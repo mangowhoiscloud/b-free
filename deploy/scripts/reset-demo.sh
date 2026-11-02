@@ -19,6 +19,9 @@
 #   data       PgBouncer 활성 대상이 target-src.ini가 아니면 rollout restart(init 컨테이너가 복사).
 #              복제가 컷오버 전 기준과 다르면 executor-0에서 repl_setup rearm(구독 · 슬롯 정리, 목적지 표 비움, 다시 복사)
 #   writes     모든 환경의 쓰기 차단 끔. executor-0 안에서 chat-admin GET /admin/writes, blocked면 PUT {"blocked": false}
+#   warm       목적지 PgBouncer의 링크 쪽 서버 연결을 min_pool_size(20)까지 열어 둠. 첫 SHIFT 10% 단계가 연결을 새로
+#              여느라 p95를 넘지 않게 함(11/3 04:46 측정). executor-0에서 SHOW POOLS(pgb_stats)를 읽고, 모자라면
+#              b-free-chat-dst에 동시 쓰기 20건(방 preflight-probe)을 몇 번 보내며 120초까지 기다림
 #
 # 입력(환경 변수, 비밀 없음)
 #   RESET_PLAN_ID            --plan과 같음
@@ -58,7 +61,7 @@ while (($#)); do
   shift
 done
 for s in ${ONLY//,/ }; do
-  case "$s" in rehearsal | approvals | front | data | writes) ;;
+  case "$s" in rehearsal | approvals | front | data | writes | warm) ;;
     *) echo "reset-demo.sh: 모르는 단계 $s" >&2; exit 2 ;;
   esac
 done
@@ -337,6 +340,62 @@ step_writes() {
   done <<<"$out"
 }
 
+# ---- warm: 목적지 PgBouncer 서버 연결을 min_pool_size까지(11/3 L1, base/chat-pgbouncer.yaml) ----------------------------
+POOL_PY='import asyncio, json, os, sys
+from pathlib import Path
+from psycopg import AsyncConnection
+from psycopg.rows import dict_row
+from bravo_executor.topology import FileSecrets, settings_from_topology
+async def main():
+    s = await settings_from_topology(Path(os.environ["BRAVO_TOPOLOGY_FILE"]), FileSecrets(Path(os.environ["BRAVO_SECRETS_DIR"])).field,
+                                     os.environ["PLATFORM_DB_DSN"], require_entries=False)
+    c = await AsyncConnection.connect(dict(s.pool_stats_dsns)[sys.argv[1]], autocommit=True, prepare_threshold=None, connect_timeout=10)
+    try:
+        cur = c.cursor(row_factory=dict_row)
+        await cur.execute(b"SHOW POOLS"); p = next((r for r in await cur.fetchall() if r.get("database") == "chat"), {})
+        await cur.execute(b"SHOW CONFIG"); cfg = {r["key"]: r["value"] for r in await cur.fetchall()}
+    finally:
+        await c.close()
+    servers = sum(int(p.get(k) or 0) for k in ("sv_active", "sv_idle", "sv_used", "sv_tested", "sv_login"))
+    print(json.dumps({"servers": servers, "sv_login": p.get("sv_login"), "cl_active": p.get("cl_active"), "cl_waiting": p.get("cl_waiting"),
+                      "min_pool_size": int(cfg.get("min_pool_size", 0)), "default_pool_size": int(cfg.get("default_pool_size", 0)),
+                      "server_idle_timeout": cfg.get("server_idle_timeout"), "server_lifetime": cfg.get("server_lifetime")}))
+asyncio.run(main())'
+WARM_WRITES_PY='import http.client, json, ssl, sys, threading, uuid
+ctx, codes, lock = ssl.create_default_context(), {}, threading.Lock()
+def one(i):
+    c = http.client.HTTPSConnection("b-free-chat-dst.mangowhois.ai", 443, context=ctx, timeout=15)
+    try:
+        c.request("POST", "/api/rooms/preflight-probe/messages?_s=warm-" + uuid.uuid4().hex[:8],
+                  body=json.dumps({"author": "bravo-warm", "body": "pool warm-up %d" % i}),
+                  headers={"Content-Type": "application/json", "Idempotency-Key": str(uuid.uuid4())})
+        k = str(c.getresponse().status)
+    except Exception as e:
+        k = type(e).__name__
+    finally:
+        c.close()
+    with lock: codes[k] = codes.get(k, 0) + 1
+ts = [threading.Thread(target=one, args=(i,)) for i in range(int(sys.argv[1]))]
+[t.start() for t in ts]; [t.join() for t in ts]
+print(json.dumps(codes))'
+exi() { kubectl --context "$BRAVO_PLATFORM_CONTEXT" -n "$PLATFORM_NS" exec -i executor-0 -c executor -- "$@"; }  # stdin = script
+step_warm() {
+  local st n mn waited=0 codes=""
+  st="$(exi python - dst <<<"$POOL_PY" 2>"$TMP/err" | tail -n 1)" || st=""
+  if ! n="$(jq -er .servers <<<"$st" 2>/dev/null)"; then report warm pool:dst NOT_CONNECTED "SHOW POOLS 읽기 실패: $(head -c 200 "$TMP/err")"; return; fi
+  mn="$(jq -r .min_pool_size <<<"$st")"
+  if ((n >= mn && mn > 0)); then report warm pool:dst ALREADY "서버 연결 $n ≥ min_pool_size $mn(idle_timeout $(jq -r .server_idle_timeout <<<"$st"), lifetime $(jq -r .server_lifetime <<<"$st"))"; return; fi
+  if ((DRY)); then report warm pool:dst PLAN "서버 연결 $n < min_pool_size $mn. 동시 쓰기로 열고 기다림"; return; fi
+  while ((waited < 120)); do
+    codes="$(exi python - 20 <<<"$WARM_WRITES_PY" 2>/dev/null | tail -n 1)"
+    st="$(exi python - dst <<<"$POOL_PY" 2>/dev/null | tail -n 1)"; n="$(jq -r '.servers // 0' <<<"$st")"
+    ((n >= mn)) && break
+    sleep 5; waited=$((waited + 5 + 3))
+  done
+  if ((n >= mn)); then report warm pool:dst DONE "서버 연결 $n ≥ min_pool_size $mn(약 ${waited}초, 마지막 동시 쓰기 응답 $codes)"
+  else report warm pool:dst FAIL "120초 뒤에도 서버 연결 $n < min_pool_size $mn(마지막 동시 쓰기 응답 $codes). 링크 · src-db-link를 볼 것"; fi
+}
+
 # ---- 실행 --------------------------------------------------------------------------------------------------------
 printf '[reset-demo] 시작 %s, 모드 %s, 계획 %s, 단계 %s, 플랫폼 %s\n' "$(kst_now)" "$( ((DRY)) && echo dry-run || echo 실행)" \
   "${PLAN:-없음}" "${ONLY:-전체}" "$BRAVO_PLATFORM_CONTEXT"
@@ -348,6 +407,7 @@ want approvals && step_approvals
 want front && step_front
 want data && step_data
 want writes && step_writes
+want warm && step_warm
 
 printf '[reset-demo] 요약: DONE %d, ALREADY %d, PLAN %d, NOT_CONNECTED %d, FAIL %d, INFO/OTHER %d. 걸린 시간 %ds\n' \
   "$N_DONE" "$N_ALREADY" "$N_PLAN" "$N_NC" "$N_FAIL" "$N_INFO" "$((SECONDS - T0))"

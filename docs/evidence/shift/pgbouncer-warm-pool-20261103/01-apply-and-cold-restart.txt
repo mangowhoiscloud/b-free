@@ -1,0 +1,13 @@
+## apply 2026-11-03 04:57:55 KST
+configmap/chat-pgbouncer-config configured
+deployment.apps/chat-pgbouncer unchanged
+configmap/chat-pgbouncer-config configured
+deployment.apps/chat-pgbouncer unchanged
+## source: rollout restart to load the new ini
+deployment.apps/chat-pgbouncer restarted
+deployment "chat-pgbouncer" successfully rolled out
+## cold start on-prem: restart the destination PgBouncer 2026-11-03 04:58:02 KST
+deployment.apps/chat-pgbouncer restarted
+deployment "chat-pgbouncer" successfully rolled out
+selected target-src.ini; userlist rendered (3 users)
+restarted at 2026-11-03 04:58:04 KST

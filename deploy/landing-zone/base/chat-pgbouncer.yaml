@@ -7,8 +7,11 @@
 # (target=src) only when it is missing, so re-applying the base never resets a switched target.
 # Pool (2026-11-03): before the cutover the destination's PgBouncer reaches the source primary over the D-16 link,
 # one round trip about 340 ms. 10 server connections carried about 16 writes/s (load lane); 30 carry the SHIFT
-# 50 % share of a 50 writes/s load with room. min_pool_size keeps 10 of them open, because opening one over the
-# link (TCP, TLS verify-full, SCRAM) costs several round trips.
+# 50 % share of a 50 writes/s load with room. Opening one server connection over the link (TCP, TLS verify-full,
+# SCRAM) costs several round trips, and a SHIFT 10 % step that had to open 3 of them failed its p95 (04:46 KST).
+# Warm pool: during a SHIFT round trip the destination used at most 16 server connections at once (SHOW POOLS every
+# 0.25 s, 04:54 KST; 16 = the two app replicas' DB_POOL_MAX 8 each). min_pool_size 20 keeps that many open with room.
+# server_idle_timeout 0 never closes an idle one; server_lifetime 86400 keeps each for a day (0 would mean "use once").
 # Passwords: Secret chat-pgbouncer-auth (keys app_writer, pgb_admin, pgb_stats), created by the
 # platform from OpenBao secret/envs/<env>/chat-db through a pipe.
 # TLS (ENC-01, 02-network.md 11.2):
@@ -37,7 +40,9 @@ data:
     pool_mode = transaction
     max_client_conn = 200
     default_pool_size = 30
-    min_pool_size = 10
+    min_pool_size = 20
+    server_idle_timeout = 0
+    server_lifetime = 86400
     reserve_pool_size = 0
     max_prepared_statements = 0
     admin_users = pgb_admin

@@ -1,0 +1,1 @@
+{"polls": 468, "servers_min": 14, "servers_max": 16, "peak_sv_active": 16, "peak_sv_login": 1, "peak_cl_waiting": 5, "peak_maxwait_ms": 121.065}

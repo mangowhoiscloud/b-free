@@ -218,7 +218,37 @@ g_path() {
 }
 
 # ---- pool: PgBouncer 활성 대상(지금 파일)과 지속 대상(ConfigMap chat-pgbouncer-target, L1a 1c0094c) ------------------
+# 목적지 PgBouncer의 링크 쪽 서버 연결이 min_pool_size 이상 열려 있는지(11/3 L1: 차가운 풀에서 SHIFT 10% 단계가 실패).
+POOL_PY='import asyncio, json, os, sys
+from pathlib import Path
+from psycopg import AsyncConnection
+from psycopg.rows import dict_row
+from bravo_executor.topology import FileSecrets, settings_from_topology
+async def main():
+    s = await settings_from_topology(Path(os.environ["BRAVO_TOPOLOGY_FILE"]), FileSecrets(Path(os.environ["BRAVO_SECRETS_DIR"])).field,
+                                     os.environ["PLATFORM_DB_DSN"], require_entries=False)
+    c = await AsyncConnection.connect(dict(s.pool_stats_dsns)[sys.argv[1]], autocommit=True, prepare_threshold=None, connect_timeout=10)
+    try:
+        cur = c.cursor(row_factory=dict_row)
+        await cur.execute(b"SHOW POOLS"); p = next((r for r in await cur.fetchall() if r.get("database") == "chat"), {})
+        await cur.execute(b"SHOW CONFIG"); cfg = {r["key"]: r["value"] for r in await cur.fetchall()}
+    finally:
+        await c.close()
+    servers = sum(int(p.get(k) or 0) for k in ("sv_active", "sv_idle", "sv_used", "sv_tested", "sv_login"))
+    print(json.dumps({"servers": servers, "sv_login": p.get("sv_login"), "cl_active": p.get("cl_active"), "cl_waiting": p.get("cl_waiting"),
+                      "min_pool_size": int(cfg.get("min_pool_size", 0)), "default_pool_size": int(cfg.get("default_pool_size", 0)),
+                      "server_idle_timeout": cfg.get("server_idle_timeout"), "server_lifetime": cfg.get("server_lifetime")}))
+asyncio.run(main())'
+g_pool_warm() {
+  local st n mn
+  st="$(kc platform -n bravo-control exec -i executor-0 -c executor -- python - dst <<<"$POOL_PY" 2>"$TMP/poolw.err" | tail -n 1)"
+  if ! n="$(jq -er .servers <<<"$st" 2>/dev/null)"; then res FAIL pool "목적지 PgBouncer 서버 연결" "SHOW POOLS 읽기 실패: $(tail -c 160 "$TMP/poolw.err")"; return; fi
+  mn="$(jq -r .min_pool_size <<<"$st")"
+  if ((n >= mn && mn > 0)); then res PASS pool "목적지 PgBouncer 서버 연결" "$n개 열림 ≥ min_pool_size $mn(idle_timeout $(jq -r .server_idle_timeout <<<"$st"), lifetime $(jq -r .server_lifetime <<<"$st")s)"
+  else res FAIL pool "목적지 PgBouncer 서버 연결" "$n개 < min_pool_size $mn. 첫 SHIFT 10% 단계가 연결을 새로 열며 p95를 넘을 수 있음: reset-demo.sh --only warm"; fi
+}
 g_pool() {
+  g_pool_warm
   local want="${PREFLIGHT_EXPECT_ACTIVE:-src}" a cm pod x y
   for a in source onprem; do
     cm="$(kc "$a" -n chat get configmap chat-pgbouncer-target -o jsonpath='{.data.target}' 2>/dev/null)"

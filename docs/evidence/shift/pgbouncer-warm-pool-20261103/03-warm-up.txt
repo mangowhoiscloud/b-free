@@ -1,0 +1,3 @@
+[reset-demo] 시작 2026-11-03 04:58:10 KST, 모드 실행, 계획 없음, 단계 warm, 플랫폼 bravo-platform-rke2
+[reset-demo] warm      pool:dst                   DONE          서버 연결 20 ≥ min_pool_size 20(약 40초, 마지막 동시 쓰기 응답 {"201": 20})
+[reset-demo] 요약: DONE 1, ALREADY 0, PLAN 0, NOT_CONNECTED 0, FAIL 0, INFO/OTHER 0. 걸린 시간 51s

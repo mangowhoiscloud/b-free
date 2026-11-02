@@ -1,0 +1,3 @@
+PASS  pool     목적지 PgBouncer 서버 연결: 20개 열림 ≥ min_pool_size 20(idle_timeout 0, lifetime 86400s)
+PASS  pool     PgBouncer(source): 지속 대상 chat-pgbouncer-target=src, 활성 대상 = target-src.ini(컷오버 전 기대 src)
+PASS  pool     PgBouncer(onprem): 지속 대상 chat-pgbouncer-target=src, 활성 대상 = target-src.ini(컷오버 전 기대 src)

@@ -1,0 +1,2 @@
+src->dst (6ffacc1f) {"polls": 173, "servers_min": 20, "servers_max": 20, "peak_sv_active": 16, "peak_sv_login": 0, "peak_cl_waiting": 4}
+dst->src (d26a9576) {"polls": 158, "servers_min": 20, "servers_max": 20, "peak_sv_active": 16, "peak_sv_login": 0, "peak_cl_waiting": 0}
