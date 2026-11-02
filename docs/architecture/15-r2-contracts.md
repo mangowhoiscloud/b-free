@@ -393,9 +393,9 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | 요청 때 본 게이트 판정 `gate_verdict_id` | 계획의 마지막 판정(`last_gate.verdict_id`)이어야 요청 가능 |
 | 값 쌍 `src`, `dst` | 그 판정의 행. `dst`는 `FAIL`, `src`는 `PASS` 또는 `FAIL`만 |
 | 증거 digest `evidence_digest` | 그 판정 행의 `evidence_digest`(목적지 증거의 sha256, 9.5) |
-| 사유 `reason`, 만료 `expires_at` | 요청 본문 |
+| 사유 `reason`, 대체 통제 `compensating_control`, 만료 `expires_at` | 요청 본문. 스펙 §8.5 "대체 불가 예외는 승인 · 기간 · 대체 통제와 함께 '예외 승인'으로 따로 표시" |
 
-예외를 걸 수 있는 행은 마지막 게이트 판정의 `controls[]` 가운데 `verdict == "BLOCK"`, `dst == "FAIL"`, `src`가 `PASS` 또는 `FAIL`, `evidence_digest`가 `null`이 아닌 행입니다. 증거가 없는 행(Executor가 낸 `DB-ANON-READ`, `DB-AUTH`)은 걸 수 없습니다.
+예외를 걸 수 있는 행은 마지막 게이트 판정의 `controls[]` 가운데 `verdict == "BLOCK"`, `dst == "FAIL"`, `src`가 `PASS` 또는 `FAIL`, `evidence_digest`가 `null`이 아닌 행입니다. 증거가 없는 행(Executor가 낸 `DB-ANON-READ`, `DB-AUTH`)은 걸 수 없습니다. 그 판정의 증거가 만료됐으면(`last_gate.evidence_expires_at`이 지남) 요청 · 승인하지 않습니다(스펙 §8.5 "만료된 증거로는 승인하지 않는다"). 게이트를 다시 돌리면 됩니다.
 
 ### 9.2 상태
 
@@ -428,11 +428,13 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 ```json
 {"control_id": "OBJ-06", "gate_verdict_id": "<last_gate.verdict_id>",
  "evidence_digest": "sha256:<last_gate.controls[].evidence_digest>",
- "reason": "GCS XML API는 평문 HTTP를 받음. 조직이 없어 storage.secureHttpTransport를 걸 수 없음. 보완: 노드 바깥 80 차단, 앱 NetworkPolicy 443만",
+ "reason": "GCS XML API는 평문 HTTP를 받음. 조직이 없어 storage.secureHttpTransport를 걸 수 없음",
+ "compensating_control": "노드에서 바깥 80 차단 방화벽, 앱 NetworkPolicy는 443만 허용",
  "expires_at": "2026-11-09T18:00:00+09:00"}
 ```
 
-- `reason`: 10–2000자. 왜 대체할 수 없는지와 보완 통제를 씁니다.
+- `reason`: 10–2000자. 왜 목적지에서 대체할 수 없는지.
+- `compensating_control`: 10–2000자. 대신 둔 통제.
 - `expires_at`: 시간대가 있는 ISO 8601. 지금부터 5분 뒤 ~ 30일 뒤.
 
 승인 본문 `{"evidence_digest": "sha256:…", "note": "<0–2000자, 생략 가능>"}`. `evidence_digest`는 승인자가 화면에서 본 값입니다. 거절 본문 `{"note": "<0–2000자, 생략 가능>"}`.
@@ -443,7 +445,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 {"exception_id": "<uuid>", "plan_id": "<uuid>", "control_id": "OBJ-06",
  "target_environment": {"environment_id": "<uuid>", "name": "target-gcp"},
  "gate_verdict_id": "<uuid>", "src": "PASS", "dst": "FAIL", "evidence_digest": "sha256:…",
- "reason": "…", "expires_at": "2026-11-09T09:00:00+00:00",
+ "reason": "…", "compensating_control": "…", "expires_at": "2026-11-09T09:00:00+00:00",
  "status": "approved", "stale_reason": null,
  "requested_by": "<operator 이메일>", "requested_at": "…",
  "decided_by": "<approver 이메일>", "decided_at": "…", "decision_note": null,
@@ -463,7 +465,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | 403 | `insufficient_scope`(역할 · 채널), `separation_of_duties` | |
 | 404 | `plan_not_found`, `exception_not_found` | |
 | 409 | `state_mismatch`(계획이 CUTOVER · FAILBACK · DONE · DONE_ROLLED_BACK · SAFE_HOLD · ABORT_PRE_WRITE) | `state` |
-| 409 | `exception_stale` | `cause`: `no_gate_verdict`, `gate_verdict_superseded`(요청의 판정이 마지막 판정이 아님), `evidence_changed`, `verdict_changed`, `evidence_mismatch`(승인 본문 digest ≠ 예외), `exception_expired` |
+| 409 | `exception_stale` | `cause`: `no_gate_verdict`, `gate_verdict_superseded`(요청의 판정이 마지막 판정이 아님), `evidence_changed`, `verdict_changed`, `not_measured`(승인 때 마지막 판정에서 그 통제가 UNKNOWN이거나 없음), `evidence_expired`(마지막 판정의 증거 만료), `evidence_mismatch`(승인 본문 digest ≠ 예외), `exception_expired`, `db_recheck`(DB 트리거가 결속 불일치를 다시 잡음) |
 | 409 | `exception_open`(그 통제에 열린 예외가 있음) | `exception_id`, `status` |
 | 409 | `exception_not_pending`(승인 · 거절할 수 없는 상태) | `status` |
 | 409 | `idempotency_key_reuse` | |
@@ -487,7 +489,8 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | `controls[].evidence_digest` | 목적지 증거 digest(게이트 보고서의 `dst_evidence_digest`). 증거가 없으면 `null` |
 | `controls[].exception_id` | `EXCEPTION`인 행만, 아니면 `null` |
 | `controls[].verdict` | `PASS` · `BLOCK` · `EXCEPTION` |
-| `exceptions[]` | 이 판정에 적용한 예외. `{"exception_id", "control_id", "src", "dst", "evidence_digest", "expires_at", "approved_by"}`. 콘솔은 "예외 승인"으로 따로 보임 |
+| `exceptions[]` | 이 판정에 적용한 예외. `{"exception_id", "control_id", "src", "dst", "evidence_digest", "expires_at", "approved_by", "compensating_control"}`. 콘솔은 "예외 승인"으로 승인자 · 기간 · 대체 통제와 함께 따로 보임 |
+| `evidence_expires_at` | 게이트 보고서의 `expires_at`(증거 유효기간 끝). 게이트를 못 읽었으면 `null`. 지난 판정으로는 예외를 요청 · 승인하지 않음 |
 
 ### 9.5 게이트 서비스 쪽(`platform/gate`)
 
@@ -510,10 +513,10 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 
 ### 9.7 DB(마이그레이션 0008)
 
-- 표 `control_exceptions`: 9.1의 값, `status`, `stale_reason`, `requested_by`, `requested_at`, `decided_by`, `decided_at`, `decision_note`, `updated_at`. RLS는 다른 표와 같습니다(`tenant_isolation` to `bravo_api` · `bravo_mcp`, 소유자 `owner_definer`). `bravo_api`는 읽기 · 쓰기, `bravo_mcp`는 읽기와 `stale` · `expired` 기록만(MCP `gate_run`이 같은 처리기를 씀). Executor · T31 워커 역할은 권한 없음.
+- 표 `control_exceptions`: 9.1의 값(`compensating_control` 포함), `status`, `stale_reason`, `requested_by`, `requested_at`, `decided_by`, `decided_at`, `decision_note`, `updated_at`. RLS는 다른 표와 같습니다(`tenant_isolation` to `bravo_api` · `bravo_mcp`, 소유자 `owner_definer`). `bravo_api`는 읽기 · 쓰기, `bravo_mcp`는 읽기와 `stale` · `expired` 기록만(MCP `gate_run`이 같은 처리기를 씀). Executor · T31 워커 역할은 권한 없음.
 - 트리거 `bravo_control_exceptions_guard`: 요청 때 요청자 = 세션 주체, 목적지 = 계획의 목적지, 판정 = 계획의 마지막 판정이고 그 행이 `dst = FAIL`, `src ∈ {PASS, FAIL}`, 같은 digest인지 확인. 결속 값은 바꿀 수 없음. 허용 전이만(9.2). 승인 · 거절은 결정자 = 세션 주체, approver 멤버십, 결정자 ≠ 요청자 ≠ 계획 작성자. 승인은 만료 전이고 마지막 판정의 그 행이 아직 같을 때만.
 - 부분 유일 색인: 계획 · 통제마다 `requested` · `approved` 하나.
-- `gate_verdicts.exceptions`(jsonb, 기본 `[]`): 그 판정에 적용한 예외.
+- `gate_verdicts.exceptions`(jsonb, 기본 `[]`): 그 판정에 적용한 예외. `gate_verdicts.evidence_expires_at`: 게이트 증거 유효기간 끝. 승인 때 트리거가 지나지 않았는지도 봅니다.
 
 ## 스펙 밖
 
