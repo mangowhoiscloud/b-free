@@ -58,7 +58,7 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:59f6ba2b9fcddcf3b106663319bbaadfa7ea6f969be7bbbd7c3548eab2e51ae4 # neutral-20261102T163611Z (gate lane: gate report by POST = plan evaluation run with write probes; over merge-20261102T144519Z; tree at 50218ea)
+    digest: sha256:a99f5aa229c4159bb2c34ba4d9f0acdababece93248e392086b0174aeb322c92 # shift-20261102T175005Z (cutover lane L1: SHIFT state 10/50/100 -> CUTOVER, replay, receipt scope, migration 0009; tree at 9253b8b)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
     digest: sha256:91678860257abd4a5e97418368e17715491b23047f697e2cb59c4c6511cb7426 # r16 (console lane: gate run elapsed timer, gate proxy 90 s for live measurement)
@@ -70,7 +70,7 @@ images:
     digest: sha256:af3c66c17932423a23a4121f184b149fdf83f526f4b3d9e8dcd97645fdab5a79 # neutral-20261102T163611Z (gate lane: provider gke over link gke-k8s with its WIF identity bravo-cost-reader; over d16link-20261102T143435Z; tree at 50218ea)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
-    digest: sha256:f5ec7dfdbe01e7a37a6fdbdde4125c12b921f99cbe51dee787b9c8b8de0caeb0 # cloud-202611022259 (data/cutover lane: + attachment_copy CLI in topology mode for T8 pre-copy in executor-0)
+    digest: sha256:14c7f0d545f39750654db9cb2169ab7ca7ec82c8be3c4a451ba78531759aa194 # shift-20261102T181150Z (cutover lane L1: step judgement on real writes, approval console start + SHIFT_NOT_DONE, failback front move, reverse slot at 6a, attachment reconcile; tree at b65f9cd)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
     digest: sha256:1e1337fa61e03e7dbbcbf19ab101021ab2abe455e0e28736412fde39f4f6cacd # b7-20261102T144209Z (rehearsal lane: B7 behavioural verification Job for rgw_bucket_policy proposals, verifier_kind behavioral+static_rules; over readyz-20261102T131522Z; arm64)
