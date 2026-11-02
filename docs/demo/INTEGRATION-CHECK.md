@@ -1,6 +1,6 @@
 # 중간 통합 점검(T28)
 
-스펙 T28의 세부 작업 "중간 통합 점검 2회: S1–S2 연결, S3–S4 연결"의 점검표입니다. **기준 시각: 2026-11-03 04:10 KST.** 실제 대상(출발지 EKS, 온프렘 RKE2(CIS), GKE, 플랫폼 EC2 + RKE2)에서만 봅니다. 지금 환경의 정본은 `deploy/CLOUD-E2E-CONTRACT.md` 0절이고, 장비 · 자격 증명 · 시작 상태는 `docs/demo/ONSITE-CHECKLIST.md`가 다룹니다.
+스펙 T28의 세부 작업 "중간 통합 점검 2회: S1–S2 연결, S3–S4 연결"의 점검표입니다. **기준 시각: 2026-11-03 04:55 KST.** 실제 대상(출발지 EKS, 온프렘 RKE2(CIS), GKE, 플랫폼 EC2 + RKE2)에서만 봅니다. 지금 환경의 정본은 `deploy/CLOUD-E2E-CONTRACT.md` 0절이고, 장비 · 자격 증명 · 시작 상태는 `docs/demo/ONSITE-CHECKLIST.md`가 다룹니다.
 
 **쓰는 법.**
 - 항목마다 명령을 그대로 돌리고 "기대하는 실제 신호"와 비교합니다. 하나라도 다르면 FAIL입니다. 출력을 볼 수 없으면 UNKNOWN이고, UNKNOWN은 통과로 세지 않습니다.
@@ -51,7 +51,7 @@ S1이 만든 것(환경, 인벤토리, 통제표, 게이트 1차 BLOCK)이 S2(�
 | B1 | 수집기가 클러스터를 읽음 | 콘솔 `#/clusters` 또는 `GET /v1/clusters` | 출발지 · 온프렘 · GKE `ok` | PASS(출발지, `docs/evidence/d16-source-k8s/`). 세 곳 동시는 다시 보지 않음 |
 | B2 | 의존성 3등급 | 콘솔 `#/plan` 의존성 칸(`GET /v1/inventory`) | "코드 수정" 1건 이상(Secrets Manager 직접 호출), `input_digest` 있음 | 계획 경로 미실행(계획 0건). S2 실측의 봉투에 인벤토리 결속 있음(`docs/evidence/s2-full/`) |
 | B3 | 게이트 두 쌍 | `curl -s -X POST $GATE/v1/controls/report …`(`docs/evidence/gate/run-platform-gate.sh`) | 질문 22개, UNKNOWN 0, FAIL은 온프렘 OBJ-01 · OBJ-05와 GKE OBJ-06뿐. 행마다 `method` | PASS(03:43–03:45, 한 쌍 39–40초, `docs/evidence/app-0.3.3/`). 방법 대응은 `docs/architecture/16-gate-test-map.md` |
-| B4 | 계획 게이트 BLOCK. **쓰기** | 콘솔 `#/plan`에서 게이트 실행(`POST /v1/plans/$PLAN/gate`) | `gate.verdict` BLOCK, IAM-01 | 미실행(계획 0건) |
+| B4 | 계획 게이트 BLOCK. **쓰기** | 콘솔 `#/plan`에서 게이트 실행(`POST /v1/plans/$PLAN/gate`) | `gate.verdict` BLOCK, IAM-01, 한 쌍 39–43초 | 미실행(계획 0건). 리허설(C1)은 이 판정이 있어야 시작되고, 리허설이 시작되면 PROPOSE · REHEARSE에서는 이 명령이 `state_mismatch`로 거부됨(`GATE_STATES`) |
 | B5 | 이전 후보 등록이 막힘 | `GET /v1/plans/$PLAN` | AWAIT_APPROVAL로 가지 않음 | 미실행 |
 | B6 | CIS 4a 사전 기록 | `docs/evidence/s1-cis-refusal/` | 거부 로그, 고친 cloud-init diff, 재설치, 거부 5초 fail-fast | PASS(버리는 VM, 사전 실행) |
 | B7 | GKE 예외(S1 5b). **쓰기** | GKE 쌍 계획에서 운영자가 예외 요청(대체 통제 `OBJ-PLAIN-EGRESS`), 승인자가 승인 | 게이트 행 `EXCEPTION`, 만료 · 대체 통제 표시 | 대체 통제 질문은 PASS(`docs/evidence/gate/obj-plain-egress-20261103/`). 예외 승인 미실행(0건) |
@@ -60,14 +60,14 @@ S1이 만든 것(환경, 인벤토리, 통제표, 게이트 1차 BLOCK)이 S2(�
 
 | # | 확인 | 명령 | 기대하는 실제 신호 | 11/3 상태 |
 |---|---|---|---|---|
-| C1 | 두 작업 시작. **쓰기** | 콘솔 `#/plan`에서 governance · app_migration 리허설 시작(`POST /v1/plans/$PLAN/rehearsals`) | HTTP 202 두 건, `trial.started` 두 건 | **측정 중**: 배포된 API(`46edd0d1`)는 계획당 리허설 하나만 받음(`rehearsal_active`). 역할마다 하나를 받는 코드는 `e1b4fe0`(고정 api `5421e97b`, push 전). API Pod 경로로는 두 Trial이 0.4초 차이로 시작(`docs/evidence/s2-full/`) |
+| C1 | 두 작업 시작. **쓰기** | 콘솔 `#/plan`에서 governance · app_migration 리허설 시작(`POST /v1/plans/$PLAN/rehearsals`) | HTTP 202 두 건, `trial.started` 두 건 | 콘솔 클릭은 미실행(운영자 첫 로그인 전). 배포된 API `5421e97b`가 역할마다 리허설 하나를 받음. 같은 상류 호출을 API Pod에서 불러 두 작업을 함께 시작: governance PASS 150–210초, app_migration PASS 180–187초(앱 0.3.3, `docs/evidence/s2-timing/`) |
 | C2 | Trial 격리 | `kubectl --context $DST get ns -l bravo.dev/trial-id`, Trial 기록 `isolation` | 대조 exec 성공, 밖으로 나가는 연결 실패, privileged Pod 입장 거부 | PASS(실행 18 `isolation`: 리허설 · 검증 네임스페이스 모두 egress 2건 실패, privileged `rejected`) |
 | C3 | 밖으로 나가는 시도 차단 | 플랫폼 Prometheus `hubble_drop_total{reason="POLICY_DENIED"}`, Trial 네임스페이스 | 0이 아님 | PASS: Trial 네임스페이스마다 12건(`docs/evidence/s2-full/12-hubble-drops-prometheus.json`) |
 | C4 | 도구 거부 기록 | `#/agents`, SSE `tool.denied` | 거부마다 `origin`(agent · probe) 표시 | PASS: probe 2건(버킷 삭제, `POST /v1/trials/{id}/probes`), agent 1건. probe는 에이전트 행동이 아님 |
-| C5 | 분리 검증 | Trial 기록 `verdict`, 검증 Job | governance: 게이트 OBJ-01–06이 시험 버킷에서 PASS. app_migration: ESO 동기화 · 고친 앱 DB 접속 · 쓰기 201 · 다른 SA Secret 읽기 거부 | PASS(실행 18: 227초 · 315초) |
+| C5 | 분리 검증 | Trial 기록 `verdict`, 검증 Job | governance: 게이트 OBJ-01–06이 시험 버킷에서 PASS. app_migration: ESO 동기화 · 고친 앱 DB 접속 · 쓰기 201 · 다른 SA Secret 읽기 거부 | PASS(`s2-timing` 실행 06, 고정 리허설 이미지 `d78bb0ce`: 210.2초 · 186.8초, 첫 시도. 이전 실행 18은 227초 · 315초) |
 | C6 | 변경 승인. **쓰기** | 승인자 콘솔 `#/plan` change | `approval.granted` stage `change`, diff · digest · 정책 diff 결속 | 미실행(승인 0건) |
-| C7 | T31 반영. **쓰기** | 승인 뒤 반영 경로(`platform/apply`) | 배포 digest = 승인 digest, `rgw_bucket_policy` · `openbao_policy` 적용 뒤 다시 읽어 같음 | 정책 단계는 시험 버킷에서만 PASS(`15-t31-rgw-apply-selftest.txt`). 승인 뒤 반영 시간 **측정 중** |
-| C8 | 재대조 PASS | 반영의 `gate.recheck` 또는 B4 다시 | `gate.verdict` PASS(온프렘 쌍) | 미실행 |
+| C7 | T31 반영. **쓰기** | 승인 뒤 반영 경로(`platform/apply`) | 배포 digest = 승인 digest, `rgw_bucket_policy` · `openbao_policy` 적용 뒤 다시 읽어 같음 | 반영 시간 PASS: 9.6초(이미지 이미 반입), 처음 반입 약 13초. 정책 적용(RGW 버킷 정책 + OpenBao 정책 + k8s) 1.5초, 서명 1.3초, 롤아웃 6.1초(`docs/evidence/s2-timing/05-t31-apply/`). 검증 네임스페이스 · 시험 버킷에 반영했고 승인 행이 없어 `approval.verify`는 안 돎. 실제 목적지 반영은 미실행 |
+| C8 | 재대조 PASS | 반영의 `gate.recheck` | `gate.verdict` PASS(온프렘 쌍), 한 쌍 38–63초. 승인부터 PASS까지 50–76초 | 미실행(승인 0건) |
 | C9 | 리허설 뒤 정리 | `kubectl --context $DST get ns -l bravo.dev/trial-id -o name` | 빈 출력(S2-AC4) | PASS(실행 18 `leftovers: []`) |
 
 ## 2. S3–S4 연결 점검
@@ -79,7 +79,7 @@ S3(전환, 컷오버)이 남긴 상태에서 S4(장애, 데이터째 되돌리�
 | D1 | 컷오버 직전 준비 | `curl -s $EXECUTOR/v1/readiness \| jq '{direction, sub_state, lag_bytes, schema_hash}'` | `forward`, `streaming`, 스키마 해시 같음 | PASS(`docs/evidence/db-tls-audit-netpol/`, preflight `repl`) |
 | D2 | PgBouncer 대상이 출발지이고 재시작에도 남음 | 두 클러스터 ConfigMap `chat/chat-pgbouncer-target` | `target=src` | PASS(재시작 시험 03:46–03:47, `docs/evidence/shift/pgbouncer-durable-target-20261103/`) |
 | D3 | 역방향 슬롯이 미리 없음 | preflight `repl`, 컷오버 전 점검 `REVERSE_SLOT_PRESENT` | 슬롯 없음(6a에서 만들어짐) | 코드 배포됨(executor `b2732bed`). 컷오버 실행 0회라 6a 동작은 미실행 |
-| D4 | 승인 → 한 번의 시작 → SHIFT → CUTOVER. **쓰기** | 승인자 cutover 승인, 운영자 `#/plan` "전환 시작"(`POST /v1/plans/$PLAN/shift {"stage":"cutover"}`) | SHIFT 10 · 50 · 100% 판정 통과(오류율 1%, 목적지 표본 100건, 목적지 p95 1,500 ms) → 시스템이 CUTOVER 시작 | 콘솔 경로 미실행. 도구 경로 실측: 목적지가 제때 답하면 편도 30.4 · 37.2초. 실제 쓰기 판정: 04:05 배포된 Executor로 10%에서 0% 복귀(목적지 p95 1,096 ms는 기준 안, 헤더 없는 오류 5건, `docs/evidence/shift/lb-deployed-p95-1500-20261103T040545/`). **재측정 중**(D-30) |
+| D4 | 승인 → 한 번의 시작 → SHIFT → CUTOVER. **쓰기** | 승인자 cutover 승인, 운영자 `#/plan` "전환 시작"(`POST /v1/plans/$PLAN/shift {"stage":"cutover"}`) | SHIFT 10 · 50 · 100% 판정 통과(오류율 1%, 목적지 표본 100건, 목적지 p95 1,500 ms) → 시스템이 CUTOVER 시작 | 콘솔 경로 미실행. 도구 경로 실측: 목적지가 제때 답하면 편도 30.4 · 37.2초. 실제 쓰기 판정: 04:05 배포된 Executor로 10%에서 0% 복귀(목적지 p95 1,096 ms는 기준 안, 헤더 없는 오류 5건, `docs/evidence/shift/lb-deployed-p95-1500-20261103T040545/`). 원인인 출발지 Gateway 노드 사이 503은 04:33에 고침(`docs/evidence/source-gateway-crossnode/`, 고친 뒤 600/600 200, 50 + 150 부하 12,000/12,000). **재측정 중**(D-30) |
 | D5 | 부하 중 컷오버. **쓰기**(부하) | `deploy/cloud/load_cutover.sh $PLAN run-1` 뒤 D4 | 실행 `DONE`, `write_pause_ms` 5,000 이하, NFR-2 유실 · 중복 0 | 미실행. 부하 자체는 PASS(50 쓰기 + 150 읽기/초, 쓰기 p95 138.1 ms, `docs/evidence/load/20261103-035431-job-2nodes-http-50w150r/`). 5회는 회마다 승인 |
 | D6 | 영수증 | 콘솔 영수증 칸, `GET /v1/plans/$PLAN` | `verdict` MATCH, `verdict_parts` 표 · 시퀀스 · 첨부 모두 MATCH, `scope`(hash_rule v1.1, 첨부 참조 집합 해시) | 미실행(영수증 0건) |
 | D7 | 컷오버 뒤 쓰기 DB가 하나 | `deploy/cloud/repl_setup.sh status`, 두 PgBouncer 활성 파일과 ConfigMap | 목적지 `app_writer` LOGIN, 출발지 아님. 두 PgBouncer와 ConfigMap 모두 dst | 미실행 |

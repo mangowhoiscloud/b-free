@@ -2,7 +2,7 @@
 
 측정과 시험 결과를 남깁니다. 모든 기록에 실행 ID, 시각, 커밋 또는 이미지 digest, 환경을 붙입니다. 데모에서 "미리 실행한 것"은 여기 있는 실행 ID와 시각을 보입니다(스펙 §10).
 
-기준 시각: 2026-11-03 04:10 KST(문서 갈래). 아래 "환경 · 경로" 칸의 이름은 `deploy/CLOUD-E2E-CONTRACT.md` 0절의 현재 환경표를 따릅니다.
+기준 시각: 2026-11-03 04:55 KST(문서 갈래). 아래 "환경 · 경로" 칸의 이름은 `deploy/CLOUD-E2E-CONTRACT.md` 0절의 현재 환경표를 따릅니다.
 
 ## 읽는 법
 
@@ -24,8 +24,9 @@
 | [gate/obj-enc-reencrypt-20261103/](gate/obj-enc-reencrypt-20261103/README.md) | 온프렘 첨부 버킷의 기존 평문 객체 4개를 SSE-KMS로 다시 저장(리뷰 B13) | 온프렘 RGW | 11/3 02:35–02:36 |
 | [app-0.3.3/](app-0.3.3/README.md) | 데모 앱 0.3.3(`76e8f595…`)을 세 클러스터에 같은 digest로. 그 뒤 게이트 두 쌍 실행(한 쌍 39 · 40초, FAIL은 온프렘 OBJ-01 · OBJ-05, GKE OBJ-06뿐, UNKNOWN 0) | 세 고객 클러스터, 배포된 게이트 | 11/3 03:40–03:46 |
 | [gke-same-digest-20261103/](gke-same-digest-20261103/README.md) | GKE 앱을 출발지와 같은 digest로 바꿈(그때 `b5c0e764…`, 지금은 0.3.3) | GKE | 11/3 02:51–02:55 |
+| [s2-timing/](s2-timing/README.md) | S2 시간 재측정(앱 0.3.3): 두 작업 함께 시작, governance PASS 150–210초, app_migration PASS 180–187초(준비 10–13, 모델 99–152, 판정 27–54초). T31 준비 약 13초, 승인 뒤 반영 9.6초(처음 반입 약 13초), 게이트 재대조 38–63초 | API Pod 안에서 API 코드로 부름 + 리허설 미리 보기 Pod(실행 01만 배포된 서비스). T31은 검증 네임스페이스 · 시험 버킷 | 11/3 04:12–04:52 |
 | [s2-full/](s2-full/README.md) | S2 전체 사슬을 사람 승인 직전까지: governance PASS 227초, app_migration PASS 315초(단계 시간), 검증 Job이 게이트 OBJ-01–06 · ESO 앱 검증, probe 표시(`origin=probe`), Hubble POLICY_DENIED, T31 정책 단계(시험 버킷), RGW `BoolIfExists` 측정 | API Pod 안에서 API 코드로 부름 + 리허설 미리 보기 Pod. 콘솔 · 승인 · 반영 없음 | 11/3 02:36–04:00 |
-| [shift/](shift/) | SHIFT 10/50/100 실측: 편도 30.4 · 37.2초(목적지가 제때 답할 때), 실제 쓰기 판정은 아직 통과 못 함, 목적지 쓰기 경로 지연 원인(링크 한 왕복 290–340 ms), PgBouncer 대상이 재시작에도 남음(ConfigMap). `lb-deployed-p95-1500-*`: D-30 기준(1,500 ms)의 배포된 Executor로도 10%에서 0% 복귀(헤더 없는 오류 5건, 출발지 Gateway 503). 재측정 중 | executor-0 도구 경로(계획 · 승인 없음) | 11/3 02:51–04:07 |
+| [shift/](shift/) | SHIFT 10/50/100 실측: 편도 30.4 · 37.2초(목적지가 제때 답할 때), 실제 쓰기 판정은 아직 통과 못 함, 목적지 쓰기 경로 지연 원인(링크 한 왕복 290–340 ms), PgBouncer 대상이 재시작에도 남음(ConfigMap). `lb-deployed-p95-1500-*`: D-30 기준(1,500 ms)의 배포된 Executor로도 10%에서 0% 복귀(헤더 없는 오류 5건). 원인인 출발지 Gateway 503은 `source-gateway-crossnode/`에서 고침. 재측정 중 | executor-0 도구 경로(계획 · 승인 없음) | 11/3 02:51–04:07 |
 | [load/](load/README.md) | 부하 측정. 출발지 50 쓰기 + 150 읽기/초 300초(HTTP 읽기, 노드 2): 쓰기 p95 138.1 ms, 읽기 p95 123.2 ms, NFR-2 OK. WebSocket 읽기는 아직 포화. 노드 1대 · Mac 실행은 대체됨 | 플랫폼 클러스터 Job(일부 Mac) | 11/3 02:36–04:01 |
 | [cloud-runs/](cloud-runs/README.md) | 11/2 클라우드 E2E 스크립트 기록 전부(성공 · 실패): LB 전환 4회(60초 보유, 1회 거짓 DONE), 자동 0% 복귀 2회, T8 첨부 복사 1회, 컷오버 dry run 2회(`NOT_STARTED` · 불완전), E4, D-16 복제, K3s 시절 역사. 플랫폼 DB 집계 | 하네스 실행 | 11/2 20:49–23:02, 집계 11/3 02:32 |
 | [exit-drill/](exit-drill/README.md) | Exit Drill 스크립트를 D-16 링크 기준으로 다시 씀. 실행은 `NOT_RUN`(컷오버 전), 잔존 의존성 지도만 | executor-0, 세 클러스터 읽기 | 11/3 03:09 |
@@ -41,6 +42,7 @@
 |---|---|---|---|
 | [kube-bench/](kube-bench/) | `onprem-20261103/`: 데모 목적지 kube-bench(`rke2-cis-1.9`) 서버 PASS 78 · FAIL 3(고친 뒤), 에이전트 FAIL 1, FAIL마다 판단. `source-20261103/` · `gke-20261103/`: 실행 결과만(FAIL 미판정, D-29). `platform-rke2-20261102T124326Z.json`: 플랫폼 1회 | 세 고객 클러스터, 플랫폼 | 11/2 21:43, 11/3 02:31–02:43 |
 | [demo-ops/](demo-ops/README.md) | preflight 2회(13초, 7초), 자격 회전 연습, reset `--plan` 시간과 범위 시험 | 운영 Mac, 네 클러스터 | 11/3 02:38–03:02 |
+| [source-gateway-crossnode/](source-gateway-crossnode/README.md) | 출발지 Gateway 노드 사이 503(약 3%)의 원인(Envoy가 VPC가 모르는 cluster-pool 주소로 연결)과 고침(그 주소만 masquerade). 고친 뒤 600/600 200, 50 + 150 부하 60초 12,000/12,000 | 출발지 EKS | 11/3 04:12–04:44 |
 | [edge-https-redirect-20261103/](edge-https-redirect-20261103/README.md) | 공개 이름의 평문 HTTP를 원점 Gateway에서 https 301로(`CF-Visitor` 일치) | 세 고객 클러스터, 플랫폼 | 11/3 03:0x |
 | [edge-lb-host-20261103/](edge-lb-host-20261103/README.md) | LB pool이 Host를 덮어쓰지 않게(평문 요청이 `b-free-chat`으로 돌아옴) | Cloudflare | 11/3 03:56 |
 | [db-tls-audit-netpol/](db-tls-audit-netpol/README.md) | DB-TLS · DB-AUDIT · NET-DEFAULT-DENY 보완, 홉별 verify-full, E4 재실행 | 세 고객 클러스터와 executor-0 | 11/3 01:23–02:05 |
@@ -60,7 +62,7 @@
 | 실제 쓰기 판정으로 통과한 SHIFT | T17 | 재측정 중(D-30) |
 | 클라우드 컷오버 · 되돌리기(쓰기 정지 ms, 영수증, S4-AC1) | T12, T20, T25 | 0회 |
 | 부하 컷오버 5회 | T18, NFR-1 | 0회. 부하 자체는 측정함(`load/`) |
-| 콘솔 경로 S2(역할별 동시 시작, 승인 뒤 T31 반영 시간) | T15, T31 | 측정 중 |
+| 콘솔 경로 S2(클릭으로 두 작업 시작), 실제 목적지 T31 반영 | T15, T31 | 0회. 시간은 API Pod 경로로 잼(`s2-timing/`) |
 | Exit Drill 실제 실행 | T27 | `NOT_RUN` |
 | 270초 · 5분 통합 리허설 3회 연속 | T28 | 0회 |
 
