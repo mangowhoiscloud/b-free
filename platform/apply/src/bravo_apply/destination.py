@@ -98,8 +98,11 @@ class K3sContainerd:
             with tar.open("rb") as f:
                 self._sh(node, f"cat > {tmp}", stdin=f, timeout=900)
             self._sh(node, f"sudo {self.ctr} -n k8s.io images import --platform linux/arm64 {tmp} >/dev/null", timeout=900)
+            # The archive's own name is kept: containerd's CRI image store remembers the first name it saw for an
+            # image, and removing it makes the container start fail ("failed to get image ... not found", measured
+            # 2026-11-03 on bravo-onprem with the gate image). Only the digest name is used by the Deployment.
             self._sh(node, f"sudo {self.ctr} -n k8s.io images tag --force '{archive_name}' '{ref}' >/dev/null"
-                           f" && sudo {self.ctr} -n k8s.io images rm '{archive_name}' >/dev/null; rm -f {tmp}", timeout=120)
+                           f"; rm -f {tmp}", timeout=120)
             have = self.node_digest(node, ref)
             per_node[node] = {"action": "imported", "digest": have}
             if have != digest:

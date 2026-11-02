@@ -130,3 +130,23 @@ def test_hcl_openbao_policy_and_t31_names_are_checked_like_t31(tmp_path):
     assert ok[0] == "1"
     assert guessed[1]["errors"] == ["secret_path_outside_profile"]
     assert named[1]["errors"] == ["k8s_name_out_of_scope"]
+
+
+def test_external_secret_must_use_the_destinations_eso_api_version(tmp_path):
+    """ESO 2.x serves only external-secrets.io/v1: a v1beta1 ExternalSecret passed the verifier and then failed T31's
+    apply (measured 2026-11-03). The destination profile names the served version; anything else is refused."""
+    doc = {"apiVersion": "external-secrets.io/v1beta1", "kind": "ExternalSecret", "metadata": {"name": "a"},
+           "spec": {"data": [{"secretKey": "p", "remoteRef": {"key": "envs/target-onprem/chat-db"}}]}}
+    prop = {**GOOD, "translations": [{"source": {"type": "aws_secretsmanager_secret", "id": "s"},
+                                      "target": {"type": "external_secret", "name": "a"}, "control_ids": ["SEC-01"],
+                                      "document": doc}]}
+    global EXPECTED
+    saved = EXPECTED
+    EXPECTED = {**saved, "secret_path_prefix": "envs/target-onprem/", "eso_api_version": "external-secrets.io/v1"}
+    try:
+        old = _verify(tmp_path / "a", prop)
+        doc["apiVersion"] = "external-secrets.io/v1"
+        new = _verify(tmp_path / "b", prop)
+    finally:
+        EXPECTED = saved
+    assert old[1]["errors"] == ["external_secret_api_version"] and new[0] == "1"

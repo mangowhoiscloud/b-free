@@ -147,3 +147,62 @@ def test_probe_calls_are_labelled_and_never_counted_as_the_agents(tmp_path: Path
     t = trial.timings()
     assert [h["phase"] for h in trial.phase_history] == ["provisioning", "agent_running", "done"]
     assert t["elapsed_s"] is not None and t["finished_at"] is not None
+
+
+def test_verification_job_starts_when_the_proposal_is_frozen_and_not_without_one(tmp_path: Path) -> None:
+    """B04/P2: the Job runs alongside Harbor's static verifier, from the moment plan_propose freezes the artifact;
+    a Trial that ends without a proposal never starts it."""
+    import asyncio
+
+    from bravo_rehearsal.service import Orchestrator
+
+    class Probe(Orchestrator):
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def behavioral(self, trial):  # noqa: ANN001, ANN201
+            self.calls.append(trial.trial_id)
+            return {"ran": True}
+
+    async def go() -> tuple[Any, Any, list[str]]:
+        orch = Probe()
+        proposed, empty = make_trial(tmp_path / "a", trial_id="t-proposed01"), make_trial(tmp_path / "b",
+                                                                                            trial_id="t-noproposal")
+        t1 = asyncio.create_task(orch._job_after_proposal(proposed))  # noqa: SLF001
+        t2 = asyncio.create_task(orch._job_after_proposal(empty))  # noqa: SLF001
+        await asyncio.sleep(0)
+        assert not t1.done() and not t2.done() and orch.calls == []  # waits for the freeze
+        proposed.artifact = {"role": "governance"}
+        proposed.proposed.set()
+        empty.finish("FAIL", "no_valid_proposal")
+        return await t1, await t2, orch.calls
+
+    r1, r2, calls = asyncio.run(go())
+    assert r1 == {"ran": True} and r2 is None and calls == ["t-proposed01"]
+
+
+def test_proposal_diff_must_be_the_workspace_diff_and_the_artifact_keeps_the_real_one(tmp_path: Path) -> None:
+    """The model sees make_diff through redact(): a context line like `if "password=" in dsn` arrives as
+    `[redacted]`. The proposal may carry that view, the artifact records the sandbox's real diff; any other diff is
+    refused (diff_not_from_workspace)."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from bravo_rehearsal.mcp_tools import ToolLayer
+    from bravo_rehearsal.server_tools import redact
+
+    real = ('--- src/src/a.py\n+++ app/src/a.py\n@@ -1,2 +1,2 @@\n'
+            ' if "password=" in dsn.replace(" ", ""):\n-    x = 1\n+    x = 2\n')
+    seen = redact(real)
+    assert seen != real  # the redaction really changes the context line
+
+    class Layer(ToolLayer):
+        async def _workspace_diff(self, trial):  # noqa: ANN001, ANN202
+            return real
+
+    layer = Layer.__new__(Layer)
+    trial = make_trial(tmp_path)
+    trial.allowlist = SimpleNamespace(spec=SimpleNamespace(sandbox=SimpleNamespace(checks={"make_diff": {}})))
+    ok = asyncio.run(layer._diff_check(trial, SimpleNamespace(diff=seen)))  # noqa: SLF001
+    bad = asyncio.run(layer._diff_check(trial, SimpleNamespace(diff=seen.replace("x = 2", "x = 3"))))  # noqa: SLF001
+    assert ok == (real, None) and bad == (None, "diff_not_from_workspace")

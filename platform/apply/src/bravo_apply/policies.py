@@ -100,6 +100,21 @@ def apply(k, objs: list[dict[str, Any]], namespace: str) -> Step:
     return Step(detail={"applied": applied, "namespace": namespace})
 
 
+def dry_run(k, objs: list[dict[str, Any]], namespace: str) -> Step:
+    """Server-side dry run of the Kubernetes documents BEFORE the image rollout, so an unknown kind or API version
+    (e.g. ExternalSecret ``external-secrets.io/v1beta1`` on ESO 2.x, measured 2026-11-03) refuses the change before
+    anything is deployed instead of failing it half-applied."""
+    if not objs:
+        return Step(Result.SKIPPED, {"reason": "no_kubernetes_documents"})
+    doc = json.dumps({"apiVersion": "v1", "kind": "List", "items": objs}).encode()
+    try:
+        out = k("-n", namespace, "apply", "--server-side", "--field-manager=bravo-apply", "--dry-run=server", "-f", "-",
+                "-o", "name", input_bytes=doc, timeout=120).stdout.decode().split()
+    except CommandError as exc:
+        raise Stop("refused", "policy_dry_run_failed", Result.REFUSED, {"error": exc.stderr}) from exc
+    return Step(detail={"dry_run": out, "namespace": namespace})
+
+
 def apply_plan(k, plan: dict[str, list[Any]], dest: dict[str, Any], kubectl: str, context: str) -> Step:
     """Kubernetes objects first (dry run, then apply), then the bucket and OpenBao policies (write, read back)."""
     k8s_step = apply(k, plan["k8s"], dest["namespace"])

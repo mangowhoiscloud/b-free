@@ -227,7 +227,8 @@ def expected_for(trial: Trial) -> dict[str, Any]:
             "secret_path_prefix": secret_path_prefix(inputs.get("target_env"), profile or None),
             # T31 applies only inside these (policies.scoped): the verifier checks the same, so PASS predicts apply.
             "app_namespace": (profile.get("app") or {}).get("namespace"),
-            "bucket": (profile.get("object_store") or {}).get("bucket")}
+            "bucket": (profile.get("object_store") or {}).get("bucket"),
+            "eso_api_version": (profile.get("secret_store") or {}).get("eso_api_version")}
 
 
 def envelope_problem(envelope: dict[str, Any]) -> str | None:
@@ -357,9 +358,22 @@ class Orchestrator:
                 trial.phase = "verifying"
 
             ht.add_hook(TrialEvent.VERIFICATION_START, verifying)
-            result = await ht.run()
-            # B7: a proposed bucket policy is also applied to the RGW test bucket and probed by a separate Job.
-            beh = await self.behavioral(trial) if result.exception_info is None else None
+            # The verification Job needs only the frozen proposal: it starts when plan_propose freezes it and runs
+            # while Harbor tears the sandbox down and runs its separate static verifier (B04/P2). The verdict still
+            # needs both; nothing is decided from either alone.
+            job = asyncio.create_task(self._job_after_proposal(trial), name=f"job-{trial.trial_id}")
+            try:
+                result = await ht.run()
+            except BaseException:
+                job.cancel()
+                raise
+            if trial.artifact is not None and result.exception_info is None:
+                beh = await job
+            else:  # no proposal or Harbor failed: the Job's result is not used (its own cleanup still runs)
+                job.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await job
+                beh = None
             harbor_run.accept_result(trial, binding, result, verifier_dir=ht.paths.verifier_dir,
                                      verifier_image=str(self.s.verifier_image), task_version=task["version"],
                                      behavioral=beh)
@@ -377,6 +391,12 @@ class Orchestrator:
         finally:
             trial.locked = True
             harbor_binding.release(trial.trial_id)
+
+    async def _job_after_proposal(self, trial: Trial) -> dict[str, Any] | None:
+        await trial.proposed.wait()  # set by plan_propose, or by finish() when the Trial ends without one
+        if trial.artifact is None or trial.verdict is not None:
+            return None
+        return await self.behavioral(trial)
 
     async def behavioral(self, trial: Trial) -> dict[str, Any] | None:
         """The verification Job the frozen proposal needs, or None when it needs none. Never raises: a Job that cannot

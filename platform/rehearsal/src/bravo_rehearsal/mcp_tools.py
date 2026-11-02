@@ -200,11 +200,51 @@ class ToolLayer:
 
     async def _policy(self, trial: Trial, args: dict[str, Any]) -> dict[str, Any]:
         p, problems = proposal_mod.check(args.get("proposal"), trial.role, _binding(trial))
+        if p is not None and not problems:
+            _, problem = await self._diff_check(trial, p)
+            problems = [problem] if problem else problems
         trial.record("policy_evaluate", args, True, "ok")
         return {"valid": p is not None and not problems, "problems": problems}
 
+    async def _diff_check(self, trial: Trial, p: Any) -> tuple[str | None, str | None]:
+        """(the workspace's real diff, problem). The model sees tool output through redact() (D-26), which also masks
+        code that merely looks like a secret (measured 2026-11-03 04:2x KST: `if "password=" in db.dsn...` became
+        `if "[redacted]" ...`, so the proposal's diff no longer applied to its own snapshot). The proposal's diff must
+        be the redacted view of the sandbox's own diff; the artifact then records the real one."""
+        diff = getattr(p, "diff", None)
+        if not isinstance(diff, str) or not diff:
+            return None, None
+        real = await self._workspace_diff(trial)
+        if real is None:
+            return None, None if trial.allowlist.spec is None or "make_diff" not in trial.allowlist.spec.sandbox.checks \
+                else "diff_workspace_unreadable"
+        if redact(real).strip() != diff.strip():
+            return None, "diff_not_from_workspace"
+        return real, None
+
+    async def _workspace_diff(self, trial: Trial) -> str | None:
+        """The sandbox's own ``make_diff`` (the role's declared check, platform side, never shown to the model).
+        None when the role has no such check or the sandbox is gone."""
+        spec = trial.allowlist.spec
+        if spec is None or "make_diff" not in spec.sandbox.checks or self._cluster is None or trial.box is None:
+            return None
+        decision = tool_layer.authorize_sandbox({"op": "run_check", "name": "make_diff", "args": {}}, trial.allowlist)
+        if not decision.allowed:
+            return None
+        try:
+            rc, stdout, _ = await self._cluster.exec(trial.box, ["sh", "-c", decision.command],
+                                                     timeout_s=decision.timeout_s)
+        except ClusterError:
+            return None
+        return stdout if rc in (0, 1) else None  # diff exits 1 when there are differences
+
     async def _propose(self, trial: Trial, args: dict[str, Any]) -> dict[str, Any]:
         p, problems = proposal_mod.check(args.get("proposal"), trial.role, _binding(trial))
+        real, problem = await self._diff_check(trial, p) if p is not None and not problems else (None, None)
+        if problem:
+            problems = [*problems, problem]
+        elif real is not None and p is not None:
+            p = p.model_copy(update={"diff": real})
         if p is None or problems:
             # The problems (schema paths, lint rule names) go into the record: a rejected final proposal is otherwise
             # only "no_valid_proposal" in the evidence (measured 2026-11-03 03:26 KST).

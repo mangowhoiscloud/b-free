@@ -96,3 +96,16 @@ def test_openbao_policy_in_hcl_text_is_read_and_scoped() -> None:
     with pytest.raises(Stop):
         items = _items(("openbao_policy", "x", bad))
         policies.scoped(items, digests.policy_diff_digest({"translations": items}), DEST)
+
+
+def test_dry_run_refuses_before_rollout_when_the_cluster_rejects_a_document() -> None:
+    from bravo_apply.runtime import CommandError, Result
+
+    def k(*argv, **_kw):
+        assert "--dry-run=server" in argv
+        raise CommandError(["kubectl"], 1, 'no matches for kind "ExternalSecret" in version "external-secrets.io/v1beta1"')
+
+    with pytest.raises(Stop) as exc:
+        policies.dry_run(k, [{"apiVersion": "external-secrets.io/v1beta1", "kind": "ExternalSecret"}], "chat")
+    assert (exc.value.reason, exc.value.result) == ("policy_dry_run_failed", Result.REFUSED)
+    assert policies.dry_run(k, [], "chat").result is Result.SKIPPED

@@ -125,17 +125,22 @@ def _bucket_resources(doc: dict, bucket: str | None) -> list[str]:
     return []
 
 
-def _external_secret(doc: dict, prefix: str | None) -> list[str]:
-    """ExternalSecret keys are relative to the store's KV mount and must sit under the destination's prefix."""
+def _external_secret(doc: dict, prefix: str | None, api_version: str | None = None) -> list[str]:
+    """ExternalSecret keys are relative to the store's KV mount and must sit under the destination's prefix; the
+    API version must be one the destination's ESO serves (v1beta1 is gone in ESO 2.x)."""
+    errs = []
+    if api_version:
+        errs += ["external_secret_api_version" for obj in _as_list(doc.get("items") or doc)
+                 if isinstance(obj, dict) and obj.get("apiVersion") != api_version][:1]
     if not prefix:
-        return []
+        return errs
     keys = []
     for obj in _as_list(doc.get("items") or doc):
         spec = obj.get("spec") or {} if isinstance(obj, dict) else {}
         keys += [(d.get("remoteRef") or {}).get("key") for d in spec.get("data") or [] if isinstance(d, dict)]
         keys += [((d.get("extract") or d.get("find") or {}).get("key")) for d in spec.get("dataFrom") or []
                  if isinstance(d, dict)]
-    return ["secret_path_outside_profile" for k in keys if not str(k or "").lstrip("/").startswith(prefix)][:1]
+    return errs + ["secret_path_outside_profile" for k in keys if not str(k or "").lstrip("/").startswith(prefix)][:1]
 
 
 def check_role(p: dict, expected: dict | None = None) -> list[str]:
@@ -143,6 +148,7 @@ def check_role(p: dict, expected: dict | None = None) -> list[str]:
     prefix = (expected or {}).get("secret_path_prefix")  # e.g. envs/target-onprem/ (destination profile, B11)
     namespace = (expected or {}).get("app_namespace")
     bucket = (expected or {}).get("bucket")
+    eso_api = (expected or {}).get("eso_api_version")
     if role == "governance":
         for t in p.get("translations") or []:
             ttype, doc = (t.get("target") or {}).get("type"), t.get("document") or {}
@@ -156,7 +162,7 @@ def check_role(p: dict, expected: dict | None = None) -> list[str]:
             elif ttype == "openbao_policy":
                 errs += _openbao(doc, prefix)
             elif ttype == "external_secret":
-                errs += _external_secret(doc, prefix) + _k8s_names(tname, doc, namespace)
+                errs += _external_secret(doc, prefix, eso_api) + _k8s_names(tname, doc, namespace)
             elif ttype == "gcs_iam_policy":
                 members = [m for b in doc.get("bindings") or [] for m in b.get("members") or []]
                 if {"allUsers", "allAuthenticatedUsers"} & set(members):

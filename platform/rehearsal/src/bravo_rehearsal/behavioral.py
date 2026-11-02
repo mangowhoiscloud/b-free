@@ -138,6 +138,7 @@ def job_objects(ns: str, trial_id: str, image: str, prm: dict[str, Any], ca_pem:
                "metadata": {"labels": labels},
                "spec": {"serviceAccountName": "rehearsal-app", "automountServiceAccountToken": False,
                         "enableServiceLinks": False, "restartPolicy": "Never", "securityContext": _pod_security(),
+                        "terminationGracePeriodSeconds": 1,  # the result is read before the delete
                         "containers": [{
                             "name": CONTAINER, "image": image, "imagePullPolicy": "IfNotPresent",
                             # The gate image's venv python (bravo_gate, boto3); -I keeps PYTHON* and cwd out.

@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/tools/t31_apply_timing.py", line 210, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/tools/t31_apply_timing.py", line 159, in main
+    setup = setup_namespace(drv0.k, ns, a.app_image, a.db_image, bao)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/tools/t31_apply_timing.py", line 114, in setup_namespace
+    k("-n", ns, "rollout", "status", "deploy/chat-bravo-demo", "--timeout=180s", timeout=200)
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/destination.py", line 56, in k
+    return run([self.kubectl, "--context", self.ctx, *args], env=clean_env(keep=KUBE_ENV), timeout=timeout,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/runtime.py", line 119, in run
+    raise CommandError(argv, proc.returncode, proc.stderr.decode(errors="replace"))
+bravo_apply.runtime.CommandError: kubectl exited 1: error: timed out waiting for the condition
+
+exit=1

@@ -1,0 +1,88 @@
+{
+ "setup": {
+  "namespace": "verify-t31timing",
+  "app_image": "bravo.local/bravo-demo@sha256:76e8f595d90267b3d740fdf9012cdf5c93d6337faf63e3601a1da3b2a65c262d",
+  "setup_s": 13.2
+ },
+ "apply_total_s": 9.6,
+ "image_digest": "sha256:62192731a32d5318578e547d5abd17a71c488fe216de9b58c92e74c8e4be4641",
+ "stages": [
+  {
+   "seq": 1,
+   "name": "image.locate",
+   "ms": 2,
+   "result": "OK"
+  },
+  {
+   "seq": 2,
+   "name": "destination.connect",
+   "ms": 102,
+   "result": "OK"
+  },
+  {
+   "seq": 3,
+   "name": "policies.scope",
+   "ms": 0,
+   "result": "OK"
+  },
+  {
+   "seq": 4,
+   "name": "policies.dryrun",
+   "ms": 105,
+   "result": "OK"
+  },
+  {
+   "seq": 5,
+   "name": "staging.push",
+   "ms": 172,
+   "result": "OK"
+  },
+  {
+   "seq": 6,
+   "name": "image.sign",
+   "ms": 1313,
+   "result": "OK"
+  },
+  {
+   "seq": 7,
+   "name": "signature.verify",
+   "ms": 61,
+   "result": "OK"
+  },
+  {
+   "seq": 8,
+   "name": "destination.import",
+   "ms": 97,
+   "result": "OK"
+  },
+  {
+   "seq": 9,
+   "name": "deploy.precheck",
+   "ms": 94,
+   "result": "OK"
+  },
+  {
+   "seq": 10,
+   "name": "deploy.rollout",
+   "ms": 6099,
+   "result": "OK"
+  },
+  {
+   "seq": 11,
+   "name": "deploy.verify",
+   "ms": 71,
+   "result": "OK"
+  },
+  {
+   "seq": 12,
+   "name": "policies.apply",
+   "ms": 1475,
+   "result": "OK"
+  }
+ ],
+ "cleanup_openbao": {
+  "test_bucket_policy_delete": 204,
+  "app-target-onprem-t31timing-app-target-onprem-chat-db": 204
+ },
+ "result": "OK"
+}

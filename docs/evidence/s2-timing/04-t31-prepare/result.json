@@ -1,0 +1,60 @@
+{
+  "mode": "cli",
+  "phase": "prepare",
+  "change_id": "4beac7db-428e-447e-a969-fd76b3f60ba5",
+  "target": "target-onprem",
+  "provenance": "T31 prepare timing of PASS artifact sha256:f386c1a803119c30978eca66c2e12f420afccff5303a1951b0011465835cee38 (Trial t-d8da4319a6d0402b85dc014247470b9d, s2-timing 03). No approval.",
+  "started_at": "2026-11-02T19:33:35.947402+00:00",
+  "ended_at": "2026-11-02T19:33:48.088115+00:00",
+  "status": "prepared",
+  "reason": null,
+  "stages": [
+    {
+      "seq": 1,
+      "name": "tools.verify",
+      "result": "OK",
+      "ms": 354
+    },
+    {
+      "seq": 2,
+      "name": "bound.verify",
+      "result": "OK",
+      "ms": 0
+    },
+    {
+      "seq": 3,
+      "name": "source.materialize",
+      "result": "OK",
+      "ms": 135
+    },
+    {
+      "seq": 4,
+      "name": "diff.apply",
+      "result": "OK",
+      "ms": 31
+    },
+    {
+      "seq": 5,
+      "name": "image.build",
+      "result": "OK",
+      "ms": 9622
+    },
+    {
+      "seq": 6,
+      "name": "sbom.syft",
+      "result": "OK",
+      "ms": 1263
+    },
+    {
+      "seq": 7,
+      "name": "scan.trivy",
+      "result": "OK",
+      "ms": 732
+    }
+  ],
+  "result": {
+    "image_repository": "bravo.local/bravo-demo",
+    "image_digest": "sha256:62192731a32d5318578e547d5abd17a71c488fe216de9b58c92e74c8e4be4641",
+    "sbom_digest": "sha256:a33013d8f678fc8189a97ed35789914815f8194666da17186e00f6170f8284d4"
+  }
+}

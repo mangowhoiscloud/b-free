@@ -1,0 +1,2 @@
+2026-11-03T04:28:10+0900
+preview Pod rehearsal-preview-s2fast2 (10.42.0.121), rehearsal@sha256:8ab48aba... = 02 speedups + plan_propose records the workspace's real diff (redaction fix). Both tasks at 0:00, probes on, gate report on.

@@ -1,0 +1,2 @@
+2026-11-03T04:19:13+0900
+preview Pod rehearsal-preview-s2fast (10.42.0.216), rehearsal@sha256:4b219040...: terminationGracePeriodSeconds 1 on sandbox/verifier/Job Pods, verification Job starts at plan_propose (parallel with Harbor's static verifier). Same config as the Deployment otherwise. Both tasks at 0:00, probes on, gate report on.

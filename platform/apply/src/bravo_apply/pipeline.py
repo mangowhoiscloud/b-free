@@ -1,7 +1,7 @@
 """The two phases of a change (migration 0004 contract). Same code for worker (DB) and CLI mode.
 
 prepare: tools.verify -> bound.verify -> source.materialize -> diff.apply -> image.build -> sbom.syft -> scan.trivy
-apply:   tools.verify -> approval.verify -> image.locate -> destination.connect -> policies.scope -> staging.push
+apply:   tools.verify -> approval.verify -> image.locate -> destination.connect -> policies.scope -> policies.dryrun -> staging.push
          -> image.sign -> signature.verify -> destination.import -> deploy.precheck -> deploy.rollout -> deploy.verify
          -> policies.apply -> gate.recheck
 
@@ -172,6 +172,7 @@ def apply(cfg: Config, ch: Change, rec: Recorder, out: Path, approvals: Approval
     lock = tools.load_lock(cfg.lock_path)
     drv = run_stage(rec, A, "destination.connect", lambda: _connect(dest, lock)).value
     plan = run_stage(rec, A, "policies.scope", lambda: _scope(ch, approval, dest)).value  # type: ignore[arg-type]
+    run_stage(rec, A, "policies.dryrun", lambda: policies.dry_run(drv.k, plan["k8s"], dest["namespace"]))  # type: ignore[index]
 
     signature, deployed = None, None
     if tar is not None and approved_image:

@@ -69,15 +69,41 @@
 - 공급자 `claude_subscription`, 모델 `claude-opus-5-5`. 서비스는 Kubernetes 인증(`rehearsal` 역할)으로 OpenBao에 로그인하고, Trial마다 `llm-claude` secret_id(60초 · 1회)를 발급해 워커에 넘깁니다. 워커가 한 번 읽고 토큰을 폐기합니다(`/readyz` `llm_token: ok`).
 - 워커 13회: 턴 14–22, API 가격 환산 합계 약 8.52달러(구독 정액이라 청구 없음), 표준 오류 출력에 rate limit · quota · 429 · overloaded 줄 0(`10-…txt`, `10b-…txt`). 구독 한도 자체는 이 측정으로 알 수 없습니다(UNKNOWN).
 
+## 바뀐 판정 규칙 (검토용)
+
+판정 규칙은 사람에게 묻는 영역(`AGENTS.md`)이라 바뀐 것을 모두 적습니다. 리뷰 B11/P14("검증기 PASS가 게이트 · T31 결과를 예측해야 함")에 따라 바꿨습니다.
+
+**비공개 정적 검증기** `platform/agent/harbor/_shared/verify.py`(각 task의 `tests/verify.py`는 같은 사본). 기대값 `tests/expected.json`에 플랫폼이 넣는 값이 넷 늘었습니다(`service.expected_for`): `secret_path_prefix`(목적지 프로필, 없으면 `envs/<target_env>/`), `app_namespace`, `bucket`, `eso_api_version`(목적지 프로필 `secret_store.eso_api_version`). 값이 없으면 해당 규칙은 돌지 않습니다.
+
+| 규칙(오류 코드) | 대상 | 전 | 후 | 이유(측정) |
+|---|---|---|---|---|
+| `secret_path_outside_profile` | `openbao_policy` 경로, `external_secret`의 `remoteRef.key` · `dataFrom` 키 | 없음 | `secret/data|metadata/<prefix>`(OpenBao), `<prefix>`(ESO 키) 밖이면 FAIL | 11/2 제안서가 계약의 `envs/target-onprem/` 대신 `envs/onprem/`을 씀(B11) |
+| `openbao_policy_unreadable` | `openbao_policy` | `{"path": {...}}` 형식만 봄. HCL 문자열(`{"policy": "path ... {}"}`)은 경로 0개로 보고 **검사 없이 통과** | HCL의 `path "…" { capabilities = [...] }`를 읽음. 읽지 못한 stanza가 있으면 FAIL | 실행 14의 PASS 제안서가 HCL이라 경로 규칙을 건너뜀(`17-…json`) |
+| `openbao_capabilities_beyond_read` | `openbao_policy` | `sudo` · `root`만 거부 | `read` · `list` 밖이면 FAIL | T31이 반영하는 범위가 read/list |
+| `k8s_name_out_of_scope`, `k8s_namespace_out_of_scope` | `k8s_rbac`, `external_secret` 문서 | RBAC은 와일드카드 · 클러스터 범위 · secret list/watch만 봄 | 이름은 대상 이름 또는 `<대상>-…`, `bravo-` · `rehearsal-` · `verify-` · `system:`으로 시작 금지, 네임스페이스는 앱 네임스페이스 | T31 `policies.scoped`와 같은 규칙. 실행 14 PASS가 T31에서 `name_out_of_scope`로 거부됨 |
+| `bucket_resource_outside_profile` | `rgw_bucket_policy` · `s3_bucket_policy`의 `Resource` | 없음 | 프로필의 첨부 버킷 ARN(과 그 아래 키)만 | T31이 목적지 버킷에만 반영 |
+| `external_secret_api_version` | `external_secret` 문서의 `apiVersion` | 없음 | 목적지 프로필의 값(`external-secrets.io/v1`)과 다르면 FAIL | 11/3 T31 반영 시간 측정에서 제안서의 `external-secrets.io/v1beta1`이 목적지 ESO 2.14에 없어, 이미지 롤아웃 **뒤** `policies.apply`에서 실패함(`docs/evidence/s2-timing/05-t31-apply/run2-eso-v1beta1.log`) |
+
+이미 있던 규칙(익명 · 와일드카드 Allow, 클러스터 범위 RBAC, 비밀 모양 값, 클라우드 SDK 추가, 금지 경로 등)은 그대로입니다.
+
+**동작 검증 Job과 판정 결합** (`platform/rehearsal`, 판정 규칙 성격):
+
+- 버킷 정책 Job: 전에는 익명 GET 거부 · 소유자 GET 허용 두 검사(표준 라이브러리 스크립트)였고, 이제 게이트 이미지에서 게이트의 OBJ-01–06(`gate_OBJ-01` … `gate_OBJ-06`, 각각 PASS여야 함)입니다. 대조 단계도 "열린 정책에서 익명 GET 200"에서 "열린 정책에서 게이트 OBJ-01이 FAIL `anonymous_read_allowed`"로 바뀌었습니다.
+- app_migration Job(새로 생김): `app:secrets_manager_call_removed`, `app:eso_synced_from_openbao`, `app:app_ready_with_injected_password`, `app:chat_write_committed`, `app:chat_write_read_back`, `app:other_service_account_cannot_read_secret`. 대조: 고치기 전 코드가 같은 조건에서 뜨지 않고 0이 아닌 코드로 끝나며, Secrets Manager 호출을 갖고 있어야 함.
+- 제안서 받기(`mcp_tools._propose`, `policy_evaluate`): app_migration의 `diff`는 샌드박스의 실제 `make_diff` 결과를 가린(redact) 것과 같아야 하고, 아니면 `diff_not_from_workspace`로 거부합니다. 같으면 산출물에는 가리지 않은 실제 diff를 넣습니다. 이유: 모델이 보는 도구 출력은 비밀 모양 값을 가리는데, `if "password=" in db.dsn…` 같은 코드도 가려져 그 문맥을 담은 diff가 자기 스냅숏에 적용되지 않았습니다(2026-11-03 04:2x, `docs/evidence/s2-timing/02-…`의 app 1차 FAIL `app:diff_applies_to_snapshot`).
+- 동작 검증 Job 시작 시점: 전에는 Harbor의 정적 검증기가 끝난 뒤, 이제 제안서가 고정되는 `plan_propose` 때 시작해 정적 검증기와 함께 돕니다. 판정은 그대로 둘 다 PASS여야 PASS입니다. 제안서가 없거나 이미 판정이 난 Trial에서는 Job을 띄우지 않습니다.
+- T31 `policies.dryrun`(새 단계): Kubernetes 문서를 서버 측 dry run으로 이미지 반입 **전에** 확인하고, 거부되면 `policy_dry_run_failed`(REFUSED)로 멈춥니다. 위 v1beta1처럼 반쯤 반영된 상태를 막으려는 것입니다.
+- `harbor_run.accept`: Job이 고정된 이미지는 Job 기록의 `pinned_image_digest`(게이트 Job은 게이트 이미지)와 대조합니다(전에는 늘 검증기 이미지). diff가 스냅숏에 적용되지 않는 제안서는 INFRA_ERROR가 아니라 FAIL(`app:diff_applies_to_snapshot`)입니다. `verifier_kind`는 Job 종류를 씁니다.
+
 ## 남은 것 (측정한 이유)
 
 - **승인 · 반영 · 게이트 재대조 PASS는 하지 않음**(지시). 승인은 콘솔에서 사람(naver 요청, gmail 승인)이 합니다. 운영자 계획이 없어 API change 행도 없습니다.
-- API는 계획마다 리허설 하나만 돌림(`rehearsal_active`). 콘솔에서 두 작업을 0:00에 함께 시작하려면 역할마다 하나를 허용해야 함(L1 상태 머신 몫).
+- ~~API는 계획마다 리허설 하나만 돌림~~ → 11/3 역할마다 하나로 바꿈(e1b4fe0, api `5421e97b…` a74c240).
 - 미리 보기 Pod는 `prometheus-ingress` 밖이라 서비스 자신의 드롭 수 읽기는 `prometheus_unreachable`. 같은 함수를 노트북에서 port-forward로 돌려 기록함. 이 커밋의 네트워크 정책이 push되면 배포된 서비스가 직접 읽음.
 - 게이트 Pod(`c841a75e…`)가 실행 중 재시작을 반복해 07a · 18a는 막혔고, 이후 실행은 `--skip-gate`(봉투에 게이트 행 없음, 에이전트의 `controls_describe`는 `gate_unreachable`).
 - AppRole이 처음 만든 상태에서 로그인 403을 낸 원인은 못 찾음(지우고 다시 만들어 해결, 점검을 스크립트에 넣음).
-- 실측은 앱 런타임 이미지 `bravo-demo@sha256:b5c0e764…`(측정 시작 때 목적지 이미지)로 했습니다. 03:54에 목적지 앱이 0.3.3(`76e8f595…`)으로 바뀌어 Deployment 설정은 그 digest를 씁니다(0.3.3 런타임으로는 다시 재지 않음). 수집기 스냅숏 고정(`customer-app-source.env`, 240856f)도 0.3.3보다 옛 코드입니다.
+- 실측은 앱 런타임 이미지 `bravo-demo@sha256:b5c0e764…`(측정 시작 때 목적지 이미지)로 했습니다. 03:54에 목적지 앱이 0.3.3(`76e8f595…`)으로 바뀌어 Deployment 설정은 그 digest를 씁니다(0.3.3 런타임으로 다시 잰 것은 `docs/evidence/s2-timing/`). 수집기 스냅숏 고정(`customer-app-source.env`, 240856f)도 0.3.3보다 옛 코드입니다.
 
-## 정리할 것 (팀장)
+## 정리
 
-미리 보기 Pod `rehearsal-preview-s2full`, `…2`, `…3`, `…4`(activeDeadlineSeconds로 스스로 끝남)와 ConfigMap `rehearsal-preview-profiles`(bravo-control). 온프렘 노드의 이미지 별칭 `docker.io/library/bravo-gate-probe:import`, `bravo-import/gate:c841a75e376a`는 CRI 이름 때문에 남겨 둠.
+미리 보기 Pod(`rehearsal-preview-*`)와 ConfigMap `rehearsal-preview-profiles`(bravo-control), 측정용 네임스페이스 `verify-t31timing`(온프렘)은 11/3에 지웠습니다. 온프렘 노드의 이미지 별칭 `docker.io/library/bravo-gate-probe:import`, `bravo-import/gate:c841a75e376a`는 CRI 이름 때문에 남겨 둠.

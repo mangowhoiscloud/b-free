@@ -12,7 +12,8 @@
           "name": "bravo-platform-openbao"
         },
         "eso_approle": "eso-target-onprem",
-        "openbao_policy_prefix": "app-target-onprem-"
+        "openbao_policy_prefix": "app-target-onprem-",
+        "eso_api_version": "external-secrets.io/v1"
       },
       "app": {
         "namespace": "chat",

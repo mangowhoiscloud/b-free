@@ -1,0 +1,33 @@
+Traceback (most recent call last):
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/policies.py", line 96, in apply
+    k(*base, "--dry-run=server", input_bytes=doc, timeout=120)
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/destination.py", line 56, in k
+    return run([self.kubectl, "--context", self.ctx, *args], env=clean_env(keep=KUBE_ENV), timeout=timeout,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/runtime.py", line 119, in run
+    raise CommandError(argv, proc.returncode, proc.stderr.decode(errors="replace"))
+bravo_apply.runtime.CommandError: kubectl exited 1: unable to recognize no matches for kind "ExternalSecret" in version "external-secrets.io/v1beta1"
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/tools/t31_apply_timing.py", line 216, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/tools/t31_apply_timing.py", line 192, in main
+    applied = run_stage(rec, A, "policies.apply", lambda: policies.apply_plan(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/runtime.py", line 81, in run_stage
+    step = fn()
+           ^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/tools/t31_apply_timing.py", line 192, in <lambda>
+    applied = run_stage(rec, A, "policies.apply", lambda: policies.apply_plan(
+                                                          ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/policies.py", line 105, in apply_plan
+    k8s_step = apply(k, plan["k8s"], dest["namespace"])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/apply/src/bravo_apply/policies.py", line 99, in apply
+    raise Stop("failed", "policy_apply_failed", Result.FAIL, {"error": exc.stderr}) from exc
+bravo_apply.runtime.Stop: policy_apply_failed
+exit=1

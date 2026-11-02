@@ -237,6 +237,9 @@ def pod(trial_id: str, images: dict[str, str], items: dict[str, list[dict[str, s
     return {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "app-verify", "labels": labels},
             "spec": {"serviceAccountName": "rehearsal-app", "automountServiceAccountToken": False,
                      "enableServiceLinks": False, "restartPolicy": "Never", "activeDeadlineSeconds": deadline_s,
+                     # Throwaway DB and apps: everything is read before the delete; PostgreSQL's smart shutdown
+                     # would otherwise wait the full default 30 s for the app's sessions.
+                     "terminationGracePeriodSeconds": 1,
                      "securityContext": {"runAsNonRoot": True, "fsGroup": PROBE_UID,
                                          "seccompProfile": {"type": "RuntimeDefault"}},
                      "initContainers": [db],

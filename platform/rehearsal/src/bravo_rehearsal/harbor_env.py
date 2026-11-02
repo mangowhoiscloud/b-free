@@ -233,6 +233,9 @@ def harbor_pod(name: str, trial_id: str, image: str, role: str, container: str) 
         "spec": {
             "serviceAccountName": APP_SA, "automountServiceAccountToken": False, "enableServiceLinks": False,
             "restartPolicy": "Never", "securityContext": _pod_security(),
+            # PID 1 is `sleep infinity`, which ignores SIGTERM: with the default 30 s grace every namespace delete
+            # waited 30 s per Pod (measured 2026-11-03: ~43 s + ~52 s of each Trial). Nothing runs at shutdown.
+            "terminationGracePeriodSeconds": 1,
             "containers": [{
                 "name": container, "image": image, "imagePullPolicy": "IfNotPresent",
                 "command": ["sleep", "infinity"],
