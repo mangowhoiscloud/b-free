@@ -17,6 +17,15 @@ resources:
   - executor.yaml
   - networkpolicy.yaml
 configMapGenerator:
+  - name: customer-app-source
+    envs:
+      - config/customer-app-source.env
+  - name: github-known-hosts
+    files:
+      - known_hosts=config/github_known_hosts
+  - name: access-members
+    files:
+      - members.json=../access/members.json
   - name: environments
     files:
       - environments.yaml=config/environments.yaml
@@ -33,19 +42,19 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:72de53c66bb0ea7438d4fe8a760b15943ea8c7b77f4be9a6e70ddc5648636308
+    digest: sha256:832b16cdf3ea143fec05b942bc18314179dd2c11176e5c4c5619af35a3c0070d # r2-20261102T130026Z (platform-API lane: + inventory_root_empty, GET /v1/me, migration 0007 owner RLS fix)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:9925d1a8d5f105d90552460f2059c704d880a68f11ec521a7d9bf8042b37f599
+    digest: sha256:868196daccbd3a670c740f4f618e1c94718cfa9f43109c9f916d14956c0bad61 # obs-cost-r5 (console lane: observability charts, cost receipt, Access-only login)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:bf7f65bb554a902b55d82b0ed37838a3c1d1fefb33f031c79a6ff14e1f97738e
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
-    digest: sha256:f0f950b630c9557531d4187da3fad784c7f4bf11d346413ae8615828b797a113
+    digest: sha256:0893095f8918634f43617befe09bfd38e0ba53d7a5f2b108b796cde7d4ecacc7 # snapshot-20261102T125122Z (collector lane: /v1/inventory/snapshot)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
     digest: sha256:32c2b92b0f6c6852def8273ecd535b7dd013d728d9d99bc176e531f6822d8262 # cloud-202611022104 (data/cutover lane)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
-    digest: sha256:208ed7b29adee018cf82a82ea6672311b38a02930c5bcd8f344487d44f1c0eab
+    digest: sha256:b3cdf76800451a253848888db8f18e346bea357abf733c71ac24ce7f5f32d012 # r2-20261102T124840Z (built from the working tree, arm64)

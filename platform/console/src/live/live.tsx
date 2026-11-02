@@ -9,6 +9,7 @@ import { Badge, type BadgeVariant } from '@astryxdesign/core/Badge';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Text } from '@astryxdesign/core/Text';
 import type { RuntimeConfig } from '../config';
+import { fmtClock, fmtTs } from '../lib/format';
 
 const ConfigContext = createContext<RuntimeConfig | null>(null);
 
@@ -99,13 +100,15 @@ export function useLive<T>(service: Service, path: string, intervalMs: number, p
   return { data: q.data, error: q.error, endpoint: `GET /svc/${service}/${path}`, updatedAt: q.dataUpdatedAt, isLoading: q.isLoading };
 }
 
-/** Explicit "not connected" state, inline (no box): what was tried and why it failed. */
-export function NotConnected({ title, endpoint, reason }: { title?: string; endpoint: string; reason: string }) {
+/** "연결 안 됨" is one line (DESIGN-REFERENCE §5): ○ 연결 안 됨 · 이유 · 시도한 엔드포인트 · 마지막 성공 시각. */
+export function NotConnected({ title, endpoint, reason, lastOk }: { title?: string; endpoint: string; reason: string; lastOk?: number }) {
   return (
     <p className="nc" role="status">
-      <Badge variant="neutral" label={title ?? '연결 안 됨'} />
-      <span>{reason}</span>
-      <code className="mono nc__ep">{endpoint}</code>
+      <span className="nc__dot" aria-hidden="true">○</span>
+      <b className="nc__title">{title ?? '연결 안 됨'}</b>
+      <span>· {reason}</span>
+      <code className="mono nc__ep">· {endpoint}</code>
+      <span className="nc__ep">· 마지막 성공 {lastOk ? fmtTs(lastOk) : '없음'}</span>
     </p>
   );
 }
@@ -113,7 +116,7 @@ export function NotConnected({ title, endpoint, reason }: { title?: string; endp
 /** Loading / error / data switch for one live read. */
 export function LiveGate<T>({ live, children, title }: { live: Live<T>; children: (d: T) => ReactNode; title?: string }) {
   if (live.data !== undefined && !live.error) return <>{children(live.data)}</>;
-  if (live.error) return <NotConnected title={title} endpoint={live.endpoint} reason={liveReason(live.error)} />;
+  if (live.error) return <NotConnected title={title} endpoint={live.endpoint} reason={liveReason(live.error)} lastOk={live.updatedAt || undefined} />;
   return (
     <Text type="supporting" color="secondary">
       불러오는 중… <span className="mono">{live.endpoint}</span>
@@ -124,9 +127,9 @@ export function LiveGate<T>({ live, children, title }: { live: Live<T>; children
 export function Fresh({ at, label = '갱신' }: { at: number; label?: string }) {
   if (!at) return null;
   return (
-    <Text type="supporting" color="secondary">
-      {label} {new Date(at).toLocaleTimeString('ko-KR', { hour12: false })}
-    </Text>
+    <span className="meta">
+      {label} {fmtClock(at)} UTC+9
+    </span>
   );
 }
 

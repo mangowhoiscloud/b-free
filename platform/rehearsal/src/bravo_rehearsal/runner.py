@@ -43,6 +43,15 @@ def append_evidence(row: dict[str, object]) -> None:
         f.write("\t".join(str(row.get(c, "")).replace("\t", " ") for c in cols) + "\n")
 
 
+def _verifier_note(trial: Any) -> str:
+    if trial.verifier is not None:
+        return f"verifier_kind={trial.verifier_kind}; verdict accepted"
+    if trial.verifier_observed is not None:
+        return (f"verifier_kind={trial.verifier_kind}; verifier ran, reward={trial.verifier_observed.get('reward')}"
+                " not accepted")
+    return "verifier_ran=no"
+
+
 def _provider() -> str:
     try:
         from bravo_agents.llm import provider_name
@@ -198,8 +207,7 @@ async def rehearse(a: argparse.Namespace) -> int:
                          a.label, f"provider={_provider()}",
                          "worker_started=yes" if trial.worker_started else "worker_started=no (no model call)",
                          trial.reason or "",
-                         f"verifier_kind={trial.verifier_kind}" if trial.verifier and trial.verifier_kind
-                         else "verifier_ran=no") if x)})
+                         _verifier_note(trial)) if x)})
     print(f"verdict={trial.verdict}\nreason={trial.reason or ''}\nreward={reward}\nrun_path={trial.harbor_trial_dir}")
     print(f"artifact_digest={trial.artifact_digest}")
     for ev in trial.tool_events:

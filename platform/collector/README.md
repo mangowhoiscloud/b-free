@@ -110,7 +110,8 @@ environments:
 | `GET /v1/environments` | 환경 ID, 이름, 설정된 출처, `credential_source`(자격을 받는 방식의 표시, 값은 아님). 비밀 없음 |
 | `GET /v1/environments/{id}/snapshot?sources=aws,kubernetes,postgres` | `collector/v1` 스냅숏. 모르는 환경은 404 |
 | `GET /v1/clusters` | 콘솔용 클러스터 실시간 보기. `kubernetes` 절이 있는 환경마다 노드 · 네임스페이스 · 워크로드 · 파드 단계 수 · 랜딩 존 구성요소(`11-landing-zone.md` 2절 규칙표). get/list만, Secret은 읽지 않음. 호출마다 5초 제한, 실패한 클러스터는 `unreachable`, 설정이 없으면 `not_configured`. 4초 캐시 |
-| `GET /v1/inventory` | `BRAVO_INVENTORY_ROOT`의 인벤토리(`inventory/v1`). 경로 인자는 받지 않습니다(경로 탈출 방지). 설정이 없으면 503 |
+| `GET /v1/inventory` | `BRAVO_INVENTORY_ROOT`의 인벤토리(`inventory/v1`). 경로 인자는 받지 않습니다(경로 탈출 방지). 설정이 없거나, 읽을 파일이 하나도 없으면 503(`inventory_root_empty`: "의존성 없음"이 아니라 저장소가 없다는 뜻) |
+| `GET /v1/inventory/snapshot` | 리허설용 저장소 스냅숏(S2, `15-r2-contracts.md`). 인벤토리가 읽은 파일만 담은 tar.gz, 헤더 `X-Bravo-Inventory-Digest`(인벤토리 `input_digest`와 같음), `X-Bravo-Snapshot-Files`, `X-Bravo-Snapshot-Skipped`. 같은 저장소면 같은 바이트(mtime 0, uid 0, 0644). 루트가 없거나 비면 503 |
 
 ## 비용(T1, 데모 마무리 장면)
 
@@ -160,6 +161,8 @@ Cost Explorer를 읽기만 합니다. 요청마다 USD 0.01이 청구되므로 �
 `hardcoded`는 리터럴(엔드포인트, DSN)이 설정 파일이 아니라 코드(Python, JS/TS, Go, Java, 셸, SQL)에 있을 때 `true`입니다. 코드 안의 DSN 리터럴은 환경마다 바꾸려면 코드를 고쳐야 하므로 `코드 수정` 등급으로 올립니다(감사 37). 증거 문자열은 비밀처럼 보이는 값(`DB_PASSWORD=`, `aws_secret_access_key =`, JSON `"password"`, URL userinfo, `password=`, AWS 키 ID, 개인 키)을 가립니다(감사 B18).
 
 탐지: Python은 AST(클라이언트 생성, 변수에 묶인 클라이언트의 호출, 환경 변수 이름), 그 밖은 정규식(JS/TS, Go, Java, Terraform, YAML, JSON, `.env*`, Dockerfile)입니다. `.git`, `node_modules`, `.venv`, `dist`, `build`, `__pycache__`, 잠금 파일, 바이너리, 1 MiB 초과 파일, 심볼릭 링크, 문서(`.md`)는 읽지 않습니다. 주석 줄은 건너뜁니다.
+
+**읽지 않는 파일(D-26).** 비밀 모양의 파일 이름(`.env`, `.env.*` 중 `.env.example` 같은 견본 제외, `*.pem`, `*.key`, `id_rsa`, `credentials`, `kubeconfig`, `*.tfstate`, `*.tfvars` 등)과, 내용에 자격 값이 있는 파일(`redact.CONTENT_PATTERNS`: AWS 키 ID · 비밀 키, 개인 키, EKS 토큰, SigV4 서명, 따옴표 안 비밀번호 리터럴, URL userinfo 비밀번호)은 읽지 않습니다. 그래서 `input_digest`와 스냅숏에도 없습니다. `skipped[]`에 이름과 이유만 남고, 자격 값이 있던 파일에는 `GEN-CREDENTIAL-FILE`(코드 수정) 항목이 첫 줄 번호와 함께 붙습니다. 값은 보고서에 들어가지 않습니다.
 
 출력(`inventory/v1`): `schema_version`, `rules_version`, `root`(디렉터리 이름만), `input_digest`(읽은 파일의 상대 경로 + sha256), `files_scanned`, `files_skipped`, `skipped[]`(읽지 않은 후보 파일과 이유: 크기, 바이너리, UTF-8 아님, 읽기 실패), `summary`(등급별 의존성 수. 같은 줄 · 같은 등급 · 같은 서비스는 하나로 셈), `findings[]`, `unclassified[]`, `test_summary`, `test_findings[]`. 시험 코드(`tests/`, `test_*.py`, `conftest.py`, `*_test.go`, `*.spec.ts` 등)의 항목은 이전 대상이 아니므로 요약에서 빼고 `test_findings`에 따로 남깁니다. 버리지 않습니다. 항목 필드: `id`(규칙 · 파일 · 줄 · 일치 문자열의 sha256 앞 16자), `rule_id`, `tier`, `tier_code`, `service`, `kind`, `file`(루트 기준 상대 경로), `line`, `evidence`(그 줄, 비밀 값 가림, 최대 200자), `reason`, `hardcoded`, `confidence`(`rule`). 시각 값이 없어서 같은 입력이면 같은 출력입니다.
 

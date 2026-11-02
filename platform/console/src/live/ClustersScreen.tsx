@@ -9,7 +9,7 @@ import { asArray, asRecord, Fresh, LiveGate, NotConnected, num, str, Tag, useLiv
 interface Node { name: string; ready: boolean; kubelet_version: string | null; instance_type: string | null; zone: string | null; roles: string[] }
 interface Workload { namespace: string; kind: string; name: string; desired: number; ready: number }
 interface LzItem { component: string; namespace: string | null; present: boolean; ready: boolean | null; detail: string | null }
-interface Cluster {
+export interface Cluster {
   cluster_id: string; display_name: string | null; provider: string; context: string | null; status: string; error: string | null;
   server_version: string | null; nodes: Node[]; namespaces: { name: string; phase: string | null }[]; workloads: Workload[];
   pods: Record<string, number>; landing_zone: LzItem[];

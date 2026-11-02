@@ -91,6 +91,8 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
         trial.finish("INFRA_ERROR", "verifier_not_separate")
         return
     reward = (rewards or {}).get("reward")
+    # What the separate verifier returned, kept even if the binding below refuses it (evidence says what ran).
+    trial.verifier_observed = {"reward": reward, "record": binding.verifier}
     if not isinstance(reward, (int, float)) or isinstance(reward, bool):
         trial.finish("INFRA_ERROR", "verifier_no_reward")
         return

@@ -120,6 +120,9 @@ resource "google_sql_database_instance" "spike" {
 resource "google_sql_database" "chat" {
   name     = "chat"
   instance = google_sql_database_instance.spike.name
+  # Cloud SQL refuses DROP DATABASE while a logical replication subscription exists (measured at destroy,
+  # spike-cloudsql-*/destroy.log). Deleting the instance removes the database anyway.
+  deletion_policy = "ABANDON"
 }
 
 locals {
@@ -228,8 +231,9 @@ resource "google_alloydb_cluster" "spike" {
   network_config {
     network = google_compute_network.spike.id
   }
-  deletion_policy = "FORCE"
-  depends_on      = [google_service_networking_connection.psa, google_project_service.alloydb]
+  deletion_policy     = "FORCE"
+  deletion_protection = false
+  depends_on          = [google_service_networking_connection.psa, google_project_service.alloydb]
 }
 
 resource "google_alloydb_instance" "spike" {

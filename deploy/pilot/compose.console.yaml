@@ -11,7 +11,7 @@
 #   CONSOLE_PROMETHEUS_UPSTREAM [http://prometheus:9090]
 #   CONSOLE_GRAFANA_URL, CONSOLE_PROMETHEUS_URL, CONSOLE_TEMPO_URL [empty: shown as 연결 안 됨]
 #   CONSOLE_PUBLIC_FRONT_HOST [b-free-chat.mangowhois.ai]  customer demo app name (b-free is the platform)
-#   CONSOLE_APP_ENVS [bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai]
+#   CONSOLE_APP_ENVS [source-aws=b-free-chat-src.mangowhois.ai,target-onprem=b-free-chat-dst.mangowhois.ai]
 #   CONSOLE_DOH_URL [https://cloudflare-dns.com/dns-query]  public DNS-over-HTTPS (JSON) for the edge-name check
 services:
   console:
@@ -27,7 +27,7 @@ services:
       BRAVO_PROMETHEUS_URL: ${CONSOLE_PROMETHEUS_URL:-}
       BRAVO_TEMPO_URL: ${CONSOLE_TEMPO_URL:-}
       BRAVO_PUBLIC_FRONT_HOST: ${CONSOLE_PUBLIC_FRONT_HOST:-b-free-chat.mangowhois.ai}
-      BRAVO_APP_ENVS: ${CONSOLE_APP_ENVS:-bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai}
+      BRAVO_APP_ENVS: ${CONSOLE_APP_ENVS:-source-aws=b-free-chat-src.mangowhois.ai,target-onprem=b-free-chat-dst.mangowhois.ai}
       BRAVO_DOH_URL: ${CONSOLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
     ports:
       - "${CONSOLE_HOST_PORT:?set CONSOLE_HOST_PORT}:8080"

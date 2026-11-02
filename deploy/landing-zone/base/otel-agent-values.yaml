@@ -1,7 +1,12 @@
 # OTel Collector agent per customer cluster (11-landing-zone §2 "관측", §6 #3): one OTLP endpoint
-# otel-agent.bravo-observability.svc:4317/4318 for the apps. Forwarding to the platform Collector
-# needs the environment link (D-16); until then the agent exports to its own log only ("debug"),
-# and the Deployment carries bravo.dev/link=pending. image.digest is set by install.sh.
+# otel-agent.bravo-observability.svc:4317/4318 for the apps. It forwards everything to the platform Collector
+# through the D-16 link t1-plat-otel: Service platform-otel (deploy/landing-zone/observability, cloudflared
+# `access tcp` with the environment's Access service token) -> Cloudflare -> tunnel bravo-platform ->
+# otel-collector.bravo-observe (platform). No laptop process on the path.
+# It also scrapes Hubble metrics (Cilium hubble.metrics, headless Service kube-system/hubble-metrics, one A record
+# per node, port 9965) so flows and drops per environment reach the platform Prometheus.
+# bravo.env is set per environment by the overlay file (otel-agent-env-<env>.yaml); target-onprem by default.
+# image.digest is set by the installer (versions.env OTEL_IMAGE_DIGEST). Apply: scripts/otel-link.sh.
 mode: deployment
 fullnameOverride: otel-agent
 replicaCount: 1
@@ -18,10 +23,12 @@ securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities: {drop: [ALL]}
+serviceAccount:
+  automountServiceAccountToken: false   # DNS service discovery only, no Kubernetes API calls
 podLabels:
-  bravo.dev/link: pending
+  bravo.dev/link: d16
 podAnnotations:
-  bravo.dev/export: "debug only until the D-16 link to the platform Collector exists"
+  bravo.dev/export: "platform Collector through D-16 link t1-plat-otel (Service platform-otel)"
 resources:
   requests: {cpu: 50m, memory: 128Mi}
   limits: {memory: 512Mi}
@@ -32,7 +39,7 @@ ports:
   jaeger-thrift: {enabled: false}
   jaeger-grpc: {enabled: false}
   zipkin: {enabled: false}
-  metrics: {enabled: false}
+  metrics: {enabled: true}
 config:
   receivers:
     jaeger: null
@@ -42,15 +49,43 @@ config:
       protocols:
         grpc: {endpoint: "0.0.0.0:4317"}
         http: {endpoint: "0.0.0.0:4318"}
+    prometheus/hubble:
+      config:
+        scrape_configs:
+          - job_name: hubble
+            scrape_interval: 30s
+            dns_sd_configs:
+              - names: [hubble-metrics.kube-system.svc.cluster.local]
+                type: A
+                port: 9965
+            metric_relabel_configs:
+              - source_labels: [__name__]
+                regex: "hubble_(flows_processed_total|drop_total|tcp_flags_total|lost_events_total)"
+                action: keep
   processors:
+    memory_limiter: {check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 25}
     batch: {}
     resource/env:
       attributes:
-        - {key: bravo.environment, value: target-onprem, action: upsert}
+        - {key: bravo.env, value: target-onprem, action: upsert}
+        - {key: deployment.environment.name, value: target-onprem, action: insert}
   exporters:
-    debug: {verbosity: basic}
+    # In-cluster plain gRPC to the link client; the link itself is TLS to Cloudflare with an Access service token,
+    # and Cloudflare to the platform is the bravo-platform tunnel (TLS).
+    otlp:
+      endpoint: platform-otel.bravo-observability.svc.cluster.local:4317
+      tls: {insecure: true}
+      sending_queue: {enabled: true, queue_size: 2000}
+      retry_on_failure: {enabled: true, max_elapsed_time: 10m}
   service:
+    telemetry:
+      metrics:
+        level: basic
+        readers:
+          - pull:
+              exporter:
+                prometheus: {host: "0.0.0.0", port: 8888}
     pipelines:
-      traces: {receivers: [otlp], processors: [resource/env, batch], exporters: [debug]}
-      metrics: {receivers: [otlp], processors: [resource/env, batch], exporters: [debug]}
-      logs: {receivers: [otlp], processors: [resource/env, batch], exporters: [debug]}
+      traces: {receivers: [otlp], processors: [memory_limiter, resource/env, batch], exporters: [otlp]}
+      metrics: {receivers: [otlp, prometheus/hubble], processors: [memory_limiter, resource/env, batch], exporters: [otlp]}
+      logs: {receivers: [otlp], processors: [memory_limiter, resource/env, batch], exporters: [otlp]}

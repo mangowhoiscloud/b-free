@@ -147,7 +147,14 @@ def pg() -> Iterator[dict[str, str]]:
                 "BRAVO_APPLY_DB_PASSWORD": PASSWORDS["bravo_apply"],
             }
         )
-        apply(owner)
+        # Production shape (CNPG on the platform cluster): the migrations run as a NON-superuser database owner
+        # without BYPASSRLS, so FORCE ROW LEVEL SECURITY applies to it and to its SECURITY DEFINER functions.
+        # A superuser owner would hide exactly that class of bug (found 2026-11-02 on bravo-platform-rke2).
+        with psycopg.connect(owner, autocommit=True) as c:
+            c.execute("CREATE ROLE bravo_db_owner LOGIN PASSWORD 'dbowner-pw' NOSUPERUSER CREATEROLE NOBYPASSRLS")
+            c.execute("CREATE DATABASE bravo_app OWNER bravo_db_owner")
+        owner = f"postgresql://bravo_owner:owner-pw@127.0.0.1:{port}/bravo_app"  # superuser: test seeding only
+        apply(f"postgresql://bravo_db_owner:dbowner-pw@127.0.0.1:{port}/bravo_app")
         from .devseed import seed
 
         with psycopg.connect(owner, autocommit=True) as c:
@@ -161,7 +168,7 @@ def pg() -> Iterator[dict[str, str]]:
             c.execute("""INSERT INTO memberships (principal_id, tenant_id, role)
                          SELECT id, 't1', r FROM principals, unnest(ARRAY['operator','approver']) r
                           WHERE email = 'dual@bravo.test'""")
-        base = f"127.0.0.1:{port}/bravo"
+        base = f"127.0.0.1:{port}/bravo_app"
         yield {"owner": owner, **{role: f"postgresql://{role}:{pw}@{base}" for role, pw in PASSWORDS.items()}}
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True)

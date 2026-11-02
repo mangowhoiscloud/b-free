@@ -7,4 +7,6 @@ ingress:
     service: tcp://chat-db-rw.chat.svc:5432
   - hostname: t1-src-pgb.mangowhois.ai
     service: tcp://chat-pgbouncer.chat.svc:6432
+  - hostname: t1-src-admin.mangowhois.ai
+    service: tcp://chat-admin.chat.svc:8081
   - service: http_status:404

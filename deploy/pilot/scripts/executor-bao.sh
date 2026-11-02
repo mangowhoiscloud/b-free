@@ -43,14 +43,15 @@ pf_stop() { [[ -z $PF_PID ]] || { kill "$PF_PID" 2>/dev/null || true; wait "$PF_
 BAO_TARGET="${BRAVO_BAO_TARGET:-}"
 if [[ -z $BAO_TARGET ]]; then
   BAO_TARGET=pilot
-  [[ -f $CUSTODY && $(jq -r '.bao_target // "pilot"' "$CUSTODY" 2>/dev/null) == platform-eks ]] && BAO_TARGET=platform-eks
+  [[ -f $CUSTODY ]] && BAO_TARGET="$(jq -r '.bao_target // "pilot"' "$CUSTODY" 2>/dev/null)"
 fi
-if [[ $BAO_TARGET == platform-eks ]]; then
-  command -v kubectl >/dev/null || die "platform-eks target needs kubectl"
-  TLS_DIR="$CUSTODY_DIR/platform-eks"
-  [[ -f $TLS_DIR/ca.crt ]] || die "no $TLS_DIR/ca.crt (keys.sh --target platform-eks tls)"
+if [[ $BAO_TARGET == platform-eks || $BAO_TARGET == platform-rke2 ]]; then
+  command -v kubectl >/dev/null || die "$BAO_TARGET target needs kubectl"
+  TLS_DIR="$CUSTODY_DIR/$BAO_TARGET"
+  [[ -f $TLS_DIR/ca.crt ]] || die "no $TLS_DIR/ca.crt (keys.sh --target $BAO_TARGET tls)"
+  [[ $BAO_TARGET == platform-rke2 ]] && DEFAULT_PLATFORM_CONTEXT=bravo-platform-rke2 || DEFAULT_PLATFORM_CONTEXT=bravo-platform
   pf_port="$(python3 -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
-  kubectl --context "${BRAVO_PLATFORM_CONTEXT:-bravo-platform}" -n openbao port-forward pod/openbao-0 \
+  kubectl --context "${BRAVO_PLATFORM_CONTEXT:-$DEFAULT_PLATFORM_CONTEXT}" -n openbao port-forward pod/openbao-0 \
     "$pf_port:8200" >/dev/null 2>&1 &
   PF_PID=$!
   trap pf_stop EXIT

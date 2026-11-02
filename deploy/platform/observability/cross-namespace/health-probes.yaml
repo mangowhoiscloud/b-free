@@ -1,0 +1,27 @@
+# Platform service health (07 6, 15-r2-contracts 7): the platform Collector's httpcheck receivers GET each service's
+# own health path. Only the collector pod, only the health ports.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: health-from-observe, namespace: bravo-control}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [api, operator-mcp, collector, gate, rehearsal, executor, console]}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-observe}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: otel-collector}}
+      ports: [{port: 8080}, {port: 8081}, {port: 8082}, {port: 8083}, {port: 8084}, {port: 8090}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: health-from-observe, namespace: openbao}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: openbao}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-observe}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: otel-collector}}
+      ports: [{port: 8200}]

@@ -47,6 +47,9 @@ spec:
               valueFrom: {secretKeyRef: {name: platform-db-roles, key: mcp}}
             - name: BRAVO_EXECUTOR_DB_PASSWORD
               valueFrom: {secretKeyRef: {name: platform-db-roles, key: executor}}
+            # T31 apply worker's DB role (migration 0007). From OpenBao secret/envs/platform/platform-db field apply.
+            - name: BRAVO_APPLY_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: platform-db-roles, key: apply}}
             - name: BRAVO_SEED_DEV
               value: "0"
           securityContext: &sc

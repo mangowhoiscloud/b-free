@@ -22,6 +22,7 @@ set -a; . "$here/versions.env"; set +a
 ENV_ID=${BRAVO_ENV_ID:-target-onprem}
 LIMA_SERVER=${BRAVO_LIMA_SERVER:-bravo-onprem-server}
 LIMA_NODES=${BRAVO_LIMA_NODES:-"bravo-onprem-server bravo-onprem-agent"}
+BLOCK_BACKING=${BRAVO_BLOCK_BACKING:-rbd}   # rbd (rbd-nbd mounter); local-path = labelled stopgap
 OSD_DISK_BYTES=${BRAVO_OSD_DISK_BYTES:-32212254720}   # 30 GiB data disk (infra/envs/target-onprem)
 
 k() { kubectl --context "$ctx" "$@"; }
@@ -65,17 +66,31 @@ step_base() {
 }
 
 step_rbd() {
-  log "Ceph CSI drivers chart $CEPH_CSI_DRIVERS_CHART_VERSION, RBD pool bravo-rbd, StorageClasses bravo-db, bravo-general"
+  log "Ceph CSI drivers chart $CEPH_CSI_DRIVERS_CHART_VERSION (RBD) and RBD pool bravo-rbd"
   h upgrade --install ceph-csi-drivers ceph-csi-operator/ceph-csi-drivers --version "$CEPH_CSI_DRIVERS_CHART_VERSION" \
     -n rook-ceph -f "$ov/rook/csi-drivers-values.yaml" --wait --timeout 5m >/dev/null
-  local i
-  for i in $(seq 1 60); do
-    [[ $(k -n rook-ceph get pods --no-headers 2>/dev/null | grep -c 'rbd.*Running') -ge 2 ]] && break; sleep 5
-  done
-  k -n rook-ceph get pods --no-headers | grep rbd
-  k apply -f "$ov/rook/rbd.yaml"
+  k apply -f "$ov/rook/rbd-pool.yaml"
   k -n rook-ceph wait --for=jsonpath='{.status.phase}'=Ready cephblockpool/bravo-rbd --timeout=5m
-  k get sc bravo-db bravo-general
+}
+
+# Block StorageClasses bravo-db / bravo-general. BLOCK_BACKING=rbd (Rook RBD, rbd-nbd mounter) is the
+# default; local-path is the labelled stopgap (see the overlay files).
+step_storage() {
+  log "StorageClasses bravo-db, bravo-general on $BLOCK_BACKING"
+  local want cur sc
+  case $BLOCK_BACKING in
+    rbd) want=rook-ceph.rbd.csi.ceph.com ;;
+    local-path) want=rancher.io/local-path
+      k apply -f "$ov/local-path.yaml" >/dev/null
+      k -n local-path-storage rollout status deploy/local-path-provisioner --timeout=3m ;;
+    *) echo "BRAVO_BLOCK_BACKING must be rbd or local-path" >&2; return 1 ;;
+  esac
+  for sc in bravo-db bravo-general; do
+    cur="$(k get sc "$sc" -o jsonpath='{.provisioner}' 2>/dev/null || true)"
+    [[ -z $cur || $cur == "$want" ]] || { echo "recreating StorageClass $sc ($cur -> $want)"; k delete sc "$sc" >/dev/null; }
+  done
+  k apply -f "$ov/storageclasses-$BLOCK_BACKING.yaml"
+  k get sc bravo-db bravo-general -o custom-columns=NAME:.metadata.name,PROVISIONER:.provisioner,BACKING:.metadata.annotations.bravo\.dev/backing
 }
 
 step_images() {
@@ -278,7 +293,7 @@ step_gateway() {
   k -n bravo-edge get svc cilium-gateway-bravo-gateway
 }
 
-all_steps=(cilium base images rook rbd cnpg secrets kyverno eso otel rgw_tls rgw app gateway)
+all_steps=(cilium base images rook rbd storage cnpg secrets kyverno eso otel rgw_tls rgw app gateway)
 steps=("$@"); ((${#steps[@]})) || steps=("${all_steps[@]}")
 helm_repos
 for s in "${steps[@]}"; do "step_$s"; done

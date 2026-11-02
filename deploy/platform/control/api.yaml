@@ -1,8 +1,9 @@
 # Platform API (REST, state machine, approvals; platform/api, BRAVO_MODE=api) and operator MCP
 # (same image, BRAVO_MODE=mcp, D-18). 2 replicas each across AZs (10-cluster-overview 2.1).
-# Login: Cloudflare Access JWT only (ConfigMap platform-access). The JWKS file is kept fresh by the
-# jwks-sync sidecar from the Access certs URL; while Access is not enabled the file stays empty and
-# every request is refused (fail closed). BRAVO_DEV_AUTH=0: no dev tokens, no seeded principals.
+# Login: Cloudflare Access JWT only (ConfigMap platform-access: team domain, console / MCP AUD by path; the API
+# fetches the team JWKS itself). First-login roles from ConfigMap access-members (deploy/platform/access/members.json).
+# No dev login, no public bypass. The API resolves environment secret_refs from OpenBao metadata only, with a
+# token from Kubernetes auth role api (sidecar bao-login, policy platform-api-secretref).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -10,6 +11,14 @@ metadata:
   namespace: bravo-control
 automountServiceAccountToken: false
 imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
+---
+# OpenBao Kubernetes auth uses this account's own JWT for TokenReview.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: bravo-api-tokenreview, labels: {app.kubernetes.io/part-of: bravo-platform}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator}
+subjects:
+  - {kind: ServiceAccount, name: api, namespace: bravo-control}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -31,36 +40,40 @@ spec:
         - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/name: api}}}
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       initContainers:
-        - name: jwks-sync
+        # OpenBao Kubernetes auth (keys.sh k8s-auth-setup, role api): logs in with this pod's service-account JWT
+        # and keeps a 1h token in a memory volume for BRAVO_BAO_TOKEN_FILE. The token never leaves the pod.
+        - name: bao-login
           image: bravo/api
           restartPolicy: Always
           command: ["python", "-c"]
           args:
             - |
-              import json, os, time, urllib.request
-              url = os.environ.get("ACCESS_CERTS_URL", "").strip()
-              path = "/var/run/bravo-jwks/jwks.json"
+              import json, os, ssl, time, urllib.request
+              addr = os.environ["BAO_ADDR"]; ctx = ssl.create_default_context(cafile=os.environ["BAO_CACERT"])
+              out = "/var/run/bravo-bao/token"
               while True:
-                  if not url:
-                      print("jwks-sync: Access not enabled (platform-access certs_url empty); JWKS stays empty, logins refused", flush=True)
-                      time.sleep(600); continue
                   try:
-                      data = json.load(urllib.request.urlopen(url, timeout=10))
-                      keys = {"keys": data.get("keys", [])}
-                      tmp = path + ".tmp"
-                      with open(tmp, "w") as f: json.dump(keys, f)
-                      os.replace(tmp, path)
-                      print(f"jwks-sync: {len(keys['keys'])} keys from {url}", flush=True)
+                      jwt = open("/var/run/secrets/openbao/token").read().strip()
+                      req = urllib.request.Request(addr + "/v1/auth/kubernetes/login", method="POST",
+                          data=json.dumps({"role": "api", "jwt": jwt}).encode(), headers={"Content-Type": "application/json"})
+                      tok = json.load(urllib.request.urlopen(req, context=ctx, timeout=10))["auth"]["client_token"]
+                      tmp = out + ".tmp"
+                      with open(tmp, "w") as f: f.write(tok)
+                      os.chmod(tmp, 0o600); os.replace(tmp, out)
+                      print("bao-login: token refreshed (role api, value not shown)", flush=True)
+                      time.sleep(1800)
                   except Exception as exc:
-                      print(f"jwks-sync: fetch failed: {type(exc).__name__}", flush=True)
-                  time.sleep(300)
+                      print(f"bao-login: login failed: {type(exc).__name__}", flush=True)
+                      time.sleep(30)
           env:
-            - name: ACCESS_CERTS_URL
-              valueFrom: {configMapKeyRef: {name: platform-access, key: certs_url}}
+            - {name: BAO_ADDR, value: "https://openbao.openbao.svc:8200"}
+            - {name: BAO_CACERT, value: /etc/bravo/openbao/ca.crt}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
           resources: {requests: {cpu: 5m, memory: 32Mi}, limits: {memory: 64Mi}}
           volumeMounts:
-            - {name: jwks, mountPath: /var/run/bravo-jwks}
+            - {name: bao-token, mountPath: /var/run/bravo-bao}
+            - {name: bao-ca, mountPath: /etc/bravo/openbao, readOnly: true}
+            - {name: bao-jwt, mountPath: /var/run/secrets/openbao, readOnly: true}
       containers:
         - name: api
           image: bravo/api
@@ -70,14 +83,13 @@ spec:
             - {name: OTEL_SERVICE_NAME, value: api}
             - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.bravo-observe.svc:4317"}
             - {name: OTEL_EXPORTER_OTLP_INSECURE, value: "true"}
-            - {name: BRAVO_JWKS_PATH, value: /var/run/bravo-jwks/jwks.json}
-            - name: BRAVO_JWT_ISSUER
-              valueFrom: {configMapKeyRef: {name: platform-access, key: issuer}}
+            - name: BRAVO_ACCESS_TEAM_DOMAIN
+              valueFrom: {configMapKeyRef: {name: platform-access, key: team_domain}}
+            - {name: BRAVO_ACCESS_MEMBERS_FILE, value: /etc/bravo/access/members.json}
             - name: BRAVO_CONSOLE_AUD
               valueFrom: {configMapKeyRef: {name: platform-access, key: console_aud}}
             - name: BRAVO_MCP_AUD
               valueFrom: {configMapKeyRef: {name: platform-access, key: mcp_aud}}
-            - {name: BRAVO_DEV_AUTH, value: "0"}
             - {name: BRAVO_EXECUTOR_URL, value: "http://executor.bravo-control.svc:8081"}
             - {name: BRAVO_REHEARSAL_URL, value: "http://rehearsal.bravo-control.svc:8090"}
             - {name: BRAVO_COLLECTOR_URL, value: "http://collector.bravo-control.svc:8083"}
@@ -90,6 +102,10 @@ spec:
               valueFrom: {secretKeyRef: {name: platform-api, key: sse_ticket_secret}}
             - name: BRAVO_REHEARSAL_API_TOKEN
               valueFrom: {secretKeyRef: {name: platform-rehearsal, key: api_token}}
+            - {name: BRAVO_BAO_ADDR, value: "https://openbao.openbao.svc:8200"}
+            - {name: BRAVO_BAO_CACERT, value: /etc/bravo/openbao/ca.crt}
+            - {name: BRAVO_BAO_KV_MOUNT, value: secret}
+            - {name: BRAVO_BAO_TOKEN_FILE, value: /var/run/bravo-bao/token}
             - name: DB_PASSWORD
               valueFrom: {secretKeyRef: {name: platform-db-roles, key: api}}
             - name: BRAVO_DATABASE_URL
@@ -100,11 +116,19 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
           resources: {requests: {cpu: 50m, memory: 160Mi}, limits: {memory: 384Mi}}
           volumeMounts:
-            - {name: jwks, mountPath: /var/run/bravo-jwks, readOnly: true}
+            - {name: access-members, mountPath: /etc/bravo/access, readOnly: true}
+            - {name: bao-token, mountPath: /var/run/bravo-bao, readOnly: true}
+            - {name: bao-ca, mountPath: /etc/bravo/openbao, readOnly: true}
             - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: jwks, emptyDir: {sizeLimit: 1Mi}}
+        - {name: access-members, configMap: {name: access-members}}
+        - {name: bao-token, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
+        - {name: bao-ca, configMap: {name: openbao-ca}}
+        - name: bao-jwt
+          projected:
+            sources:
+              - serviceAccountToken: {expirationSeconds: 3600, path: token}
         - {name: pg-ca, secret: {secretName: platform-db-ca, items: [{key: ca.crt, path: ca.crt}]}}
         - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
 ---
@@ -145,37 +169,6 @@ spec:
       topologySpreadConstraints:
         - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/name: operator-mcp}}}
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
-      initContainers:
-        - name: jwks-sync
-          image: bravo/api
-          restartPolicy: Always
-          command: ["python", "-c"]
-          args:
-            - |
-              import json, os, time, urllib.request
-              url = os.environ.get("ACCESS_CERTS_URL", "").strip()
-              path = "/var/run/bravo-jwks/jwks.json"
-              while True:
-                  if not url:
-                      print("jwks-sync: Access not enabled (platform-access certs_url empty); JWKS stays empty, logins refused", flush=True)
-                      time.sleep(600); continue
-                  try:
-                      data = json.load(urllib.request.urlopen(url, timeout=10))
-                      keys = {"keys": data.get("keys", [])}
-                      tmp = path + ".tmp"
-                      with open(tmp, "w") as f: json.dump(keys, f)
-                      os.replace(tmp, path)
-                      print(f"jwks-sync: {len(keys['keys'])} keys from {url}", flush=True)
-                  except Exception as exc:
-                      print(f"jwks-sync: fetch failed: {type(exc).__name__}", flush=True)
-                  time.sleep(300)
-          env:
-            - name: ACCESS_CERTS_URL
-              valueFrom: {configMapKeyRef: {name: platform-access, key: certs_url}}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          resources: {requests: {cpu: 5m, memory: 32Mi}, limits: {memory: 64Mi}}
-          volumeMounts:
-            - {name: jwks, mountPath: /var/run/bravo-jwks}
       containers:
         - name: operator-mcp
           image: bravo/api
@@ -185,14 +178,13 @@ spec:
             - {name: OTEL_SERVICE_NAME, value: operator-mcp}
             - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.bravo-observe.svc:4317"}
             - {name: OTEL_EXPORTER_OTLP_INSECURE, value: "true"}
-            - {name: BRAVO_JWKS_PATH, value: /var/run/bravo-jwks/jwks.json}
-            - name: BRAVO_JWT_ISSUER
-              valueFrom: {configMapKeyRef: {name: platform-access, key: issuer}}
+            - name: BRAVO_ACCESS_TEAM_DOMAIN
+              valueFrom: {configMapKeyRef: {name: platform-access, key: team_domain}}
+            - {name: BRAVO_ACCESS_MEMBERS_FILE, value: /etc/bravo/access/members.json}
             - name: BRAVO_CONSOLE_AUD
               valueFrom: {configMapKeyRef: {name: platform-access, key: console_aud}}
             - name: BRAVO_MCP_AUD
               valueFrom: {configMapKeyRef: {name: platform-access, key: mcp_aud}}
-            - {name: BRAVO_DEV_AUTH, value: "0"}
             - {name: BRAVO_EXECUTOR_URL, value: "http://executor.bravo-control.svc:8081"}
             - {name: BRAVO_CONSOLE_BASE_URL, value: "https://b-free.mangowhois.ai"}
             - {name: BRAVO_GATE_MAX_LAG_BYTES, value: "65536"}
@@ -209,11 +201,11 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
           resources: {requests: {cpu: 50m, memory: 160Mi}, limits: {memory: 384Mi}}
           volumeMounts:
-            - {name: jwks, mountPath: /var/run/bravo-jwks, readOnly: true}
+            - {name: access-members, mountPath: /etc/bravo/access, readOnly: true}
             - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: jwks, emptyDir: {sizeLimit: 1Mi}}
+        - {name: access-members, configMap: {name: access-members}}
         - {name: pg-ca, secret: {secretName: platform-db-ca, items: [{key: ca.crt, path: ca.crt}]}}
         - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
 ---

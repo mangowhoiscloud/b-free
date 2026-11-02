@@ -1,27 +1,21 @@
-# Block storage for the landing-zone StorageClass names (D-22, spec "Rook-Ceph(RGW · RBD)"):
-# RBD pool bravo-rbd, 2 replicas (one per VM/OSD, failure domain host). bravo-db (CNPG) and
-# bravo-general use it. Fallback if RBD cannot serve CNPG: storageclasses-local-path.yaml +
-# local-path.yaml (stopgap, reported as such).
-apiVersion: ceph.rook.io/v1
-kind: CephBlockPool
-metadata:
-  name: bravo-rbd
-  namespace: rook-ceph
-spec:
-  failureDomain: host
-  replicated: {size: 2, requireSafeReplicaSize: false}
----
+# bravo-db / bravo-general on Rook-Ceph RBD (D-22, spec "Rook-Ceph(RGW · RBD)"), the default
+# (BRAVO_BLOCK_BACKING=rbd). mounter: rbd-nbd (userspace librbd through /dev/nbdX): the kernel
+# client (krbd) of Ubuntu 24.04 kernel 6.8 fails with "rbd: failed to add secret
+# 'client.csi-rbd-node.1' to kernel ... (22) Invalid argument" against Ceph Tentacle 20.2.4
+# (observed 2026-11-02). rbd-nbd caveat: a restart of the CSI node plugin pod breaks the mounts on
+# that node until the pods using them restart. The nbd module is loaded by the common cloud-init.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: bravo-db
-  annotations: {bravo.dev/backing: "rook-ceph RBD pool bravo-rbd (2 replicas)"}
+  annotations: {bravo.dev/backing: "rook-ceph RBD pool bravo-rbd (2 replicas), mounter rbd-nbd"}
 provisioner: rook-ceph.rbd.csi.ceph.com
 parameters:
   clusterID: rook-ceph
   pool: bravo-rbd
   imageFormat: "2"
   imageFeatures: layering
+  mounter: rbd-nbd
   csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
   csi.storage.k8s.io/provisioner-secret-namespace: rook-ceph
   csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner
@@ -37,13 +31,14 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: bravo-general
-  annotations: {bravo.dev/backing: "rook-ceph RBD pool bravo-rbd (2 replicas)"}
+  annotations: {bravo.dev/backing: "rook-ceph RBD pool bravo-rbd (2 replicas), mounter rbd-nbd"}
 provisioner: rook-ceph.rbd.csi.ceph.com
 parameters:
   clusterID: rook-ceph
   pool: bravo-rbd
   imageFormat: "2"
   imageFeatures: layering
+  mounter: rbd-nbd
   csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
   csi.storage.k8s.io/provisioner-secret-namespace: rook-ceph
   csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner

@@ -18,7 +18,7 @@ import type { EnvSummary, PlanSummary } from '../api/home';
 import { fmtDateTime, shortId } from '../lib/format';
 import { idemKey, releaseIdemKey } from '../lib/idem';
 import { useApi, type Session } from '../state';
-import { parseClusters, type ClustersResp } from './ClustersScreen';
+import { distroOf, parseClusters, type Cluster, type ClustersResp } from './ClustersScreen';
 import { Block, DataTable, Facts, Screen, Val } from './ScreenFrame';
 import { Fresh, liveReason, NotConnected, Tag, useLive } from './live';
 
@@ -38,56 +38,62 @@ function planHref(id: string) {
 interface EnvRow {
   key: string;
   name: string;
-  provider: string | null;
-  apiStatus: string | null;
+  role: string | null;
+  distro: string | null;
   inApi: boolean;
   cluster: 'ok' | 'down' | 'none' | 'unknown';
   clusterNote: string;
   nodes: string | null;
   apps: string[];
+  secret: string | null;
 }
 
-const PROVIDER: Record<string, string> = { eks: 'Amazon EKS', aws: 'Amazon EKS', k3s: '온프렘 K3s', rke2: '온프렘 RKE2', onprem: '온프렘', gke: 'GKE', gcp: 'GKE' };
+const SYSTEM_NS = /^(kube-|cattle-|calico-|tigera-|cilium|longhorn|cert-manager|bravo-link$|amazon-|aws-)/;
+
+/** App candidates as the collector sees them: non-system namespaces that run workloads. */
+export function appsOf(c: Cluster | undefined): string[] {
+  if (!c) return [];
+  return [...new Set(c.workloads.map((w) => w.namespace).filter((ns) => !SYSTEM_NS.test(ns)))].sort();
+}
+
+function liveState(c: Cluster): Pick<EnvRow, 'cluster' | 'clusterNote' | 'nodes' | 'distro'> {
+  const ok = c.status === 'ok';
+  return {
+    cluster: ok ? 'ok' : 'down',
+    clusterNote: ok ? `${c.cluster_id} 응답` : c.error ?? '닿지 않음',
+    nodes: ok ? `${c.nodes.filter((n) => n.ready).length} / ${c.nodes.length}` : null,
+    distro: ok ? distroOf(c) : c.provider,
+  };
+}
 
 function envRows(envs: EnvSummary[] | undefined, clusters: ClustersResp | undefined): EnvRow[] {
   const rows: EnvRow[] = [];
   const used = new Set<string>();
-  const findCluster = (e: EnvSummary) =>
-    clusters?.clusters.find((c) => [e.id, e.context, e.name].includes(c.cluster_id) || (c.context !== null && [e.id, e.context, e.name].includes(c.context)));
   for (const e of envs ?? []) {
-    const c = findCluster(e);
-    const nc = clusters?.not_configured.find((n) => [e.id, e.context, e.name].includes(n.cluster_id));
+    const keys = [e.name, e.id, e.context].filter((k): k is string => !!k);
+    const c = clusters?.clusters.find((x) => keys.includes(x.cluster_id) || (x.context !== null && keys.includes(x.context)));
+    const nc = clusters?.not_configured.find((n) => keys.includes(n.cluster_id));
     if (c) used.add(c.cluster_id);
     if (nc) used.add(nc.cluster_id);
-    rows.push({
-      key: `api:${e.id}`,
-      name: e.name ?? e.id,
-      provider: e.provider,
-      apiStatus: e.status,
-      inApi: true,
-      cluster: c ? (c.status === 'ok' ? 'ok' : 'down') : nc ? 'none' : 'unknown',
-      clusterNote: c ? (c.status === 'ok' ? `${c.cluster_id} 응답` : c.error ?? '닿지 않음') : nc ? nc.reason : '수집기 등록부에 이 환경이 없음',
-      nodes: c && c.status === 'ok' ? `${c.nodes.filter((n) => n.ready).length} / ${c.nodes.length}` : null,
-      apps: e.apps,
-    });
+    const base = { key: `api:${e.id}`, name: e.name ?? e.id, role: e.role, inApi: true, apps: e.apps.length ? e.apps : appsOf(c), secret: e.secretStatus };
+    if (c) rows.push({ ...base, ...liveState(c) });
+    else
+      rows.push({
+        ...base,
+        // No live collector row: show the API's own join (cluster.status / reason) as it reports it.
+        cluster: e.clusterStatus === 'ok' ? 'ok' : e.clusterStatus === 'unreachable' ? 'down' : 'none',
+        clusterNote: nc?.reason ?? e.clusterReason ?? (e.clusterStatus ? `API: ${e.clusterStatus}` : '수집기에서 이 환경을 찾지 못함'),
+        nodes: e.clusterNodes !== null ? `${e.clusterNodes}개` : null,
+        distro: e.provider,
+      });
   }
   for (const c of clusters?.clusters ?? []) {
     if (used.has(c.cluster_id)) continue;
-    rows.push({
-      key: `col:${c.cluster_id}`,
-      name: c.display_name ?? c.cluster_id,
-      provider: c.provider,
-      apiStatus: null,
-      inApi: false,
-      cluster: c.status === 'ok' ? 'ok' : 'down',
-      clusterNote: c.status === 'ok' ? `${c.cluster_id} 응답` : c.error ?? '닿지 않음',
-      nodes: c.status === 'ok' ? `${c.nodes.filter((n) => n.ready).length} / ${c.nodes.length}` : null,
-      apps: [],
-    });
+    rows.push({ key: `col:${c.cluster_id}`, name: c.display_name ?? c.cluster_id, role: null, inApi: false, apps: appsOf(c), secret: null, ...liveState(c) });
   }
   for (const n of clusters?.not_configured ?? []) {
     if (used.has(n.cluster_id)) continue;
-    rows.push({ key: `nc:${n.cluster_id}`, name: n.cluster_id, provider: null, apiStatus: null, inApi: false, cluster: 'none', clusterNote: n.reason, nodes: null, apps: [] });
+    rows.push({ key: `nc:${n.cluster_id}`, name: n.cluster_id, role: null, distro: null, inApi: false, cluster: 'none', clusterNote: n.reason, nodes: null, apps: [], secret: null });
   }
   return rows;
 }
@@ -99,12 +105,14 @@ const CLUSTER_TAG: Record<EnvRow['cluster'], { v: 'success' | 'error' | 'neutral
   unknown: { v: 'neutral', l: '연결 안 됨' },
 };
 
-function NewMigration({ envs, token, onCreated }: { envs: EnvSummary[]; token: string; onCreated: (id: string) => void }) {
+function NewMigration({ envs, clusters, token, onCreated }: { envs: EnvSummary[]; clusters: ClustersResp | undefined; token: string; onCreated: (id: string) => void }) {
   const api = useApi();
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
   const [app, setApp] = useState('');
   const srcEnv = envs.find((e) => e.id === source);
+  const srcCluster = srcEnv ? clusters?.clusters.find((c) => [srcEnv.name, srcEnv.id].includes(c.cluster_id)) : undefined;
+  const appChoices = srcEnv ? (srcEnv.apps.length ? srcEnv.apps : appsOf(srcCluster)) : [];
   const scope = `home-create:${source}:${target}:${app.trim()}`;
   const create = useMutation({
     mutationFn: () => api.createPlan(token, { workload: app.trim(), source_environment_id: source, target_environment_id: target }, idemKey(scope)),
@@ -116,7 +124,7 @@ function NewMigration({ envs, token, onCreated }: { envs: EnvSummary[]; token: s
       if (!(err instanceof ApiError && err.status === 0)) releaseIdemKey(scope);
     },
   });
-  const options = envs.map((e) => ({ value: e.id, label: `${e.name ?? e.id}${e.provider ? ` · ${PROVIDER[e.provider] ?? e.provider}` : ''}` }));
+  const options = envs.map((e) => ({ value: e.id, label: `${e.name ?? e.id}${e.role ? ` · ${e.role}` : ''}` }));
   const same = source !== '' && source === target;
   const valid = source && target && !same && /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(app.trim());
   return (
@@ -130,8 +138,8 @@ function NewMigration({ envs, token, onCreated }: { envs: EnvSummary[]; token: s
         <HStack gap={3} wrap="wrap" vAlign="end">
           <Selector label="출발 환경" options={options} value={source} onChange={setSource} placeholder="환경 고르기…" isRequired width={260} />
           <Selector label="목적 환경" options={options} value={target} onChange={setTarget} placeholder="환경 고르기…" isRequired width={260} status={same ? { type: 'error', message: '출발과 목적이 같습니다.' } : undefined} />
-          {srcEnv && srcEnv.apps.length > 0 ? (
-            <Selector label="앱" options={srcEnv.apps.map((a) => ({ value: a, label: a }))} value={app} onChange={setApp} placeholder="앱 고르기…" isRequired width={200} />
+          {appChoices.length > 0 ? (
+            <Selector label="앱" options={appChoices.map((a) => ({ value: a, label: a }))} value={app} onChange={setApp} placeholder="앱 고르기…" isRequired width={200} />
           ) : (
             <TextInput label="앱 (워크로드 이름)" value={app} onChange={(v) => setApp(v)} placeholder="예: chat…" isRequired width={200} htmlName="workload" />
           )}
@@ -143,7 +151,7 @@ function NewMigration({ envs, token, onCreated }: { envs: EnvSummary[]; token: s
             <span>{apiReason(create.error)}</span>
           </p>
         )}
-        <p className="foot">계획을 만들면 그 계획 화면으로 갑니다. 게이트 · 승인 · 컷오버는 계획 화면에서 이어집니다. 승인은 다른 사람(승인자)이 합니다.</p>
+        <p className="foot">앱 후보는 수집기가 출발 클러스터에서 본 업무 네임스페이스입니다. 계획을 만들면 그 계획 화면으로 갑니다. 게이트 · 승인 · 컷오버는 계획 화면에서 이어집니다. 승인은 다른 사람(승인자)이 합니다.</p>
       </VStack>
     </form>
   );
@@ -211,7 +219,7 @@ export function HomeScreen({ session, onOpenPlan }: { session: Session; onOpenPl
           ) : envs.data.length < 2 ? (
             <p className="foot">등록된 환경이 {envs.data.length}개라 이전을 만들 수 없습니다. 출발과 목적 환경이 모두 등록되어야 합니다.</p>
           ) : (
-            <NewMigration envs={envs.data} token={token} onCreated={onOpenPlan} />
+            <NewMigration envs={envs.data} clusters={clusters.data} token={token} onCreated={onOpenPlan} />
           )}
         </Block>
       )}
@@ -235,12 +243,13 @@ export function HomeScreen({ session, onOpenPlan }: { session: Session; onOpenPl
           rowKey={(r) => r.key}
           empty={envs.isLoading || clusters.isLoading ? '불러오는 중…' : '보여 줄 환경이 없습니다(API 목록과 수집기 모두 비어 있음).'}
           cols={[
-            { key: 'n', header: '환경', weight: 2, render: (r) => <VStack gap={0}><span>{r.name}</span><span className="foot">{r.inApi ? 'API 등록' : '수집기에만 있음'}</span></VStack> },
-            { key: 'p', header: '종류', render: (r) => (r.provider ? PROVIDER[r.provider] ?? r.provider : <Val v={null} />) },
-            { key: 'c', header: '클러스터', weight: 3, render: (r) => <VStack gap={0}><span><Tag variant={CLUSTER_TAG[r.cluster].v} label={CLUSTER_TAG[r.cluster].l} /></span>{r.cluster !== 'ok' && <span className="foot">{r.clusterNote}</span>}</VStack> },
+            { key: 'n', header: '환경', weight: 2, render: (r) => <VStack gap={0}><span className="mono">{r.name}</span><span className="foot">{r.inApi ? 'API 등록' : '수집기에만 있음'}</span></VStack> },
+            { key: 'r', header: '역할', render: (r) => (r.role ? <span className="mono">{r.role}</span> : <Val v={null} />) },
+            { key: 'p', header: '배포판', render: (r) => (r.distro ? r.distro : <Val v={null} />) },
+            { key: 'c', header: '클러스터', weight: 2, render: (r) => <VStack gap={0}><span><Tag variant={CLUSTER_TAG[r.cluster].v} label={CLUSTER_TAG[r.cluster].l} /></span>{r.cluster !== 'ok' && <span className="foot">{r.clusterNote}</span>}</VStack> },
             { key: 'nodes', header: '노드 Ready', numeric: true, render: (r) => <Val v={r.nodes} /> },
-            { key: 'apps', header: '앱', weight: 2, render: (r) => (r.apps.length ? <span className="mono">{r.apps.join(', ')}</span> : <span className="foot">{r.inApi ? '응답에 앱 목록 없음' : '—'}</span>) },
-            { key: 'st', header: 'API 상태', render: (r) => (r.apiStatus ? <span className="mono">{r.apiStatus}</span> : <Val v={null} />) },
+            { key: 'apps', header: '업무 네임스페이스', weight: 2, render: (r) => (r.apps.length ? <span className="mono">{r.apps.join(', ')}</span> : <Val v={null} />) },
+            { key: 'sec', header: '비밀 참조', render: (r) => (r.secret ? <span className="mono">{r.secret}</span> : <Val v={null} />) },
           ]}
         />
       </Block>

@@ -89,6 +89,31 @@ def create_app(registry: Registry | None = None, cluster_view: ClusterView | Non
         """Live read-only view of every registry environment with a kubernetes section (console)."""
         return {**request.app.state.cluster_view.get(reg(request)), "credential_source": credential_source()}
 
+    @app.get("/v1/inventory/snapshot")
+    def inventory_snapshot() -> Response:
+        """tar.gz of exactly the files the inventory scanned; header X-Bravo-Inventory-Digest (S2)."""
+        from .inventory.snapshot import SnapshotError, build_snapshot
+
+        root = os.environ.get(ROOT_ENV, "").strip()
+        if not root or not Path(root).is_dir():
+            raise HTTPException(status_code=503, detail=f"{ROOT_ENV} is not set or not a directory")
+        try:
+            snap = build_snapshot(Path(root))
+        except SnapshotError as exc:
+            status = 503 if exc.reason == "inventory_root_missing" else 422
+            return JSONResponse(status_code=status, content={"error": exc.reason})
+        if snap.files == 0:
+            # An empty root means the repository was not provided; "no files" is not a valid snapshot.
+            return JSONResponse(status_code=503, content={"error": "inventory_root_empty",
+                                                          "skipped": len(snap.skipped)})
+        return Response(content=snap.archive, media_type="application/gzip", headers={
+            "X-Bravo-Inventory-Digest": snap.input_digest,
+            "X-Bravo-Snapshot-Files": str(snap.files),
+            "X-Bravo-Snapshot-Skipped": str(len(snap.skipped)),
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'attachment; filename="repo-snapshot.tar.gz"',
+        })
+
     @app.get("/v1/inventory")
     def inventory() -> dict[str, Any]:
         root = os.environ.get(ROOT_ENV, "").strip()
@@ -97,6 +122,10 @@ def create_app(registry: Registry | None = None, cluster_view: ClusterView | Non
         path = Path(root)
         if not path.is_dir():
             raise HTTPException(status_code=503, detail=f"{ROOT_ENV} is not a directory")
-        return scan(path).model_dump(mode="json")
+        report = scan(path)
+        if report.files_scanned == 0:
+            # Not "no dependencies": the repository is missing (an empty emptyDir, a failed checkout).
+            raise HTTPException(status_code=503, detail="inventory_root_empty: no file to scan")
+        return report.model_dump(mode="json")
 
     return app

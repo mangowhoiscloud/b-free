@@ -216,3 +216,6 @@ class FileSecrets:
         if not value:
             raise ConfigError(f"secret file for {path} field {name} missing or empty")
         return value
+
+    async def close(self) -> None:
+        return None

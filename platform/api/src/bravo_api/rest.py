@@ -97,6 +97,15 @@ def build_router(
     ) -> dict[str, Any]:
         return await services.env_register(p, Channel.CONSOLE, body, key)
 
+    @router.get("/me")
+    async def me(p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
+        """Who is logged in (verified Access identity -> principal, tenant, roles). Read only."""
+        authorize(p, Action.PLAN_READ, Channel.CONSOLE)
+        order = ("security_approver", "approver", "operator", "viewer")
+        roles = sorted((r.value for r in p.roles), key=order.index)
+        return {"email": p.email, "tenant_id": p.tenant_id, "roles": roles, "role": roles[0] if roles else None,
+                "principal": {"id": str(p.id), "iss": p.iss, "sub": p.sub}}
+
     @router.get("/environments")
     async def env_list(p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
         return await services.env_list(p, Channel.CONSOLE)

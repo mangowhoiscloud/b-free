@@ -1,0 +1,70 @@
+# otel-agent -> platform-otel.bravo-observability.svc:4317 -> cloudflared access tcp (Access service token
+# <client>-plat-otel) -> https://t1-plat-otel.mangowhois.ai -> tunnel bravo-platform -> otel-collector.bravo-observe:4317.
+# Without the token the link host answers 403 (Service Auth policy t1-plat-otel, infra/envs/edge/platform_links.tf).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-otel
+  namespace: bravo-observability
+  labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector: {matchLabels: {app.kubernetes.io/name: platform-otel}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway,
+           labelSelector: {matchLabels: {app.kubernetes.io/name: platform-otel}}}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba # 2026.10.7
+          # access tcp takes the service token only from flags or env (no file option in 2026.10.x): env from Secret.
+          args: ["access", "tcp", "--hostname", "t1-plat-otel.mangowhois.ai", "--url", "0.0.0.0:4317", "--loglevel", "info"]
+          env:
+            - name: TUNNEL_SERVICE_TOKEN_ID
+              valueFrom: {secretKeyRef: {name: cf-link-plat-otel, key: client_id}}
+            - name: TUNNEL_SERVICE_TOKEN_SECRET
+              valueFrom: {secretKeyRef: {name: cf-link-plat-otel, key: client_secret}}
+          ports: [{name: client, containerPort: 4317}]
+          readinessProbe: {tcpSocket: {port: client}, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: client}, periodSeconds: 30}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-otel
+  namespace: bravo-observability
+  labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/part-of: bravo-link}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: platform-otel}
+  ports: [{name: client, port: 4317, targetPort: client}]
+---
+# Only the agent reaches the link client; the client reaches only DNS and the Cloudflare edge (443, 7844).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-otel
+  namespace: bravo-observability
+  labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/part-of: bravo-link}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: platform-otel}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: opentelemetry-collector}}}]
+      ports: [{port: client}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]}}]
+      ports: [{port: 443, protocol: TCP}, {port: 7844, protocol: TCP}, {port: 7844, protocol: UDP}]

@@ -58,6 +58,7 @@ class Trial:
     locked: bool = False
     harbor_trial_dir: str | None = None
     repo_snapshot: str | None = None  # uploaded customer repo snapshot (snapshot.SnapshotStore), if any
+    verifier_observed: dict[str, Any] | None = None  # verifier output before acceptance (reward, Pod record)
     worker_started: bool = False  # the agent worker (and so the model) was started for this Trial
     verifier_kind: str | None = None  # what the verifier did (harbor_task.STATIC_RULES today)
     proposed: asyncio.Event = field(default_factory=asyncio.Event)
@@ -133,6 +134,7 @@ class Trial:
             "harbor_trial_dir": self.harbor_trial_dir,
             "verifier_kind": self.verifier_kind,
             "worker_started": self.worker_started,
+            "verifier_observed": self.verifier_observed,
             "created_at": self.created_at,
         }
 

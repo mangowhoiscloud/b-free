@@ -601,7 +601,8 @@ def test_snapshot_upload_is_bound_to_collector_inventory(tmp_path: Path) -> None
         assert bad.status_code == 422 and bad.json()["error"] == "snapshot_digest_mismatch"
         ok = c.put(url, content=body, headers={**auth, "X-Bravo-Inventory-Digest": digest})
         assert ok.status_code == 200, ok.text
-        assert ok.json()["withheld"] == [".env"] and ok.json()["input_digest"] == digest
+        # The collector itself leaves secret-shaped files (.env) out of the scan, so nothing needed withholding.
+        assert ok.json()["withheld"] == [] and ok.json()["input_digest"] == digest
         from bravo_rehearsal.service import TrialRequest, new_trial
 
         req = TrialRequest.model_validate(trial_body(task="governance", inventory_digest=digest))
@@ -614,7 +615,7 @@ def test_snapshot_upload_is_bound_to_collector_inventory(tmp_path: Path) -> None
         tok = trial_token.issue(KEY, claims(trial_id=trial.trial_id, plan_id=PLAN, attempt=1,
                                             namespace=trial.names.rehearsal_ns))
         assert "boto3" in call(c, tok, "repo_read", {"path": "app/main.py"})["content"]
-        assert call(c, tok, "repo_read", {"path": ".env"})["blocked"] == "path_outside_repo"  # withheld
+        assert call(c, tok, "repo_read", {"path": ".env"})["blocked"] == "path_outside_repo"  # never in the snapshot
         assert call(c, tok, "repo_read", {"path": "README.md"})["blocked"] == "path_outside_repo"  # not scanned
         other = TrialRequest.model_validate(trial_body(task="governance", inventory_digest="1" * 64))
         assert new_trial(other, s, "k-other", "d").repo_snapshot is None  # a different inventory: not bound

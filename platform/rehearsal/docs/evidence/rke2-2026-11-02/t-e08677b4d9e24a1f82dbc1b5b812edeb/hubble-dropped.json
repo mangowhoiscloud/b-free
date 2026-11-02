@@ -1,0 +1,242 @@
+[
+  {
+    "time": "2026-11-02T12:51:38.942931835Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:38.942942294Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:39.953194418Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:39.953209793Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:40.976430809Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:40.976446601Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:42.017087655Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:42.017094655Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:43.024651991Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:43.024661825Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:44.048444851Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:51:44.048453684Z",
+    "namespace": "rehearsal-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "rehearsal-sandbox-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:33.685722966Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:33.685732925Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:34.704588627Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:34.704596585Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:35.728475612Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:35.728486612Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "1.1.1.1",
+    "port": 443,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:36.788224844Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:36.788237594Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:37.840536287Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:37.840544454Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:38.864953110Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  },
+  {
+    "time": "2026-11-02T12:53:38.864961443Z",
+    "namespace": "verify-aedeef1f-1",
+    "verdict": "DROPPED",
+    "drop_reason": "POLICY_DENIED",
+    "source": "verify-runner-t-e08677b4d9",
+    "destination": "169.254.169.254",
+    "port": 80,
+    "traffic_direction": "EGRESS"
+  }
+]

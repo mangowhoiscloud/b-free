@@ -19,6 +19,13 @@ hubble:
     enabled: true
   ui:
     enabled: false
+  # Flow and drop counters per namespace pair (headless Service kube-system/hubble-metrics, port 9965), scraped by
+  # otel-agent and sent to the platform over t1-plat-otel (15-r2-contracts 7). Same list on every overlay.
+  metrics:
+    enabled:
+      - "flow:sourceContext=namespace;destinationContext=namespace"
+      - "drop:sourceContext=namespace;destinationContext=namespace"
+      - "tcp:sourceContext=namespace;destinationContext=namespace"
 gatewayAPI:
   enabled: true
 envoy:

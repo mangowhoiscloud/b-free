@@ -8,8 +8,9 @@
 #
 # OpenBao (secret/envs/...)               -> Secret (namespace/name: key)
 #   platform/platform-db owner             -> bravo-control/platform-db-owner: password (+ username bravo_owner)
-#   platform/platform-db api, mcp, executor -> bravo-control/platform-db-roles: api, mcp, executor
+#   platform/platform-db api, mcp, executor, apply -> bravo-control/platform-db-roles (apply: T31 worker, 0007)
 #   platform/api sse_ticket_secret         -> bravo-control/platform-api: sse_ticket_secret
+#   platform/git-customer-repo private_key  -> bravo-control/git-customer-repo (read-only deploy key, collector checkout)
 #   platform/rehearsal api_token, token_key -> bravo-control/platform-rehearsal (api token shared by api and rehearsal)
 #   platform/grafana admin_password        -> bravo-observe/grafana-admin: admin_password
 #   platform/cf-tunnel token               -> cf-edge/cf-tunnel: token
@@ -23,6 +24,7 @@ umask 077
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEYS="$HERE/../../pilot/scripts/keys.sh"
 CTX="${BRAVO_PLATFORM_CONTEXT:-bravo-platform-rke2}"
+CUSTODY_DIR="${BRAVO_KEY_CUSTODY_DIR:-$HOME/.bravo/custody}"
 die() { printf 'deliver-secrets: %s\n' "$*" >&2; exit 1; }
 log() { printf 'deliver-secrets: %s\n' "$*"; }
 
@@ -53,7 +55,7 @@ secret() {
 
 cmd_generate() {
   local f
-  for f in owner api mcp executor; do "$KEYS" env-generate platform platform-db "$f" 24; done
+  for f in owner api mcp executor apply; do "$KEYS" env-generate platform platform-db "$f" 24; done
   "$KEYS" env-generate platform api sse_ticket_secret 32
   "$KEYS" env-generate platform grafana admin_password 24
 }
@@ -84,8 +86,11 @@ pgpass_doc() {
 
 cmd_deliver() {
   secret bravo-control platform-db-owner kubernetes.io/basic-auth literal:username=bravo_owner password=platform/platform-db/owner
-  secret bravo-control platform-db-roles Opaque api=platform/platform-db/api mcp=platform/platform-db/mcp executor=platform/platform-db/executor
+  secret bravo-control platform-db-roles Opaque api=platform/platform-db/api mcp=platform/platform-db/mcp executor=platform/platform-db/executor apply=platform/platform-db/apply
   secret bravo-control platform-api Opaque sse_ticket_secret=platform/api/sse_ticket_secret
+  if [[ -n $("$KEYS" env-fields platform git-customer-repo) ]]; then
+    secret bravo-control git-customer-repo kubernetes.io/ssh-auth ssh-privatekey=platform/git-customer-repo/private_key
+  fi
   secret bravo-control platform-rehearsal Opaque api_token=platform/rehearsal/api_token token_key=platform/rehearsal/token_key
   secret bravo-observe grafana-admin Opaque admin_password=platform/grafana/admin_password
   secret cf-edge cf-tunnel Opaque token=platform/cf-tunnel/token
@@ -104,7 +109,7 @@ cmd_deliver() {
     else log "executor secret $p: not in OpenBao (topology entries that need it fail at executor start: not connected)"; fi
   done
   local l
-  for l in src-k8s src-db src-pgb dst-k8s dst-db dst-pgb; do
+  for l in src-k8s src-db src-pgb src-admin dst-k8s dst-db dst-pgb dst-admin; do
     secret bravo-link "cf-link-$l" Opaque "client_id=platform/cf-link-$l/client_id" "client_secret=platform/cf-link-$l/client_secret"
   done
   if [[ -n $("$KEYS" env-fields platform argocd-repo) ]]; then
@@ -116,7 +121,7 @@ cmd_deliver() {
   fi
   local ns
   for ns in bravo-control; do
-    kubectl --context "$CTX" -n "$ns" create configmap openbao-ca --from-file=ca.crt="${BRAVO_KEY_CUSTODY_DIR:-$HOME/.bravo/custody}/platform-eks/ca.crt" \
+    kubectl --context "$CTX" -n "$ns" create configmap openbao-ca --from-file=ca.crt="$CUSTODY_DIR/$(jq -r '.bao_target' "$CUSTODY_DIR/openbao-init.json")/ca.crt" \
       --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null
   done
 }

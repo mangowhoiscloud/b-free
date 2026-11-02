@@ -1,0 +1,288 @@
+{
+  "schema_version": "ATIF-v1.8",
+  "session_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb",
+  "agent": {
+    "name": "bravo-rehearsal",
+    "version": "0.0.1"
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "timestamp": "2026-11-02T12:51:45.364676+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec blocked rule=free_text_command",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-1",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "4393e6ef47f0aadea41b28388702f1dfee5321d2881b821e3c5a5bca198739a9"
+          },
+          "extra": {
+            "allowed": false,
+            "rule": "free_text_command",
+            "result": null,
+            "origin": "probe"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 2,
+      "timestamp": "2026-11-02T12:51:45.366809+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec blocked rule=kubectl_not_allowed",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-2",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "c38fd189387c4ef9560a232a364e8ac597fe06c90d804eb14de6fb53bdcc323b"
+          },
+          "extra": {
+            "allowed": false,
+            "rule": "kubectl_not_allowed",
+            "result": null,
+            "origin": "probe"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 3,
+      "timestamp": "2026-11-02T12:51:48.349991+00:00",
+      "source": "agent",
+      "message": "inventory_describe allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-3",
+          "function_name": "inventory_describe",
+          "arguments": {
+            "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 4,
+      "timestamp": "2026-11-02T12:51:48.419128+00:00",
+      "source": "agent",
+      "message": "controls_describe allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-4",
+          "function_name": "controls_describe",
+          "arguments": {
+            "args_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 5,
+      "timestamp": "2026-11-02T12:51:49.810099+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-5",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "a2245a72ec82ab0baaa45e7f98a41d9a36e0b8a84a74c7119684999b41230f06"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 6,
+      "timestamp": "2026-11-02T12:51:51.195256+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-6",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "878798578d57e8b855e28208d6ccb1150bf7a9130730a0c757806e77b203aa41"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 7,
+      "timestamp": "2026-11-02T12:51:51.878814+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-7",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "13a3e3f9e296a22edfb34f859e3eef5253d35f2c12203f184d486210ea00071c"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 8,
+      "timestamp": "2026-11-02T12:51:51.970921+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-8",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "ebda6b7c4654666eeecdce93313f8a3596203d27f091caa29b95e28ea5e6d2a3"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 9,
+      "timestamp": "2026-11-02T12:51:53.325261+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-9",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "ad04c5532e0aaebfab4404bed2b1887e3f4c7ce38e5adfb9feee122370fe8b21"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 10,
+      "timestamp": "2026-11-02T12:51:53.808814+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-10",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "aa67627f4aed00d308ed1fa01f25dce266fcf5c6d550e824ca15c237226a3d24"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 11,
+      "timestamp": "2026-11-02T12:51:54.229543+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-11",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "1c3b79abd2d70c0a923bf3c7812c26c96d33d80b85c1443f32f82689af2721e2"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 12,
+      "timestamp": "2026-11-02T12:52:18.305428+00:00",
+      "source": "agent",
+      "message": "policy_evaluate allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-12",
+          "function_name": "policy_evaluate",
+          "arguments": {
+            "args_sha256": "46953e3e8d62ade82dd03c7285ab59d901ab2e787cbd164c8e4b824c7863fc6f"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 13,
+      "timestamp": "2026-11-02T12:52:47.887582+00:00",
+      "source": "agent",
+      "message": "plan_propose allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb-13",
+          "function_name": "plan_propose",
+          "arguments": {
+            "args_sha256": "1e035a872a2098cdddecf13aa666720127ba43a585c9db7579938d54bb4fcd8a"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    }
+  ],
+  "extra": {
+    "artifact_digest": "sha256:7e8310e94b1c2c80afe0abfc4e1cc7c80600e803cea22eec86cf6529ad0865bd",
+    "role": "governance",
+    "attempt": 1
+  }
+}

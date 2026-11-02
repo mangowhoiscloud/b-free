@@ -21,7 +21,7 @@ export function Header({ session }: { session: Session }) {
         </span>
         <div>
           <h1 className="brand__name">Bravo 운영 콘솔</h1>
-          <p className="brand__sub">chat DB 이전</p>
+          <p className="brand__sub">플랫폼 콘솔</p>
         </div>
       </div>
 

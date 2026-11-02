@@ -121,3 +121,16 @@ def test_landing_lists_plans_and_environments_with_real_status(
         assert mine["state"] == "AWAIT_APPROVAL" and mine["pending_approval"]["stage"] == "cutover"
         assert mine["console_url"].endswith(f"/plans/{pid}")
         assert console.get("viewer", "/plans?limit=0").status_code == 422
+
+
+def test_me_reports_the_session_identity_and_roles(keys: Keys, pg: dict[str, str], executor: ExecutorStub) -> None:
+    with TestClient(create_app(make_settings(keys, pg, executor.url, Mode.API))) as client:
+        console = Console(client, keys)
+        me = console.get("approver", "/me").json()
+        assert (me["email"], me["tenant_id"], me["role"], me["roles"]) == (
+            "approver@bravo.test",
+            "t1",
+            "approver",
+            ["approver"],
+        )
+        assert client.get("/v1/me").status_code == 401

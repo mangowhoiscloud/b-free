@@ -1,0 +1,351 @@
+{
+  "trial_id": "t-10746102ce9649f89284a37bc20c5116",
+  "plan_id": "49a4a94d-a72d-4cf7-9efa-429f17737ef6",
+  "rehearsal_id": "cli-39ac20ae",
+  "attempt": 1,
+  "task": "governance",
+  "role": "governance",
+  "phase": "done",
+  "verdict": "INFRA_ERROR",
+  "reason": "verifier_image_mismatch",
+  "artifact": {
+    "plan_id": "p-49a4a94d-a72d-4cf7-9efa-429f17737ef6",
+    "trial_id": "t-10746102ce9649f89284a37bc20c5116",
+    "attempt": 1,
+    "rationale": "Evidence insufficient: inventory_describe returned analysis.status=unconfigured, controls_describe shows all controls UNKNOWN for source-aws and target-onprem, platform_state.evidence is empty, and sandbox repo paths are blocked (path_outside_workspace). No source IAM, bucket policy or Secrets Manager artifacts could be read, so no permission-bearing translation can be derived without guessing. A single deny-by-default placeholder (namespaced Role with zero rules) is proposed only to satisfy the schema; it grants nothing. Re-run after inventory analysis is configured.",
+    "risk": "high",
+    "evidence_refs": [],
+    "role": "governance",
+    "step": "translate",
+    "translations": [
+      {
+        "source": {
+          "type": "aws_iam_role",
+          "id": "unresolved-inventory-unconfigured"
+        },
+        "target": {
+          "type": "k8s_rbac",
+          "name": "app-placeholder-deny"
+        },
+        "document": {
+          "apiVersion": "rbac.authorization.k8s.io/v1",
+          "kind": "Role",
+          "metadata": {
+            "name": "app-placeholder-deny",
+            "namespace": "app",
+            "annotations": {
+              "bravo/status": "placeholder-no-source-evidence"
+            }
+          },
+          "rules": []
+        },
+        "control_ids": [
+          "IAM-01"
+        ]
+      }
+    ],
+    "exception_justifications": [],
+    "audit_summary": "Governance translation could not be completed: source inventory is unconfigured and no evidence ids exist. All six controls remain UNKNOWN at source and target; this proposal makes no control claims. One zero-permission placeholder Role is included only to satisfy the schema. Approver should not treat this as a mapping; configure inventory analysis and retry (attempt 1/3)."
+  },
+  "artifact_digest": "sha256:33d0e401de1f28dfff28751e4f8878d13f84975d9f53326c8ae2f84a2746f500",
+  "verifier": null,
+  "tool_events": [
+    {
+      "seq": 1,
+      "tool": "rehearsal_exec",
+      "args_sha256": "4393e6ef47f0aadea41b28388702f1dfee5321d2881b821e3c5a5bca198739a9",
+      "allowed": false,
+      "rule": "free_text_command",
+      "result": null,
+      "at": "2026-11-02T12:47:11.887578+00:00",
+      "origin": "probe"
+    },
+    {
+      "seq": 2,
+      "tool": "rehearsal_exec",
+      "args_sha256": "c38fd189387c4ef9560a232a364e8ac597fe06c90d804eb14de6fb53bdcc323b",
+      "allowed": false,
+      "rule": "kubectl_not_allowed",
+      "result": null,
+      "at": "2026-11-02T12:47:11.889365+00:00",
+      "origin": "probe"
+    },
+    {
+      "seq": 3,
+      "tool": "inventory_describe",
+      "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T12:47:14.716815+00:00"
+    },
+    {
+      "seq": 4,
+      "tool": "controls_describe",
+      "args_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:47:14.782113+00:00"
+    },
+    {
+      "seq": 5,
+      "tool": "rehearsal_exec",
+      "args_sha256": "f7fc337651c540ea70aad0529bcccce9d1744f7752e0ea99982e30a3d32959a1",
+      "allowed": false,
+      "rule": "path_outside_workspace",
+      "result": null,
+      "at": "2026-11-02T12:47:16.167998+00:00"
+    },
+    {
+      "seq": 6,
+      "tool": "rehearsal_exec",
+      "args_sha256": "c8f7fa0bd1c975b254645bc369f28d6c3cb0c3760e66fbed14b1d4ab6b9cf762",
+      "allowed": false,
+      "rule": "path_outside_workspace",
+      "result": null,
+      "at": "2026-11-02T12:47:17.263882+00:00"
+    },
+    {
+      "seq": 7,
+      "tool": "rehearsal_exec",
+      "args_sha256": "d612158b88f30feeddcb81eaec07ecf35cc4c809e1e8ffdbfc5f8eb5b2285932",
+      "allowed": false,
+      "rule": "path_outside_workspace",
+      "result": null,
+      "at": "2026-11-02T12:47:18.386296+00:00"
+    },
+    {
+      "seq": 8,
+      "tool": "rehearsal_exec",
+      "args_sha256": "ca7aa18e475d3ac650e60c766d2702437574d6fc7795d10d0a56ca45d92c0e00",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:47:19.965522+00:00"
+    },
+    {
+      "seq": 9,
+      "tool": "rehearsal_exec",
+      "args_sha256": "dfd2627ac97c0db405351b545002c87baf08997915d506ceb5de9ab56337675d",
+      "allowed": false,
+      "rule": "path_outside_workspace",
+      "result": null,
+      "at": "2026-11-02T12:47:20.255307+00:00"
+    },
+    {
+      "seq": 10,
+      "tool": "policy_evaluate",
+      "args_sha256": "c85eefb62168cbdec897279620d765d301e267f0d4fd1be83220f4aee5d839c6",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T12:47:30.162408+00:00"
+    },
+    {
+      "seq": 11,
+      "tool": "plan_propose",
+      "args_sha256": "c85eefb62168cbdec897279620d765d301e267f0d4fd1be83220f4aee5d839c6",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T12:47:36.257003+00:00"
+    }
+  ],
+  "hook_events": [
+    {
+      "seq": 1,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__inventory_describe",
+      "tool_input_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "at": "2026-11-02T12:47:14.705395+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 2,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__controls_describe",
+      "tool_input_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326",
+      "at": "2026-11-02T12:47:14.706748+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 3,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__inventory_describe",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:47:14.721602+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 4,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__controls_describe",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:47:14.783686+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 5,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "f7fc337651c540ea70aad0529bcccce9d1744f7752e0ea99982e30a3d32959a1",
+      "at": "2026-11-02T12:47:16.164879+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 6,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "c8f7fa0bd1c975b254645bc369f28d6c3cb0c3760e66fbed14b1d4ab6b9cf762",
+      "at": "2026-11-02T12:47:17.260805+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 7,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "d612158b88f30feeddcb81eaec07ecf35cc4c809e1e8ffdbfc5f8eb5b2285932",
+      "at": "2026-11-02T12:47:18.383453+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 8,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "ca7aa18e475d3ac650e60c766d2702437574d6fc7795d10d0a56ca45d92c0e00",
+      "at": "2026-11-02T12:47:19.929241+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 9,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:47:19.966928+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 10,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "dfd2627ac97c0db405351b545002c87baf08997915d506ceb5de9ab56337675d",
+      "at": "2026-11-02T12:47:20.252850+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 11,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "c85eefb62168cbdec897279620d765d301e267f0d4fd1be83220f4aee5d839c6",
+      "at": "2026-11-02T12:47:30.158927+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 12,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:47:30.163474+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 13,
+      "kind": "tool_request",
+      "tool_name": "StructuredOutput",
+      "tool_input_sha256": "336b1e7908f017b930a57c75ee6e7daad5a6a71cb98a2c65172d508072621d8d",
+      "at": "2026-11-02T12:47:36.145865+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 14,
+      "kind": "tool_result",
+      "tool_name": "StructuredOutput",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:47:36.149542+00:00",
+      "authoritative": false
+    }
+  ],
+  "isolation": {
+    "rehearsal-49a4a94d-1": {
+      "pod": "rehearsal-sandbox-t-10746102ce",
+      "checks": [
+        {
+          "check": "control_exec",
+          "exit_code": 0,
+          "at": 1793623625.31395
+        },
+        {
+          "check": "egress",
+          "target": "1.1.1.1:443",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793623625.3139682,
+          "seconds": 3.07
+        },
+        {
+          "check": "egress",
+          "target": "169.254.169.254:80",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793623628.3860009,
+          "seconds": 3.09
+        },
+        {
+          "check": "privileged_pod_admission",
+          "admitted": false,
+          "result": "rejected",
+          "at": 1793623631.477139
+        }
+      ],
+      "baseline_notes": []
+    },
+    "verify-49a4a94d-1": {
+      "pod": "verify-runner-t-10746102ce",
+      "checks": [
+        {
+          "check": "control_exec",
+          "exit_code": 0,
+          "at": 1793623702.892524
+        },
+        {
+          "check": "egress",
+          "target": "1.1.1.1:443",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793623702.8925261,
+          "seconds": 3.06
+        },
+        {
+          "check": "egress",
+          "target": "169.254.169.254:80",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793623705.9573078,
+          "seconds": 3.15
+        },
+        {
+          "check": "privileged_pod_admission",
+          "admitted": false,
+          "result": "rejected",
+          "at": 1793623709.110326
+        }
+      ],
+      "baseline_notes": []
+    }
+  },
+  "namespaces": [
+    "rehearsal-49a4a94d-1",
+    "verify-49a4a94d-1"
+  ],
+  "leftovers": [],
+  "harbor_trial_dir": "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/runs/t-10746102ce9649f89284a37bc20c5116",
+  "verifier_kind": "static_rules",
+  "worker_started": true,
+  "created_at": "2026-11-02T12:47:02.314284+00:00",
+  "label": "RKE2 기록"
+}

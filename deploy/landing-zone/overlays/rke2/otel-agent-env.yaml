@@ -1,0 +1,9 @@
+# On-prem RKE2 (environment target-onprem): the agent marks everything it forwards with bravo.env=target-onprem.
+# Layered over base/otel-agent-values.yaml by scripts/otel-link.sh (helm replaces the attribute list whole).
+config:
+  processors:
+    resource/env:
+      attributes:
+        - {key: bravo.env, value: target-onprem, action: upsert}
+        - {key: deployment.environment.name, value: target-onprem, action: insert}
+        - {key: cloud.provider, value: onprem, action: upsert}

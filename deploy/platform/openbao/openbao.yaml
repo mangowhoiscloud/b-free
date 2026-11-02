@@ -184,7 +184,17 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: ["executor", "rehearsal"]
+                values: ["executor", "rehearsal", "api"]
+      ports:
+        - port: https
+    # D-16 link t1-plat-bao: the platform tunnel connector carries GKE External Secrets (Access service token).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cf-edge
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared
       ports:
         - port: https
   egress:

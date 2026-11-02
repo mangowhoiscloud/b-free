@@ -48,7 +48,7 @@ function optionalUrl(v: unknown): string | null {
 
 const SVC_BASE = `${import.meta.env.BASE_URL}svc`;
 const DEFAULT_FRONT = 'b-free-chat.mangowhois.ai';
-const DEFAULT_APP_ENVS = 'bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai';
+const DEFAULT_APP_ENVS = 'source-aws=b-free-chat-src.mangowhois.ai,target-onprem=b-free-chat-dst.mangowhois.ai';
 
 function parseAppEnvs(v: unknown): { id: string; host: string }[] {
   if (typeof v !== 'string') return [];

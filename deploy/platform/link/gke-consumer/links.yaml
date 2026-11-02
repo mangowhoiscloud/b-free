@@ -1,0 +1,200 @@
+# D-16 links consumed by the GKE target (context bravo-target-gcp). They replace the laptop reverse-tunnel agents
+# (infra/envs/target-gcp/scripts/links.sh, 임시 링크(D-16 전)): each Service keeps its name and port, so ESO, the
+# OTel agent and the app do not change. The pod is `cloudflared access tcp` to a hostname behind Cloudflare Access
+# (Service Auth, one service token per link, kept in OpenBao secret/envs/target-gcp/cf-link-*; the Secret here is
+# piped from there by deploy/platform/scripts/gke-links.sh). No laptop process, no inbound port.
+---
+# GKE External Secrets -> platform OpenBao (D-26): openbao.external-secrets.svc:8200 -> t1-plat-bao.mangowhois.ai
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openbao
+  namespace: external-secrets
+  labels: {app.kubernetes.io/name: openbao, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: openbao}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: openbao, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba # 2026.10.7
+          args: ["access", "tcp", "--hostname", "t1-plat-bao.mangowhois.ai", "--url", "0.0.0.0:8200", "--loglevel", "info"]
+          env:
+            - name: TUNNEL_SERVICE_TOKEN_ID
+              valueFrom: {secretKeyRef: {name: cf-link-plat-bao, key: client_id}}
+            - name: TUNNEL_SERVICE_TOKEN_SECRET
+              valueFrom: {secretKeyRef: {name: cf-link-plat-bao, key: client_secret}}
+          ports: [{name: client, containerPort: 8200}]
+          readinessProbe: {tcpSocket: {port: client}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: client}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openbao
+  namespace: external-secrets
+  labels: {app.kubernetes.io/name: openbao, app.kubernetes.io/part-of: bravo-link}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: openbao}
+  ports: [{name: client, port: 8200, targetPort: client}]
+---
+# Same-namespace clients only; out: DNS and Cloudflare edge (443 / 7844), nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openbao
+  namespace: external-secrets
+  labels: {app.kubernetes.io/name: openbao, app.kubernetes.io/part-of: bravo-link}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: openbao}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {}}]
+      ports: [{port: client}]
+  egress:
+    # GKE NodeLocal DNSCache answers the kube-dns Service address (node-local-dns pods), kube-dns behind it.
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchExpressions: [{key: k8s-app, operator: In, values: [kube-dns, node-local-dns]}]}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [169.254.169.254/32]}}]
+      ports: [{port: 443, protocol: TCP}, {port: 7844, protocol: TCP}, {port: 7844, protocol: UDP}]
+---
+# GKE OTel agent -> platform Collector (D-23): platform-otel.bravo-observability.svc:4317 -> t1-plat-otel.mangowhois.ai
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-otel
+  namespace: bravo-observability
+  labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: platform-otel}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba # 2026.10.7
+          args: ["access", "tcp", "--hostname", "t1-plat-otel.mangowhois.ai", "--url", "0.0.0.0:4317", "--loglevel", "info"]
+          env:
+            - name: TUNNEL_SERVICE_TOKEN_ID
+              valueFrom: {secretKeyRef: {name: cf-link-plat-otel, key: client_id}}
+            - name: TUNNEL_SERVICE_TOKEN_SECRET
+              valueFrom: {secretKeyRef: {name: cf-link-plat-otel, key: client_secret}}
+          ports: [{name: client, containerPort: 4317}]
+          readinessProbe: {tcpSocket: {port: client}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: client}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-otel
+  namespace: bravo-observability
+  labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/part-of: bravo-link}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: platform-otel}
+  ports: [{name: client, port: 4317, targetPort: client}]
+---
+# Same-namespace clients only; out: DNS and Cloudflare edge (443 / 7844), nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-otel
+  namespace: bravo-observability
+  labels: {app.kubernetes.io/name: platform-otel, app.kubernetes.io/part-of: bravo-link}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: platform-otel}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {}}]
+      ports: [{port: client}]
+  egress:
+    # GKE NodeLocal DNSCache answers the kube-dns Service address (node-local-dns pods), kube-dns behind it.
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchExpressions: [{key: k8s-app, operator: In, values: [kube-dns, node-local-dns]}]}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [169.254.169.254/32]}}]
+      ports: [{port: 443, protocol: TCP}, {port: 7844, protocol: TCP}, {port: 7844, protocol: UDP}]
+---
+# GKE app / PgBouncer -> source CNPG before cutover (§8.6): src-db-link.chat.svc:5432 -> t1-src-db.mangowhois.ai
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: src-db-link
+  namespace: chat
+  labels: {app.kubernetes.io/name: src-db-link, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: src-db-link}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: src-db-link, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba # 2026.10.7
+          args: ["access", "tcp", "--hostname", "t1-src-db.mangowhois.ai", "--url", "0.0.0.0:5432", "--loglevel", "info"]
+          env:
+            - name: TUNNEL_SERVICE_TOKEN_ID
+              valueFrom: {secretKeyRef: {name: cf-link-src-db, key: client_id}}
+            - name: TUNNEL_SERVICE_TOKEN_SECRET
+              valueFrom: {secretKeyRef: {name: cf-link-src-db, key: client_secret}}
+          ports: [{name: client, containerPort: 5432}]
+          readinessProbe: {tcpSocket: {port: client}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: client}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: src-db-link
+  namespace: chat
+  labels: {app.kubernetes.io/name: src-db-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: src-db-link}
+  ports: [{name: client, port: 5432, targetPort: client}]
+---
+# Same-namespace clients only; out: DNS and Cloudflare edge (443 / 7844), nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: src-db-link
+  namespace: chat
+  labels: {app.kubernetes.io/name: src-db-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: src-db-link}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {}}]
+      ports: [{port: client}]
+  egress:
+    # GKE NodeLocal DNSCache answers the kube-dns Service address (node-local-dns pods), kube-dns behind it.
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchExpressions: [{key: k8s-app, operator: In, values: [kube-dns, node-local-dns]}]}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [169.254.169.254/32]}}]
+      ports: [{port: 443, protocol: TCP}, {port: 7844, protocol: TCP}, {port: 7844, protocol: UDP}]

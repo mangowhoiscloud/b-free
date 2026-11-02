@@ -51,3 +51,48 @@ export function shortId(id: string | null | undefined, n = 8): string {
   if (!id) return '—';
   return id.length > n + 1 ? `${id.slice(0, n)}…` : id;
 }
+
+/* DESIGN-REFERENCE §5 number and time formats. */
+const tsFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const clockFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+/** `2026-11-02 21:31 UTC+9` (KST and JST share the offset). */
+export function fmtTs(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '—';
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '—' : `${tsFmt.format(d)} UTC+9`;
+}
+
+/** `21:31:08` in UTC+9, for "last updated" lines next to a dated context. */
+export function fmtClock(v: number | null | undefined): string {
+  if (!v) return '—';
+  return clockFmt.format(new Date(v));
+}
+
+/** Latency: integer ms under 1000, else seconds with two decimals. */
+export function fmtLatency(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return '—';
+  return ms < 1000 ? `${Math.round(ms).toLocaleString('en-US')} ms` : `${(ms / 1000).toFixed(2)} s`;
+}
+
+/** Ratio as percent with one decimal: `0.4 %`. */
+export function fmtPct(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  return `${v.toFixed(1)} %`;
+}
+
+/** Money `$1,234.56`; hourly unit prices keep four decimals (`$0.0832`). */
+export function fmtMoney(v: number | null | undefined, currency = 'USD', unitPrice = false): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const digits = unitPrice ? 4 : 2;
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v);
+  } catch {
+    return `${v.toFixed(digits)} ${currency}`;
+  }
+}
+
+/** Counts with thousands separators. */
+export function fmtCount(v: number | null | undefined): string {
+  return v === null || v === undefined || !Number.isFinite(v) ? '—' : Math.round(v).toLocaleString('en-US');
+}

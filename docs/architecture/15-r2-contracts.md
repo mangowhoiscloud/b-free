@@ -76,7 +76,7 @@ S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` P
 
 ## 3. 의존성 인벤토리(`platform/collector`, :8083)
 
-`GET /v1/inventory`(`BRAVO_INVENTORY_ROOT`가 없으면 503). 형식 `inventory/v1`:
+`GET /v1/inventory`(`BRAVO_INVENTORY_ROOT`가 없으면 503). 스캔할 파일이 하나도 없으면(빈 emptyDir, 실패한 checkout) 503 `inventory_root_empty`입니다. "의존성 없음"이 아닙니다. 형식 `inventory/v1`:
 
 | 필드 | 뜻 |
 |---|---|
@@ -87,6 +87,8 @@ S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` P
 | `summary` | 등급 코드별 의존성 수 |
 | `findings[]`, `unclassified[]` | 항목: `id`(16 hex), `rule_id`, `tier`(한국어 등급), `tier_code`(`config_swap` · `adapter` · `code_change` · `no_change` · `unclassified`), `service`, `kind`, `file`, `line`, `evidence`(비밀 가림, 200자), `reason`, `hardcoded`, `confidence`(`rule`) |
 | `test_summary`, `test_findings[]` | 시험 코드의 항목(이전 범위 밖, 버리지 않음) |
+
+API는 `inventory_root_empty`를 "인벤토리 없음"으로 받습니다. 계획은 ANALYZE에 머물고 `state_reason`과 `plan.analysis.inventory`가 `{"status": "unavailable", "reason": "inventory_root_empty"}`입니다. 수집기 장애(`collector_*`)와 구분하고, 리허설 시작에서는 시도로 세지 않습니다.
 
 API는 `findings[]`와 `unclassified[]`에서 `tier_code`가 `code_change` · `unclassified`인 항목을 공백으로 셉니다. 공백이 있으면 PROPOSE, 없으면 GATE입니다. 수집기가 설정되지 않았거나 읽지 못하면 ANALYZE에 머물고 `state_reason`이 `collector_unconfigured` 또는 `collector_*`입니다(감사 A4). `GET /v1/clusters`는 환경별 실시간 클러스터 보기이고 `GET /v1/environments`의 `cluster`가 이 값을 씁니다.
 
@@ -100,6 +102,7 @@ API는 `findings[]`와 `unclassified[]`에서 `tier_code`가 `code_change` · `u
 
 | 요청 | 응답 |
 |---|---|
+| `GET /v1/me` (멤버 누구나) | `{"email", "tenant_id", "roles": [...], "role": "<가장 높은 역할>", "principal": {"id", "iss", "sub"}}` |
 | `GET /v1/plans?limit=100` (viewer 이상) | `{"plans": [{"plan_id", "workload", "state", "state_reason", "rehearsal", "revision", "source": {"environment_id", "name"}, "target": {...}, "pending_approval": {"stage", "approval_request_id", "expires_at", "approve_url"} \| null, "change": {"change_id", "status"} \| null, "created_at", "updated_at", "console_url"}]}` 최신순 |
 | `GET /v1/environments` (viewer 이상) | `{"environments": [{"environment_id", "name", "role", "engine", "secret_ref", "secret_status"("resolved" · "unverified"), "secret_reason", "secret_checked_at", "cluster", "created_at"}], "cluster_source": {"status"("ok" · "unconfigured" · "error"), "reason", "observed_at"}}`. `cluster`는 수집기 값 `{"status", "provider", "context", "server_version", "nodes", "error"}`, 또는 `{"status": "not_configured" \| "unknown", "reason"}` |
 | `POST /v1/environments` (operator) `{"name", "role": "source"\|"target", "secret_ref"}` | 201 `{"environment_id", "name", "role", "engine", "secret_status", "secret_reason"}`. `secret_ref`는 `tenants/<tenant>/…` 또는 `envs/<이 환경 이름>/…`(플랫폼 OpenBao 배치). 422 `secret_ref_out_of_scope` · `secret_ref_not_found`, 409 `environment_name_taken` |
@@ -195,8 +198,8 @@ API → `platform/rehearsal`. 순서: 수집기 인벤토리 → 수집기 스�
 - 헤더: `Authorization: Bearer <BRAVO_REHEARSAL_API_TOKEN>`, `Idempotency-Key: rehearsal-<rehearsal_id>`.
 - `attempt` = 지금까지의 FAIL 판정 수 + 1. 전제 조건 · 인프라 재시도는 같은 번호를 씁니다.
 - 스냅숏: `PUT` 본문 tar.gz, 헤더 `X-Bravo-Inventory-Digest: <input_digest>`, `Content-Type: application/gzip`. 200 `{tenant_id, plan_id, input_digest, files, withheld}`, 422 `{"error": "snapshot_digest_mismatch" | …}`.
-- **연결 안 됨:** 수집기에 스냅숏 엔드포인트가 아직 없습니다. 제안: `GET /v1/inventory/snapshot`(스캔한 파일만 tar.gz, 헤더 `X-Bravo-Inventory-Digest`, 루트가 없으면 503). 그전까지 실제 수집기로는 모든 리허설 시작이 `snapshot_unavailable`로 멈추고, 시도로 세지 않습니다.
-- 시도로 세지 않는 "아무것도 돌지 않음" 이유: `llm_unconfigured`, `cluster_unconfigured`, `rehearsal_unreachable`, `task_unknown`, `verifier_unconfigured`, `tool_layer_unconfigured`, `role_task_mismatch`, `role_unknown`, `role_allowlist_missing`, `role_allowlist_invalid`, `unauthorized`, `envelope_invalid`, `state_not_allowed_for_role`, `agent_runtime_unavailable`, `openbao_unconfigured`, `openbao_unreachable`, `openbao_denied`, `llm_token_missing`, `bad_request`, `idempotency_key_reuse`, `inventory_unavailable`, `collector_unreachable`, `collector_response_lost`, `collector_bad_response`, `snapshot_unavailable`, `snapshot_inventory_mismatch`, `snapshot_upload_failed`, 그리고 리허설 서비스의 스냅숏 거부 코드(`snapshot_*`, `bad_inventory_digest`, `bad_snapshot_key`, `inventory_digest_missing`).
+- 수집기 `GET /v1/inventory/snapshot`(2026-11-02 저녁 추가): 스캔한 파일만 tar.gz, 헤더 `X-Bravo-Inventory-Digest`. 파일이 없으면 503 `{"error": "inventory_root_empty"}`. 실제 수집기 → 실제 리허설 서비스까지 시험이 통과합니다(`tests/test_rehearsal.py::test_real_collector_snapshot_reaches_the_real_rehearsal_service`).
+- 시도로 세지 않는 "아무것도 돌지 않음" 이유: `llm_unconfigured`, `cluster_unconfigured`, `rehearsal_unreachable`, `task_unknown`, `verifier_unconfigured`, `tool_layer_unconfigured`, `role_task_mismatch`, `role_unknown`, `role_allowlist_missing`, `role_allowlist_invalid`, `unauthorized`, `envelope_invalid`, `state_not_allowed_for_role`, `agent_runtime_unavailable`, `openbao_unconfigured`, `openbao_unreachable`, `openbao_denied`, `llm_token_missing`, `bad_request`, `idempotency_key_reuse`, `inventory_unavailable`, `inventory_root_empty`, `collector_unreachable`, `collector_response_lost`, `collector_bad_response`, `snapshot_unavailable`, `snapshot_inventory_mismatch`, `snapshot_upload_failed`, 그리고 리허설 서비스의 스냅숏 거부 코드(`snapshot_*`, `bad_inventory_digest`, `bad_snapshot_key`, `inventory_digest_missing`).
 
 ## 스펙 밖
 

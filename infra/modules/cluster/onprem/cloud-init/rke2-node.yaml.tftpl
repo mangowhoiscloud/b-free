@@ -15,6 +15,15 @@ write_files:
       kernel.panic_on_oops=1
       fs.inotify.max_user_instances=8192
       fs.inotify.max_user_watches=524288
+  # Ceph RBD through rbd-nbd (the kernel 6.8 krbd cannot use Ceph Tentacle keys).
+  - path: /etc/modules-load.d/bravo-nbd.conf
+    permissions: "0644"
+    content: |
+      nbd
+  - path: /etc/modprobe.d/bravo-nbd.conf
+    permissions: "0644"
+    content: |
+      options nbd nbds_max=64
   - path: /etc/rancher/rke2/config.yaml
     permissions: "0600"
     content: |
@@ -83,6 +92,7 @@ write_files:
       log() { echo "bravo-rke2-bootstrap[$ROLE]: $*"; }
       # CIS host conditions.
       sysctl --system >/dev/null
+      modprobe nbd 2>/dev/null || log "nbd module not loaded (RBD rbd-nbd mounts will fail)"
       if [ "$ROLE" = server ]; then
         getent group etcd >/dev/null || groupadd --system etcd
         id etcd >/dev/null 2>&1 || useradd --system --no-create-home --gid etcd --shell /sbin/nologin --comment "etcd user" etcd

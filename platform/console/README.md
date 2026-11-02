@@ -52,15 +52,16 @@
 | `BRAVO_DNS_RESOLVER` | `127.0.0.11` | nginx가 프록시 대상 이름을 푸는 DNS(클러스터에서는 kube-dns 주소) |
 | `BRAVO_GRAFANA_URL` · `BRAVO_PROMETHEUS_URL` · `BRAVO_TEMPO_URL` | 비어 있음 | 관측 화면 링크. 비어 있으면 "연결 안 됨" |
 | `BRAVO_PUBLIC_FRONT_HOST` | `b-free-chat.mangowhois.ai` | 고객 데모 앱 대표 이름(`b-free`는 플랫폼) |
-| `BRAVO_APP_ENVS` | `bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai` | 수집기 클러스터 ID 또는 kubectl 컨텍스트 → 공개 이름 |
+| `BRAVO_APP_ENVS` | `source-aws=b-free-chat-src.mangowhois.ai,target-onprem=b-free-chat-dst.mangowhois.ai` | 수집기 클러스터 ID(CLOUD-E2E-CONTRACT §2 환경 ID) 또는 kubectl 컨텍스트 → 공개 이름 |
 | `BRAVO_DOH_URL` | `https://cloudflare-dns.com/dns-query` | 공개 이름 확인용 DNS-over-HTTPS(JSON). 비우면 확인하지 않음 |
 
 개발 서버는 `VITE_API_BASE`(필수), `VITE_GRAFANA_URL` · `VITE_PROMETHEUS_URL` · `VITE_TEMPO_URL` · `VITE_DOH_URL` · `VITE_APP_ENVS`(선택)를 읽고, `vite.config.ts`가 `/svc/<name>/`를 `BRAVO_*_UPSTREAM`으로 넘깁니다.
 
 ## API와 맞춘 것
 
-- 인증: 배포(`b-free`, Cloudflare Access 뒤, 콘솔과 API가 같은 출처)에서는 브라우저가 Access 쿠키를 보내고(`credentials: 'same-origin'`), Cloudflare가 `Cf-Access-Jwt-Assertion`을 붙입니다. 로그인한 사람과 역할은 `GET /v1/me`로 받습니다. 로컬 실행에서는 개발용 사용자를 `GET /v1/dev/tokens`에서 받아 그 토큰을 헤더로 보냅니다. 토큰은 저장하지 않습니다.
-- `GET /v1/me`, `GET /v1/plans`, `GET /v1/environments`는 플랫폼 API 작업이 추가하는 중이고 응답 형식 계약이 아직 없습니다. `src/api/home.ts`가 방어적으로 읽고(목록은 배열 또는 `{plans|environments|items: [...]}`), 없는 값은 "—"로 둡니다.
+- 인증은 Cloudflare Access뿐입니다(감사 A3). 콘솔과 API가 같은 출처(`b-free`)이고, 모든 요청(API와 `/svc/...`)이 Access 쿠키를 보내며(`credentials: 'same-origin'`), Cloudflare가 `Cf-Access-Jwt-Assertion`을 붙입니다. 쿠키 없는 요청은 Access 로그인으로 넘겨져 브라우저에서 "Failed to fetch"가 됩니다. 로그인한 사람과 역할은 `GET /v1/me`로 받고 헤더에 보입니다. 개발용 토큰 입력과 `GET /v1/dev/tokens` 호출은 없앴습니다. 계획 열기 · 새 계획은 계획 화면 안에 있습니다.
+- `GET /v1/plans`(`{plans: [{plan_id, workload, state, source{name}, target{name}, pending_approval{stage}, change, created_at}]}`), `GET /v1/environments`(`{environments: [{environment_id, name, role, cluster{status, provider, nodes}, secret_status}]}`)는 `platform/api/src/bravo_api/service.py`를 따라 읽습니다. `GET /v1/me`는 형식 계약 전이라 `email`, `role`을 방어적으로 읽습니다(`src/api/home.ts`). 없는 값은 "—"입니다.
+- 화면 문구는 상태를 단정하지 않습니다. 상태는 데이터(수집기 · API)에서 만들고, 출처가 없으면 "이 콘솔은 … 출처가 없습니다"라고만 씁니다. 배포판(EKS · RKE2 · K3s · GKE)은 노드 kubelet 버전에서 읽고, 환경 사이 링크는 수집기가 보는 이름에 link가 들어간 워크로드로 보입니다.
 - 쓰기 요청마다 `Idempotency-Key`를 보냅니다. 승인은 승인 요청 ID마다, 컷오버는 승인 ID마다 키 하나를 씁니다. 같은 키로 다시 보내면 서버가 처음 결과를 돌려줍니다.
 - 이벤트 흐름은 `fetch` 기반 SSE(`@microsoft/fetch-event-source`)입니다. `EventSource`는 헤더를 못 보내기 때문입니다. 끊기면 `Last-Event-ID`로 다시 붙습니다.
 - 주소 `/plans/<plan_id>`는 API의 `console_url`과 같습니다. `#approve`로 열면 승인 칸으로 갑니다.

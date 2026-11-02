@@ -1,0 +1,10 @@
+# RBD pool bravo-rbd, 2 replicas (one per VM/OSD, failure domain host), for the landing-zone block
+# StorageClasses when BRAVO_BLOCK_BACKING=rbd (storageclasses-rbd.yaml).
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: bravo-rbd
+  namespace: rook-ceph
+spec:
+  failureDomain: host
+  replicated: {size: 2, requireSafeReplicaSize: false}

@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bravo-control
+resources:
+  - job.yaml
+configMapGenerator:
+  - name: access-environments
+    files:
+      - environments.json=../access/environments.json
+images:
+  - name: bravo/api
+    newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
+    digest: sha256:832b16cdf3ea143fec05b942bc18314179dd2c11176e5c4c5619af35a3c0070d  # r2-20261102T130026Z (includes migration 0007)

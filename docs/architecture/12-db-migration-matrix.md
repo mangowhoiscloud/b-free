@@ -491,7 +491,8 @@ WHERE rolname IN ('postgres', 'alloydbsuperuser');
 - 실행: `deploy/pilot/spike-db/`. `run.sh <facts|privileges|seed|fwd-sub|digest|rev-sub|cutover|failback|pgb|spk09|probe>`, `SPIKE_SIDE=rds|cloudsql`. 비밀은 플랫폼 OpenBao `secret/envs/spike-db/*`에서 환경 변수로만 받습니다.
 - 비용(공식 요금표 기준 추정, 실제 청구는 Cost Explorer · Billing에서 `component=spike`로 확인):
   - AWS: RDS 수명 0.625시간. 인스턴스 $0.0156, gp3 $0.0022, 비밀 $0.0003, 전송 상한 $0.02. 합계 상한 약 $0.04(`R/cost.json`).
-  - Google: `G/cost.json`.
+  - Google: Cloud SQL ZONAL 0.505시간 + REGIONAL 0.558시간 $0.0223, HDD 10 GiB $0.0026, AlloyDB 2 vCPU · 16 GiB 0.267시간 $0.1064, 링크 VM $0.0078(추정), 전송 상한 $0.02. 합계 상한 약 $0.16(`G/cost.json`).
+- 정리: 두 스파이크 모두 `terraform destroy` 완료. EKS 네임스페이스 `spike-db`, 노트북 컨테이너, OpenBao `secret/envs/spike-db/*`도 지웠습니다. GCP 첫 destroy는 두 가지로 실패했습니다. AlloyDB 클러스터의 provider 기본 `deletion_protection`, 그리고 **논리 복제 구독이 있는 동안 Cloud SQL이 DB 삭제를 거부함**(`database "chat" is being used by logical replication subscription`). 두 번째는 관리형 DB 모듈(7절)에도 해당합니다. 구독을 먼저 지우거나 DB 자원을 `deletion_policy = "ABANDON"`으로 둡니다(`G/destroy1-errors.log`).
 
 ## 12. 열린 것
 

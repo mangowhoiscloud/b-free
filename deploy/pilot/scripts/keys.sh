@@ -30,7 +30,7 @@
 #                                               env only (cosign --key hashivault://bravo-supply-chain); revoked after CMD
 #   keys.sh signer-pubkey [FILE]                public key of bravo-supply-chain (PEM) -> FILE or stdout (not secret)
 #   keys.sh env-fields ENV NAME                   field names of secret/envs/ENV/NAME (no values)
-#   keys.sh k8s-auth-setup                        platform-rke2: Kubernetes auth + role rehearsal (root once, revoked)
+#   keys.sh k8s-auth-setup                        platform-rke2: Kubernetes auth + roles rehearsal, api (root once, revoked)
 #   keys.sh env-list [ENV]                        secret names under secret/envs/ (or secret/envs/ENV/), no values
 #   keys.sh --target platform-eks CMD          any command against the platform EKS OpenBao (port-forward)
 #   keys.sh --target platform-eks tls           platform CA + server cert -> Secret openbao/openbao-tls
@@ -911,11 +911,33 @@ cmd_k8s_auth_setup() {
       api POST auth/token/revoke-self "$root" >/dev/null
       jq -n --arg at "$(now)" '{root_token_revoked_at: $at}' | custody_merge
       log "auth/kubernetes config + role rehearsal written with root (revoked)"
+      k8s_auth_roles_admin "$admin"
       return 0; }
   printf '%s' '{"bound_service_account_names":["rehearsal"],"bound_service_account_namespaces":["bravo-control"],
     "token_policies":["platform-rehearsal"],"token_ttl":"1h","token_max_ttl":"4h","token_type":"service"}' \
     | api -d POST auth/kubernetes/role/rehearsal "$admin" >/dev/null
   log "auth/kubernetes config + role rehearsal (SA bravo-control/rehearsal -> platform-rehearsal)"
+  k8s_auth_roles_admin "$admin"
+}
+
+# Platform API: environment secret_ref check reads KV metadata only (15-r2-contracts, platform/api secretrefs.py).
+POLICY_API_SECRETREF='# Platform API (D-26): existence/version of environment chat-db secrets, never their values.
+path "secret/metadata/envs/+/chat-db" { capabilities = ["read"] }'
+
+k8s_auth_roles_admin() { # roles writable with the platform-admin token (auth/kubernetes/role/* is under auth/)
+  local admin=$1
+  put_policy platform-api-secretref "$POLICY_API_SECRETREF" "$admin"
+  printf '%s' '{"bound_service_account_names":["api"],"bound_service_account_namespaces":["bravo-control"],
+    "token_policies":["platform-api-secretref"],"token_ttl":"1h","token_max_ttl":"4h","token_type":"service"}' \
+    | api -d POST auth/kubernetes/role/api "$admin" >/dev/null 2>&1 && { log "auth/kubernetes role api (SA bravo-control/api -> platform-api-secretref)"; return 0; }
+  local root
+  cmd_generate_root >/dev/null; root="$(custody_get .root_token)"
+  printf '%s' '{"bound_service_account_names":["api"],"bound_service_account_namespaces":["bravo-control"],
+    "token_policies":["platform-api-secretref"],"token_ttl":"1h","token_max_ttl":"4h","token_type":"service"}' \
+    | api -d POST auth/kubernetes/role/api "$root" >/dev/null
+  api POST auth/token/revoke-self "$root" >/dev/null
+  jq -n --arg at "$(now)" '{root_token_revoked_at: $at}' | custody_merge
+  log "auth/kubernetes role api written with root (revoked)"
 }
 
 # --- platform-eks (deploy/platform/openbao) --------------------------------------------------------------

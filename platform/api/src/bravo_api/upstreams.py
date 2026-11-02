@@ -92,6 +92,21 @@ def _finding_ok(f: Any) -> bool:
     )
 
 
+ROOT_EMPTY = "inventory_root_empty"  # collector: nothing mounted to scan (503), on /v1/inventory and /snapshot
+
+
+def _collector_code(resp: httpx.Response) -> str | None:
+    """The collector's reason code from a 503 body: ``{"error": code}`` or FastAPI ``{"detail": "code: text"}``."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    raw = body.get("error") if isinstance(body.get("error"), str) else body.get("detail")
+    return raw.split(":", 1)[0].strip() if isinstance(raw, str) else None
+
+
 class CollectorClient(_Client):
     """platform/collector: ``GET /v1/inventory`` (FR-2, T16) and the repo snapshot that matches it.
 
@@ -116,6 +131,9 @@ class CollectorClient(_Client):
 
     async def inventory(self) -> dict[str, Any]:
         resp = await self._request("GET", "/v1/inventory")
+        if resp.status_code == 503 and _collector_code(resp) == ROOT_EMPTY:
+            # Nothing mounted to scan: the repository is missing, not "no dependencies" and not unreachable.
+            raise UpstreamError(ROOT_EMPTY, 503)
         if resp.status_code != 200:
             raise UpstreamError(f"collector_http_{resp.status_code}", resp.status_code)
         body = self._json(resp, self.name)
@@ -144,6 +162,8 @@ class CollectorClient(_Client):
             resp = await self._client.request("GET", "/v1/inventory/snapshot", timeout=SNAPSHOT_TIMEOUT_S)
         except httpx.HTTPError as exc:
             raise UpstreamError("snapshot_unavailable") from exc
+        if resp.status_code == 503 and _collector_code(resp) == ROOT_EMPTY:
+            raise UpstreamError(ROOT_EMPTY, 503)
         if resp.status_code != 200:
             raise UpstreamError("snapshot_unavailable", resp.status_code)
         if resp.headers.get("x-bravo-inventory-digest") != input_digest:

@@ -62,6 +62,7 @@ const REASON_TEXT: Record<string, string> = {
   token_expired: '토큰이 만료되었습니다.',
   wrong_audience: '콘솔용 토큰이 아닙니다(AUD 불일치).',
   not_a_member: '이 테넌트의 구성원이 아닙니다.',
+  unknown_principal: 'Access 로그인은 되었지만 이 계정이 플랫폼 구성원으로 등록되어 있지 않습니다.',
 };
 
 /** Plain Korean text for an error shown on screen. */

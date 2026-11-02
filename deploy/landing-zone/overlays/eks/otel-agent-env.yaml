@@ -1,0 +1,9 @@
+# Source EKS (environment source-aws): the agent marks everything it forwards with bravo.env=source-aws.
+# Layered over base/otel-agent-values.yaml by scripts/otel-link.sh (helm replaces the attribute list whole).
+config:
+  processors:
+    resource/env:
+      attributes:
+        - {key: bravo.env, value: source-aws, action: upsert}
+        - {key: deployment.environment.name, value: source-aws, action: insert}
+        - {key: cloud.provider, value: aws, action: upsert}

@@ -145,38 +145,27 @@ class SnapshotStore:
 
 
 def pack(repo: Path) -> tuple[bytes, str, int]:
-    """Exactly the files the collector scans, checked against the collector's own input_digest."""
+    """Exactly the files the collector's inventory reads (``scanned_files``: secret-shaped names and files with
+    secret-shaped content are left out there), checked against the collector's own ``input_digest``."""
     try:
-        from bravo_collector.inventory.detector import _walk, file_class, scan
+        from bravo_collector.inventory.detector import scan, scanned_files
     except ImportError as exc:  # pragma: no cover - operator environment
         raise SystemExit("run with the collector's environment (uv run --project platform/collector)") from exc
     root = repo.resolve()
-    chosen: list[tuple[Path, PurePosixPath]] = []
-    for path, rel in _walk(root):
-        if file_class(rel) is None:
-            continue
-        try:
-            if path.stat().st_size > MAX_FILE_BYTES:
-                continue
-            raw = path.read_bytes()
-            if b"\0" in raw[:8192]:
-                continue
-            raw.decode("utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        chosen.append((path, rel))
-    digest = tree_digest(chosen)
+    files = scanned_files(root)
+    digest = hashlib.sha256()
+    for f in files:
+        digest.update(f"{f.rel}\0{hashlib.sha256(f.raw).hexdigest()}\n".encode())
     inventory = scan(root)
-    if inventory.input_digest != digest or inventory.files_scanned != len(chosen):
+    if inventory.input_digest != digest.hexdigest() or inventory.files_scanned != len(files):
         raise SystemExit("file selection differs from the collector's scan; update bravo_rehearsal.snapshot.pack")
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for path, rel in chosen:
-            info = tarfile.TarInfo(str(rel))
-            data = path.read_bytes()
-            info.size, info.mode = len(data), 0o644
-            tar.addfile(info, io.BytesIO(data))
-    return buf.getvalue(), digest, len(chosen)
+        for f in files:
+            info = tarfile.TarInfo(str(f.rel))
+            info.size, info.mode = len(f.raw), 0o644
+            tar.addfile(info, io.BytesIO(f.raw))
+    return buf.getvalue(), digest.hexdigest(), len(files)
 
 
 def main() -> None:

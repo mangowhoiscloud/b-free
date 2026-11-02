@@ -1,0 +1,57 @@
+# D-16 environment-to-environment DB link (CLOUD-E2E-CONTRACT.md 7; infra/modules/edge_link): a
+# cloudflared Access TCP client in the consuming cluster's ns chat, so the logical-replication
+# subscriber (and the source PgBouncer's target-dst.ini) reach the other environment's chat-db-rw
+# through the other side's management tunnel. Service token: Secret ${SECRET} (client_id, client_secret),
+# delivered from OpenBao by env-link.sh. Rendered by env-link.sh (envsubst-free sed); no secret here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${NAME}
+  namespace: chat
+  labels: {app.kubernetes.io/name: ${NAME}, app.kubernetes.io/part-of: bravo-link, app.kubernetes.io/component: env-link}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: ${NAME}}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ${NAME}, app.kubernetes.io/part-of: bravo-link, app.kubernetes.io/component: env-link}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+          imagePullPolicy: IfNotPresent
+          args: ["access", "tcp", "--hostname", "${HOSTNAME}", "--url", "0.0.0.0:5432", "--loglevel", "info"]
+          env:
+            - name: TUNNEL_SERVICE_TOKEN_ID
+              valueFrom: {secretKeyRef: {name: ${SECRET}, key: client_id}}
+            - name: TUNNEL_SERVICE_TOKEN_SECRET
+              valueFrom: {secretKeyRef: {name: ${SECRET}, key: client_secret}}
+          ports: [{name: link, containerPort: 5432}]
+          readinessProbe: {tcpSocket: {port: link}, periodSeconds: 5}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${NAME}
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-link}
+spec:
+  selector: {app.kubernetes.io/name: ${NAME}}
+  ports: [{name: link, port: 5432, targetPort: link}]
+---
+# Only pods of ns chat (the CNPG subscriber, PgBouncer) may use the link.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${NAME}
+  namespace: chat
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: ${NAME}}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: [{podSelector: {}}]
+      ports: [{port: 5432}]

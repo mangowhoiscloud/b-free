@@ -1,0 +1,684 @@
+{
+  "trial_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb",
+  "plan_id": "aedeef1f-a338-4279-8c14-3ec7f4bb56b4",
+  "rehearsal_id": "cli-59ee3a8d",
+  "attempt": 1,
+  "task": "governance",
+  "role": "governance",
+  "phase": "done",
+  "verdict": "PASS",
+  "reason": null,
+  "artifact": {
+    "plan_id": "p-aedeef1f-a338-4279-8c14-3ec7f4bb56b4",
+    "trial_id": "t-e08677b4d9e24a1f82dbc1b5b812edeb",
+    "attempt": 1,
+    "rationale": "I translated these from /src/infra/app.tf and /src/chart/values.yaml. The evidence is incomplete, so risk is high. inventory_describe returned analysis status 'unconfigured', every control row in controls_describe is UNKNOWN for both src and dst, and platform_state.evidence is empty, so I cite no evidence ids. What I translated: (1) The chat_app IAM role became a namespaced Role and RoleBinding in namespace 'chat' for ServiceAccount chat-app (automount off). It can only 'get' two named Secrets and cannot list or watch, and there are no cluster-scoped roles or wildcards. On-prem the app reads its password from a mounted Secret (passwordSource env-file), so it needs no Secrets Manager or KMS API rights. (2) The strong attachments bucket policy became an RGW bucket policy. It has an explicit Deny for non-TLS requests. Allows go only to the RGW user chat-app: s3:ListBucket on the bucket, and s3:GetObject and s3:PutObject on objects. These are the same actions as the source role, and Delete is not granted. The Deny-insecure statement uses a '*' principal only in a Deny, as the source does, and no Allow has a wildcard principal. I did not translate the demo_weak_bucket_policy variant (s3:* for the account root). The bucket name 'chat-attachments' and RGW user ARN are placeholders, because the source uses bucket_prefix and the RGW tenant/user is not in inventory. (3) The external_secrets IAM role became an OpenBao policy, narrowed from the source's '<name>/*' prefix read to two exact paths. It can read and push (create/update) only to db-app, and read chat-admin. List is not granted. (4) The db_app Secrets Manager secret became an ExternalSecret that uses a namespaced SecretStore, not a ClusterSecretStore. Not translated: the KMS CMK and its key policy (S3 SSE-KMS / customer key), aws:kms:ViaService scoping, and S3 versioning/recovery window. There is no target-format type for these in this step. I checked the proposal with policy_evaluate and it came back valid with no problems.",
+    "risk": "high",
+    "evidence_refs": [],
+    "role": "governance",
+    "step": "translate",
+    "translations": [
+      {
+        "source": {
+          "type": "aws_iam_role",
+          "id": "aws_iam_role.chat_app"
+        },
+        "target": {
+          "type": "k8s_rbac",
+          "name": "chat-app"
+        },
+        "document": {
+          "apiVersion": "v1",
+          "kind": "List",
+          "items": [
+            {
+              "apiVersion": "v1",
+              "kind": "ServiceAccount",
+              "metadata": {
+                "name": "chat-app",
+                "namespace": "chat"
+              },
+              "automountServiceAccountToken": false
+            },
+            {
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "kind": "Role",
+              "metadata": {
+                "name": "chat-app",
+                "namespace": "chat"
+              },
+              "rules": [
+                {
+                  "apiGroups": [
+                    ""
+                  ],
+                  "resources": [
+                    "secrets"
+                  ],
+                  "resourceNames": [
+                    "chat-db-app",
+                    "chat-attachments-rgw"
+                  ],
+                  "verbs": [
+                    "get"
+                  ]
+                }
+              ]
+            },
+            {
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "kind": "RoleBinding",
+              "metadata": {
+                "name": "chat-app",
+                "namespace": "chat"
+              },
+              "roleRef": {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "Role",
+                "name": "chat-app"
+              },
+              "subjects": [
+                {
+                  "kind": "ServiceAccount",
+                  "name": "chat-app",
+                  "namespace": "chat"
+                }
+              ]
+            }
+          ]
+        },
+        "control_ids": [
+          "IAM-01",
+          "SEC-01",
+          "ISO-01"
+        ]
+      },
+      {
+        "source": {
+          "type": "aws_s3_bucket_policy",
+          "id": "aws_s3_bucket_policy.attachments"
+        },
+        "target": {
+          "type": "rgw_bucket_policy",
+          "name": "chat-attachments"
+        },
+        "document": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": [
+                  "*"
+                ]
+              },
+              "Action": [
+                "s3:*"
+              ],
+              "Resource": [
+                "arn:aws:s3:::chat-attachments",
+                "arn:aws:s3:::chat-attachments/*"
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            },
+            {
+              "Sid": "ListAttachments",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/chat-app"
+                ]
+              },
+              "Action": [
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::chat-attachments"
+              ]
+            },
+            {
+              "Sid": "ReadWriteAttachments",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/chat-app"
+                ]
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject"
+              ],
+              "Resource": [
+                "arn:aws:s3:::chat-attachments/*"
+              ]
+            }
+          ]
+        },
+        "control_ids": [
+          "IAM-01",
+          "ENC-01",
+          "ISO-01"
+        ]
+      },
+      {
+        "source": {
+          "type": "aws_iam_role",
+          "id": "aws_iam_role.external_secrets"
+        },
+        "target": {
+          "type": "openbao_policy",
+          "name": "eso-chat-onprem"
+        },
+        "document": {
+          "path": {
+            "secret/data/envs/onprem/chat/db-app": {
+              "capabilities": [
+                "read",
+                "create",
+                "update"
+              ]
+            },
+            "secret/metadata/envs/onprem/chat/db-app": {
+              "capabilities": [
+                "read"
+              ]
+            },
+            "secret/data/envs/onprem/chat-admin": {
+              "capabilities": [
+                "read"
+              ]
+            }
+          }
+        },
+        "control_ids": [
+          "SEC-01",
+          "IAM-01",
+          "ISO-01"
+        ]
+      },
+      {
+        "source": {
+          "type": "aws_secretsmanager_secret",
+          "id": "aws_secretsmanager_secret.db_app"
+        },
+        "target": {
+          "type": "external_secret",
+          "name": "chat-db-app"
+        },
+        "document": {
+          "apiVersion": "external-secrets.io/v1",
+          "kind": "ExternalSecret",
+          "metadata": {
+            "name": "chat-db-app",
+            "namespace": "chat"
+          },
+          "spec": {
+            "refreshInterval": "1h",
+            "secretStoreRef": {
+              "kind": "SecretStore",
+              "name": "openbao-chat"
+            },
+            "target": {
+              "name": "chat-db-app",
+              "creationPolicy": "Owner",
+              "deletionPolicy": "Retain"
+            },
+            "data": [
+              {
+                "secretKey": "password",
+                "remoteRef": {
+                  "key": "envs/onprem/chat/db-app",
+                  "property": "password"
+                }
+              }
+            ]
+          }
+        },
+        "control_ids": [
+          "SEC-01",
+          "ENC-02",
+          "ISO-01"
+        ]
+      }
+    ],
+    "exception_justifications": [
+      {
+        "control_id": "AUD-01",
+        "justification": "None of these translations sets up audit logging. On the source, CloudTrail/S3 access logging is not shown in app.tf. On the destination, the OpenBao audit device, Kubernetes API audit policy and RGW ops log are platform-level settings outside this scope. The approver must confirm them separately. Both src and dst are UNKNOWN."
+      },
+      {
+        "control_id": "NET-01",
+        "justification": "In chart values, networkPolicy.enabled is false and ingress/egress are empty, so these policy translations do not give default deny. The network role must add namespace default-deny plus allow rules for the edge, PgBouncer, RGW, OTel and DNS. Until then NET-01 is an open gap."
+      },
+      {
+        "control_id": "DR-01",
+        "justification": "Source S3 versioning (Enabled) and a Secrets Manager recovery window of 0 days (demo setting) are not represented in any target format here. No backup, or restore into a new environment, has been shown. Destination RGW bucket versioning and OpenBao snapshot/restore need separate evidence."
+      },
+      {
+        "control_id": "ENC-02",
+        "justification": "Source at-rest encryption uses a customer KMS CMK (SSE-KMS with bucket key, and a Secrets Manager kms_key_id) with rotation enabled. This translation has no format for an RGW SSE-KMS key (e.g. via OpenBao transit) or for OpenBao storage-barrier key settings. Customer-key equivalence on the destination is unverified, which also affects the 'customer key' part of SEC-01."
+      }
+    ],
+    "audit_summary": "Plan p-aedeef1f-a338-4279-8c14-3ec7f4bb56b4 translates AWS policies to on-prem formats in 4 translations:\n1. IAM role chat_app → namespaced k8s RBAC in 'chat'. It can only get two named Secrets: no list or watch, no cluster scope, no wildcards.\n2. S3 attachments bucket policy (strong variant) → RGW bucket policy. Non-TLS requests are denied. Only the chat-app user can List/Get/Put; Delete is not granted.\n3. IAM role external_secrets → OpenBao policy, narrowed from a prefix wildcard to exact paths, with no list.\n4. Secrets Manager db_app → ExternalSecret using a namespaced SecretStore.\n\nMapped controls: IAM-01, SEC-01, ISO-01, ENC-01, ENC-02.\n\nOpen gaps, each with an exception justification: AUD-01, NET-01, DR-01, and ENC-02 (customer-key equivalence).\n\nThere is no evidence: inventory analysis is unconfigured and all control results are UNKNOWN. Risk is high.\n\nBefore approving, the approver should confirm:\n- the real bucket name and RGW user ARN (both placeholders here)\n- the OpenBao mount path 'secret/' and env 'onprem'\n- that the weak demo bucket policy is not the one in force at the source\n\nThis proposal does not decide any control or gate verdict."
+  },
+  "artifact_digest": "sha256:7e8310e94b1c2c80afe0abfc4e1cc7c80600e803cea22eec86cf6529ad0865bd",
+  "verifier": {
+    "run_id": "verify-aedeef1f-1/verify-runner-t-e08677b4d9",
+    "pod_uid": "6d1b7511-aa26-4ff3-a18d-cb544727294b",
+    "image_digest": "sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753",
+    "image_id": "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+    "task_version": "01a3399d669803efd60b589b8f91de437549df613eb41c54bb97e05ea6622852",
+    "artifact_digest": "sha256:7e8310e94b1c2c80afe0abfc4e1cc7c80600e803cea22eec86cf6529ad0865bd",
+    "reward": 1.0,
+    "checks": [],
+    "refused_uploads": [
+      "/logs/artifacts"
+    ],
+    "verifier_kind": "static_rules",
+    "collected_at": "2026-11-02T12:54:24.672719+00:00"
+  },
+  "tool_events": [
+    {
+      "seq": 1,
+      "tool": "rehearsal_exec",
+      "args_sha256": "4393e6ef47f0aadea41b28388702f1dfee5321d2881b821e3c5a5bca198739a9",
+      "allowed": false,
+      "rule": "free_text_command",
+      "result": null,
+      "at": "2026-11-02T12:51:45.364676+00:00",
+      "origin": "probe"
+    },
+    {
+      "seq": 2,
+      "tool": "rehearsal_exec",
+      "args_sha256": "c38fd189387c4ef9560a232a364e8ac597fe06c90d804eb14de6fb53bdcc323b",
+      "allowed": false,
+      "rule": "kubectl_not_allowed",
+      "result": null,
+      "at": "2026-11-02T12:51:45.366809+00:00",
+      "origin": "probe"
+    },
+    {
+      "seq": 3,
+      "tool": "inventory_describe",
+      "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T12:51:48.349991+00:00"
+    },
+    {
+      "seq": 4,
+      "tool": "controls_describe",
+      "args_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:48.419128+00:00"
+    },
+    {
+      "seq": 5,
+      "tool": "rehearsal_exec",
+      "args_sha256": "a2245a72ec82ab0baaa45e7f98a41d9a36e0b8a84a74c7119684999b41230f06",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:49.810099+00:00"
+    },
+    {
+      "seq": 6,
+      "tool": "rehearsal_exec",
+      "args_sha256": "878798578d57e8b855e28208d6ccb1150bf7a9130730a0c757806e77b203aa41",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:51.195256+00:00"
+    },
+    {
+      "seq": 7,
+      "tool": "rehearsal_exec",
+      "args_sha256": "13a3e3f9e296a22edfb34f859e3eef5253d35f2c12203f184d486210ea00071c",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:51.878814+00:00"
+    },
+    {
+      "seq": 8,
+      "tool": "rehearsal_exec",
+      "args_sha256": "ebda6b7c4654666eeecdce93313f8a3596203d27f091caa29b95e28ea5e6d2a3",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:51.970921+00:00"
+    },
+    {
+      "seq": 9,
+      "tool": "rehearsal_exec",
+      "args_sha256": "ad04c5532e0aaebfab4404bed2b1887e3f4c7ce38e5adfb9feee122370fe8b21",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:53.325261+00:00"
+    },
+    {
+      "seq": 10,
+      "tool": "rehearsal_exec",
+      "args_sha256": "aa67627f4aed00d308ed1fa01f25dce266fcf5c6d550e824ca15c237226a3d24",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:53.808814+00:00"
+    },
+    {
+      "seq": 11,
+      "tool": "rehearsal_exec",
+      "args_sha256": "1c3b79abd2d70c0a923bf3c7812c26c96d33d80b85c1443f32f82689af2721e2",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T12:51:54.229543+00:00"
+    },
+    {
+      "seq": 12,
+      "tool": "policy_evaluate",
+      "args_sha256": "46953e3e8d62ade82dd03c7285ab59d901ab2e787cbd164c8e4b824c7863fc6f",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T12:52:18.305428+00:00"
+    },
+    {
+      "seq": 13,
+      "tool": "plan_propose",
+      "args_sha256": "1e035a872a2098cdddecf13aa666720127ba43a585c9db7579938d54bb4fcd8a",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T12:52:47.887582+00:00"
+    }
+  ],
+  "hook_events": [
+    {
+      "seq": 1,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__inventory_describe",
+      "tool_input_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "at": "2026-11-02T12:51:48.334768+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 2,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__controls_describe",
+      "tool_input_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326",
+      "at": "2026-11-02T12:51:48.336051+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 3,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__inventory_describe",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:48.353885+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 4,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__controls_describe",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:48.420638+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 5,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "a2245a72ec82ab0baaa45e7f98a41d9a36e0b8a84a74c7119684999b41230f06",
+      "at": "2026-11-02T12:51:49.774089+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 6,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:49.811706+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 7,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "878798578d57e8b855e28208d6ccb1150bf7a9130730a0c757806e77b203aa41",
+      "at": "2026-11-02T12:51:51.164661+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 8,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:51.196705+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 9,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "13a3e3f9e296a22edfb34f859e3eef5253d35f2c12203f184d486210ea00071c",
+      "at": "2026-11-02T12:51:51.852017+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 10,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:51.880118+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 11,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "ebda6b7c4654666eeecdce93313f8a3596203d27f091caa29b95e28ea5e6d2a3",
+      "at": "2026-11-02T12:51:51.945880+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 12,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:51.972558+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 13,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "ad04c5532e0aaebfab4404bed2b1887e3f4c7ce38e5adfb9feee122370fe8b21",
+      "at": "2026-11-02T12:51:53.294237+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 14,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:53.327549+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 15,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "aa67627f4aed00d308ed1fa01f25dce266fcf5c6d550e824ca15c237226a3d24",
+      "at": "2026-11-02T12:51:53.773412+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 16,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:53.810890+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 17,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "1c3b79abd2d70c0a923bf3c7812c26c96d33d80b85c1443f32f82689af2721e2",
+      "at": "2026-11-02T12:51:54.201656+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 18,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:51:54.231082+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 19,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "46953e3e8d62ade82dd03c7285ab59d901ab2e787cbd164c8e4b824c7863fc6f",
+      "at": "2026-11-02T12:52:18.301397+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 20,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:52:18.306957+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 21,
+      "kind": "tool_request",
+      "tool_name": "StructuredOutput",
+      "tool_input_sha256": "41e548181a7556ea3375342e522c431cd51cf986a49bee87f3d784200e12a346",
+      "at": "2026-11-02T12:52:47.825436+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 22,
+      "kind": "tool_result",
+      "tool_name": "StructuredOutput",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T12:52:47.830071+00:00",
+      "authoritative": false
+    }
+  ],
+  "isolation": {
+    "rehearsal-aedeef1f-1": {
+      "pod": "rehearsal-sandbox-t-e08677b4d9",
+      "checks": [
+        {
+          "check": "control_exec",
+          "exit_code": 0,
+          "at": 1793623898.839882
+        },
+        {
+          "check": "egress",
+          "target": "1.1.1.1:443",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793623898.839885,
+          "seconds": 3.08
+        },
+        {
+          "check": "egress",
+          "target": "169.254.169.254:80",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793623901.918151,
+          "seconds": 3.07
+        },
+        {
+          "check": "privileged_pod_admission",
+          "admitted": false,
+          "result": "rejected",
+          "at": 1793623904.993471
+        }
+      ],
+      "baseline_notes": []
+    },
+    "verify-aedeef1f-1": {
+      "pod": "verify-runner-t-e08677b4d9",
+      "checks": [
+        {
+          "check": "control_exec",
+          "exit_code": 0,
+          "at": 1793624013.524083
+        },
+        {
+          "check": "egress",
+          "target": "1.1.1.1:443",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793624013.524087,
+          "seconds": 3.13
+        },
+        {
+          "check": "egress",
+          "target": "169.254.169.254:80",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793624016.654856,
+          "seconds": 3.1
+        },
+        {
+          "check": "privileged_pod_admission",
+          "admitted": false,
+          "result": "rejected",
+          "at": 1793624019.761935
+        }
+      ],
+      "baseline_notes": []
+    }
+  },
+  "namespaces": [
+    "rehearsal-aedeef1f-1",
+    "verify-aedeef1f-1"
+  ],
+  "leftovers": [],
+  "harbor_trial_dir": "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/runs/t-e08677b4d9e24a1f82dbc1b5b812edeb",
+  "verifier_kind": "static_rules",
+  "worker_started": true,
+  "verifier_observed": {
+    "reward": 1.0,
+    "record": {
+      "namespace": "verify-aedeef1f-1",
+      "pod": "verify-runner-t-e08677b4d9",
+      "pod_uid": "6d1b7511-aa26-4ff3-a18d-cb544727294b",
+      "image_id": "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+      "image": "docker.io/library/python:3.12-slim-bookworm",
+      "image_names": [
+        "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+        "docker.io/library/python@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753",
+        "docker.io/library/python:3.12-slim-bookworm"
+      ],
+      "refused_uploads": [
+        "/logs/artifacts"
+      ]
+    }
+  },
+  "created_at": "2026-11-02T12:51:36.679123+00:00",
+  "label": "RKE2 기록(2회차)"
+}

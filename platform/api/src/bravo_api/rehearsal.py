@@ -61,6 +61,7 @@ PRECONDITIONS = frozenset(
         "idempotency_key_reuse",
         # API side, before the Trial request: the collector inventory and the repo snapshot bound to it
         "inventory_unavailable",
+        "inventory_root_empty",  # collector 503: nothing mounted to scan (not "no dependencies")
         "collector_unreachable",
         "collector_response_lost",
         "collector_bad_response",

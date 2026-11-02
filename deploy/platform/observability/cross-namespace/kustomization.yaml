@@ -1,0 +1,13 @@
+# Objects that bravo-observe needs in other namespaces. Applied separately from ../ because the parent sets
+# namespace: bravo-observe on everything. All additive: no existing object in bravo-control or openbao is edited.
+#   kubectl --context bravo-platform-rke2 apply -k deploy/platform/observability/cross-namespace
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: bravo-platform
+      app.kubernetes.io/component: observability
+    includeSelectors: false
+resources:
+  - grafana-route.yaml
+  - health-probes.yaml

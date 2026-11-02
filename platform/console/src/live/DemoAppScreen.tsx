@@ -104,7 +104,7 @@ export function DemoAppScreen({ view }: { view: ConsoleView | null }) {
 
       <Block title="마지막 컷오버 영수증" meta={receipt ? <Tag variant={receipt.verdict === 'MATCH' ? 'success' : 'error'} label={receipt.verdict} /> : undefined}>
         {!view ? (
-          <NotConnected title="계획 없음" endpoint="GET /v1/plans/{plan_id}" reason="영수증은 계획에 붙습니다. 위 계획 ID 칸에서 계획을 여세요(API에 계획 목록이 없음)." />
+          <NotConnected title="계획 없음" endpoint="GET /v1/plans/{plan_id}" reason="영수증은 계획에 붙습니다. 홈의 이전 계획 표에서 계획을 고르세요." />
         ) : !receipt ? (
           <p className="foot">이 계획에는 컷오버 영수증이 아직 없습니다{run ? ` (실행 ${shortId(run.run_id)} · ${run.status})` : ''}.</p>
         ) : (

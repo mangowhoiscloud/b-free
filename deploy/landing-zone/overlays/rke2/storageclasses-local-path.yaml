@@ -1,13 +1,14 @@
-# StorageClasses with the landing-zone names (D-21, D-23). On the on-prem RKE2 the backing is the
-# local-path provisioner (local-path.yaml) for now (D-22: on-prem block storage not decided; Rook-Ceph RBD is the
-# candidate). The names stay when the backing changes; only this overlay file changes.
+# STOPGAP only (BRAVO_BLOCK_BACKING=local-path): bravo-db / bravo-general on the local-path
+# provisioner (local-path.yaml). The default is Rook-Ceph RBD with the rbd-nbd mounter
+# (storageclasses-rbd.yaml); use this file only if RBD cannot serve CNPG. The names stay
+# when the backing changes; StorageClass parameters are immutable, so switching recreates them.
 # local-path: node-local hostPath volumes, no replication, no expansion, WaitForFirstConsumer.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: bravo-db
   annotations:
-    bravo.dev/backing: "rancher.io/local-path (temporary, D-22)"
+    bravo.dev/backing: "rancher.io/local-path (STOPGAP)"
 provisioner: rancher.io/local-path
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Delete
@@ -18,7 +19,7 @@ kind: StorageClass
 metadata:
   name: bravo-general
   annotations:
-    bravo.dev/backing: "rancher.io/local-path (temporary, D-22)"
+    bravo.dev/backing: "rancher.io/local-path (STOPGAP)"
 provisioner: rancher.io/local-path
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Delete

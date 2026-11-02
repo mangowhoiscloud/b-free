@@ -1,24 +1,58 @@
-# From deploy/pilot/observability/otel-collector.yaml, adapted for the platform EKS (ns bravo-observe).
-# One OTLP entry point for every platform service; split to Tempo, Prometheus, Loki (07 6).
+# Platform OTel Collector (ns bravo-observe, 07 6, TECH-STACK-SPEC 2.6). One OTLP entry point for platform services
+# and, through the D-16 link t1-plat-otlp, for each environment's otel-agent. Split to Tempo, Prometheus, Loki.
+# - bravo.env: kept when the sender set it (env agents set source-aws, target-onprem, target-gcp); "platform" otherwise.
+# - spanmetrics: RED (calls, errors, latency histogram) from real SERVER spans, so apps need no extra metric code.
+# - httpcheck/platform: platform service health, probed every 15 s against each service's own health path.
 receivers:
   otlp:
     protocols:
       grpc: { endpoint: 0.0.0.0:4317 }
       http: { endpoint: 0.0.0.0:4318 }
+  http_check/platform:
+    collection_interval: 15s
+    targets:
+      - { endpoint: "http://api.bravo-control.svc:8080/readyz", method: GET }
+      - { endpoint: "http://operator-mcp.bravo-control.svc:8082/readyz", method: GET }
+      - { endpoint: "http://collector.bravo-control.svc:8083/healthz", method: GET }
+      - { endpoint: "http://gate.bravo-control.svc:8084/healthz", method: GET }
+      - { endpoint: "http://rehearsal.bravo-control.svc:8090/healthz", method: GET }
+      - { endpoint: "http://executor.bravo-control.svc:8081/healthz", method: GET }
+      - { endpoint: "http://console.bravo-control.svc:8080/config.json", method: GET }
+  # OpenBao: 200 = initialised, unsealed, active; 429 standby, 503 sealed, 501 not initialised (sys/health).
+  http_check/openbao:
+    collection_interval: 15s
+    targets:
+      - endpoint: "https://openbao.openbao.svc:8200/v1/sys/health"
+        method: GET
+        tls: { ca_file: /etc/bravo/openbao/ca.crt }
 processors:
   memory_limiter: { check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20 }
   resource:
     attributes:
-      - { key: deployment.environment.name, value: "${env:BRAVO_ENV}", action: upsert }
-      - { key: bravo.env, value: "${env:BRAVO_ENV}", action: upsert }
+      - { key: bravo.env, value: "${env:BRAVO_ENV}", action: insert }
+      - { key: deployment.environment.name, value: "${env:BRAVO_ENV}", action: insert }
   batch: {}
+connectors:
+  span_metrics:
+    namespace: traces.span.metrics
+    histogram:
+      unit: ms
+      explicit:
+        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2500ms, 5s, 10s, 30s]
+    dimensions:
+      - name: http.request.method
+      - name: http.response.status_code
+      - name: url.path
+    resource_metrics_key_attributes: [service.name, deployment.environment.name, bravo.env]
+    metrics_flush_interval: 15s
+    aggregation_cardinality_limit: 2000
 exporters:
-  otlp/tempo:
+  otlp_grpc/tempo:
     endpoint: tempo.bravo-observe.svc:4317
-    tls: { insecure: true }   # in-cluster plain gRPC; mesh mTLS is the proposal D-15 (bravo-observe stays outside the mesh)
-  otlphttp/prometheus:
+    tls: { insecure: true }   # in-cluster plain gRPC; bravo-observe stays outside the mesh (07 2)
+  otlp_http/prometheus:
     endpoint: http://prometheus.bravo-observe.svc:9090/api/v1/otlp
-  otlphttp/loki:
+  otlp_http/loki:
     endpoint: http://loki.bravo-observe.svc:3100/otlp
 extensions:
   health_check: { endpoint: 0.0.0.0:13133 }
@@ -29,6 +63,15 @@ service:
       readers:
         - pull: { exporter: { prometheus: { host: 0.0.0.0, port: 8888 } } }
   pipelines:
-    traces:  { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [otlp/tempo] }
-    metrics: { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [otlphttp/prometheus] }
-    logs:    { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [otlphttp/loki] }
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp_grpc/tempo, span_metrics]
+    metrics:
+      receivers: [otlp, span_metrics, http_check/platform, http_check/openbao]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp_http/prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp_http/loki]

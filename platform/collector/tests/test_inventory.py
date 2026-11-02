@@ -42,7 +42,7 @@ def queue():
     return boto3.client("sqs")
 
 
-LEGACY_DSN = "postgresql://app:hunter2@db.prod.internal.corp:5432/chat"
+LEGACY_DSN = "postgresql://app@db.prod.internal.corp:5432/chat"
 '''
 
 MAIN_TF = '''\
@@ -86,7 +86,7 @@ metadata:
 '''
 
 ENV_EXAMPLE = '''\
-# comment with postgresql://ignored:ignored@nowhere/db
+# comment with postgresql://ignored@nowhere/db
 S3_ENDPOINT_URL=http://rook-ceph-rgw-bravo.rook-ceph.svc:80
 DB_DSN=host=pgbouncer port=6432 dbname=chat user=app_writer
 '''
@@ -208,11 +208,17 @@ def test_digest_changes_with_content(app_tree: Path) -> None:
 
 
 def test_evidence_masks_secrets(app_tree: Path) -> None:
+    # A file with a credential value is not read at all: one GEN-CREDENTIAL-FILE finding marks it (D-26).
+    (app_tree / "src" / "chat" / "legacy.py").write_text(
+        'import boto3\n\nDSN = "postgresql://app:hunter2x@db.prod.internal.corp:5432/chat"\n'
+        'boto3.client("secretsmanager")\n')
     r = scan(app_tree)
     dumped = json.dumps(r.model_dump(mode="json"), ensure_ascii=False)
-    assert "hunter2" not in dumped
-    dsn = next(f for f in r.findings if f.rule_id == "GEN-DSN-URL")
-    assert "app:***@db.prod.internal.corp" in dsn.evidence
+    assert "hunter2x" not in dumped
+    cred = [f for f in r.findings if f.file == "src/chat/legacy.py"]
+    assert [(f.rule_id, f.line, f.tier) for f in cred] == [("GEN-CREDENTIAL-FILE", 3, Tier.CODE_CHANGE)]
+    assert cred[0].evidence == "<credential material: dsn_userinfo_password>"
+    assert any(s["file"] == "src/chat/legacy.py" and "credential material" in s["reason"] for s in r.skipped)
     assert mask("password=s3cr3t host=db") == "password=*** host=db"
     assert mask("key AKIAABCDEFGHIJKLMNOP") == "key AKIA****************"
     assert mask("password=%s") == "password=%s"  # placeholder kept

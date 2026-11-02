@@ -4,6 +4,7 @@ import { AppShell } from '@astryxdesign/core/AppShell';
 import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
 import { AgentsScreen } from './live/AgentsScreen';
 import { ApprovalsScreen } from './live/ApprovalsScreen';
+import { CostScreen } from './live/CostScreen';
 import { EndingScreen } from './live/EndingScreen';
 import { HomeScreen } from './live/HomeScreen';
 import { ClustersScreen } from './live/ClustersScreen';
@@ -32,6 +33,7 @@ const SCREENS = [
   { id: 'demo', label: '데모 앱 상태', group: 'watch' },
   { id: 'observe', label: '관측', group: 'watch' },
   { id: 'ending', label: '마무리 장면', group: 'watch' },
+  { id: 'cost', label: '비용 영수증', group: 'watch' },
 ] as const;
 type ScreenId = (typeof SCREENS)[number]['id'];
 
@@ -122,7 +124,7 @@ export function App() {
           {screen === 'clusters' && <ClustersScreen />}
           {screen === 'workflow' && <WorkflowScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} />}
           {screen === 'demo' && <DemoAppScreen view={view} />}
-          {screen === 'observe' && <ObservabilityScreen />}
+          {screen === 'observe' && <ObservabilityScreen view={view} planId={planId} />}
           {screen === 'home' && (
             <HomeScreen
               session={session}
@@ -134,6 +136,7 @@ export function App() {
           )}
           {screen === 'approvals' && <ApprovalsScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} user={session.user} />}
           {screen === 'ending' && <EndingScreen />}
+          {screen === 'cost' && <CostScreen session={session} />}
         </div>
       )}
       {screen === 'plan' && (

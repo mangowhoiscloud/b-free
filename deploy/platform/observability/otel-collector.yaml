@@ -1,4 +1,6 @@
-# OTel Collector 0.164.0 (contrib). Receives OTLP from platform services; no persistent state.
+# OTel Collector 0.164.0 (contrib). Receives OTLP from platform services and, over the D-16 link t1-plat-otlp, from
+# each environment's otel-agent; probes platform service health (config/otel-collector.yaml). No persistent state.
+# ConfigMap openbao-ca (public CA cert, copied from bravo-control/openbao-ca by README step) verifies OpenBao TLS.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -32,7 +34,7 @@ spec:
           image: otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b # 0.164.0
           args: ["--config=/etc/otelcol/config.yaml"]
           env:
-            - { name: BRAVO_ENV, value: platform-aws }
+            - { name: BRAVO_ENV, value: platform }
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
             - { name: otlp-http, containerPort: 4318 }
@@ -54,10 +56,13 @@ spec:
             capabilities: { drop: ["ALL"] }
           volumeMounts:
             - { name: config, mountPath: /etc/otelcol, readOnly: true }
+            - { name: openbao-ca, mountPath: /etc/bravo/openbao, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: config
           configMap: { name: otel-collector-config }
+        - name: openbao-ca
+          configMap: { name: openbao-ca, optional: true }
         - name: tmp
           emptyDir: { sizeLimit: 64Mi }
 ---

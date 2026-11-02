@@ -12,11 +12,13 @@ import hashlib
 import os
 import re
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ..redact import find_content_credentials
 from .rules import (
     AWS_SERVICE_NAMES,
     CLIENT_FACTORIES,
@@ -413,6 +415,79 @@ def _dedupe(findings: list[Finding]) -> list[Finding]:
     return list(best.values())
 
 
+# Secret-shaped file names: never read, never in the digest, never in a snapshot (D-26). Templates such as
+# .env.example stay readable; their content still passes the credential guard below.
+_ENV_TEMPLATES = frozenset({".env.example", ".env.sample", ".env.template", ".env.dist", ".env.defaults"})
+_SECRET_NAMES = frozenset({"credentials", ".netrc", ".npmrc", ".pypirc", ".git-credentials", "kubeconfig",
+                           ".pgpass", "id_rsa", "id_ecdsa", "id_ed25519", "id_dsa"})
+_SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore", ".kubeconfig", ".tfstate",
+                    ".tfstate.backup", ".tfvars", ".ppk", ".asc", ".gpg")
+
+
+def is_secret_file(rel: PurePosixPath) -> bool:
+    name = rel.name.lower()
+    if name == ".env" or (name.startswith(".env.") and name not in _ENV_TEMPLATES):
+        return True
+    return name in _SECRET_NAMES or name.endswith(_SECRET_SUFFIXES)
+
+
+@dataclass(frozen=True, slots=True)
+class ScannedFile:
+    path: Path
+    rel: PurePosixPath
+    fclass: str
+    raw: bytes
+
+
+def scanned_files(root: Path, skipped: list[dict[str, str]] | None = None) -> list[ScannedFile]:
+    """The exact file set the inventory reads, in walk order. ``input_digest`` and the snapshot use it.
+
+    Excluded and listed in ``skipped`` with the reason: secret-shaped names, files whose content holds
+    credential material (``redact.find_content_credentials``), oversize, binary, non-UTF-8, unreadable.
+    """
+    out: list[ScannedFile] = []
+    skip = skipped if skipped is not None else []
+    for path, rel in _walk(root):
+        if is_secret_file(rel):
+            skip.append({"file": str(rel), "reason": "secret-shaped file name (not read, not in snapshot)"})
+            continue
+        fclass = file_class(rel)
+        if fclass is None:
+            continue
+        try:
+            if path.stat().st_size > MAX_FILE_BYTES:
+                skip.append({"file": str(rel), "reason": f"larger than {MAX_FILE_BYTES} bytes"})
+                continue
+            raw = path.read_bytes()
+        except OSError as exc:
+            skip.append({"file": str(rel), "reason": f"unreadable: {type(exc).__name__}"})
+            continue
+        if b"\0" in raw[:8192]:
+            skip.append({"file": str(rel), "reason": "binary (NUL byte)"})
+            continue
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            skip.append({"file": str(rel), "reason": "not UTF-8"})
+            continue
+        hits = find_content_credentials(text)
+        if hits:
+            first = next((n for n, line in enumerate(text.splitlines(), 1) if find_content_credentials(line)), 1)
+            skip.append({"file": str(rel), "line": str(first), "patterns": ",".join(hits),
+                         "reason": f"credential material ({', '.join(hits)}): not read, not in snapshot"})
+            continue
+        out.append(ScannedFile(path, rel, fclass, raw))
+    return out
+
+
+def files_digest(files: list[ScannedFile]) -> str:
+    """sha256 over "<relative path>\\0<file sha256>\\n" in walk order (the rehearsal snapshot contract)."""
+    digest = hashlib.sha256()
+    for f in files:
+        digest.update(f"{f.rel}\0{hashlib.sha256(f.raw).hexdigest()}\n".encode())
+    return digest.hexdigest()
+
+
 def scan(root: Path, label: str | None = None) -> InventoryReport:
     """Scan ``root`` and return the FR-2 inventory. ``label`` names the root in the output."""
     root = Path(root)
@@ -420,31 +495,19 @@ def scan(root: Path, label: str | None = None) -> InventoryReport:
         raise NotADirectoryError(f"inventory root is not a directory: {root.name or root}")
     root = root.resolve()
     findings: list[Finding] = []
-    scanned = 0
     skipped_files: list[dict[str, str]] = []  # audit 37: every skipped candidate file is listed with a reason
-    digest = hashlib.sha256()
-    for path, rel in _walk(root):
-        fclass = file_class(rel)
-        if fclass is None:
-            continue
-        try:
-            if path.stat().st_size > MAX_FILE_BYTES:
-                skipped_files.append({"file": str(rel), "reason": f"larger than {MAX_FILE_BYTES} bytes"})
-                continue
-            raw = path.read_bytes()
-        except OSError as exc:
-            skipped_files.append({"file": str(rel), "reason": f"unreadable: {type(exc).__name__}"})
-            continue
-        if b"\0" in raw[:8192]:
-            skipped_files.append({"file": str(rel), "reason": "binary (NUL byte)"})
-            continue
-        try:
-            source = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            skipped_files.append({"file": str(rel), "reason": "not UTF-8"})
-            continue
-        scanned += 1
-        digest.update(f"{rel}\0{hashlib.sha256(raw).hexdigest()}\n".encode())
+    files = scanned_files(root, skipped_files)
+    scanned = len(files)
+    cred_rule = RULES_BY_ID["GEN-CREDENTIAL-FILE"]
+    for s in skipped_files:
+        if "patterns" in s:  # a finding marks the credential; the value itself is never read into the report
+            c = _Collector(s["file"], CONFIG, [])
+            c.add(cred_rule, int(s["line"]), s["patterns"])
+            f = next(iter(c.items.values()))
+            findings.append(f.model_copy(update={"evidence": f"<credential material: {s['patterns']}>",
+                                                 "hardcoded": True}))
+    for sf in files:
+        rel, fclass, source = sf.rel, sf.fclass, sf.raw.decode("utf-8")
         out = _Collector(str(rel), fclass, source.splitlines())
         if fclass == PYTHON:
             _python_pass(out, source)
@@ -466,7 +529,7 @@ def scan(root: Path, label: str | None = None) -> InventoryReport:
         test_summary[f.tier] += 1
     return InventoryReport(
         root=label if label is not None else root.name,
-        input_digest=digest.hexdigest(),
+        input_digest=files_digest(files),
         files_scanned=scanned,
         files_skipped=len(skipped_files),
         skipped=sorted(skipped_files, key=lambda s: s["file"]),

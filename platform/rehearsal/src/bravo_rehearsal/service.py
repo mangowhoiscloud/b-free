@@ -171,8 +171,10 @@ def build_envelope(req: TrialRequest, trial_id: str, deadline: float, budget_usd
         "inputs": {k: v for k, v in {
             "instruction": instruction, "source_env": req.source_env, "target_env": req.target_env,
             "analysis": req.analysis,
-            "repo_snapshot": {k2: snapshot.manifest.get(k2) for k2 in ("input_digest", "files", "withheld")}
-            if snapshot else None}.items() if v is not None},
+            "repo_snapshot": {**{k2: snapshot.manifest.get(k2) for k2 in ("input_digest", "files", "withheld")},
+                              "sandbox_path": "/src"} if snapshot else None,
+            "sandbox_paths": {"read": list(spec.sandbox.paths.read), "write": list(spec.sandbox.paths.write)}
+            if spec else None}.items() if v is not None},
     }
 
 

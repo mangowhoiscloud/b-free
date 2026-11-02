@@ -116,7 +116,9 @@ def rehearsal_service(tmp_path_factory: pytest.TempPathFactory, snapshot_dir: Pa
 @pytest.fixture(scope="module")
 def api_settings(keys: Keys, pg: dict[str, str], executor: ExecutorStub, rehearsal_service: str) -> Settings:
     return replace(
-        make_settings(keys, pg, executor.url, Mode.API), rehearsal_url=rehearsal_service, rehearsal_poll_interval_s=0.2,
+        make_settings(keys, pg, executor.url, Mode.API),
+        rehearsal_url=rehearsal_service,
+        rehearsal_poll_interval_s=0.2,
         collector_url=None,  # these tests opt in to a collector explicitly
     )
 
@@ -293,13 +295,12 @@ REPO_FILES = {
     # A direct Secrets Manager call: the collector grades it code_change (the S2 material, §8.10).
     "src/chat/secrets.py": (
         "import boto3\n\n"
-        "client = boto3.client(\"secretsmanager\")\n\n\n"
+        'client = boto3.client("secretsmanager")\n\n\n'
         "def db_password() -> str:\n"
-        "    return client.get_secret_value(SecretId=\"chat/db\")[\"SecretString\"]\n"
+        '    return client.get_secret_value(SecretId="chat/db")["SecretString"]\n'
     ),
     "src/chat/storage.py": (
-        "import os\n\nimport boto3\n\n"
-        "s3 = boto3.client(\"s3\", endpoint_url=os.environ.get(\"S3_ENDPOINT_URL\"))\n"
+        'import os\n\nimport boto3\n\ns3 = boto3.client("s3", endpoint_url=os.environ.get("S3_ENDPOINT_URL"))\n'
     ),
     "deploy/values.yaml": "image:\n  repository: chat\nservice:\n  port: 8000\n",
 }
@@ -408,8 +409,7 @@ def collector_with_snapshot(collector_service: str, customer_repo: Path) -> str:
     def snapshot() -> Response:
         digest = httpx.get(f"{collector_service}/v1/inventory", timeout=10).json()["input_digest"]
         assert _tree_digest(customer_repo) == digest  # the front ships exactly the files the collector scanned
-        return Response(_tar_gz(customer_repo), media_type="application/gzip",
-                        headers={"X-Bravo-Inventory-Digest": digest})
+        return Response(_tar_gz(customer_repo), media_type="application/gzip", headers={"X-Bravo-Inventory-Digest": digest})
 
     return _serve(front)
 
@@ -419,8 +419,13 @@ def _client_call(coro_fn: Any) -> Any:
 
 
 def test_coordinator_reasons_are_nothing_ran_preconditions() -> None:
-    for reason in (*NOTHING_RAN_FROM_ENVELOPE, "inventory_unavailable", "snapshot_unavailable",
-                   "snapshot_digest_mismatch", "snapshot_inventory_mismatch"):
+    for reason in (
+        *NOTHING_RAN_FROM_ENVELOPE,
+        "inventory_unavailable",
+        "snapshot_unavailable",
+        "snapshot_digest_mismatch",
+        "snapshot_inventory_mismatch",
+    ):
         assert reason in PRECONDITIONS
 
 
@@ -456,9 +461,12 @@ def test_collector_client_rejects_the_old_dependencies_shape() -> None:
     assert _client_call(run) == "collector_bad_response"
 
 
-def test_real_collector_has_no_snapshot_endpoint_so_no_trial_is_requested(
+def test_real_collector_snapshot_reaches_the_real_rehearsal_service(
     api_settings: Settings, keys: Keys, executor: ExecutorStub, pg: dict[str, str], collector_service: str
 ) -> None:
+    """The collector now serves ``GET /v1/inventory/snapshot`` (2026-11-02 evening): the real snapshot is
+    uploaded and the Trial request reaches the real rehearsal service, which refuses before running anything
+    (no model key on this machine). Nothing is counted."""
     os.environ["BRAVO_REHEARSAL_API_TOKEN"] = SERVICE_TOKEN
     try:
         with TestClient(create_app(replace(api_settings, collector_url=collector_service))) as client:
@@ -468,7 +476,12 @@ def test_real_collector_has_no_snapshot_endpoint_so_no_trial_is_requested(
             _to_state(pg, pid, "PROPOSE")
             r = console.post("operator", f"/plans/{pid}/rehearsals", {"task": "fix-bucket-policy", "role": "governance"})
             assert r.status_code == 202, r.text
-            assert (r.json()["status"], r.json()["reason"]) == ("INFRA_ERROR", "snapshot_unavailable")
+            status, reason = r.json()["status"], r.json()["reason"]
+            assert status == "INFRA_ERROR" and reason in {
+                "llm_unconfigured",
+                "cluster_unconfigured",
+                "verifier_unconfigured",
+            }
             plan = console.get("viewer", f"/plans/{pid}").json()
             assert plan["rehearsal_attempts"] == {"failed": 0, "infra_errors": 0, "max": 3}  # not counted
     finally:
@@ -497,9 +510,7 @@ def test_snapshot_upload_bound_to_the_inventory_digest(rehearsal_service: str, c
     assert refused == "snapshot_digest_mismatch" and refused in PRECONDITIONS
 
 
-def test_trial_request_envelope_passes_the_real_rehearsal_validation(
-    rehearsal_service: str, collector_service: str
-) -> None:
+def test_trial_request_envelope_passes_the_real_rehearsal_validation(rehearsal_service: str, collector_service: str) -> None:
     """The exact body the API sends (``trial_request``) against the real ``TrialRequest`` + ``StateEnvelope``
     checks. The service still refuses (no model key, no cluster), but never for the envelope itself."""
 
@@ -542,13 +553,33 @@ def test_trial_request_envelope_passes_the_real_rehearsal_validation(
 
     out = _client_call(run)
     body = out["body"]
-    assert set(body) == {"plan_id", "tenant_id", "rehearsal_id", "attempt", "max_attempts", "task", "role", "state",
-                         "prior_failures", "evidence", "source_env", "target_env", "analysis", "inventory_digest"}
+    assert set(body) == {
+        "plan_id",
+        "tenant_id",
+        "rehearsal_id",
+        "attempt",
+        "max_attempts",
+        "task",
+        "role",
+        "state",
+        "prior_failures",
+        "evidence",
+        "source_env",
+        "target_env",
+        "analysis",
+        "inventory_digest",
+    }
     ids = [e["id"] for e in body["evidence"]]
     assert ids[0].startswith("gate:") and ids[0].endswith(":db-anon-read") and len(ids) == len(set(ids))
     assert any(i.startswith("inv:") for i in ids)
-    assert body["prior_failures"] == [{"attempt": 1, "verdict": "FAIL", "reason": "verifier_anonymous_get_allowed",
-                                       "summary": "attempt 1: verifier verdict FAIL (verifier: anonymous GET allowed)"}]
+    assert body["prior_failures"] == [
+        {
+            "attempt": 1,
+            "verdict": "FAIL",
+            "reason": "verifier_anonymous_get_allowed",
+            "summary": "attempt 1: verifier verdict FAIL (verifier: anonymous GET allowed)",
+        }
+    ]
     # Accepted shape: a 503 precondition refusal (no model key here), never 422 bad_request or an envelope reason.
     assert out["status"] == 503 and out["error"] in PRECONDITIONS, out
     assert not set(out["missing"]) & set(NOTHING_RAN_FROM_ENVELOPE), out["missing"]

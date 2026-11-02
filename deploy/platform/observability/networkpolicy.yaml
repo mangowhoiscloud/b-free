@@ -66,6 +66,11 @@ spec:
             matchLabels: { app.kubernetes.io/name: otel-collector }
         - podSelector:
             matchLabels: { app.kubernetes.io/name: grafana }
+        # Console nginx read-only proxy /svc/prometheus/ (GET and HEAD only, platform/console/README.md).
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: bravo-control }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: console }
       ports:
         - { protocol: TCP, port: 9090 }
 ---
@@ -106,7 +111,8 @@ spec:
       ports:
         - { protocol: TCP, port: 3100 }
 ---
-# Grafana: same namespace only. Operators use kubectl port-forward (not subject to NetworkPolicy).
+# Grafana: same namespace, and the platform Gateway (Cilium Envoy, reserved identity "ingress", which a Kubernetes
+# NetworkPolicy cannot select) for https://b-free.mangowhois.ai/grafana/ behind Access.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -120,3 +126,74 @@ spec:
         - podSelector: {}
       ports:
         - { protocol: TCP, port: 3000 }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: grafana-from-gateway
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: grafana }
+  ingress:
+    - fromEntities: ["ingress"]
+      toPorts:
+        - ports: [{ port: "3000", protocol: TCP }]
+---
+# Grafana fetches the Cloudflare Access team JWKS (auth.jwt). Only HTTPS out, not the instance metadata service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-egress-jwks
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: grafana }
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.169.254/32, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - { protocol: TCP, port: 443 }
+---
+# Platform service health probes (httpcheck receivers): bravo-control health ports and OpenBao sys/health.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-egress-probes
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: otel-collector }
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: bravo-control }
+      ports:
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 8082 }
+        - { protocol: TCP, port: 8083 }
+        - { protocol: TCP, port: 8084 }
+        - { protocol: TCP, port: 8090 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: openbao }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: openbao }
+      ports:
+        - { protocol: TCP, port: 8200 }
+---
+# Grafana at /grafana/ on the platform front: only the Gateway (Cilium Envoy, reserved identity "ingress").
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: grafana-from-gateway
+  namespace: bravo-observe
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: grafana }
+  ingress:
+    - fromEntities: ["ingress"]
+      toPorts:
+        - ports: [{ port: "3000", protocol: TCP }]

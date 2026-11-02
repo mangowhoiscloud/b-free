@@ -159,7 +159,12 @@ class ToolLayer:
         decision = tool_layer.authorize_sandbox(op, trial.allowlist)
         if not decision.allowed:
             trial.record("rehearsal_exec", args, False, decision.rule)
-            return {"blocked": decision.rule, "op": op.get("op") if isinstance(op, dict) else None}
+            out: dict[str, Any] = {"blocked": decision.rule, "op": op.get("op") if isinstance(op, dict) else None}
+            spec = trial.allowlist.spec
+            if decision.rule == "path_outside_workspace" and spec is not None:
+                out["allowed_read"] = list(spec.sandbox.paths.read)  # roots only; no file names, no values
+                out["allowed_write"] = list(spec.sandbox.paths.write)
+            return out
         if self._cluster is None or trial.box is None:
             trial.record("rehearsal_exec", args, False, "sandbox_unavailable")
             return {"blocked": "sandbox_unavailable"}

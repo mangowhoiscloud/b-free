@@ -226,6 +226,12 @@ RULES: tuple[Rule, ...] = (
          "Literal URL host that no rule places; cloud dependency not decidable by rule.",
          CODE_CLASSES | frozenset({CONFIG}), _re(r"\bhttps?://([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)(?::\d+)?"),
          literal=True),
+    # Not a pattern rule: the scan applies it when a file holds credential material (redact.CONTENT_PATTERNS).
+    # The file is then excluded from the scan and the snapshot (D-26), and this finding marks where it is.
+    Rule("GEN-CREDENTIAL-FILE", Tier.CODE_CHANGE, "secret", "credential_in_repo",
+         "A credential value sits in the repository; the file is not read further and not shipped in the "
+         "snapshot. Move the value to the vault (OpenBao) and read it at run time.",
+         frozenset()),
 )
 
 RULES_BY_ID: dict[str, Rule] = {r.rule_id: r for r in RULES}

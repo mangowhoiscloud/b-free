@@ -57,7 +57,7 @@ export function WorkflowScreen({ planId, view, events, status, detail }: { planI
         />
       </Block>
       {!planId || !view ? (
-        <NotConnected title="계획이 열려 있지 않음" endpoint="GET /v1/plans/{plan_id} · /events (SSE)" reason="계획별 진행은 계획을 열어야 보입니다. 위의 계획 ID 칸에서 계획을 여세요(API에 계획 목록 엔드포인트가 없음)" />
+        <NotConnected title="계획이 열려 있지 않음" endpoint="GET /v1/plans/{plan_id} · /events (SSE)" reason="계획별 진행은 계획을 열어야 보입니다. 홈의 이전 계획 표에서 계획을 고르세요." />
       ) : (
         <>
           <StateProgress view={view} />

@@ -59,3 +59,23 @@ def install_log_filter() -> None:
             h.addFilter(flt)
     for name in _QUIET:
         logging.getLogger(name).setLevel(logging.WARNING)
+
+
+# Stricter patterns for whole files (inventory scan and repository snapshot): real credential values only.
+# Templated values (``{pw}``, ``$PW``, ``%s``, ``<pw>``, ``:'var'``) and AWS documentation keys do not count.
+CONTENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("aws_access_key_id", re.compile(r"\b(?:AKIA|ASIA)(?![0-9A-Z]{9}EXAMPLE\b)[0-9A-Z]{16}\b")),
+    ("aws_secret_access_key", re.compile(r"(?i)aws_secret_access_key[\"']?\s*[=:]\s*[\"']?[A-Za-z0-9/+]{40}\b")),
+    ("private_key", re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----")),
+    ("eks_bearer_token", re.compile(r"k8s-aws-v1\.[A-Za-z0-9_\-]{40,}")),
+    ("sigv4_signature", re.compile(r"(?i)X-Amz-Signature=[0-9a-f]{64}")),
+    # key = "v", key: "v" (YAML), "key": "v" (JSON). Not psql ``PASSWORD :'var'`` (space before the colon).
+    ("password_literal", re.compile(r"(?i)(?:password|passwd|secret)(?:[\"']\s*:|\s*=|:)\s*[\"']"
+                                    r"(?![{$%<*:])[^\"'\s]{8,}[\"']")),
+    ("dsn_userinfo_password", re.compile(r"[a-z][a-z0-9+.-]*://[^/:@\s'\"]+:(?![{$%<*])[^@\s'\"/]{6,}@")),
+)
+
+
+def find_content_credentials(text: str) -> list[str]:
+    """Names of credential patterns present in a file's text (values are never returned)."""
+    return sorted({name for name, pat in CONTENT_PATTERNS if pat.search(text)})

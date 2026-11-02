@@ -65,14 +65,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise RuntimeError("PLATFORM_DB_DSN is required")
             secrets_dir = os.environ.get("BRAVO_SECRETS_DIR", "").strip()
             if secrets_dir:  # in-cluster: fields delivered from OpenBao into a mounted Secret
-                lookup = FileSecrets(Path(secrets_dir)).field
+                files = FileSecrets(Path(secrets_dir))
+                lookup = files.field
+                if broker is None:  # the front switch reads platform/cloudflare the same way
+                    app.state.secret_broker = files
             elif broker is not None:  # operator laptop: AppRole login (executor-bao.sh with-executor)
                 lookup = broker.field
             else:
                 raise RuntimeError("BRAVO_TOPOLOGY_FILE needs BRAVO_SECRETS_DIR or OpenBao AppRole credentials")
             resolved = await settings_from_topology(Path(topology), lookup, platform_dsn)
         service = ExecutorService(resolved or Settings.from_env())
-        app.state.secret_broker = broker
+        if broker is not None:
+            app.state.secret_broker = broker
         await service.start()
         app.state.service = service
         try:

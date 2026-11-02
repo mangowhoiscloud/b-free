@@ -24,7 +24,8 @@ from typing import Any, Protocol
 from .pgbouncer import read_database_target, rewrite_database_target, write_ini_atomically
 
 _HOST_RE = re.compile(r"(?:^|\s)host=(\S+)")
-_SAFE_RE = re.compile(r"^[A-Za-z0-9_./:@-]+$")
+_SAFE_RE = re.compile(r"^[A-Za-z0-9_./:@=,-]+$")
+SELECTOR_PREFIX = "selector:"
 
 
 def host_of(target: str | None) -> str | None:
@@ -79,7 +80,9 @@ class K8sExecSwitch:
 
     context: str
     namespace: str
-    workload: str  # e.g. deploy/chat-pgbouncer or pod/chat-pgbouncer-0
+    # pod/<name>, deploy/<name> (needs deployments get), or selector:<label selector> (pods get/list
+    # only, the least privilege of CLOUD-E2E-CONTRACT.md 9): exactly one Running pod must match.
+    workload: str
     db_name: str
     targets_dir: str = "/etc/pgbouncer/targets"
     active_path: str = "/run/pgbouncer/active.ini"
@@ -87,6 +90,7 @@ class K8sExecSwitch:
     timeout_s: float = 20.0
     kubectl: str = "kubectl"
     _cache: dict[str, str] = field(default_factory=dict)
+    _pod: str | None = None
 
     def __post_init__(self) -> None:
         for v in (self.context, self.namespace, self.workload, self.targets_dir, self.active_path):
@@ -98,8 +102,39 @@ class K8sExecSwitch:
             raise SwitchError(f"unknown side {side!r}")
         return f"{self.targets_dir}/target-{side}.ini"
 
+    async def _kubectl(self, *args: str) -> str:
+        proc = await asyncio.create_subprocess_exec(
+            self.kubectl, "--context", self.context, "-n", self.namespace, *args,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), self.timeout_s)
+        except TimeoutError as exc:
+            proc.kill()
+            raise SwitchError(f"kubectl {args[0]} timed out after {self.timeout_s}s") from exc
+        if proc.returncode != 0:
+            raise SwitchError(f"kubectl {args[0]} exit {proc.returncode}: {err.decode(errors='replace')[-300:]}")
+        return out.decode()
+
+    async def target(self) -> str:
+        """The pod to exec into. A selector is resolved once per Executor run (resolve() resets)."""
+        if not self.workload.startswith(SELECTOR_PREFIX):
+            return self.workload
+        if self._pod is None:
+            names = (await self._kubectl("get", "pods", "-l", self.workload[len(SELECTOR_PREFIX):],
+                                         "--field-selector=status.phase=Running",
+                                         "-o", "jsonpath={.items[*].metadata.name}")).split()
+            if len(names) != 1:
+                raise SwitchError(f"selector {self.workload} matched {len(names)} running pods, need exactly 1")
+            self._pod = f"pod/{names[0]}"
+        return self._pod
+
+    def resolve(self) -> None:
+        self._pod = None
+        self._cache.clear()
+
     async def _exec(self, script: str) -> str:
-        cmd = [self.kubectl, "--context", self.context, "-n", self.namespace, "exec", self.workload]
+        cmd = [self.kubectl, "--context", self.context, "-n", self.namespace, "exec", await self.target()]
         if self.container:
             cmd += ["-c", self.container]
         cmd += ["--", "sh", "-c", script]
@@ -134,6 +169,7 @@ class K8sExecSwitch:
         return None
 
     async def preflight(self) -> dict[str, Any]:
+        self.resolve()
         out = await self._exec(
             f"hostname; ls {self.targets_dir}/target-src.ini {self.targets_dir}/target-dst.ini {self.active_path}"
         )

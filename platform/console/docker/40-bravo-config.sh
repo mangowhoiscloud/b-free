@@ -28,7 +28,7 @@ TEMPO_URL="${BRAVO_TEMPO_URL-}"
 # Customer demo app's public name (CLOUD-E2E-CONTRACT §6). b-free itself is the platform.
 PUBLIC_FRONT_HOST="${BRAVO_PUBLIC_FRONT_HOST-b-free-chat.mangowhois.ai}"
 # Where the demo app runs: <collector cluster id or kubectl context>=<public host>, comma separated.
-APP_ENVS="${BRAVO_APP_ENVS-bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai}"
+APP_ENVS="${BRAVO_APP_ENVS-source-aws=b-free-chat-src.mangowhois.ai,target-onprem=b-free-chat-dst.mangowhois.ai}"
 # Public DNS-over-HTTPS resolver (JSON API) used to show whether the edge names resolve. Empty = not shown.
 DOH_URL="${BRAVO_DOH_URL-https://cloudflare-dns.com/dns-query}"
 for pair in "BRAVO_GRAFANA_URL=$GRAFANA_URL" "BRAVO_PROMETHEUS_URL=$PROMETHEUS_URL" "BRAVO_TEMPO_URL=$TEMPO_URL" "BRAVO_DOH_URL=$DOH_URL"; do

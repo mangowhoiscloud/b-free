@@ -1,0 +1,7 @@
+# D-16 link from a customer cluster to the platform Collector (t1-plat-otel). Same on every landing-zone cluster
+# (EKS, RKE2; the GKE copy lives in deploy/platform/link/gke-consumer). Secret cf-link-plat-otel (client_id,
+# client_secret) is piped from OpenBao secret/envs/<env>/cf-link-plat-otel by scripts/otel-link.sh (D-26).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - platform-otel-link.yaml

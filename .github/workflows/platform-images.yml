@@ -1,80 +1,104 @@
-# [T7] 플랫폼 이미지 빌드 → 플랫폼 ECR push(digest). 장기 키 없음: GitHub OIDC로 역할을 받음(NFR-6).
-# 역할(infra/modules/ci_identity/aws)은 repo:mangowhoiscloud/b-free:ref:refs/heads/main 만 믿고,
-# 플랫폼 ECR 저장소(bravo-platform/*)에 push만 할 수 있음. 클러스터 배포는 Argo CD pull(D-16).
-# 저장소 변수 PLATFORM_CI_ROLE_ARN = terraform -chdir=infra/envs/platform-aws output -raw ci_deploy_identity
-# 서드파티 Action은 커밋 SHA로 고정(TECH-STACK-SPEC 2.8). Trivy 단계는 두지 않음(OIDC를 주지 않기 위해).
+# [T7] Platform ECR mirror of the scanned images. No build here and no unscanned path:
+#   images.yaml (push to main) builds -> SBOM (syft) -> scan (trivy, no OIDC) -> pushes to GHCR by digest and
+#   uploads digests.json (name, digest, scan_passed, pushed). When that run succeeds, this workflow copies exactly
+#   those pushed digests from GHCR to the platform ECR (bravo-platform/<name>) with skopeo --preserve-digests,
+#   then reads each back by digest. An image whose scan did not pass, or that was not pushed, is not copied.
+# Identity: GitHub OIDC -> role from infra/modules/ci_identity/aws, trusted only for
+#   repo:mangowhoiscloud/b-free:ref:refs/heads/main, allowed only to push to bravo-platform/* (NFR-6, no stored key).
+#   Repository variable PLATFORM_CI_ROLE_ARN = terraform -chdir=infra/envs/platform-aws output -raw ci_deploy_identity
+# Deployment stays a pull: the platform Argo CD reads the digests from deploy/platform (D-16).
+# Third-party actions are pinned by full commit SHA (TECH-STACK-SPEC 2.8).
 name: platform-images
 
-# 일시 중지(2026-11-02 21:5x): 스캔 없이 ECR에 올리는 경로라 push 트리거를 끔. images.yaml에서 스캔한 digest를 복사하도록 고친 뒤 되살림.
 on:
-  workflow_dispatch: {}
+  workflow_run:
+    workflows: [images]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "images.yaml run id whose digests.json to mirror (main, scans passed)"
+        required: true
 
-permissions:
-  id-token: write
-  contents: read
+permissions: {}
 
 concurrency:
-  group: platform-images-${{ github.ref }}
+  group: platform-images
   cancel-in-progress: false
 
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REGISTRY: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com
+  GHCR_PREFIX: ghcr.io/mangowhoiscloud/b-free
+  # images.yaml catalog name -> platform ECR repository bravo-platform/<name>
+  PLATFORM_IMAGES: api console gate collector executor rehearsal
+
 jobs:
-  build:
-    name: ${{ matrix.image.name }}
+  mirror:
+    name: mirror scanned digests to ECR
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        image:
-          - { name: api, context: platform/api, file: platform/api/Dockerfile, build_contexts: "" }
-          - { name: console, context: platform/console, file: platform/console/Dockerfile, build_contexts: "" }
-          - { name: gate, context: platform/gate, file: platform/gate/Dockerfile, build_contexts: "" }
-          - { name: collector, context: platform/collector, file: platform/collector/Dockerfile, build_contexts: "" }
-          - { name: executor, context: platform/executor, file: platform/executor/Dockerfile, build_contexts: "" }
-          - { name: rehearsal, context: platform, file: platform/rehearsal/Dockerfile, build_contexts: "" }
-          - { name: link, context: tools/link, file: deploy/platform/images/link/Dockerfile, build_contexts: "extra=deploy/platform/images/link" }
+    timeout-minutes: 30
+    permissions:
+      id-token: write   # OIDC to the ECR push role
+      actions: read     # digests.json artifact of the images run
+      packages: read    # pull from GHCR by digest
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download digests.json from the images run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          persist-credentials: false
+          name: digests
+          path: ${{ runner.temp }}/digests
+          run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
+          github-token: ${{ github.token }}
 
-      - name: Set up QEMU (linux/arm64 for t4g nodes)
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: arm64
+      - name: Select scanned and pushed digests
+        id: sel
+        run: |
+          set -euo pipefail
+          f="$RUNNER_TEMP/digests/digests.json"
+          jq -e '.images | type == "array"' "$f" >/dev/null
+          : > "$RUNNER_TEMP/copy.tsv"
+          for n in $PLATFORM_IMAGES; do
+            row="$(jq -c --arg n "$n" '.images[] | select(.name == $n)' "$f")"
+            if [[ -z $row ]]; then echo "$n: not built in this run, skipped"; continue; fi
+            d="$(jq -r '.digest // ""' <<<"$row")"; ok="$(jq -r '.scan_passed // false' <<<"$row")"; pushed="$(jq -r '.pushed // ""' <<<"$row")"
+            if [[ $ok != true || -z $pushed || $d != sha256:* ]]; then echo "$n: scan not passed or not pushed, NOT copied"; continue; fi
+            printf '%s\t%s\n' "$n" "$d" >> "$RUNNER_TEMP/copy.tsv"
+          done
+          echo "count=$(wc -l < "$RUNNER_TEMP/copy.tsv" | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: AWS credentials (OIDC, no static key)
+      - name: AWS credentials (OIDC)
+        if: steps.sel.outputs.count != '0'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.PLATFORM_CI_ROLE_ARN }}
-          role-session-name: platform-images-${{ github.run_id }}
-          aws-region: ap-northeast-2
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
-
-      - name: Build and push (tag = commit SHA; ECR tags are immutable)
-        id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ${{ matrix.image.context }}
-          file: ${{ matrix.image.file }}
-          build-contexts: ${{ matrix.image.build_contexts }}
-          platforms: linux/arm64
-          push: true
-          provenance: false
-          tags: ${{ steps.ecr.outputs.registry }}/bravo-platform/${{ matrix.image.name }}:${{ github.sha }}
-
-      - name: Digest to job summary
+      - name: Copy GHCR -> ECR by digest (skopeo, digests preserved)
+        if: steps.sel.outputs.count != '0'
         env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          NAME: ${{ matrix.image.name }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          test -n "$DIGEST" || { echo "no digest from build-push-action" >&2; exit 1; }
-          printf '| %s | `%s/bravo-platform/%s@%s` |\n' "$NAME" "$REGISTRY" "$NAME" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          ecr_pw="$(aws ecr get-login-password --region "$AWS_REGION")"
+          printf '%s' "$ecr_pw" | skopeo login --username AWS --password-stdin "$ECR_REGISTRY" >/dev/null
+          printf '%s' "$GH_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io >/dev/null
+          {
+            echo "| image | digest (scanned in images.yaml) | ECR |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS=$'\t' read -r n d; do
+            dst="$ECR_REGISTRY/bravo-platform/$n"
+            # ECR tags are immutable: tag with the commit; the digest is what deploy/platform pins.
+            skopeo copy --all --preserve-digests "docker://$GHCR_PREFIX/$n@$d" "docker://$dst:$SHA-$(echo "$d" | cut -c8-19)"
+            got="$(skopeo inspect --raw "docker://$dst@$d" | sha256sum | awk '{print "sha256:" $1}')"
+            [[ $got == "$d" ]] || { echo "$n: ECR digest $got != scanned $d"; exit 1; }
+            echo "| \`$n\` | \`$d\` | \`$dst@$d\` |" >> "$GITHUB_STEP_SUMMARY"
+          done < "$RUNNER_TEMP/copy.tsv"

@@ -57,9 +57,10 @@ class Bao:
             raise SystemExit("custody file must be mode 600")
         self._token = json.loads(custody.read_text())["admin_token"]
         doc = json.loads(custody.read_text())
-        if doc.get("bao_target") == "platform-eks":  # keys.sh migrate-to-platform
-            self._addr = self._port_forward()
-            cafile = custody_dir / "platform-eks" / "ca.crt"
+        target = doc.get("bao_target")
+        if target in ("platform-eks", "platform-rke2"):  # keys.sh migrate-to-platform
+            self._addr = self._port_forward("bravo-platform-rke2" if target == "platform-rke2" else "bravo-platform")
+            cafile = custody_dir / target / "ca.crt"
         else:
             self._addr = f"https://127.0.0.1:{os.environ.get('PLATFORM_BAO_HOST_PORT', '8200')}"
             cafile = REPO / "deploy/pilot/bao/tls/ca.crt"
@@ -69,7 +70,7 @@ class Bao:
         self._ctx.verify_flags &= ~getattr(ssl, "VERIFY_X509_STRICT", 0)
 
     @staticmethod
-    def _port_forward() -> str:
+    def _port_forward(default_ctx: str) -> str:
         """Private port-forward to the platform EKS openbao-0 for this process only (as keys.sh does)."""
         import atexit
         import socket
@@ -78,7 +79,7 @@ class Bao:
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
-        ctx = os.environ.get("BRAVO_PLATFORM_CONTEXT", "bravo-platform")
+        ctx = os.environ.get("BRAVO_PLATFORM_CONTEXT", default_ctx)
         proc = subprocess.Popen(["kubectl", "--context", ctx, "-n", "openbao", "port-forward", "pod/openbao-0",
                                  f"{port}:8200"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         atexit.register(proc.terminate)

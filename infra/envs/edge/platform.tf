@@ -32,10 +32,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "platform" {
   account_id = var.account_id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.platform.id
   config = {
-    ingress = [
-      { hostname = local.platform_fqdn, service = var.platform_origin_service },
-      { service = "http_status:404" },
-    ]
+    ingress = concat(
+      [{ hostname = local.platform_fqdn, service = var.platform_origin_service }],
+      local.platform_link_ingress, # platform_links.tf (D-16 links the platform exposes)
+      [{ service = "http_status:404" }],
+    )
   }
 }
 

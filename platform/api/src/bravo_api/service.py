@@ -27,7 +27,7 @@ from .gate import GatePolicy, Verdict, evaluate
 from .models import ApprovalDecision, EnvRegister, PlanCreate
 from .secretrefs import BaoSettings, SecretRefResolver
 from .statemachine import State, Trigger, lock_plan, transition
-from .upstreams import GAP_GRADES, CollectorClient, GateControlsClient, UpstreamError
+from .upstreams import GAP_GRADES, ROOT_EMPTY, CollectorClient, GateControlsClient, UpstreamError
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +56,9 @@ class Snapshot:
 
 @dataclass(frozen=True, slots=True)
 class Inventory:
-    """Collector inventory (``inventory/v1``) as read, or why it is missing. ``status``: ok | unconfigured | error.
+    """Collector inventory (``inventory/v1``) as read, or why it is missing.
+
+    ``status``: ok | unconfigured | unavailable (collector answered ``inventory_root_empty``) | error.
 
     Gaps are findings whose ``tier_code`` needs a proposal (``code_change``, ``unclassified``; FR-2, §8.1), from
     ``findings[]`` and ``unclassified[]``. Test-code findings (``test_findings``) are not migration scope.
@@ -465,7 +467,9 @@ class Services:
         try:
             return Inventory("ok", await self.collector.inventory(), None)
         except UpstreamError as exc:
-            return Inventory("error", None, exc.reason)
+            # inventory_root_empty: the collector answered, but nothing was mounted to scan. Unavailable, not an
+            # outage and never "no gaps": ANALYZE holds with that reason (plan.analysis.inventory.reason).
+            return Inventory("unavailable" if exc.reason == ROOT_EMPTY else "error", None, exc.reason)
 
     async def _apply_analysis(
         self, conn: Conn, plan_id: UUID, snap: Snapshot, inv: Inventory, actor: Actor

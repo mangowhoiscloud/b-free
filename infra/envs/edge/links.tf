@@ -33,14 +33,17 @@ locals {
         k8s = { service = "tcp://kubernetes.default.svc:443", clients = ["plat"] }
         db  = { service = "tcp://chat-db-rw.chat.svc:5432", clients = ["plat", "dst"] }
         pgb = { service = "tcp://chat-pgbouncer.chat.svc:6432", clients = ["plat"] }
+        # Write-block switch (spec r2 §8.10, CLOUD-E2E-CONTRACT 8): Executor -> chat-admin:8081 (Bearer token).
+        admin = { service = "tcp://chat-admin.chat.svc:8081", clients = ["plat"] }
       }
     }
     dst = {
       environment_id = "target-onprem"
       links = {
-        k8s = { service = "tcp://kubernetes.default.svc:443", clients = ["plat"] }
-        db  = { service = "tcp://chat-db-rw.chat.svc:5432", clients = ["plat", "src"] }
-        pgb = { service = "tcp://chat-pgbouncer.chat.svc:6432", clients = ["plat"] }
+        k8s   = { service = "tcp://kubernetes.default.svc:443", clients = ["plat"] }
+        db    = { service = "tcp://chat-db-rw.chat.svc:5432", clients = ["plat", "src"] }
+        pgb   = { service = "tcp://chat-pgbouncer.chat.svc:6432", clients = ["plat"] }
+        admin = { service = "tcp://chat-admin.chat.svc:8081", clients = ["plat"] }
       }
     }
   }
