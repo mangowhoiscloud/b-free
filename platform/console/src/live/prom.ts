@@ -25,12 +25,11 @@ export function fmtNum(v: number | null | undefined, digits = 1): string {
   return v.toLocaleString('ko-KR', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
 }
 
-/** Labels that name an environment, in the order we trust them. */
-export const ENV_LABELS = ['deployment_environment_name', 'environment', 'env', 'k8s_cluster_name', 'cluster'] as const;
-export const ENV_BY = ENV_LABELS.join(', ');
+/** Environment label (15-r2-contracts §7.3): every panel groups by `bravo_env`
+ *  (source-aws, target-onprem, target-gcp, platform). `deployment_environment_name` is app-set and not used. */
+export const ENV_BY = 'bravo_env';
 export function envOf(labels: Record<string, string>): string {
-  for (const k of ENV_LABELS) if (labels[k]) return labels[k];
-  return '(환경 라벨 없음)';
+  return labels.bravo_env || '(bravo_env 없음)';
 }
 
 export interface PromRange {

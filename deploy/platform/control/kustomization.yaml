@@ -51,7 +51,7 @@ images:
     digest: sha256:eefdcf9f8af3e884fe6f17b47db6d34bd7542e173efe01c819f72bd9a963cff2 # cost-20261102T134535Z (obs/cost lane: + GET /v1/cost over r2-20261102T130026Z; tree at 59883af)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:077fb8c8209228797fcebc6566e1229a4a6a6018d3247601094a69b535000805 # redesign-r8 (console lane: DESIGN-REFERENCE IA, type scale, time range, KPI, receipt, health/sync)
+    digest: sha256:fac924f27de534668e169d2bd60f33ab124a621f45de7f77b6a760076d7f1835 # cost-v1-r9 (console lane: cost/v1 bases flat + api_equivalent, lower bound, CE reference; §7.4 PromQL bravo_env)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)

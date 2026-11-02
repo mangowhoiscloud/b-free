@@ -24,6 +24,9 @@ Stores are S3-compatible endpoints configured only from the environment:
 
 CLI (pre-copy before a cutover, or the final delta under freeze):
     python -m bravo_executor.attachment_copy --from src --to dst
+In executor-0 (BRAVO_TOPOLOGY_FILE set) the stores and DSNs come from the topology and the delivered
+secrets, the same ones the cutover uses at step 1b:
+    kubectl exec executor-0 -c executor -- python -m bravo_executor.attachment_copy --from src --to dst
 """
 
 from __future__ import annotations
@@ -287,15 +290,29 @@ def copier_from_env(
 
 
 async def _cli(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
     from .config import Settings
 
-    s = Settings.from_env()
+    topology = os.environ.get("BRAVO_TOPOLOGY_FILE", "").strip()
+    if topology:
+        from .topology import FileSecrets, settings_from_topology
+
+        secrets = FileSecrets(Path(os.environ["BRAVO_SECRETS_DIR"]))
+        s = await settings_from_topology(Path(topology), secrets.field, os.environ["PLATFORM_DB_DSN"],
+                                         require_entries=False)
+    else:
+        s = Settings.from_env()
     pool: AsyncConnectionPool[AsyncConnection] = AsyncConnectionPool(
         s.platform_dsn, connection_class=AsyncConnection, min_size=1, max_size=2, open=False
     )
     await pool.open(wait=True, timeout=30)
     try:
-        copier = copier_from_env(pool, args.from_side, args.to_side, {"src": s.src_store_id, "dst": s.dst_store_id})
+        stores = dict(s.object_stores)
+        copier = (AttachmentCopier(pool, ObjectStore(stores[args.from_side]), ObjectStore(stores[args.to_side]))
+                  if args.from_side in stores and args.to_side in stores
+                  else copier_from_env(pool, args.from_side, args.to_side,
+                                       {"src": s.src_store_id, "dst": s.dst_store_id}))
         if copier is None:
             hint = "set BRAVO_ATT_SRC_S3_BUCKET and BRAVO_ATT_DST_S3_BUCKET"
             print(json.dumps({"status": "NOT_CONFIGURED", "hint": hint}))

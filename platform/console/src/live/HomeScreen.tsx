@@ -16,6 +16,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { ApiError, errorText } from '../api/client';
 import type { EnvSummary, PlanSummary } from '../api/home';
 import { fmtLatency, fmtMoney, fmtTs, shortId } from '../lib/format';
+import { extraNote, extraOf } from './costExtra';
 import { idemKey, releaseIdemKey } from '../lib/idem';
 import { useApi, type Session } from '../state';
 import { distroOf, parseClusters, type Cluster, type ClustersResp } from './ClustersScreen';
@@ -161,10 +162,7 @@ function useCostTotal(apiBase: string) {
     queryFn: async () => {
       const res = await fetch(`${apiBase}/v1/cost`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
       if (!res.ok) throw new Error(`GET /v1/cost → ${res.status}`);
-      const o = (await res.json()) as Record<string, unknown>;
-      const t = (o.totals ?? {}) as Record<string, unknown>;
-      const extra = typeof t.migration_extra === 'number' ? t.migration_extra : typeof o.migration_extra === 'number' ? o.migration_extra : null;
-      return { extra, currency: typeof o.currency === 'string' ? o.currency : 'USD' };
+      return extraOf(await res.json());
     },
   });
 }
@@ -245,7 +243,7 @@ export function HomeScreen({ session, onOpenPlan }: { session: Session; onOpenPl
           {
             label: '이전 중 추가 비용',
             value: cost.data?.extra != null ? fmtMoney(cost.data.extra, cost.data.currency) : '—',
-            note: cost.error ? `연결 안 됨 · ${cost.error instanceof Error ? cost.error.message : 'GET /v1/cost'}` : cost.data && cost.data.extra === null ? '응답에 migration_extra 없음' : '비용 영수증에서 자세히',
+            note: extraNote(cost.data, cost.error),
           },
         ]}
       />
