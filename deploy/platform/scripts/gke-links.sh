@@ -13,7 +13,7 @@ for spec in "external-secrets cf-link-plat-bao" "bravo-observability cf-link-pla
   for f in client_id client_secret; do
     acc="$(printf '%s\n%s\n' "$acc" "$("$KEYS" env-pipe target-gcp "$sec" "$f" -- jq -Rs '{v: (. | @base64)}')" | jq -s --arg k "$f" '.[0] as $s | .[1].v as $v | $s | .data[$k] = $v')"
   done
-  printf '%s\n' "$acc" | "${G[@]}" apply -f - >/dev/null; echo "gke-links: Secret $ns/$sec (values not shown)"
+  printf '%s\n' "$acc" | "${G[@]}" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null; echo "gke-links: Secret $ns/$sec (values not shown)"
 done
 # The relays rendered by links.sh carry a ConfigMap and a different pod template; replace the Deployments.
 for spec in "external-secrets openbao" "bravo-observability platform-otel" "chat src-db-link"; do

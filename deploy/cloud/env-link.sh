@@ -15,16 +15,16 @@ deliver() {  # deliver CONTEXT OPENBAO_ENV OPENBAO_NAME SECRET_NAME
     CID="$(cat)"; export CID
     "$KEYS" env-pipe "$OENV" "$ONAME" client_secret -- jq -Rs --arg n "$SNAME" "{apiVersion: \"v1\", kind: \"Secret\",
       type: \"Opaque\", metadata: {name: \$n, namespace: \"chat\", labels: {\"bravo.io/source\": \"openbao\"}},
-      data: {client_id: (env.CID | @base64), client_secret: (. | @base64)}}" | kubectl --context "$CTX" apply -f -'
+      data: {client_id: (env.CID | @base64), client_secret: (. | @base64)}}" | kubectl --context "$CTX" apply --server-side --force-conflicts --field-manager=bravo-secrets -f -'
 }
 case "${1:-status}" in
   apply)
     deliver "$DST_CONTEXT" "$DST_ENV" cf-link-src-db cf-link-src-db
-    render src-db-link t1-src-db.mangowhois.ai cf-link-src-db | kubectl --context "$DST_CONTEXT" apply -f -
+    render src-db-link t1-src-db.mangowhois.ai cf-link-src-db | kubectl --context "$DST_CONTEXT" apply --server-side --force-conflicts --field-manager=bravo-secrets -f -
     deliver "$SRC_CONTEXT" "$SRC_ENV" cf-link-dst-db cf-link-dst-db
     # the 임시 링크 reverse relay (laptop agent) is replaced by the D-16 client under the same Service name
     kubectl --context "$SRC_CONTEXT" -n chat delete deploy/dst-db-link configmap/dst-db-link-relay networkpolicy/dst-db-link --ignore-not-found
-    render dst-db-link t1-dst-db.mangowhois.ai cf-link-dst-db | kubectl --context "$SRC_CONTEXT" apply -f -
+    render dst-db-link t1-dst-db.mangowhois.ai cf-link-dst-db | kubectl --context "$SRC_CONTEXT" apply --server-side --force-conflicts --field-manager=bravo-secrets -f -
     ;;
   status)
     for c in "$DST_CONTEXT:src-db-link" "$SRC_CONTEXT:dst-db-link"; do

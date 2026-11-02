@@ -966,14 +966,14 @@ cmd_tls_platform() {
       "extendedKeyUsage=serverAuth" "subjectAltName=$sans") 2>/dev/null
   kubectl --context "$PLATFORM_CONTEXT" -n openbao create secret generic openbao-tls \
     --from-file=tls.crt="$d/tls.crt" --from-file=tls.key="$d/tls.key" --from-file=ca.crt="$d/ca.crt" \
-    --dry-run=client -o yaml | kubectl --context "$PLATFORM_CONTEXT" apply -f - >/dev/null
+    --dry-run=client -o yaml | kubectl --context "$PLATFORM_CONTEXT" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   cp "$d/ca.crt" "$PLATFORM_TLS_DIR/ca.crt"; chmod 600 "$PLATFORM_TLS_DIR/ca.crt"
   rm -rf "$d"
   local ns
   for ns in openbao bravo-control; do
     kubectl --context "$PLATFORM_CONTEXT" get ns "$ns" >/dev/null 2>&1 || continue
     kubectl --context "$PLATFORM_CONTEXT" -n "$ns" create configmap openbao-ca --from-file=ca.crt="$PLATFORM_TLS_DIR/ca.crt" \
-      --dry-run=client -o yaml | kubectl --context "$PLATFORM_CONTEXT" apply -f - >/dev/null
+      --dry-run=client -o yaml | kubectl --context "$PLATFORM_CONTEXT" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   done
   log "platform TLS: Secret openbao/openbao-tls (server cert 30 days), CA in $PLATFORM_TLS_DIR/ca.crt and ConfigMap openbao-ca"
 }

@@ -33,7 +33,7 @@ docker rmi "$GATE_REPO:import" >/dev/null
 
 k -n rook-ceph get secret rook-ceph-object-user-bravo-bravo-gate-other -o json \
   | jq '{apiVersion: "v1", kind: "Secret", type: "Opaque", metadata: {name: "bravo-gate-other", namespace: "chat"},
-         data: {AccessKey: .data.AccessKey, SecretKey: .data.SecretKey}}' | k apply -f - >/dev/null
+         data: {AccessKey: .data.AccessKey, SecretKey: .data.SecretKey}}' | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
 
 k -n chat delete job bravo-obj-tests --ignore-not-found >/dev/null
 k apply -f - >/dev/null <<YAML

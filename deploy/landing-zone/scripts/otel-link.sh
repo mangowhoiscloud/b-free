@@ -26,7 +26,7 @@ for f in client_id client_secret; do
   secret="$(printf '%s\n%s\n' "$secret" "$("$keys" env-pipe "$env_id" cf-link-plat-otel "$f" -- jq -Rs '{v: (. | @base64)}')" \
     | jq -s --arg k "$f" '.[0] as $s | .[1].v as $v | $s | .data[$k] = $v')"
 done
-printf '%s\n' "$secret" | k apply -f - >/dev/null
+printf '%s\n' "$secret" | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
 secret=""
 echo "otel-link: Secret bravo-observability/cf-link-plat-otel from secret/envs/$env_id/cf-link-plat-otel (values not shown)"
 

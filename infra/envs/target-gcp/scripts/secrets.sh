@@ -141,7 +141,7 @@ cmd_eso() {
         metadata: {name: "eso-target-gcp", namespace: "external-secrets",
                    labels: {"app.kubernetes.io/part-of": "bravo-landing-zone"}},
         stringData: {role_id: $rid, secret_id: .data.secret_id}}' \
-    | k apply -f - >/dev/null
+    | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   log "Secret external-secrets/eso-target-gcp applied (fresh secret_id, values not shown)"
 }
 

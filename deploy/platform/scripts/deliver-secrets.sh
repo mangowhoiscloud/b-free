@@ -49,7 +49,7 @@ secret() {
     acc="$(printf '%s\n%s\n' "$acc" "$(b64_field "$env" "$sname" "$field")" | jq -s --arg k "$key" '.[0] as $s | .[1].v as $v | $s | .data[$k] = $v')"
   done
   kubectl --context "$CTX" get ns "$ns" >/dev/null 2>&1 || kubectl --context "$CTX" create ns "$ns" >/dev/null
-  printf '%s\n' "$acc" | kubectl --context "$CTX" apply -f - >/dev/null
+  printf '%s\n' "$acc" | kubectl --context "$CTX" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   log "Secret $ns/$name: keys $(printf '%s\n' "$acc" | jq -c '.data | keys') (values not shown)"
 }
 
@@ -98,7 +98,7 @@ cmd_deliver() {
   acc="$(jq -n '{apiVersion: "v1", kind: "Secret", type: "Opaque", metadata: {name: "executor-pgpass", namespace: "bravo-control",
     labels: {"app.kubernetes.io/managed-by": "bravo-keys", "bravo.io/source": "openbao"}}, data: {}}')"
   acc="$(printf '%s\n%s\n' "$acc" "$(pgpass_doc)" | jq -s '.[0] as $s | .[1].v as $v | $s | .data.pgpass = $v')"
-  printf '%s\n' "$acc" | kubectl --context "$CTX" apply -f - >/dev/null
+  printf '%s\n' "$acc" | kubectl --context "$CTX" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   log "Secret bravo-control/executor-pgpass: $(printf '%s\n' "$acc" | jq -r '.data.pgpass | @base64d | split("\n") | map(select(length > 0)) | length') entries (values not shown)"
   local p env name f specs
   for p in envs/source-aws/chat-db envs/target-onprem/chat-db envs/source-aws/chat-admin envs/target-onprem/chat-admin \
@@ -123,7 +123,7 @@ cmd_deliver() {
       data: {type: ("git" | @base64), name: ("b-free" | @base64),
              url: ("git@github.com:mangowhoiscloud/b-free.git" | @base64),
              sshPrivateKey: ((if endswith("\n") then . else . + "\n" end) | @base64)}}')"
-    printf '%s\n' "$repo" | kubectl --context "$CTX" apply -f - >/dev/null; repo=""
+    printf '%s\n' "$repo" | kubectl --context "$CTX" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null; repo=""
     log "Secret argocd/repo-b-free: ssh deploy key for git@github.com:mangowhoiscloud/b-free.git (value not shown)"
   else
     log "argocd repo credential: secret/envs/platform/argocd-repo (field ssh_private_key) is not in OpenBao; Argo CD cannot read the private repo yet"
@@ -131,7 +131,7 @@ cmd_deliver() {
   local ns
   for ns in bravo-control; do
     kubectl --context "$CTX" -n "$ns" create configmap openbao-ca --from-file=ca.crt="$CUSTODY_DIR/$(jq -r '.bao_target' "$CUSTODY_DIR/openbao-init.json")/ca.crt" \
-      --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null
+      --dry-run=client -o yaml | kubectl --context "$CTX" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   done
 }
 

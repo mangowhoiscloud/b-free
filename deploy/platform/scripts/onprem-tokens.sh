@@ -31,7 +31,7 @@ kubeconfig_secret() { # bao-name secret-name user
         "tls-server-name": "kubernetes.default.svc", "certificate-authority-data": $ca}}],
       users: [{name: $u, user: {token: .}}],
       contexts: [{name: "target-onprem", context: {cluster: "target-onprem", user: $u}}]} | tojson | @base64)}}' \
-    | kubectl --context "$PLATFORM" apply -f - >/dev/null
+    | kubectl --context "$PLATFORM" apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   echo "onprem-tokens: Secret bravo-control/$2 from secret/envs/target-onprem/$1 (values not shown)"
 }
 mint kube-system bravo-collector collector-k8s

@@ -54,7 +54,7 @@ case "${1:-status}" in
   relay-deploy)
     # The in-cluster half of the reverse tunnel (ns chat on the source cluster), image by digest.
     sed "s#image: bravo-link-relay#image: ${RELAY_IMAGE}#" "$REPO/tools/link/k8s/reverse-relay.yaml" \
-      | kubectl --context "$SRC_CONTEXT" -n "$CHAT_NAMESPACE" apply -f -
+      | kubectl --context "$SRC_CONTEXT" -n "$CHAT_NAMESPACE" apply --server-side --force-conflicts --field-manager=bravo-secrets -f -
     kubectl --context "$SRC_CONTEXT" -n "$CHAT_NAMESPACE" rollout status "$REVERSE_RELAY_WORKLOAD" --timeout=180s
     ;;
   relay-delete)
