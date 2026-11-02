@@ -4,7 +4,7 @@
 
 | 방식 | 대상 | 쓰기 | 읽기 |
 |---|---|---|---|
-| 앱(`--app-url`) | 고객 앱 공개 주소(예: `https://b-free-chat-src.mangowhois.ai`, LB `https://b-free-chat.mangowhois.ai`) | `POST /api/rooms/<방>/messages` | `/ws?room=<방>&after=<id>` 접속 → `hello` → 이력(`messages`, `backlog: true`) → 닫기 |
+| 앱(`--app-url`) | 고객 앱 공개 주소(예: `https://b-free-chat-src.mangowhois.ai`, LB `https://b-free-chat.mangowhois.ai`) | `POST /api/rooms/<방>/messages` | 기본 `GET /api/rooms/<방>/messages?after=<id>`(앱 0.3.3부터). `--read-op ws`면 `/ws?room=<방>&after=<id>` 접속 → `hello` → 이력 → 닫기 |
 | DB(`--dsn`) | PgBouncer(`app_writer`) | `INSERT ... ON CONFLICT (idem_key)` | 없음 |
 
 스펙 수치(쓰기 50, 읽기 150 req/s)는 앱 방식으로 잽니다. DB 방식은 예전 T18 경로이고 앱을 거치지 않습니다.
@@ -12,7 +12,7 @@
 ## 앱 방식이 하는 일
 
 - 쓰기: 요청 ID가 `Idempotency-Key`이고, 본문은 `load message <요청 ID>`입니다. 시도마다 시도 ID(`X-Bravo-Attempt-Id`)를 붙이고 실패한 시도는 `events.jsonl`에 남깁니다. 503(쓰기 차단 · 대기, `Retry-After`를 따름), 그 밖의 5xx, 429, 시간 초과, 연결 오류는 같은 키로 다시 보냅니다. 200은 이미 commit된 키의 재응답입니다. 그 밖의 응답은 실패로 끝냅니다. 시도 시간 제한 15초(§5.3), 요청 기한 120초, 최대 40회.
-- 읽기: 데모 앱이 방을 읽는 길은 WebSocket뿐입니다(HTTP로 메시지를 읽는 API가 없음). 브라우저가 방을 열거나 다시 붙을 때와 같이 `after=<마지막 id>`로 접속해 이력을 받고 닫습니다. `after`는 가장 최근 확인된 쓰기 ID보다 20 작게 잡아(`--read-window`) 읽기마다 최근 행 20개 안팎을 읽습니다. 읽기는 다시 시도하지 않습니다.
+- 읽기: 기본은 앱 0.3.3의 HTTP 이력 읽기 `GET /api/rooms/<방>/messages?after=<마지막 id>`입니다. WebSocket 이력(`/ws?after=`)과 같은 행을 돌려주고, keep-alive라 Cloudflare · cloudflared · Envoy가 연결을 다시 씁니다. 0.3.2까지는 WebSocket뿐이었고, 읽기마다 새 연결이 생겨 출발지 노드를 포화시켰습니다. WebSocket 길은 `--read-op ws`(Job은 `READ_OP=ws`)로 따로 잽니다. `after`는 가장 최근 확인된 쓰기 ID보다 20 작게 잡아(`--read-window`) 읽기마다 최근 행 20개 안팎을 읽습니다. 읽기는 다시 시도하지 않습니다.
 - 열린 부하(open loop)입니다. 응답이 늦어도 정해진 시각에 요청을 냅니다. 쓰기 정지는 처리량 감소가 아니라 지연과 재시도로 드러납니다.
 - 방은 실행마다 새로 씁니다(`load-<실행 ID 앞 8자>`). 그 방의 모든 행이 이 실행의 것이라 NFR-2가 "보내지 않은 행"까지 셉니다.
 - 어느 환경이 답했는지는 앱이 알려 줍니다. HTTP는 응답 헤더 `X-Served-By`, WebSocket은 `hello.env.id`입니다(`aws`, `onprem`, `gcp`). 앱 응답이 없으면(엣지 530 · 502, 시간 초과) `unknown`입니다.
@@ -65,12 +65,12 @@ uv run python -m bravo_loadgen --app-url https://b-free-chat-src.mangowhois.ai \
 
 | 시계열 | 라벨 | 뜻 |
 |---|---|---|
-| `bravo_loadgen_attempts_total` | `run_id`, `op`(write · read), `result`(ok · error), `code`, `served_by` | 쓰기 시도와 읽기 하나하나 |
+| `bravo_loadgen_attempts_total` | `run_id`, `op`(write · read · read_ws), `result`(ok · error), `code`, `served_by` | 쓰기 시도와 읽기 하나하나. `read`는 HTTP 읽기, `read_ws`는 WebSocket 읽기 |
 | `bravo_loadgen_attempt_duration_milliseconds_{bucket,count,sum}` | `run_id`, `op`, `result`, `served_by`, `le` | 시도 하나의 시간(HTTP 요청 하나, WebSocket 이력 읽기 하나) |
 | `bravo_loadgen_request_duration_milliseconds_{bucket,count,sum}` | `run_id`, `op`, `outcome`(쓰기 acked · failed, 읽기 ok · failed), `served_by`, `le` | 논리 요청 하나, 예정 시각부터 끝까지(재시도 포함) |
 
 - 공통 라벨: `job="bravo-loadgen"`, `service_name="bravo-loadgen"`, `instance="<run_id>/w<번호>"`(프로세스마다 하나. 실행 단위는 `run_id`로 묶어 합칩니다), `bravo_plan_id`(`--plan-id`를 준 경우. `load_cutover.sh`는 항상 줌), `bravo_env="platform"`(Collector가 붙임).
-- `code`: 쓰기 성공 `201`(새로 씀) · `200`(재응답). 쓰기 오류 `503:writes_blocked`, `503:write_timeout`, `503:starting`, `500:injected_fault`, `500`, `502`, `530`, `timeout`, `transport:<예외>`, `bad_body`, `409:idempotency_conflict`(재시도 안 함), `client_saturated`(보내지 않음). 읽기 성공 `ok`. 읽기 오류 `http_<상태>`(핸드셰이크 거절), `close_<코드>`(예: 1013), `timeout`, `transport:<예외>`, `handshake:<예외>`, `bad_frame`.
+- `code`: 쓰기 성공 `201`(새로 씀) · `200`(재응답). 쓰기 오류 `503:writes_blocked`, `503:write_timeout`, `503:starting`, `500:injected_fault`, `500`, `502`, `530`, `timeout`, `transport:<예외>`, `bad_body`, `409:idempotency_conflict`(재시도 안 함), `client_saturated`(보내지 않음). 읽기 성공 `ok`. HTTP 읽기 오류 `<상태>`(예: `503:db_waiting`, `502`), `timeout`, `transport:<예외>`, `bad_body`, `rows_outside_request`. WebSocket 읽기 오류 `http_<상태>`(핸드셰이크 거절), `close_<코드>`(예: 1013), `handshake:<예외>`, `bad_frame`.
 - 히스토그램 경계(ms): 25, 50, 100, 200, 300, 400, 500, 750, 1000, 1500, 2000, 3000, 5000, 8000, 15000, 30000.
 - 누적(cumulative) 값이고 5초마다 보냅니다(`--metrics-interval`). 15초보다 짧은 단계 창은 가르지 못합니다.
 
@@ -90,7 +90,7 @@ time() - max(timestamp(bravo_loadgen_attempts_total{bravo_plan_id="$PLAN"}))
 2026-11-03 03:0x KST에 위 쿼리를 플랫폼 Prometheus에 실제로 던져 확인했습니다(실행 `08c2231f-…`, `bravo_plan_id` 라벨은 시험용 plan ID로 확인).
 
 - 최소 표본: 초당 50 + 150에서 10% 단계의 목적지 몫은 초당 쓰기 5 · 읽기 15 안팎입니다. 표본 수 규칙은 판정 쪽이 정합니다.
-- 서버 쪽 값도 있습니다. 앱의 SERVER span에서 만든 `traces_span_metrics_calls_total` · `traces_span_metrics_duration_milliseconds_bucket`(`service_name="bravo-demo"`, `bravo_env`, `url_path`, `http_response_status_code`)입니다. `url_path`에 방 이름이 들어가므로 `url_path=~"/api/rooms/[^/]+/messages"`로 고릅니다. WebSocket 읽기는 span이 없습니다.
+- 서버 쪽 값도 있습니다. 앱의 SERVER span에서 만든 `traces_span_metrics_calls_total` · `traces_span_metrics_duration_milliseconds_bucket`(`service_name="bravo-demo"`, `bravo_env`, `url_path`, `http_response_status_code`)입니다. `url_path`에 방 이름이 들어가므로 `url_path=~"/api/rooms/[^/]+/messages"`로 고릅니다. HTTP 읽기는 `GET /api/rooms/<방>/messages` span이 있고, WebSocket 읽기는 span이 없습니다.
 - 네트워크: 플랫폼 Prometheus의 NetworkPolicy(`deploy/platform/observability/networkpolicy.yaml`의 `prometheus-ingress`)는 2026-11-03 현재 Collector · Grafana · 콘솔만 받습니다. Executor가 읽으려면 그 규칙과 Executor 쪽 송신 규칙을 더해야 합니다.
 
 ## 측정 결과

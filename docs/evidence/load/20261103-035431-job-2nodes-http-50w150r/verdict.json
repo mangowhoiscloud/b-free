@@ -1,0 +1,7 @@
+{
+  "loadgen_exit": 1,
+  "nfr2_exit": 0,
+  "writes_failed": 0,
+  "reads_failed": 77,
+  "nfr2_ok": true
+}
