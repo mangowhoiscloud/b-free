@@ -45,7 +45,7 @@
 
 - 출발지 chat-db 재시작(투영 볼륨 추가) 01:36:32–01:39:56. CNPG smart shutdown이 180초 동안 기존 연결을 기다림. 그동안 기존 PgBouncer 연결로 앱 `/readyz`는 3.5초 간격 표본 모두 200(`source-restart-readyz.txt`). 온프렘 · GKE 재시작(pgaudit 적재)은 약 20초.
 - 온프렘 PgBouncer TLS 전환 직후 16:40:50 서버 접속 몇 번이 `unexpected eof`로 실패한 뒤 회복. 이후 오류 없음.
-- 정방향 구독이 `wal_sender_timeout = 5s`(CNPG 기본) 때문에 링크 위에서 가끔 끊기고 몇 초 안에 다시 붙음(16:41, 16:47, 17:01 출발지 로그). 이번 변경 전부터 있던 동작입니다.
+- 정방향 구독이 `wal_sender_timeout = 5s`(CNPG 기본) 때문에 링크 위에서 가끔 끊기고 몇 초 안에 다시 붙음(16:41, 16:47, 17:01 출발지 로그). 이번 변경 전부터 있던 동작입니다. 02:08 KST에 60초로 바꾼 뒤 22분 동안 끊김 0번(`docs/evidence/repl-timeouts/`).
 - `log_connections`로 CNPG `pg_isready`(10초마다) 접속도 로그에 남습니다.
 - PgBouncer는 CNPG 서버 키를 마운트합니다(같은 네임스페이스, 같은 신뢰 경계). CNPG가 인증서를 갱신하면(만료 7일 전) PgBouncer에 RELOAD가 필요합니다. CA 만료는 2027-01-31입니다. CA가 바뀌면 `db-ca.sh`와 `cluster-cas.sh`를 다시 돌립니다.
 - 데모 이야기: `verify.sh`는 전에 출발지 `chat`의 기본 차단 없음을 "S2 변경 승인으로 고칠 틈"으로 표시했습니다. 이제 기본 차단이 있으므로 S2 데모에 이 틈을 쓸 수 없습니다.

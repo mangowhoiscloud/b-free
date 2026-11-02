@@ -1,0 +1,15 @@
+2026-11-03 02:08:17 KST patch ko
+cluster.postgresql.cnpg.io/chat-db patched
+2026-11-03 02:08:17 KST patch kg
+cluster.postgresql.cnpg.io/chat-db patched
+2026-11-03 02:08:17 KST patch ks
+cluster.postgresql.cnpg.io/chat-db patched
+ks|wal_receiver_timeout|60000ms|configuration file|f
+ks|wal_sender_timeout|60000ms|configuration file|f
+ks pod started|2026-11-02 16:39:46.294159+00
+ko|wal_receiver_timeout|60000ms|configuration file|f
+ko|wal_sender_timeout|60000ms|configuration file|f
+ko pod started|2026-11-02 16:34:56.616021+00
+kg|wal_receiver_timeout|60000ms|configuration file|f
+kg|wal_sender_timeout|60000ms|configuration file|f
+kg pod started|2026-11-02 16:36:01.598054+00

@@ -1,0 +1,13 @@
+# Server logs after the change (2026-11-02 17:08:17 UTC) to 17:30:55 UTC
+## source: walsender timeouts / connection errors on the replication connection
+(end of list)
+## on-prem: bravo_fwd_sub WAL stream errors / apply worker starts
+(end of list)
+## link client src-db-link (on-prem) errors
+2026-11-02T17:21:45Z ERR failed to connect to origin error=EOF originURL=https://t1-src-db.mangowhois.ai
+(end of list)
+== /v1/readiness
+{"lag_bytes":0,"sub_state":"streaming","direction":"forward","schema_hash":{"src":"224b984591c7af598cee76f407444297c9b2281823f971bd8139efdb084f40cb","dst":"224b984591c7af598cee76f407444297c9b2281823f971bd8139efdb084f40cb"},"seq":{"src":1021,"dst":0},"rows":{"src":1021,"dst":1021}}
+b-free-chat-src /readyz: 200
+b-free-chat-dst /readyz: 200
+b-free-chat-gke /readyz: 200

@@ -41,6 +41,11 @@ spec:
       pgaudit.log_catalog: "off"
       log_connections: "on"
       log_disconnections: "on"
+      # Logical replication runs over the D-16 link (Cloudflare). CNPG's default 5s timeouts dropped the forward
+      # subscription every few minutes ("terminating walsender process due to replication timeout", measured
+      # 2026-11-03, docs/evidence/repl-timeouts/); 60s on the publisher and the subscriber side.
+      wal_sender_timeout: "60s"
+      wal_receiver_timeout: "60s"
     pg_hba:
       - hostnossl all all all reject
       - hostssl all all all scram-sha-256

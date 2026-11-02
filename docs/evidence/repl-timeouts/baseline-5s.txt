@@ -1,0 +1,16 @@
+# Baseline with CNPG defaults wal_sender_timeout = wal_receiver_timeout = 5s (wal_receiver_status_interval 10s).
+# Window: source chat-db-1 start 2026-11-02 16:39:35 UTC -> 17:07:48 UTC (28 min). Source walsender timeouts:
+2026-11-02T16:41:34 walsender bravo_fwd_sub terminating walsender process due to replication timeout
+2026-11-02T16:47:22 walsender bravo_fwd_sub terminating walsender process due to replication timeout
+2026-11-02T17:01:48 walsender bravo_fwd_sub terminating walsender process due to replication timeout
+# On-prem bravo_fwd_sub: WAL stream errors and apply worker starts in the same window (16:54:16 = deliberate restart for the NetworkPolicy check)
+2026-11-02T16:40:05 LOG logical replication apply worker for subscription "bravo_fwd_sub" has started
+2026-11-02T16:41:32 ERROR could not receive data from WAL stream: SSL error: unexpected eof while reading
+2026-11-02T16:41:32 LOG logical replication apply worker for subscription "bravo_fwd_sub" has started
+2026-11-02T16:47:19 ERROR could not receive data from WAL stream: SSL error: unexpected eof while reading
+2026-11-02T16:47:20 LOG logical replication apply worker for subscription "bravo_fwd_sub" has started
+2026-11-02T16:54:16 FATAL terminating logical replication worker due to administrator command
+2026-11-02T16:54:16 LOG logical replication apply worker for subscription "bravo_fwd_sub" has started
+2026-11-02T17:01:46 ERROR could not receive data from WAL stream: SSL error: unexpected eof while reading
+2026-11-02T17:01:46 LOG logical replication apply worker for subscription "bravo_fwd_sub" has started
+# Rate: 3 timeouts in 28 min (16:41:34, 16:47:22, 17:01:48), one every ~9 min; each reconnect took 0-1 s.
