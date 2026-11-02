@@ -1,8 +1,14 @@
 # Links that the PLATFORM exposes to customer clusters (D-16, D-26): consumers run `cloudflared access tcp` with their
-# own Access service token. Today: GKE target (target-gcp) External Secrets -> platform OpenBao, and its OTel agent ->
-# platform Collector. Same pattern as edge_link (Access app + Service Auth policy first, DNS last), but the connector is
+# own Access service token. Today:
+#   bao  (t1-plat-bao -> platform OpenBao): GKE target External Secrets (gke-plat-bao), on-prem RGW SSE-KMS (dst-plat-bao,
+#        2026-11-03: RGW wraps object data keys with transit key rgw-target-onprem; client deploy/landing-zone/overlays/
+#        rke2/rook/rgw-kms-link.yaml, Service rook-ceph/openbao, only RGW and its token renewer may use it).
+#   otel (t1-plat-otel -> platform Collector): OTel agents of GKE, source EKS and on-prem.
+# Same pattern as edge_link (Access app + Service Auth policy first, DNS last), but the connector is
 # the platform tunnel bravo-platform (platform.tf), so the ingress rules join its remote config.
 # Token secrets: keys.sh issue-service-token writes them to OpenBao only (secret/envs/<consumer>/cf-link-plat-<svc>).
+# Token IDs (not secret) go to terraform.tfvars platform_links.<key>.token_ids. Service tokens last 168h: a new token
+# has a new ID, so rotation = issue, add the ID, apply, re-pipe the Secret, remove the old ID, apply.
 
 variable "platform_links" {
   description = "링크 키(예: bao, otel) → 원본 tcp:// 서비스와 이 링크를 쓸 서비스 토큰 ID 목록. 호스트 이름 t1-plat-<키>.<zone>"

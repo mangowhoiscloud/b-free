@@ -32,6 +32,12 @@
 #   keys.sh env-fields ENV NAME                   field names of secret/envs/ENV/NAME (no values)
 #   keys.sh k8s-auth-setup                        platform-rke2: Kubernetes auth + roles rehearsal, api (root once, revoked)
 #   keys.sh env-list [ENV]                        secret names under secret/envs/ (or secret/envs/ENV/), no values
+#   keys.sh rgw-kms-init [ENV]                    RGW SSE-KMS (D-26): transit key rgw-ENV (aes256-gcm96, not exportable,
+#                                               no plaintext backup), policy platform-rgw-kms-ENV, AppRole rgw-kms-ENV,
+#                                               issuer token -> custody (ENV default target-onprem; root once, revoked)
+#   keys.sh rgw-kms-issue [ENV]                   new RGW token (TTL 1h, renewable up to 168h) -> secret/envs/ENV/rgw-kms
+#                                               (token, accessor, previous_accessor); no root; values not shown
+#   keys.sh rgw-kms-retire [ENV]                  revoke the previous RGW token (previous_accessor), after RGW restarted
 #   keys.sh --target platform-eks CMD          any command against the platform EKS OpenBao (port-forward)
 #   keys.sh --target platform-eks tls           platform CA + server cert -> Secret openbao/openbao-tls
 #   keys.sh migrate-to-platform [--from T --to T] store -> platform by raft snapshot (shares unchanged)
@@ -750,6 +756,130 @@ cmd_signer_pubkey() {
   fi
 }
 
+# --- RGW SSE-KMS (D-26, OBJ-ENC) ------------------------------------------------------------------------------------
+# A customer object store (Rook-Ceph RGW) encrypts each object with its own data key. The data key is wrapped by a
+# transit key that exists only in the platform OpenBao: RGW (Ceph rgw_kms.cc, transit engine, "new" compat mode) calls
+# transit/datakey/plaintext/<key> on PUT and keeps only the wrapped copy in the object's attributes, and calls
+# transit/decrypt/<key> on GET. The transit key is not exportable and has no plaintext backup.
+# RGW token: AppRole rgw-kms-<env>, policy platform-rgw-kms-<env> only (no default policy), TTL 1h, renewable up to
+# 168h. In the customer cluster a CronJob calls renew-self through the D-16 link; before 168h the operator issues a new
+# token and restarts RGW (deploy/platform/scripts/onprem-tokens.sh rgw-kms). Issuing needs no root: the issuer token in
+# custody can only mint one-use secret_ids for that one role.
+rgw_kms_names() { # ENV -> RGW_KEY RGW_POL RGW_ROLE RGW_ISSUER_POL
+  [[ $1 =~ ^[a-z0-9][a-z0-9-]{0,40}$ ]] || die "env must match a-z 0-9 - (got '$1')"
+  RGW_KEY="rgw-$1"; RGW_POL="platform-rgw-kms-$1"; RGW_ROLE="rgw-kms-$1"; RGW_ISSUER_POL="platform-rgw-kms-issuer-$1"
+}
+
+rgw_kms_policy() { # ENV (after rgw_kms_names)
+  cat <<HCL
+# RGW SSE-KMS for $1 (D-26): wrap a new data key and unwrap a stored one with transit key $RGW_KEY. Nothing else.
+path "transit/datakey/plaintext/$RGW_KEY" { capabilities = ["update"] }
+path "transit/decrypt/$RGW_KEY" { capabilities = ["update"] }
+path "auth/token/renew-self" { capabilities = ["update"] }
+HCL
+}
+
+rgw_kms_issuer_policy() {
+  cat <<HCL
+# Mints one-use secret_ids for the AppRole $RGW_ROLE only (keys.sh rgw-kms-issue).
+path "auth/approle/role/$RGW_ROLE/role-id" { capabilities = ["read"] }
+path "auth/approle/role/$RGW_ROLE/secret-id" { capabilities = ["update"] }
+HCL
+}
+
+cmd_rgw_kms_init() {
+  local env=${1:-target-onprem} root issuer
+  rgw_kms_names "$env"
+  need_custody; need_unsealed
+  [[ $(jq -r '.root_token_revoked_at // ""' "$CUSTODY") != "" ]] \
+    || die "a root token is active in custody; revoke it first (keys.sh revoke-root)"
+  # Creating a transit key and an orphan token need root: regenerate it from the shares for this run only.
+  trap signer_cleanup EXIT
+  cmd_generate_root >/dev/null
+  root="$(custody_get .root_token)"
+  api GET sys/mounts "$root" | jq -e '(.data // .) | has("transit/")' >/dev/null \
+    || die "transit/ is not mounted (keys.sh signer-init mounts it)"
+  if api GET "transit/keys/$RGW_KEY" "$root" >/dev/null 2>&1; then
+    log "transit key $RGW_KEY exists"
+  else
+    printf '{"type":"aes256-gcm96","exportable":false,"allow_plaintext_backup":false}' \
+      | api -d POST "transit/keys/$RGW_KEY" "$root" >/dev/null
+    log "transit key $RGW_KEY created (aes256-gcm96, not exportable, no plaintext backup)"
+  fi
+  api GET "transit/keys/$RGW_KEY" "$root" | jq -e '.data | .type == "aes256-gcm96" and .exportable == false
+      and .allow_plaintext_backup == false and .derived == false and .deletion_allowed == false' >/dev/null \
+    || die "transit key $RGW_KEY does not have the expected properties"
+  put_policy "$RGW_POL" "$(rgw_kms_policy "$env")" "$root"
+  put_policy "$RGW_ISSUER_POL" "$(rgw_kms_issuer_policy)" "$root"
+  jq -n --arg p "$RGW_POL" '{token_policies: [$p], token_no_default_policy: true, token_type: "service",
+      token_ttl: "1h", token_max_ttl: "168h", bind_secret_id: true, secret_id_ttl: "60s", secret_id_num_uses: 1}' \
+    | api -d POST "auth/approle/role/$RGW_ROLE" "$root" >/dev/null
+  log "approle: role $RGW_ROLE (policy $RGW_POL only, token 1h renewable up to 168h, secret_id 60s / 1 use)"
+  issuer="$(jq -r --arg e "$env" '.rgw_kms_issuer[$e].token // ""' "$CUSTODY")"
+  if [[ -n $issuer ]] && api GET auth/token/lookup-self "$issuer" >/dev/null 2>&1; then
+    log "rgw-kms issuer token for $env in custody is valid; kept"
+  else
+    jq -n --arg p "$RGW_ISSUER_POL" --arg d "rgw-kms-issuer-$env" '{policies: [$p], period: "168h", display_name: $d}' \
+      | api -d POST auth/token/create-orphan "$root" \
+      | jq --arg e "$env" '{rgw_kms_issuer: {($e): {token: .auth.client_token, accessor: .auth.accessor}}}' | custody_merge
+    log "rgw-kms issuer token for $env ($RGW_ISSUER_POL, periodic 168h) -> custody"
+  fi
+  issuer=""
+  cmd_revoke_root
+}
+
+# keys.sh rgw-kms-issue [ENV]: a new RGW token -> secret/envs/ENV/rgw-kms (token, accessor, previous_accessor, ...).
+# The token is checked once with renew-self (its policy list must be exactly the RGW policy). Values never printed.
+cmd_rgw_kms_issue() {
+  local env=${1:-target-onprem} issuer admin role_id secret_id login prev chk
+  rgw_kms_names "$env"
+  need_custody; need_unsealed
+  issuer="$(jq -r --arg e "$env" '.rgw_kms_issuer[$e].token // ""' "$CUSTODY")"
+  [[ -n $issuer ]] || die "no rgw-kms issuer for $env in custody: keys.sh rgw-kms-init $env"
+  api POST auth/token/renew-self "$issuer" >/dev/null || die "rgw-kms issuer token invalid or expired: keys.sh rgw-kms-init $env"
+  role_id="$(api GET "auth/approle/role/$RGW_ROLE/role-id" "$issuer" | jq -er .data.role_id)"
+  secret_id="$(printf '{"ttl":"60s","num_uses":1}' | api -d POST "auth/approle/role/$RGW_ROLE/secret-id" "$issuer" \
+    | jq -er .data.secret_id)"
+  issuer=""
+  login="$(printf '%s\n%s\n' "$role_id" "$secret_id" | jq -Rn '[inputs] as $v | {role_id: $v[0], secret_id: $v[1]}' \
+    | api -d POST auth/approle/login)" || die "approle login $RGW_ROLE failed"
+  secret_id=""
+  chk="$(api POST auth/token/renew-self "$(printf '%s' "$login" | jq -r .auth.client_token)")" \
+    || die "the new RGW token cannot renew itself"
+  printf '%s' "$chk" | jq -e --arg p "$RGW_POL" '.auth.policies == [$p] and .auth.renewable == true' >/dev/null \
+    || die "the new RGW token has unexpected policies: $(printf '%s' "$chk" | jq -c .auth.policies)"
+  admin="$(custody_get .admin_token)"
+  prev="$(api GET "secret/data/envs/$env/rgw-kms" "$admin" 2>/dev/null | jq -r '.data.data.accessor // ""')" || prev=""
+  printf '%s' "$login" | jq --arg k "$RGW_KEY" --arg p "$prev" --arg at "$(now)" '{data: ({
+      token: .auth.client_token, accessor: .auth.accessor, transit_key: $k, policies: (.auth.token_policies | join(",")),
+      ttl: "1h", max_ttl: "168h", issued_at: $at, renewable_until: (now + 168 * 3600 | floor | todate)}
+      + (if $p == "" then {} else {previous_accessor: $p} end))}' \
+    | api -d POST "secret/data/envs/$env/rgw-kms" "$admin" >/dev/null || die "cannot write secret/envs/$env/rgw-kms"
+  log "RGW token for $env: policy $RGW_POL, TTL $(printf '%s' "$chk" | jq -r .auth.lease_duration)s, renewable until" \
+    "$(jq -rn 'now + 168 * 3600 | floor | todate'), accessor $(printf '%s' "$login" | jq -r '.auth.accessor[0:6]')..." \
+    "-> secret/envs/$env/rgw-kms (token not shown)${prev:+; previous token kept until keys.sh rgw-kms-retire $env}"
+  login=""; chk=""; prev=""
+}
+
+# keys.sh rgw-kms-retire [ENV]: revoke the token that the last rgw-kms-issue replaced (run after RGW restarted with the
+# new one). An already expired token counts as retired.
+cmd_rgw_kms_retire() {
+  local env=${1:-target-onprem} admin prev
+  rgw_kms_names "$env"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  prev="$(api GET "secret/data/envs/$env/rgw-kms" "$admin" | jq -r '.data.data.previous_accessor // ""')" \
+    || die "secret/envs/$env/rgw-kms not found"
+  [[ -n $prev ]] || { log "no previous RGW token recorded for $env"; return 0; }
+  if jq -n --arg a "$prev" '{accessor: $a}' | api -d POST auth/token/revoke-accessor "$admin" >/dev/null 2>&1; then
+    log "previous RGW token for $env revoked (accessor ${prev:0:6}...)"
+  else
+    log "previous RGW token for $env already expired or revoked (accessor ${prev:0:6}...)"
+  fi
+  printf '%s' '{"data":{"previous_accessor":null}}' | api -p PATCH "secret/data/envs/$env/rgw-kms" "$admin" >/dev/null
+  prev=""
+}
+
 # Model credentials for the agent worker (13 6, D-26). claude: the lead's `claude setup-token` OAuth token
 # (secret/envs/platform/llm-claude oauth_token, stored with env-put). openai: the OpenAI API key
 # (secret/envs/platform/llm-openai api_key). The policy files allow reading that one path only.
@@ -1091,6 +1221,9 @@ case $cmd in
   signer-init) cmd_signer_init ;;
   with-signer) cmd_with_signer "$@" ;;
   signer-pubkey) cmd_signer_pubkey "$@" ;;
-  help | -h | --help) sed -n '2,41p' "${BASH_SOURCE[0]}" ;;
+  rgw-kms-init) cmd_rgw_kms_init "$@" ;;
+  rgw-kms-issue) cmd_rgw_kms_issue "$@" ;;
+  rgw-kms-retire) cmd_rgw_kms_retire "$@" ;;
+  help | -h | --help) sed -n '2,/^set -euo pipefail/{/^#/p;}' "${BASH_SOURCE[0]}" ;;
   *) die "unknown command: $cmd (keys.sh help)" ;;
 esac

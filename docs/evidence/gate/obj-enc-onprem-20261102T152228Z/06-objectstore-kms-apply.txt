@@ -1,0 +1,33 @@
+# 2026-11-03 00:28:15 KST RGW pod before
+(eval):1: no matches found: custom-columns=NAME:.metadata.name,START:.status.startTime,READY:.status.containerStatuses[0].ready
+$ kubectl --context bravo-onprem apply -f deploy/landing-zone/overlays/rke2/rook/objectstore.yaml
+cephobjectstore.ceph.rook.io/bravo configured
+storageclass.storage.k8s.io/bravo-bucket unchanged
+objectbucketclaim.objectbucket.io/bravo-demo-attachments unchanged
+cephobjectstoreuser.ceph.rook.io/bravo-gate-other unchanged
+# RGW pod before apply: rook-ceph-rgw-bravo-a-5f788dd4d6-q6bzs (Running since 2026-11-02 ~22:13 KST)
+# 2026-11-03 00:29:09 KST RGW pod after
+NAME                                     READY   STATUS    RESTARTS   AGE   IP            NODE                  NOMINATED NODE   READINESS GATES
+rook-ceph-rgw-bravo-a-68b555b795-xkmc2   1/1     Running   0          45s   10.42.0.251   bravo-onprem-server   <none>           <none>
+Ready
+# RGW container args (crypt/vault only) and init containers
+chown-container-data-dir
+vault-initcontainer-token-file-setup
+--rgw-crypt-s3-kms-backend=vault
+--rgw-crypt-vault-addr=https://openbao:8200
+--rgw-crypt-vault-auth=token
+--rgw-crypt-vault-token-file=/etc/vault/rgw/ssekms/vault.token
+--rgw-crypt-vault-prefix=/v1/transit
+--rgw-crypt-vault-secret-engine=transit
+--rgw-crypt-vault-verify-ssl=true
+--rgw-crypt-vault-ssl-cacert=/etc/vault/rgw/ssekms/vault.ca
+# projected vault volume sources
+{"emptyDir":{},"name":"rgw-vault-volume"}
+{"name":"vaultssekms","projected":{"defaultMode":420,"sources":[{"secret":{"items":[{"key":"cert","mode":292,"path":"vault.ca"}],"name":"rgw-kms-ca"}},{"secret":{"items":[{"key":"token","mode":292,"path":"vault.token"}],"name":"rgw-kms-token"}}]}}
+# token file in the RGW pod: owner/mode only
+ls: cannot access '/etc/ceph/vault/ssekms/': No such file or directory
+uid=167(ceph) gid=167(ceph) groups=167(ceph)
+# copied token file used by RGW (owner/mode only, no content)
+ceph:ceph 700 4096 bytes /etc/vault/rgw/ssekms
+ceph:ceph 400 26 bytes /etc/vault/rgw/ssekms/vault.token
+ceph:ceph 400 611 bytes /etc/vault/rgw/ssekms/vault.ca

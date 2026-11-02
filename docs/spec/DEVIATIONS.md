@@ -568,6 +568,7 @@ D-02의 "격리 규칙 그대로"는 이 예외를 포함한 규칙을 뜻합니
 - **고르지 않은 것.** Cloudflare R2(S3 API로 버킷 정책 · 공개 차단 · Object Lock을 다 지원하지 않고, 데이터 위치 보장에 일본이 없음), MinIO(`minio/minio` 저장소가 2026-04 보관 상태, 무료판은 단일 노드 약관), Garage(버킷 정책 없음). 그래서 스펙 §9의 "MinIO 마지막 판 고정" 대안은 지웁니다.
 - **폴백.** 팀장이 D-23을 "엔진까지 같음"으로 정하면 모든 목적지에 RGW를 둡니다. 데모에서는 EKS · GKE 목적지를 만들지 않으므로 비용은 늘지 않지만, 위 한계를 발표에 밝힙니다.
 - **11/3 실측 항목(Rook-Ceph).** RGW region 값과 path-style 동작, ObjectBucketClaim의 버킷 정책과 공개 차단을 함께 거는지, RGW의 SSE-KMS가 금고(OpenBao · Vault)와 동작하는지, Lima VM 자원에 들어가는지.
+- **SSE-KMS 실측(2026-11-03 00:22–00:42 KST).** 동작합니다. Rook v1.21.1 · Ceph 20.2.4 RGW가 플랫폼 OpenBao transit 키 `rgw-target-onprem`(내보내기 불가)로 객체마다 데이터 키를 감쌉니다. 키는 OpenBao 밖으로 나가지 않습니다(D-26). RGW는 D-16 링크 `t1-plat-bao`로 OpenBao에 닿습니다. 첨부 버킷 기본 암호화 `aws:kms`, 게이트 OBJ-ENC 목적지 PASS. 링크가 끊기면 암호화 객체의 PUT · GET이 500입니다. 증거 `docs/evidence/gate/obj-enc-onprem-20261102T152228Z/`.
 
 ## D-23. 온프렘 · GKE · EKS에 같은 랜딩 존
 

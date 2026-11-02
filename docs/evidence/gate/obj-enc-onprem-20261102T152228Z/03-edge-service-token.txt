@@ -1,0 +1,30 @@
+$ deploy/pilot/scripts/keys.sh issue-service-token target-onprem dst-plat-bao cf-link-plat-bao   # 2026-11-03 00:23:07 KST
+keys.sh: service token dst-plat-bao id 70361862-e93c-46f4-962b-3a647bf04b1c (expires 2026-11-09T15:23:08Z) -> secret/envs/target-onprem/cf-link-plat-bao (client_id, client_secret not shown)
+exit=0
+
+# infra/envs/edge/terraform.tfvars (gitignored): platform_links.bao.token_ids += "70361862-e93c-46f4-962b-3a647bf04b1c" # dst-plat-bao
+$ cd infra/envs/edge && keys.sh with-cloudflare -- terraform plan -lock-timeout=120s -out=<scratch>/edge.tfplan   # 2026-11-03 00:23 KST
+  # cloudflare_zero_trust_access_policy.platform_link["bao"] will be updated in-place
+  ~ resource "cloudflare_zero_trust_access_policy" "platform_link" {
+      ~ app_count  = 1 -> (known after apply)
+        id         = "3586957e-9ce3-4fde-b965-d795d943870c"
+      ~ include    = [
+          + {
+              + service_token = {
+                  + token_id = "70361862-e93c-…" (dst-plat-bao; ID shortened here, not secret)
+                }
+            },
+            # (1 unchanged element hidden)
+        ]
+        name       = "t1-plat-bao service auth"
+      ~ reusable   = true -> (known after apply)
+      ~ updated_at = "2026-11-02T12:56:22Z" -> (known after apply)
+        # (3 unchanged attributes hidden)
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+
+$ keys.sh with-cloudflare -- terraform apply -lock-timeout=120s <scratch>/edge.tfplan   # 2026-11-03 00:24 KST
+cloudflare_zero_trust_access_policy.platform_link["bao"]: Modifying... [id=3586957e-9ce3-4fde-b965-d795d943870c]
+cloudflare_zero_trust_access_policy.platform_link["bao"]: Modifications complete after 1s [id=3586957e-9ce3-4fde-b965-d795d943870c]
+Apply complete! Resources: 0 added, 1 changed, 0 destroyed.

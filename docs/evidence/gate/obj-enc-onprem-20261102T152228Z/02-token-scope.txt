@@ -1,0 +1,13 @@
+$ keys.sh env-pipe target-onprem rgw-kms token -- python3 -I token_scope.py   # 2026-11-03 00:22:59 KST (laptop, port-forward)
+POST transit/datakey/plaintext/rgw-target-onprem (base64 context, non-derived key) -> 200; fields=['ciphertext', 'key_version', 'plaintext']; plaintext_bytes=32; ciphertext_prefix=vault:v1:
+POST transit/decrypt/rgw-target-onprem -> 200; unwrapped key equals the data key: True
+GET transit/keys/rgw-target-onprem -> 403
+POST transit/encrypt/rgw-target-onprem -> 403
+POST transit/datakey/plaintext/bravo-supply-chain -> 403
+POST transit/sign/bravo-supply-chain -> 403
+POST transit/keys/rgw-target-onprem/rotate -> 403
+GET transit/export/encryption-key/rgw-target-onprem -> 403
+GET secret/data/envs/target-onprem/object-store -> 403
+GET auth/token/lookup-self -> 403
+POST auth/token/create -> 403
+POST auth/token/renew-self -> 200; policies=['platform-rgw-kms-target-onprem']; lease_duration=3600s; renewable=True

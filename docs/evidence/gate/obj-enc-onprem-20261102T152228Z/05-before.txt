@@ -1,0 +1,4 @@
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem   # before
+rgw_encryption 2026-11-03T00:27:56+0900: bucket bravo-demo-attachments at https://localhost:62703 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+get_bucket_encryption: "404 ServerSideEncryptionConfigurationNotFoundError"
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}

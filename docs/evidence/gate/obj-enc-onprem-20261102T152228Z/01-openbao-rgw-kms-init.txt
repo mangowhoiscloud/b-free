@@ -1,0 +1,20 @@
+$ deploy/pilot/scripts/keys.sh rgw-kms-init target-onprem   # 2026-11-03 00:22:28 KST
+keys.sh: transit key rgw-target-onprem created (aes256-gcm96, not exportable, no plaintext backup)
+keys.sh: policy platform-rgw-kms-target-onprem
+keys.sh: policy platform-rgw-kms-issuer-target-onprem
+keys.sh: approle: role rgw-kms-target-onprem (policy platform-rgw-kms-target-onprem only, token 1h renewable up to 168h, secret_id 60s / 1 use)
+keys.sh: rgw-kms issuer token for target-onprem (platform-rgw-kms-issuer-target-onprem, periodic 168h) -> custody
+keys.sh: root token revoked
+exit=0
+$ deploy/pilot/scripts/keys.sh rgw-kms-issue target-onprem   # 2026-11-03 00:22:37 KST
+keys.sh: RGW token for target-onprem: policy platform-rgw-kms-target-onprem, TTL 3600s, renewable until 2026-11-09T15:22:38Z, accessor O4OqRG... -> secret/envs/target-onprem/rgw-kms (token not shown)
+exit=0
+$ deploy/pilot/scripts/keys.sh env-fields target-onprem rgw-kms
+accessor
+issued_at
+max_ttl
+policies
+renewable_until
+token
+transit_key
+ttl

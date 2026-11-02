@@ -1,0 +1,6 @@
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --apply   # 2026-11-03 00:29:24 KST
+rgw_encryption 2026-11-03T00:29:25+0900: bucket bravo-demo-attachments at https://localhost:62902 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+rgw_encryption 2026-11-03T00:29:25+0900: PutBucketEncryption bravo-demo-attachments: aws:kms, KMSMasterKeyID rgw-target-onprem (platform OpenBao transit key)
+get_bucket_encryption: [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": "rgw-target-onprem"}}]
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}
+exit=0

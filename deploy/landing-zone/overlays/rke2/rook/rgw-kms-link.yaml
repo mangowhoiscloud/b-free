@@ -1,0 +1,175 @@
+# RGW SSE-KMS (OBJ-ENC, D-26): the object store "bravo" wraps every object's data key with the transit key
+# rgw-target-onprem in the PLATFORM OpenBao. No key and no OpenBao run in this cluster.
+#   RGW -> https://openbao:8200 (this Service; the OpenBao server certificate names "openbao", so the hostname check
+#   passes with verify on) -> cloudflared access tcp (Access service token dst-plat-bao) -> https://t1-plat-bao.mangowhois.ai
+#   -> platform tunnel bravo-platform -> openbao.openbao.svc:8200. TLS ends at OpenBao (end to end through the link).
+# Secrets in rook-ceph, piped from OpenBao by deploy/platform/scripts/onprem-tokens.sh rgw-kms (values never in files):
+#   cf-link-plat-bao (client_id, client_secret), rgw-kms-token (token), rgw-kms-ca (cert = platform OpenBao CA, public).
+# Without the token the link host answers 403 (Service Auth policy t1-plat-bao, infra/envs/edge/platform_links.tf).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plat-bao-link
+  namespace: rook-ceph
+  labels: {app.kubernetes.io/name: plat-bao-link, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector: {matchLabels: {app.kubernetes.io/name: plat-bao-link}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: plat-bao-link, app.kubernetes.io/component: d16-link, app.kubernetes.io/part-of: bravo-link}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway,
+           labelSelector: {matchLabels: {app.kubernetes.io/name: plat-bao-link}}}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba # 2026.10.7
+          # access tcp takes the service token only from flags or env (no file option in 2026.10.x): env from Secret.
+          args: ["access", "tcp", "--hostname", "t1-plat-bao.mangowhois.ai", "--url", "0.0.0.0:8200", "--loglevel", "info"]
+          env:
+            - name: TUNNEL_SERVICE_TOKEN_ID
+              valueFrom: {secretKeyRef: {name: cf-link-plat-bao, key: client_id}}
+            - name: TUNNEL_SERVICE_TOKEN_SECRET
+              valueFrom: {secretKeyRef: {name: cf-link-plat-bao, key: client_secret}}
+          ports: [{name: client, containerPort: 8200}]
+          readinessProbe: {tcpSocket: {port: client}, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: client}, periodSeconds: 30}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openbao
+  namespace: rook-ceph
+  labels: {app.kubernetes.io/name: plat-bao-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: plat-bao-link}
+  ports: [{name: client, port: 8200, targetPort: client}]
+---
+# Only RGW and the token renewer reach the link client; the client reaches only DNS and the Cloudflare edge (443, 7844).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: plat-bao-link
+  namespace: rook-ceph
+  labels: {app.kubernetes.io/name: plat-bao-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: plat-bao-link}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: rook-ceph-rgw, rook_object_store: bravo}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: rgw-kms-renew}}
+      ports: [{port: client}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]}}]
+      ports: [{port: 443, protocol: TCP}, {port: 7844, protocol: TCP}, {port: 7844, protocol: UDP}]
+---
+# Token renewal. The RGW token (AppRole rgw-kms-target-onprem) lives 1h and is renewable up to 168h. RGW reads the
+# token file on every OpenBao request but never renews it, so this CronJob calls renew-self every 15 minutes with the
+# same token (mounted from Secret rgw-kms-token; kubelet refreshes it when the Secret changes). It needs no
+# Kubernetes API access. Before 168h the operator issues a new token and restarts RGW (onprem-tokens.sh rgw-kms).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rgw-kms-renew
+  namespace: rook-ceph
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rgw-kms-renew
+  namespace: rook-ceph
+  labels: {app.kubernetes.io/name: rgw-kms-renew, app.kubernetes.io/part-of: bravo-link}
+data:
+  renew.sh: |
+    #!/bin/sh
+    # The token goes from the mounted file into curl's header on a pipe; the response holds it too, so only the
+    # HTTP code and the lease are printed.
+    # Test: deploy/landing-zone/tests/rgw-kms-renew-test.sh (stub curl, the RGW_KMS_* overrides below).
+    set -eu
+    token=${RGW_KMS_TOKEN_FILE:-/var/run/rgw-kms/token}
+    ca=${RGW_KMS_CA_FILE:-/var/run/rgw-kms-ca/cert}
+    addr=${RGW_KMS_ADDR:-https://openbao:8200}
+    at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    out="$({ printf 'X-Vault-Token: '; cat "$token"; printf '\n'; } \
+      | curl -sS --max-time 20 --cacert "$ca" -H @- -X POST -w '\n%{http_code}' "$addr/v1/auth/token/renew-self")" \
+      || { echo "rgw-kms-renew $at: OpenBao not reachable through the link ($addr)"; exit 1; }
+    code="$(printf '%s\n' "$out" | tail -n 1)"
+    lease="$(printf '%s' "$out" | sed -n 's/.*"lease_duration":\([0-9]*\).*/\1/p' | head -n 1)"
+    out=""
+    echo "rgw-kms-renew $at: renew-self HTTP $code, lease ${lease:-?}s"
+    [ "$code" = 200 ] || exit 1
+    if [ "${lease:-0}" -lt 3600 ]; then
+      echo "rgw-kms-renew $at: lease below 1h = near the 168h limit; issue a new token: onprem-tokens.sh rgw-kms"
+    fi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rgw-kms-renew
+  namespace: rook-ceph
+  labels: {app.kubernetes.io/name: rgw-kms-renew, app.kubernetes.io/part-of: bravo-link}
+spec:
+  schedule: "7,22,37,52 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: rgw-kms-renew, app.kubernetes.io/part-of: bravo-link}
+        spec:
+          serviceAccountName: rgw-kms-renew
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: OnFailure
+          securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532,
+                            seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: renew
+              image: docker.io/curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+              command: ["sh", "/opt/renew/renew.sh"]
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+              resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {memory: 64Mi}}
+              volumeMounts:
+                - {name: script, mountPath: /opt/renew, readOnly: true}
+                - {name: token, mountPath: /var/run/rgw-kms, readOnly: true}
+                - {name: ca, mountPath: /var/run/rgw-kms-ca, readOnly: true}
+          volumes:
+            - {name: script, configMap: {name: rgw-kms-renew}}
+            - {name: token, secret: {secretName: rgw-kms-token, defaultMode: 0440, items: [{key: token, path: token}]}}
+            - {name: ca, secret: {secretName: rgw-kms-ca, defaultMode: 0444, items: [{key: cert, path: cert}]}}
+---
+# The renewer reaches only the link client (8200) and DNS; nothing reaches it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rgw-kms-renew
+  namespace: rook-ceph
+  labels: {app.kubernetes.io/name: rgw-kms-renew, app.kubernetes.io/part-of: bravo-link}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: rgw-kms-renew}}
+  policyTypes: ["Ingress", "Egress"]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: plat-bao-link}}}]
+      ports: [{port: 8200, protocol: TCP}]

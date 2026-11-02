@@ -1,0 +1,36 @@
+$ deploy/platform/scripts/onprem-tokens.sh rgw-kms   # 2026-11-03 00:25:35 KST
+onprem-tokens: Secret rook-ceph/cf-link-plat-bao from secret/envs/target-onprem/cf-link-plat-bao (values not shown)
+onprem-tokens: Secret rook-ceph/rgw-kms-ca (platform OpenBao CA, public)
+Waiting for deployment "plat-bao-link" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "plat-bao-link" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "plat-bao-link" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "plat-bao-link" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "plat-bao-link" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "plat-bao-link" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "plat-bao-link" rollout to finish: 1 old replicas are pending termination...
+deployment "plat-bao-link" successfully rolled out
+keys.sh: RGW token for target-onprem: policy platform-rgw-kms-target-onprem, TTL 3600s, renewable until 2026-11-09T15:25:41Z, accessor pJtRML... -> secret/envs/target-onprem/rgw-kms (token not shown); previous token kept until keys.sh rgw-kms-retire target-onprem
+onprem-tokens: Secret rook-ceph/rgw-kms-token from secret/envs/target-onprem/rgw-kms (values not shown)
+onprem-tokens: CephObjectStore bravo has no security.kms yet; apply objectstore.yaml next (RGW then starts with this token)
+keys.sh: previous RGW token for target-onprem revoked (accessor O4OqRG...)
+exit=0
+
+# 2026-11-03 00:25:49 KST: link + TLS hostname + token check from the cluster (renewer run by hand)
+$ kubectl --context bravo-onprem -n rook-ceph get pods -l app.kubernetes.io/name=plat-bao-link -o wide
+NAME                             READY   STATUS    RESTARTS   AGE   IP            NODE                 NOMINATED NODE   READINESS GATES
+plat-bao-link-5cf664cc76-97zlm   1/1     Running   0          10s   10.42.1.209   bravo-onprem-agent   <none>           <none>
+plat-bao-link-5cf664cc76-nh92g   1/1     Running   0          9s    10.42.1.54    bravo-onprem-agent   <none>           <none>
+$ kubectl --context bravo-onprem -n rook-ceph create job rgw-kms-renew-manual-1 --from=cronjob/rgw-kms-renew; ... logs
+rgw-kms-renew 2026-11-02T15:25:49Z: renew-self HTTP 200, lease 3600s
+(curl --cacert <platform OpenBao CA> https://openbao:8200/... : the OpenBao certificate SAN "openbao" matches, verify on)
+
+# 2026-11-03 00:26 KST: NetworkPolicy negative check, a pod in rook-ceph WITHOUT the RGW/renewer labels
+$ kubectl --context bravo-onprem -n rook-ceph run netpol-probe-<n> --rm -i --restart=Never --image=curlimages/curl:8.17.0@sha256:935d9100… \
+    -- sh -c 'curl -sk -m 8 -o /dev/null -w "%{http_code}\n" https://openbao:8200/v1/sys/health; echo curl_exit=$?'
+000
+curl_exit=28            (timeout: the link client NetworkPolicy lets only RGW and rgw-kms-renew in)
+
+# 2026-11-03 00:32:52 KST: after the renew.sh test hooks (RGW_KMS_* overrides) were added, ConfigMap re-applied
+$ kubectl --context bravo-onprem apply -f deploy/landing-zone/overlays/rke2/rook/rgw-kms-link.yaml
+$ kubectl --context bravo-onprem -n rook-ceph create job rgw-kms-renew-manual-2 --from=cronjob/rgw-kms-renew; ... logs
+rgw-kms-renew 2026-11-02T15:32:52Z: renew-self HTTP 200, lease 3600s

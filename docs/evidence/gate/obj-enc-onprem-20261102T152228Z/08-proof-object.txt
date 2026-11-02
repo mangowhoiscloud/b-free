@@ -1,0 +1,84 @@
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --proof   # 2026-11-03 00:29:29 KST
+rgw_encryption 2026-11-03T00:29:31+0900: bucket bravo-demo-attachments at https://localhost:62933 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+get_bucket_encryption: [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": "rgw-target-onprem"}}]
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}
+rgw_encryption 2026-11-03T00:29:31+0900: PUT _obj-enc-proof/20261102T152931Z.bin (65619 bytes, sha256 bce3a336fc31ad0c), no SSE request headers
+put_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "etag": "\"3c706368937a76292e27874de67dde6f\""}
+Traceback (most recent call last):
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/deploy/cloud/rgw_encryption.py", line 242, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/deploy/cloud/rgw_encryption.py", line 235, in main
+    return proof(b)
+           ^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/deploy/cloud/rgw_encryption.py", line 165, in proof
+    print("object_stat_crypt_attrs:", json.dumps(b.object_stat(key)))
+                                                 ^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/deploy/cloud/rgw_encryption.py", line 131, in object_stat
+    out = operator_exec(self.ctx, f"radosgw-admin {' '.join(RADOS)} --rgw-realm=bravo --rgw-zonegroup=bravo "
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/deploy/cloud/rgw_encryption.py", line 61, in operator_exec
+    return kubectl(ctx, "-n", "rook-ceph", "exec", "deploy/rook-ceph-operator", "--", "sh", "-c", script)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/deploy/cloud/rgw_encryption.py", line 55, in kubectl
+    return subprocess.run(["kubectl", "--context", ctx, *args], capture_output=True, text=True, timeout=300,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/subprocess.py", line 2153, in _communicate
+    stdout = self._translate_newlines(stdout,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/subprocess.py", line 1086, in _translate_newlines
+    data = data.decode(encoding, errors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xbe in position 5699: invalid start byte
+exit=1
+leftover delete _obj-enc-proof/20261102T152931Z.bin: 204
+remaining under _obj-enc-proof/: []
+
+# second run after fixing the radosgw-admin output decoding
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --proof   # 2026-11-03 00:29:52 KST
+rgw_encryption 2026-11-03T00:29:52+0900: bucket bravo-demo-attachments at https://localhost:63011 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+get_bucket_encryption: [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": "rgw-target-onprem"}}]
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}
+rgw_encryption 2026-11-03T00:29:53+0900: PUT _obj-enc-proof/20261102T152953Z.bin (65619 bytes, sha256 eb68705ec79b8727), no SSE request headers
+put_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "etag": "\"8b8089921296bd70152fe3b212be3945\""}
+object_stat_crypt_attrs: {"user.rgw.crypt.context": "eyJhd3M6czM6YXJuIjoiYXJuOmF3czpzMzo6b2JjLWNoYXQtYnJhdm8tZGVtby1hdHRhY2htZW50cy1iMjkyZTU1MS02NmNlLTQ0MmQtYjUxYi1lNTg2NWE2MjhlMWI6YnJhdm8tZGVtby1hdHRhY2htZW50cy9fb2JqLWVuYy1wcm9vZi8yMDI2MTEwMlQxNTI5NTNaLmJpbiJ9", "user.rgw.crypt.datakey": "vault:v1:etQ7MEhI...(89 chars)", "user.rgw.crypt.keyid": "rgw-target-onprem", "user.rgw.crypt.keysel": "(binary, masked afterwards)", "user.rgw.crypt.mode": "SSE-KMS"}
+rados_head: {"rados_oid": "9367adb1-7e05-44f5-b621-f0f96f1285f1.5453.1__obj-enc-proof/20261102T152953Z.bin", "rados_bytes": null, "plaintext_marker_found": null}
+get_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "bytes": 65619, "sha256_equal": true}
+delete: 204
+exit=0
+
+# third run: RADOS object lookup by listing (RGW escapes a leading '_' in the oid), keysel masked
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --proof   # 2026-11-03 00:30:14 KST
+rgw_encryption 2026-11-03T00:30:15+0900: bucket bravo-demo-attachments at https://localhost:63063 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+get_bucket_encryption: [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": "rgw-target-onprem"}}]
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}
+rgw_encryption 2026-11-03T00:30:15+0900: PUT _obj-enc-proof/20261102T153015Z.bin (65619 bytes, sha256 f2d9ed96281e9511), no SSE request headers
+put_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "etag": "\"53d75fa95b71c1c049b68bf89a0aae45\""}
+object_stat_crypt_attrs: {"user.rgw.crypt.context": "eyJhd3M6czM6YXJuIjoiYXJuOmF3czpzMzo6b2JjLWNoYXQtYnJhdm8tZGVtby1hdHRhY2htZW50cy1iMjkyZTU1MS02NmNlLTQ0MmQtYjUxYi1lNTg2NWE2MjhlMWI6YnJhdm8tZGVtby1hdHRhY2htZW50cy9fb2JqLWVuYy1wcm9vZi8yMDI2MTEwMlQxNTMwMTVaLmJpbiJ9", "user.rgw.crypt.datakey": "vault:v1:LJXhLE5r...(89 chars)", "user.rgw.crypt.keyid": "rgw-target-onprem", "user.rgw.crypt.keysel": "(binary, masked afterwards)", "user.rgw.crypt.mode": "SSE-KMS"}
+rados_head: {"rados_objects": [{"oid": "9367adb1-7e05-44f5-b621-f0f96f1285f1.5453.1___obj-enc-proof/20261102T153015Z.bin", "bytes": 0, "plaintext_marker_found": false}, {"oid": "9367adb1-7e05-44f5-b621-f0f96f1285f1.5453.1__obj-enc-proof/20261102T153015Z.bin", "bytes": 0, "plaintext_marker_found": false}]}
+get_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "bytes": 65619, "sha256_equal": true}
+delete: 204
+exit=0
+
+# fourth run: rados get with the object locator (a key starting with '_' is stored as <marker>__<key> + locator)
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --proof   # 2026-11-03 00:30:42 KST
+rgw_encryption 2026-11-03T00:30:42+0900: bucket bravo-demo-attachments at https://localhost:63154 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+get_bucket_encryption: [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": "rgw-target-onprem"}}]
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}
+rgw_encryption 2026-11-03T00:30:43+0900: PUT _obj-enc-proof/20261102T153043Z.bin (65619 bytes, sha256 7c5d4dbb72b48aff), no SSE request headers
+put_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "etag": "\"ffe31564f2b727184fd8ac73542a3df5\""}
+object_stat_crypt_attrs: {"user.rgw.crypt.context": "eyJhd3M6czM6YXJuIjoiYXJuOmF3czpzMzo6b2JjLWNoYXQtYnJhdm8tZGVtby1hdHRhY2htZW50cy1iMjkyZTU1MS02NmNlLTQ0MmQtYjUxYi1lNTg2NWE2MjhlMWI6YnJhdm8tZGVtby1hdHRhY2htZW50cy9fb2JqLWVuYy1wcm9vZi8yMDI2MTEwMlQxNTMwNDNaLmJpbiJ9", "user.rgw.crypt.datakey": "vault:v1:bXyZdz7x...(89 chars)", "user.rgw.crypt.keyid": "rgw-target-onprem", "user.rgw.crypt.keysel": "(binary, masked afterwards)", "user.rgw.crypt.mode": "SSE-KMS"}
+rados_head: {"rados_objects": [{"oid": "9367adb1-7e05-44f5-b621-f0f96f1285f1.5453.1___obj-enc-proof/20261102T153043Z.bin", "bytes": 65619, "plaintext_marker_found": false}]}
+get_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "bytes": 65619, "sha256_equal": true}
+delete: 204
+exit=0
+
+# control: the same RADOS check on the canary _gate/canary (stored before default encryption, read only)
+canary object_stat_crypt_attrs: {}
+canary rados: {"rados_objects": [{"oid": "9367adb1-7e05-44f5-b621-f0f96f1285f1.5453.1___gate/canary", "bytes": 39, "plaintext_marker_found": true}]}

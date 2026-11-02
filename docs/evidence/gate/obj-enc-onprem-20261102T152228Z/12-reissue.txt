@@ -1,0 +1,32 @@
+# scheduled renew run (CronJob rgw-kms-renew, 00:37 KST)
+$ kubectl --context bravo-onprem -n rook-ceph logs job/rgw-kms-renew-29893897
+rgw-kms-renew 2026-11-02T15:37:00Z: renew-self HTTP 200, lease 3600s
+
+# re-issue path (what runs before 168h): new token -> Secret -> RGW pod restart -> previous token revoked
+$ deploy/platform/scripts/onprem-tokens.sh rgw-kms   # start 2026-11-03 00:41:02 KST
+onprem-tokens: Secret rook-ceph/cf-link-plat-bao from secret/envs/target-onprem/cf-link-plat-bao (values not shown)
+onprem-tokens: Secret rook-ceph/rgw-kms-ca (platform OpenBao CA, public)
+deployment "plat-bao-link" successfully rolled out
+keys.sh: RGW token for target-onprem: policy platform-rgw-kms-target-onprem, TTL 3600s, renewable until 2026-11-09T15:41:08Z, accessor DgRtxv... -> secret/envs/target-onprem/rgw-kms (token not shown); previous token kept until keys.sh rgw-kms-retire target-onprem
+onprem-tokens: Secret rook-ceph/rgw-kms-token from secret/envs/target-onprem/rgw-kms (values not shown)
+deployment "rook-ceph-rgw-bravo-a" successfully rolled out
+onprem-tokens: RGW restarted with the new token
+keys.sh: previous RGW token for target-onprem revoked (accessor pJtRML...)
+exit=0  end 00:41:50 KST
+rook-ceph-rgw-bravo-a-68b555b795-fqf6p started 2026-11-02T15:41:09Z ready 2026-11-02T15:41:49Z
+
+# after re-issue: one more object end to end with the new token (RGW pod rook-ceph-rgw-bravo-a-68b555b795-fqf6p)
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --proof   # 2026-11-03 00:41:59 KST
+rgw_encryption 2026-11-03T00:41:59+0900: bucket bravo-demo-attachments at https://localhost:64542 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+get_bucket_encryption: [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": "rgw-target-onprem"}}]
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}
+rgw_encryption 2026-11-03T00:41:59+0900: PUT _obj-enc-proof/20261102T154159Z.bin (65619 bytes, sha256 c8c02388fd2f7c7e), no SSE request headers
+put_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "etag": "\"e36e49a29d8d6175a25d42feba2c1d66\""}
+object_stat_crypt_attrs: {"user.rgw.crypt.context": "eyJhd3M6czM6YXJuIjoiYXJuOmF3czpzMzo6b2JjLWNoYXQtYnJhdm8tZGVtby1hdHRhY2htZW50cy1iMjkyZTU1MS02NmNlLTQ0MmQtYjUxYi1lNTg2NWE2MjhlMWI6YnJhdm8tZGVtby1hdHRhY2htZW50cy9fb2JqLWVuYy1wcm9vZi8yMDI2MTEwMlQxNTQxNTlaLmJpbiJ9", "user.rgw.crypt.datakey": "vault:v1:UnIF3hhI...(89 chars)", "user.rgw.crypt.keyid": "rgw-target-onprem", "user.rgw.crypt.keysel": "(binary, not shown)", "user.rgw.crypt.mode": "SSE-KMS"}
+rados_head: {"rados_objects": [{"oid": "9367adb1-7e05-44f5-b621-f0f96f1285f1.5453.1___obj-enc-proof/20261102T154159Z.bin", "bytes": 65619, "plaintext_marker_found": false}]}
+get_response: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "bytes": 65619, "sha256_equal": true}
+delete: 204
+exit=0
+# OpenBao audit for this run (datakey/decrypt) and the accessor of the token used
+2026-11-02T15:42:01.481	transit/datakey/plaintext/rgw-target-onprem	platform-rgw-kms-target-onprem	40c83215	10.42.0.218	200
+2026-11-02T15:42:02.149	transit/decrypt/rgw-target-onprem	platform-rgw-kms-target-onprem	40c83215	10.42.0.218	200

@@ -1,0 +1,32 @@
+$ uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --outage   # 2026-11-03 00:31:35 KST
+rgw_encryption 2026-11-03T00:31:36+0900: bucket bravo-demo-attachments at https://localhost:63336 (port-forward to bravo-onprem rook-ceph-rgw-bravo:443)
+get_bucket_encryption: [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": "rgw-target-onprem"}}]
+unchanged_by_this_tool: {"policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}}
+put_a_link_up: {"status": 200, "x-amz-server-side-encryption": "aws:kms", "x-amz-server-side-encryption-aws-kms-key-id": "rgw-target-onprem", "etag": "\"24809291fe59e7c7118cb7be273cf5f9\""}
+rgw_encryption 2026-11-03T00:31:37+0900: scale rook-ceph/plat-bao-link to 0 (RGW cannot reach the platform OpenBao)
+put_b_link_down: ["error", "500 InternalError", 0.6]
+get_a_link_down: ["error", "500 InternalError", 0.5]
+get_canary_link_down (stored before default encryption): ["ok", 39, 0.0]
+rgw_encryption 2026-11-03T00:31:39+0900: scale rook-ceph/plat-bao-link back to 2
+get_a_link_up: ["ok", true, 2.0]
+delete_a: 204 delete_b: 204
+exit=0
+# 2026-11-03 00:31:42 KST link after
+NAME            READY   UP-TO-DATE   AVAILABLE   AGE
+plat-bao-link   2/2     2            2           6m4s
+
+# RGW log in the same window (kubectl --context bravo-onprem -n rook-ceph logs deploy/rook-ceph-rgw-bravo-a -c rgw; owner user id shortened)
+debug 2026-11-02T15:31:37.048+0000 e70197736f00  1 ====== req done req=0xe70066fb7270 op=put_obj bucket=bravo-demo-attachments status=0 http_status=200 latency=0.365000337s request_id=tx000009c60d31f4008918d-006ae8acd8-7446-bravo ======
+debug 2026-11-02T15:31:37.815+0000 e70186516f00  0 req 6558960983283079673 0.002000002s ERROR: Request to Vault failed with error -2200
+debug 2026-11-02T15:31:37.815+0000 e70186516f00  1 ====== req done req=0xe70066fb7270 op=put_obj bucket=bravo-demo-attachments status=-2200 http_status=500 latency=0.002000002s request_id=tx000005b061c43703c19f9-006ae8acd9-7446-bravo ======
+debug 2026-11-02T15:31:38.430+0000 e700a38f6f00  0 req 17778380580754839338 0.000000000s ERROR: Request to Vault failed with error -2200
+debug 2026-11-02T15:31:38.431+0000 e700a38f6f00  1 ====== req done req=0xe70066fb7270 op=put_obj bucket=bravo-demo-attachments status=-2200 http_status=500 latency=0.001000001s request_id=tx00000f6b97ef1bd98572a-006ae8acda-7446-bravo ======
+debug 2026-11-02T15:31:38.435+0000 e700af266f00  0 req 859022341309794093 0.001000001s ERROR: Request to Vault failed with error -2200
+debug 2026-11-02T15:31:38.435+0000 e700af266f00  1 ====== req done req=0xe70066fb7270 op=get_obj bucket=bravo-demo-attachments status=-2200 http_status=500 latency=0.001000001s request_id=tx000000bebdc44a3e5072d-006ae8acda-7446-bravo ======
+debug 2026-11-02T15:31:38.973+0000 e700aa1c6f00  0 req 3175571901938898228 0.001000001s ERROR: Request to Vault failed with error -2200
+debug 2026-11-02T15:31:38.973+0000 e700b6b56f00  1 ====== req done req=0xe70066fb7270 op=get_obj bucket=bravo-demo-attachments status=-2200 http_status=500 latency=0.001000001s request_id=tx000002c11e5d1e5c79534-006ae8acda-7446-bravo ======
+debug 2026-11-02T15:31:38.976+0000 e700c3cf6f00  1 ====== req done req=0xe70066fb7270 op=get_obj bucket=bravo-demo-attachments status=0 http_status=200 latency=0.001000001s request_id=tx000003a77d75839d7485a-006ae8acda-7446-bravo ======
+debug 2026-11-02T15:31:42.222+0000 e7013f446f00  1 ====== req done req=0xe70066fb7270 op=get_obj bucket=bravo-demo-attachments status=0 http_status=200 latency=1.994001865s request_id=tx00000f4095f9b56a601e7-006ae8acdc-7446-bravo ======
+debug 2026-11-02T15:31:42.228+0000 e700b1ab6f00  1 ====== req done req=0xe70066fb7270 op=delete_obj bucket=bravo-demo-attachments status=0 http_status=204 latency=0.004000003s request_id=tx0000005063ab523d7de1f-006ae8acde-7446-bravo ======
+debug 2026-11-02T15:31:42.230+0000 e70144cf6f00  1 ====== req done req=0xe70066fb7270 op=delete_obj bucket=bravo-demo-attachments status=-2 http_status=204 latency=0.000000000s request_id=tx000004cb4cc2e30bfe492-006ae8acde-7446-bravo ======
+# the botocore client retried each 500 once (two RGW lines per request).

@@ -255,6 +255,11 @@ step_rgw_tls() {
 
 step_rgw() {
   log "RGW object store bravo, bucket bravo-demo-attachments (OBC), OBJ-05 user"
+  # objectstore.yaml has security.kms (SSE-KMS, key in the platform OpenBao): Rook needs these Secrets first.
+  if grep -q 'tokenSecretName: rgw-kms-token' "$ov/rook/objectstore.yaml" \
+    && ! k -n rook-ceph get secret rgw-kms-token rgw-kms-ca >/dev/null 2>&1; then
+    echo "RGW SSE-KMS Secrets missing: run deploy/platform/scripts/onprem-tokens.sh rgw-kms first" >&2; return 1
+  fi
   render <"$ov/rook/objectstore.yaml" | k apply -f -
   k -n rook-ceph wait --for=jsonpath='{.status.phase}'=Ready cephobjectstore/bravo --timeout=15m
   k -n chat wait --for=jsonpath='{.status.phase}'=Bound objectbucketclaim/bravo-demo-attachments --timeout=5m

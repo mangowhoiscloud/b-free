@@ -1,0 +1,43 @@
+# OpenBao audit log (platform openbao-0:/openbao/file/audit.log), response entries that name transit key rgw-target-onprem
+# $ kubectl --context bravo-platform-rke2 -n openbao exec openbao-0 -- sh -c 'grep -F rgw-target-onprem /openbao/file/audit.log | tail -n 400' | jq (summary)
+# collected 2026-11-03 00:34 KST. Tokens, accessors and response values are HMAC-SHA256 in the audit log itself (shortened here).
+# remote 127.0.0.1 = operator laptop port-forward (key creation as root 00:22:30 KST; token scope check 00:23:01 KST).
+# remote 10.42.0.218 = platform cf-edge/cloudflared-6bfd565bbc-l4zb7, i.e. RGW through the D-16 link t1-plat-bao.
+# accessor hmac abaf5071 = first token (revoked by rgw-kms-retire 00:25 KST); 2d48861d = second token (onprem-tokens.sh 00:25 KST,
+# revoked at the 00:41 KST re-issue); 40c83215 = current token since 00:41 KST (12-reissue.txt).
+# 15:29:33 = first proof PUT (stopped by a decode bug in the tool, object deleted). 15:30:28 = RADOS naming check object (PUT only, deleted).
+# 15:31:36.9 datakey = outage run object A (link up). 15:31:37.8-15:31:39 (link down): no entry, the requests never reached OpenBao.
+# 15:31:42 decrypt = object A read again after the link came back.
+
+time(UTC)	path	op	auth	policies	role	accessor(hmac)	remote	response
+2026-11-02T15:22:30.533	transit/keys/rgw-target-onprem	read	root	root	-	f81fe05c	127.0.0.1	200
+2026-11-02T15:22:30.632	transit/keys/rgw-target-onprem	update	root	root	-	f81fe05c	127.0.0.1	200
+2026-11-02T15:22:30.723	transit/keys/rgw-target-onprem	read	root	root	-	f81fe05c	127.0.0.1	200
+2026-11-02T15:23:01.107	transit/datakey/plaintext/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	abaf5071	127.0.0.1	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:23:01.180	transit/decrypt/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	abaf5071	127.0.0.1	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:23:01.258	transit/keys/rgw-target-onprem	read	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	abaf5071	127.0.0.1	permission denied
+2026-11-02T15:23:01.339	transit/encrypt/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	abaf5071	127.0.0.1	permission denied
+2026-11-02T15:23:01.573	transit/keys/rgw-target-onprem/rotate	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	abaf5071	127.0.0.1	permission denied
+2026-11-02T15:23:01.655	transit/export/encryption-key/rgw-target-onprem	read	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	abaf5071	127.0.0.1	permission denied
+2026-11-02T15:29:33.439	transit/datakey/plaintext/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:29:53.160	transit/datakey/plaintext/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:29:53.753	transit/decrypt/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:30:15.587	transit/datakey/plaintext/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:30:16.203	transit/decrypt/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:30:28.181	transit/datakey/plaintext/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:30:43.229	transit/datakey/plaintext/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:30:43.835	transit/decrypt/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:31:36.881	transit/datakey/plaintext/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+2026-11-02T15:31:42.005	transit/decrypt/rgw-target-onprem	update	approle	platform-rgw-kms-target-onprem	rgw-kms-target-onprem	2d48861d	10.42.0.218	200 (plaintext/ciphertext: hmac only)
+
+# platform pod cloudflared-6bfd565bbc-bkcdb 10.42.0.247
+# platform pod cloudflared-6bfd565bbc-l4zb7 10.42.0.218
+
+# renew-self by the RGW token (audit, response entries with policy platform-rgw-kms-target-onprem)
+# 127.0.0.1 = keys.sh rgw-kms-issue self-check; 10.42.0.218 = CronJob rgw-kms-renew runs (by hand 00:25:51, 00:32:53 KST) through the link
+time(UTC)	path	policies	accessor(hmac)	remote	result
+2026-11-02T15:22:38.390	auth/token/renew-self	platform-rgw-kms-target-onprem	abaf5071	127.0.0.1	200
+2026-11-02T15:23:01.977	auth/token/renew-self	platform-rgw-kms-target-onprem	abaf5071	127.0.0.1	200
+2026-11-02T15:25:41.137	auth/token/renew-self	platform-rgw-kms-target-onprem	2d48861d	127.0.0.1	200
+2026-11-02T15:25:51.013	auth/token/renew-self	platform-rgw-kms-target-onprem	2d48861d	10.42.0.218	200
+2026-11-02T15:32:53.883	auth/token/renew-self	platform-rgw-kms-target-onprem	2d48861d	10.42.0.218	200
