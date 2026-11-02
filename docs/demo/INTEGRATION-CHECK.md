@@ -1,12 +1,12 @@
 # 중간 통합 점검(T28)
 
-스펙 T28의 세부 작업 "중간 통합 점검 2회: S1–S2 연결, S3–S4 연결"의 점검표입니다. **기준 시각: 2026-11-03 04:55 KST.** 실제 대상(출발지 EKS, 온프렘 RKE2(CIS), GKE, 플랫폼 EC2 + RKE2)에서만 봅니다. 지금 환경의 정본은 `deploy/CLOUD-E2E-CONTRACT.md` 0절이고, 장비 · 자격 증명 · 시작 상태는 `docs/demo/ONSITE-CHECKLIST.md`가 다룹니다.
+스펙 T28의 세부 작업 "중간 통합 점검 2회: S1–S2 연결, S3–S4 연결"의 점검표입니다. **기준 시각: 2026-11-03 05:00 KST.** 실제 대상(출발지 EKS, 온프렘 RKE2(CIS), GKE, 플랫폼 EC2 + RKE2)에서만 봅니다. 지금 환경의 정본은 `deploy/CLOUD-E2E-CONTRACT.md` 0절이고, 장비 · 자격 증명 · 시작 상태는 `docs/demo/ONSITE-CHECKLIST.md`가 다룹니다.
 
 **쓰는 법.**
 - 항목마다 명령을 그대로 돌리고 "기대하는 실제 신호"와 비교합니다. 하나라도 다르면 FAIL입니다. 출력을 볼 수 없으면 UNKNOWN이고, UNKNOWN은 통과로 세지 않습니다.
 - 클러스터나 플랫폼 DB에 쓰는 조작은 "쓰기"로 표시합니다. 승인과 실행 시작은 콘솔에서 사람만 합니다(운영자 naver, 승인자 gmail, 서로 다른 신원). 스크립트는 승인을 만들거나 실행을 시작하지 않습니다.
 - 결과는 실행 ID와 시각을 붙여 `docs/evidence/`에 남깁니다. `deploy/pilot/runs/cloud-*`(Git 제외)에 생긴 기록은 `docs/evidence/cloud-runs/`로 옮깁니다.
-- "11/3 상태" 칸의 말: **PASS**(증거 있음), **FAIL**, **측정 중** · **재측정 중**(다른 갈래가 재는 중), **미실행**(사람 승인이나 앞 단계가 필요). 이 문서를 고치면서 쓰기 조작은 하지 않았습니다.
+- "11/3 상태" 칸의 말: **PASS**(증거 있음), **FAIL**, **측정 중**(다른 갈래가 재는 중), **대응 중**(다른 갈래가 고치는 중), **미실행**(사람 승인이나 앞 단계가 필요). 이 문서를 고치면서 쓰기 조작은 하지 않았습니다.
 
 **공통 값.** 비밀은 없습니다.
 
@@ -79,7 +79,7 @@ S3(전환, 컷오버)이 남긴 상태에서 S4(장애, 데이터째 되돌리�
 | D1 | 컷오버 직전 준비 | `curl -s $EXECUTOR/v1/readiness \| jq '{direction, sub_state, lag_bytes, schema_hash}'` | `forward`, `streaming`, 스키마 해시 같음 | PASS(`docs/evidence/db-tls-audit-netpol/`, preflight `repl`) |
 | D2 | PgBouncer 대상이 출발지이고 재시작에도 남음 | 두 클러스터 ConfigMap `chat/chat-pgbouncer-target` | `target=src` | PASS(재시작 시험 03:46–03:47, `docs/evidence/shift/pgbouncer-durable-target-20261103/`) |
 | D3 | 역방향 슬롯이 미리 없음 | preflight `repl`, 컷오버 전 점검 `REVERSE_SLOT_PRESENT` | 슬롯 없음(6a에서 만들어짐) | 코드 배포됨(executor `b2732bed`). 컷오버 실행 0회라 6a 동작은 미실행 |
-| D4 | 승인 → 한 번의 시작 → SHIFT → CUTOVER. **쓰기** | 승인자 cutover 승인, 운영자 `#/plan` "전환 시작"(`POST /v1/plans/$PLAN/shift {"stage":"cutover"}`) | SHIFT 10 · 50 · 100% 판정 통과(오류율 1%, 목적지 표본 100건, 목적지 p95 1,500 ms) → 시스템이 CUTOVER 시작 | 콘솔 경로 미실행. 도구 경로 실측: 목적지가 제때 답하면 편도 30.4 · 37.2초. 실제 쓰기 판정: 04:05 배포된 Executor로 10%에서 0% 복귀(목적지 p95 1,096 ms는 기준 안, 헤더 없는 오류 5건, `docs/evidence/shift/lb-deployed-p95-1500-20261103T040545/`). 원인인 출발지 Gateway 노드 사이 503은 04:33에 고침(`docs/evidence/source-gateway-crossnode/`, 고친 뒤 600/600 200, 50 + 150 부하 12,000/12,000). **재측정 중**(D-30) |
+| D4 | 승인 → 한 번의 시작 → SHIFT → CUTOVER. **쓰기** | 승인자 cutover 승인, 운영자 `#/plan` "전환 시작"(`POST /v1/plans/$PLAN/shift {"stage":"cutover"}`) | SHIFT 10 · 50 · 100% 판정 통과(오류율 1%, 목적지 표본 100건, 목적지 p95 1,500 ms) → 시스템이 CUTOVER 시작 | 콘솔 경로 미실행. 도구 경로 실측(배포된 Executor, 표본기 판정): 04:50 출발지 → 목적지 DONE 43.9초, 오류 0, 목적지 p95 765 · 775 · 748 ms. 04:51 목적지 → 출발지 DONE 46.8초(`docs/evidence/shift/lb-roundtrip-after-gw-fix-20261103T044632/`). 같은 날 04:46 첫 시도는 차가운 목적지 풀 때문에 10%에서 0% 복귀(p95 2,454.6 ms): **대응 중** |
 | D5 | 부하 중 컷오버. **쓰기**(부하) | `deploy/cloud/load_cutover.sh $PLAN run-1` 뒤 D4 | 실행 `DONE`, `write_pause_ms` 5,000 이하, NFR-2 유실 · 중복 0 | 미실행. 부하 자체는 PASS(50 쓰기 + 150 읽기/초, 쓰기 p95 138.1 ms, `docs/evidence/load/20261103-035431-job-2nodes-http-50w150r/`). 5회는 회마다 승인 |
 | D6 | 영수증 | 콘솔 영수증 칸, `GET /v1/plans/$PLAN` | `verdict` MATCH, `verdict_parts` 표 · 시퀀스 · 첨부 모두 MATCH, `scope`(hash_rule v1.1, 첨부 참조 집합 해시) | 미실행(영수증 0건) |
 | D7 | 컷오버 뒤 쓰기 DB가 하나 | `deploy/cloud/repl_setup.sh status`, 두 PgBouncer 활성 파일과 ConfigMap | 목적지 `app_writer` LOGIN, 출발지 아님. 두 PgBouncer와 ConfigMap 모두 dst | 미실행 |

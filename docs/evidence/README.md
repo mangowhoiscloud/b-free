@@ -26,7 +26,7 @@
 | [gke-same-digest-20261103/](gke-same-digest-20261103/README.md) | GKE 앱을 출발지와 같은 digest로 바꿈(그때 `b5c0e764…`, 지금은 0.3.3) | GKE | 11/3 02:51–02:55 |
 | [s2-timing/](s2-timing/README.md) | S2 시간 재측정(앱 0.3.3): 두 작업 함께 시작, governance PASS 150–210초, app_migration PASS 180–187초(준비 10–13, 모델 99–152, 판정 27–54초). T31 준비 약 13초, 승인 뒤 반영 9.6초(처음 반입 약 13초), 게이트 재대조 38–63초 | API Pod 안에서 API 코드로 부름 + 리허설 미리 보기 Pod(실행 01만 배포된 서비스). T31은 검증 네임스페이스 · 시험 버킷 | 11/3 04:12–04:52 |
 | [s2-full/](s2-full/README.md) | S2 전체 사슬을 사람 승인 직전까지: governance PASS 227초, app_migration PASS 315초(단계 시간), 검증 Job이 게이트 OBJ-01–06 · ESO 앱 검증, probe 표시(`origin=probe`), Hubble POLICY_DENIED, T31 정책 단계(시험 버킷), RGW `BoolIfExists` 측정 | API Pod 안에서 API 코드로 부름 + 리허설 미리 보기 Pod. 콘솔 · 승인 · 반영 없음 | 11/3 02:36–04:00 |
-| [shift/](shift/) | SHIFT 10/50/100 실측: 편도 30.4 · 37.2초(목적지가 제때 답할 때), 실제 쓰기 판정은 아직 통과 못 함, 목적지 쓰기 경로 지연 원인(링크 한 왕복 290–340 ms), PgBouncer 대상이 재시작에도 남음(ConfigMap). `lb-deployed-p95-1500-*`: D-30 기준(1,500 ms)의 배포된 Executor로도 10%에서 0% 복귀(헤더 없는 오류 5건). 원인인 출발지 Gateway 503은 `source-gateway-crossnode/`에서 고침. 재측정 중 | executor-0 도구 경로(계획 · 승인 없음) | 11/3 02:51–04:07 |
+| [shift/](shift/) | SHIFT 10/50/100 실측. `lb-roundtrip-after-gw-fix-20261103T044632/`: 배포된 Executor(p95 기준 1,500 ms)로 실제 쓰기 판정 왕복 DONE(출발지 → 목적지 43.9초, 목적지 → 출발지 46.8초, 오류 0). 그 첫 시도는 차가운 목적지 풀로 10%에서 0% 복귀(대응 중). 그 밖: 목적지 쓰기 경로 지연 원인(링크 한 왕복 290–340 ms), PgBouncer 대상이 재시작에도 남음(ConfigMap), 지난 실행(`GET` 표본 30.4 · 37.2초, 04:05 Gateway 503으로 0% 복귀) | executor-0 도구 경로(계획 · 승인 없음) | 11/3 02:51–04:52 |
 | [load/](load/README.md) | 부하 측정. 출발지 50 쓰기 + 150 읽기/초 300초(HTTP 읽기, 노드 2): 쓰기 p95 138.1 ms, 읽기 p95 123.2 ms, NFR-2 OK. WebSocket 읽기는 아직 포화. 노드 1대 · Mac 실행은 대체됨 | 플랫폼 클러스터 Job(일부 Mac) | 11/3 02:36–04:01 |
 | [cloud-runs/](cloud-runs/README.md) | 11/2 클라우드 E2E 스크립트 기록 전부(성공 · 실패): LB 전환 4회(60초 보유, 1회 거짓 DONE), 자동 0% 복귀 2회, T8 첨부 복사 1회, 컷오버 dry run 2회(`NOT_STARTED` · 불완전), E4, D-16 복제, K3s 시절 역사. 플랫폼 DB 집계 | 하네스 실행 | 11/2 20:49–23:02, 집계 11/3 02:32 |
 | [exit-drill/](exit-drill/README.md) | Exit Drill 스크립트를 D-16 링크 기준으로 다시 씀. 실행은 `NOT_RUN`(컷오버 전), 잔존 의존성 지도만 | executor-0, 세 클러스터 읽기 | 11/3 03:09 |
@@ -59,7 +59,7 @@
 | 기록 | 작업 | 상태 |
 |---|---|---|
 | 콘솔에서 사람이 시작한 실행, change · cutover · failback · 예외 승인 | T10, T21 | 0건 |
-| 실제 쓰기 판정으로 통과한 SHIFT | T17 | 재측정 중(D-30) |
+| 콘솔에서 시작해 통과한 SHIFT | T17 | 0회. 도구 경로로는 왕복 통과(`shift/lb-roundtrip-after-gw-fix-20261103T044632/`). 차가운 풀 대응 중 |
 | 클라우드 컷오버 · 되돌리기(쓰기 정지 ms, 영수증, S4-AC1) | T12, T20, T25 | 0회 |
 | 부하 컷오버 5회 | T18, NFR-1 | 0회. 부하 자체는 측정함(`load/`) |
 | 콘솔 경로 S2(클릭으로 두 작업 시작), 실제 목적지 T31 반영 | T15, T31 | 0회. 시간은 API Pod 경로로 잼(`s2-timing/`) |
