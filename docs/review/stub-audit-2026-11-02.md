@@ -15,7 +15,7 @@
 | # | 코드 | 배포 | 실행 확인 | 남은 것 |
 |---|---|---|---|---|
 | A1 | 문서 `240856f`(21:12) | 해당 없음(문서) | 해당 없음. 원본 사본 `docs/evidence/pilot-notebook/` | 파일럿 수치를 클라우드 값으로 인용하지 않기 |
-| A2 | Executor `approvals.py`, API 마이그레이션 0004: `240856f`(21:12). API 쪽 21:4x 고침: `d52c8b3`(21:47) | 예. executor `f5ec7dfd`, api `59f6ba2b`. 플랫폼 DB 0001–0008 적용 | **없음.** 승인 0건, cutover · failback run 0회 | 콘솔 승인으로 컷오버 1회(사람 승인 필요) |
+| A2 | Executor `approvals.py`, API 마이그레이션 0004: `240856f`(21:12). API 쪽 21:4x 고침: `d52c8b3`(21:47). 11/3 L1: 콘솔 시작 확인(`consumed_at`, `APPROVAL_NOT_STARTED`), 시작자 ≠ 승인자, 실행 종류별 1회, 컷오버는 같은 승인의 shift DONE(`SHIFT_NOT_DONE`): `9253b8b`, 시험 `platform/executor/tests/test_approvals.py` | 핀 커밋 `8e99684`(executor `14c7f0d5`, api `a99f5aa2`), **push 대기**. 지금 도는 것은 executor `f5ec7dfd`, api `59f6ba2b` | **없음.** 승인 0건, 계획의 shift · cutover · failback run 0회. 직접 Executor 컷오버는 새 이미지에서 `APPROVAL_NOT_STARTED`로 거부됨(시험) | push 뒤 콘솔 승인 → 운영자 시작으로 SHIFT → CUTOVER 1회(사람 승인 필요) |
 | A3 | API Access JWT 검증 · 허용 목록 JIT: `d52c8b3`(21:47). 콘솔 자동 로그인 제거: `d52c8b3`(`state.tsx` "Login is Cloudflare Access only") | 예. api `59f6ba2b`, console `91678860` | 부분. `b-free` 302 → Access 로그인(02:32). approver(gmail) 첫 로그인으로 역할이 생김(`principals` 1). 목록 밖 이메일의 403은 기록 없음 | operator(naver) 첫 로그인. 아래 원문의 "콘솔 자동 로그인 열림"은 낡은 표기(닫힘) |
 | A4 | API: `d52c8b3`(21:47). 콘솔: `4115767`(23:24) | 예. api, console | 없음. 계획 0건이라 운영 화면에서 본 적 없음(서버 렌더 확인만) | 계획 1건으로 확인 |
 | A5 | 게이트 `240856f`(21:12) | 예. gate `ec47f7c3` | 예. `docs/evidence/gate/platform-gate-20261102T170251Z/TABLES.md`: 온프렘 OBJ-05 FAIL `other_credential_read_allowed`, GKE OBJ-06 FAIL `plain_http_accepted`, 나머지는 PASS 사유와 함께 | 없음 |
@@ -23,7 +23,7 @@
 | B7 | `b7671d6`(23:47) | 예. rehearsal `1e1337fa` | 부분. Trial `t-3ac2e611…` PASS(`behavioral+static_rules`), `docs/evidence/s1-s2-bucket/`. **노트북 CLI 러너**로 돌림. 플랫폼 리허설 서비스 경로는 0회(`rehearsals` 0행) | 콘솔 → API → 리허설 서비스 1회. 평문 HTTP · 앱 PUT · 다른 자격 거부 검사(리뷰 B11) |
 | B8 | 리허설 `240856f` | 예. rehearsal | 부분. 같은 Trial이 INFRA_ERROR 없이 채점됨(노트북 CLI) | B7과 같음 |
 | B9 | 리허설 `240856f`(`snapshot.py` 추가) | 예. rehearsal | 부분. 같은 Trial이 스냅숏 37파일을 씀(CLI `--snapshot`). `PUT /v1/snapshots` 플랫폼 경로는 0회 | B7과 같음 |
-| B10 | Executor `MATCH_PARTIAL` · `verdict_parts`: `240856f`. 콘솔: `0d47efa`(23:26) | 예. executor `f5ec7dfd`, console `91678860` | **없음.** 영수증 0건 | 컷오버 전 첨부 대조, 영수증의 검증 범위 표시(리뷰 B28) |
+| B10 | Executor `MATCH_PARTIAL` · `verdict_parts`: `240856f`. 콘솔: `0d47efa`(23:26). 11/3 L1(리뷰 B28): 1b에서 최종 참조 집합을 목적지 저장소에 HEAD로 대조(크기, sha256 메타), 쓰기 정지 중 참조 집합 해시 재확인, 영수증 `scope`, 지난 영수증은 API가 `verification_scope`를 붙임, hash_rule v1 규칙을 계약 15 §11에 고정: `9253b8b` | 핀 커밋 `8e99684`(executor `14c7f0d5`, api `a99f5aa2`), **push 대기** | **없음.** 영수증 0건. 대조 규칙은 시험만(`test_attachment_copy.py`) | 컷오버 1회로 `objects` MATCH와 `scope` 확인 |
 | B11 | API `d52c8b3`(21:47) | 예. api. API의 OpenBao 토큰(`BRAVO_BAO_TOKEN_FILE`, `deploy/platform/control/api.yaml`)도 배포에 있음. 아래 원문의 "남음: API OpenBao 자격"은 닫힘 | 없음. 환경 등록 0건(`environments` 0행) | API로 환경 등록 1회 |
 | B12 | `deploy/cloud/contract.sh` E5: `240856f` | 해당 없음(스크립트) | **없음.** 클라우드 E5 0회(콘솔 cutover 승인 두 개 필요) | E1 · E5 · E6 |
 | B13 | `240856f` | 해당 없음(스크립트) | 없음. 클라우드 컷오버 0회 | - |
@@ -34,7 +34,7 @@
 | B18 | 수집기 `240856f` | 예. collector `af3c66c1` | 없음. 시험만(`test_masks_cover_secret_shapes`) | - |
 | B19 | 수집기 · 데모 앱 스키마 `240856f` | 해당 없음(DB 초기화 · 스크립트) | 부분. 온프렘 RKE2 역할이 SCRAM(`docs/evidence/cloud-runs/cloud-dbroles-onprem-rke2-20261102T221719/state.txt`) | 구독 conninfo 안 비밀번호(PG16 제약)는 남음 |
 | B20 | `1fc9db3`(23:22) | 해당 없음 | 예. `deploy/pilot/.env` 없음(02:30 확인) | - |
-| B21 | `TARGET_SHARE` 판정: executor `98f57c71` 고정 `212b930`(22:48) | 예. executor `f5ec7dfd`(같은 판정) | 예, **하네스 실행만.** `docs/evidence/cloud-runs/`: LB 10/50/100 이동 4회(1회는 거짓 DONE 결함), 자동 0% 복귀 2회. 콘솔 · 상태 머신 경로는 0회. 아래 원문의 "증거는 9ca7af4"는 틀림(그 커밋에 실행 기록 없음) | 상태 머신 SHIFT · 콘솔 시작(리뷰 B02), 업무 트래픽 판정(B14) |
+| B21 | `TARGET_SHARE` 판정: executor `98f57c71` 고정 `212b930`(22:48). 11/3 L1(리뷰 B02 · B14 · B04): 상태 머신 AWAIT_APPROVAL → SHIFT → CUTOVER, 1a는 AWAIT_APPROVAL로, 단계 판정은 실제 채팅 쓰기(목적지 100건 이상, 보유 5–30초), 되돌리기 8단계가 앞단을 출발지로: `9253b8b`, `b65f9cd`. 계약 15 §10 | 핀 커밋 `8e99684`, **push 대기** | 부분. 새 코드를 executor-0 안에서 도구 경로로 실측(`docs/evidence/shift/lb-oneway-20261103T025133/`, 02:51–03:10): 목적지가 빨리 답하면 편도 30.4초 · 37.2초(이전 184.8초). **실제 쓰기 판정으로는 목적지 전환 FAIL**: 목적지 앱 쓰기 1.7–2.6초(링크 경로), 10%에서 매번 0% 복귀. 콘솔 · 상태 머신 경로 0회 | 링크 쓰기 지연(데이터 · 링크 갈래), 원인 미확인: 느린 목적지로 가는 POST가 가중치보다 적게 감. 그 뒤 콘솔에서 SHIFT 1회 |
 | B22 | 파일럿 사본 `240856f`, 클라우드 사본은 이 갱신과 같은 커밋 | 해당 없음 | 예. `docs/evidence/pilot-notebook/`, `docs/evidence/cloud-runs/` | 앞으로 생기는 `deploy/pilot/runs/cloud-*`도 옮기기 |
 | G1 | `ac4e1aa`(00:43), 재암호화 · 객체 수준 검사는 이 갈래 L3 커밋 | 예. 온프렘 RGW(Rook) 설정. 객체 수준 검사는 게이트 `c841a75e`(push 전) | 예. `docs/evidence/gate/obj-enc-onprem-20261102T152228Z/`. 기존 객체 4개 재암호화(02:36, 본문 sha256 같음, `docs/evidence/gate/obj-enc-reencrypt-20261103/`), 게이트 OBJ-ENC 객체 수준 4/4(미리 보기 `platform-gate-20261102T175426Z`) | 링크가 끊기면 PUT · GET 500, 이제 canary GET도(리뷰 B17). 출발지 S3는 객체 수준을 못 봄(목록 권한 없음) |
 | G2 | `8542cda`(00:11) | 예. 세 환경 CNPG 백업 설정 | 예. `docs/evidence/gate/dr-restore-*`, DR-RESTORE · DR-ARCHIVE PASS(170251Z) | 정기 백업 없음 |
@@ -48,7 +48,7 @@
 | G10 | GKE 이미지 digest 복사: 이 갈래 L3 커밋 | 예. GKE `chat-bravo-demo` `b5c0e764…`(02:52) | 예. `docs/evidence/gke-same-digest-20261103/`, 세 클러스터 같은 digest, `b-free-chat-gke` 200 | - |
 | G11 | 원점 HTTPRoute 리다이렉트: 이 갈래 L3 커밋 | 고객 세 클러스터는 손으로 적용(03:05, Argo 밖). 플랫폼 `https-redirect`는 손으로 만들었고 push 뒤 Argo `edge`가 맡음 | 예. `docs/evidence/edge-https-redirect-20261103/`: 다섯 이름 `http://` 301 → https, `https://` 200(b-free는 Access 302), `/ws` 101 | 대표 이름 `b-free-chat`의 평문 요청은 환경 이름으로 돌아감(LB Host 덮어쓰기, Cloudflare 변경 필요) |
 
-중간 항목(23–50)은 문서 · 시험 기준으로 고쳤고, 운영 실행 확인은 따로 하지 않았습니다. 아직 열린 것은 31(`mode: recorded`를 쓰는 코드 없음, 리뷰 P21)과 44(금고 보관 파일 집중)입니다. 26은 API 코드가 `security_holds: null`, `security_holds_reason: not_implemented:D-20`으로 둡니다(D-20 미구현). 계획이 0건이라 운영 응답으로는 보지 못했습니다.
+중간 항목(23–50)은 문서 · 시험 기준으로 고쳤고, 운영 실행 확인은 따로 하지 않았습니다. 아직 열린 것은 44(금고 보관 파일 집중)입니다. 31(`mode: recorded`)은 11/3 L1이 `GET /v1/plans/{id}/runs/{run_id}/replay`로 고쳤습니다(`9253b8b`, 계약 15 §12, 시험만, push 대기). 26은 API 코드가 `security_holds: null`, `security_holds_reason: not_implemented:D-20`으로 둡니다(D-20 미구현). 계획이 0건이라 운영 응답으로는 보지 못했습니다.
 
 **갱신 규칙.** 항목을 닫는 갈래는 이 표의 세 칸을 갱신합니다. 실행 확인 칸에는 증거 경로와 시각을 적습니다. 아래 원문 표의 "경과" 칸에는 한 줄만 덧붙입니다.
 
