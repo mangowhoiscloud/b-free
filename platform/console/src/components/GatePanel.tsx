@@ -17,6 +17,28 @@ function exceptable(c: ControlRow): boolean {
   return c.verdict === 'BLOCK' && c.dst === 'FAIL' && (c.src === 'PASS' || c.src === 'FAIL') && c.evidence_digest !== null;
 }
 
+const SOURCE_TEXT: Record<string, string> = { executor: 'Executor', gate: '게이트' };
+const srcName = (s: string) => SOURCE_TEXT[s] ?? s;
+
+/** Which source measured the row (contract 15 §9.5 two-source merge); null when only one source reported. */
+function SourcesLine({ c }: { c: ControlRow }) {
+  if (!c.sources && c.missing_sources.length === 0) return null;
+  if (c.reason === 'sources_disagree' && c.sources) {
+    return (
+      <span className="cell-sub">
+        출처 불일치: {c.sources.map((s) => `${srcName(s.source)} 원본 ${s.src ?? '—'} · 대상 ${s.dst ?? '—'}`).join(' / ')} → UNKNOWN, 그대로 막힘
+      </span>
+    );
+  }
+  const measured = (c.sources ?? []).map((s) => s.source).filter((s) => !c.missing_sources.includes(s));
+  return (
+    <span className="cell-sub">
+      {measured.map(srcName).join(' · ')} 측정
+      {c.missing_sources.length > 0 && ` · ${c.missing_sources.map(srcName).join(' · ')} 미측정(UNKNOWN · 값 없음)`}
+    </span>
+  );
+}
+
 /** Evidence validity of a verdict (contract 15 §9.1): past `evidence_expires_at`, or without one (the gate
  *  report was not read), nothing can be excepted — the API refuses with exception_stale/evidence_expired. */
 export function evidenceBlock(gate: { evidence_expires_at: string | null }): string | null {
@@ -238,6 +260,7 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                     <th scope="row">
                       <span className="mono">{c.control_id}</span>
                       {c.question && <span className="cell-sub">{c.question}</span>}
+                      <SourcesLine c={c} />
                     </th>
                     <td>
                       <ControlValueMark value={c.src} />

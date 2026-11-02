@@ -83,6 +83,10 @@ function controlRow(v: unknown): ControlRow | null {
     reason: asStr(o.reason),
     evidence_digest: asStr(o.evidence_digest),
     exception_id: asStr(o.exception_id),
+    sources: Array.isArray(o.sources)
+      ? o.sources.map((x) => asObj(x)).filter((x): x is NonNullable<typeof x> => x !== null).map((x) => ({ source: asStr(x.source) ?? '?', src: asStr(x.src), dst: asStr(x.dst) }))
+      : null,
+    missing_sources: asArr(o.missing_sources).map(asStr).filter((x): x is string => x !== null),
   };
 }
 

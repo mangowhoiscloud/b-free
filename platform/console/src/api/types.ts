@@ -84,6 +84,10 @@ export interface ControlRow {
   evidence_digest: string | null;
   /** Set only on EXCEPTION rows. */
   exception_id: string | null;
+  /** Both sources' values when Executor and gate reported the same control (contract 15 §9.5); else null. */
+  sources: { source: string; src: string | null; dst: string | null }[] | null;
+  /** Sources that reported UNKNOWN or no value while the other measured. */
+  missing_sources: string[];
 }
 
 /** Exception applied in a gate verdict (`exceptions[]`, contract 15 §9.4). */

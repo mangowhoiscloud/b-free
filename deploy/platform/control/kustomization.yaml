@@ -51,7 +51,7 @@ images:
     digest: sha256:dda00a9ec3c0cac242e3dd4a4c04651f0b31108e505710b191ca4b810bdd86ad # merge-20261102T144519Z (API lane: Executor + gate rows for one control merged per side, sources_disagree blocks; over exception-20261102T143819Z; tree at 1293507)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:0352ad8b872dd084fedcb41bf4ee806f1ab3fc5893ac0ed85a0b637739b95456 # r14 (console lane: exception compensating_control + evidence_expires_at gating, spec §8.5)
+    digest: sha256:9db331e04ff03d85c368901fabff632fdc8e984765da87b5a79080ea26f5da89 # r15 (console lane: gate rows show measuring source, sources_disagree stays blocked)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:71428216456e779286ef8d09313def20d0a305b08ec2969ed8fb5b31f8d49f1b # exception-20261102T143819Z (src/dst evidence digests on report rows for S1 5b; over dbauth-20261102T134943Z; tree at f1cd770)
