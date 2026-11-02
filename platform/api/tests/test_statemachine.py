@@ -14,7 +14,8 @@ def test_pilot_happy_path() -> None:
         Trigger.COLLECTED,
         Trigger.ANALYZED_NO_GAPS,
         Trigger.GATE_PASSED,
-        Trigger.CUTOVER_STARTED,
+        Trigger.SHIFT_STARTED,
+        Trigger.SHIFT_DONE,
         Trigger.RUN_DONE,
         Trigger.CONTROLS_VERIFIED,
     ):
@@ -31,7 +32,8 @@ def test_spec_path_through_rehearsal() -> None:
         Trigger.REHEARSAL_PASSED,  # r2: stays in REHEARSE, opens a change (T31)
         Trigger.CHANGE_APPLIED,  # change approved + applied with the approved digest -> GATE re-check
         Trigger.GATE_PASSED,
-        Trigger.CUTOVER_STARTED,
+        Trigger.SHIFT_STARTED,
+        Trigger.SHIFT_DONE,
         Trigger.RUN_DONE,
         Trigger.FAILBACK_STARTED,
         Trigger.RUN_DONE,
@@ -72,20 +74,16 @@ def test_rehearsal_is_never_entered_after_cutover() -> None:
     assert not [(s, t) for (s, t), d in TRANSITIONS.items() if s in after and d in (State.PROPOSE, State.REHEARSE)]
 
 
-def test_shift_state_has_no_transition_yet() -> None:
-    # FR-8 edge weights have no controller contract yet: SHIFT is named but never entered.
-    assert State.SHIFT not in set(TRANSITIONS.values()) | {s for s, _ in TRANSITIONS}
-
-
 @pytest.mark.parametrize(
     ("state", "trigger"),
     [
         (State.COLLECT, Trigger.GATE_PASSED),
-        (State.GATE, Trigger.CUTOVER_STARTED),  # no cutover without approval state
-        (State.WATCH, Trigger.CUTOVER_STARTED),
+        (State.GATE, Trigger.SHIFT_STARTED),  # no move without approval state
+        (State.WATCH, Trigger.SHIFT_STARTED),
+        (State.AWAIT_APPROVAL, Trigger.SHIFT_DONE),  # CUTOVER only through SHIFT
         (State.WATCH, Trigger.PROPOSAL_ACCEPTED),  # no rehearsal after cutover (S2-AC5)
         (State.PROPOSE, Trigger.GATE_PASSED),  # a proposal must pass the rehearsal first
-        (State.REHEARSE, Trigger.CUTOVER_STARTED),
+        (State.REHEARSE, Trigger.SHIFT_STARTED),
         (State.SAFE_HOLD, Trigger.ABORT_SETTLED),  # SAFE_HOLD is left only by a human
         (State.SAFE_HOLD, Trigger.RUN_DONE),
         (State.GATE, Trigger.GATE_BLOCKED),  # BLOCK in GATE is not a transition
@@ -98,3 +96,13 @@ def test_invalid_transitions_rejected(state: State, trigger: Trigger) -> None:
 
 def test_safe_hold_is_terminal_for_code() -> None:
     assert not [t for (s, t) in TRANSITIONS if s is State.SAFE_HOLD]
+
+
+def test_shift_sits_between_approval_and_cutover() -> None:
+    """Contract 15 §10.1: no AWAIT_APPROVAL -> CUTOVER shortcut; SHIFT done -> CUTOVER, 1a -> AWAIT_APPROVAL."""
+    assert next_state(State.AWAIT_APPROVAL, Trigger.SHIFT_STARTED) is State.SHIFT
+    assert next_state(State.SHIFT, Trigger.SHIFT_DONE) is State.CUTOVER
+    assert next_state(State.SHIFT, Trigger.SHIFT_REVERTED) is State.AWAIT_APPROVAL
+    assert next_state(State.SHIFT, Trigger.RUN_SAFE_HOLD) is State.SAFE_HOLD
+    into_cutover = {current for (current, _t), target in TRANSITIONS.items() if target is State.CUTOVER}
+    assert into_cutover == {State.SHIFT}

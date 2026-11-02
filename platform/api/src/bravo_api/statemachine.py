@@ -1,7 +1,7 @@
 """Plan state machine: one transition table, one function (spec §8.2, 03 3).
 
 Full path: COLLECT -> ANALYZE -> (GATE | PROPOSE) ; PROPOSE -> REHEARSE -> GATE ; GATE ->
-AWAIT_APPROVAL -> CUTOVER -> WATCH -> (DONE | FAILBACK -> DONE_ROLLED_BACK).
+AWAIT_APPROVAL -> SHIFT -> CUTOVER -> WATCH -> (DONE | FAILBACK -> DONE_ROLLED_BACK).
 Spec r2 (§8.2 REHEARSE row): a passing rehearsal stays in REHEARSE and opens a change (T31). The pipeline
 prepares a candidate (image digest, SBOM, scan); a ``change`` approval binds diff, image digest and policy
 diff; the pipeline applies it to the destination; only ``CHANGE_APPLIED`` (applied digest == approved
@@ -9,10 +9,13 @@ digest) leaves REHEARSE for GATE, where the system re-runs the gate. Approvals: 
 cutover (AWAIT_APPROVAL), failback (WATCH). A failed
 rehearsal returns to PROPOSE until three FAIL verdicts, then NEEDS_HUMAN (FR-5). A gate BLOCK
 stays in GATE (a person may fix and re-run, the pilot path) or re-proposes when an operator
-starts a rehearsal. CUTOVER failures: ABORT_PRE_WRITE -> AWAIT_APPROVAL, SAFE_HOLD. SHIFT
-(edge weights, FR-8) keeps its spec name but has no transition yet: there is no edge
-controller contract. Updates are compare-and-swap on ``plans.version`` and every transition
-appends a ``state.changed`` event in the same transaction. No LLM (NFR-5).
+starts a rehearsal. SHIFT (FR-8, contract 15 §10): the operator's console start consumes the
+cutover approval and the Executor walks Edge weights 10/50/100 % judged on real chat writes; DONE
+-> CUTOVER with the same approval, a revert to 0 % (S3 1a) -> AWAIT_APPROVAL with a fresh request,
+an unconfirmed weight change -> SAFE_HOLD. There is no AWAIT_APPROVAL -> CUTOVER shortcut.
+CUTOVER failures: ABORT_PRE_WRITE -> AWAIT_APPROVAL, SAFE_HOLD. Updates are compare-and-swap on
+``plans.version`` and every transition appends a ``state.changed`` event in the same transaction.
+No LLM (NFR-5).
 """
 
 from __future__ import annotations
@@ -81,7 +84,9 @@ class Trigger(StrEnum):
     FAILBACK_STARTED = "failback_started"
     GATE_PASSED = "gate_passed"
     GATE_BLOCKED = "gate_blocked"
-    CUTOVER_STARTED = "cutover_started"
+    SHIFT_STARTED = "shift_started"
+    SHIFT_DONE = "shift_done"
+    SHIFT_REVERTED = "shift_reverted"
     RUN_DONE = "run_done"
     RUN_ABORTED_PRE_WRITE = "run_aborted_pre_write"
     ABORT_SETTLED = "abort_settled"
@@ -115,7 +120,11 @@ TRANSITIONS: dict[tuple[State, Trigger], State] = {
     # (the old one is void), BLOCK returns to GATE.
     (S.AWAIT_APPROVAL, T.GATE_PASSED): S.AWAIT_APPROVAL,
     (S.AWAIT_APPROVAL, T.GATE_BLOCKED): S.GATE,
-    (S.AWAIT_APPROVAL, T.CUTOVER_STARTED): S.CUTOVER,
+    # SHIFT (contract 15 §10): console start -> 10/50/100 judged -> CUTOVER, or 0 % and back (S3 1a).
+    (S.AWAIT_APPROVAL, T.SHIFT_STARTED): S.SHIFT,
+    (S.SHIFT, T.SHIFT_DONE): S.CUTOVER,
+    (S.SHIFT, T.SHIFT_REVERTED): S.AWAIT_APPROVAL,  # fresh cutover request; the consumed one is void
+    (S.SHIFT, T.RUN_SAFE_HOLD): S.SAFE_HOLD,
     (S.CUTOVER, T.RUN_DONE): S.WATCH,
     (S.CUTOVER, T.RUN_ABORTED_PRE_WRITE): S.ABORT_PRE_WRITE,
     (S.ABORT_PRE_WRITE, T.ABORT_SETTLED): S.AWAIT_APPROVAL,
@@ -151,6 +160,7 @@ _SETTABLE = frozenset(
         "active_change_id",
         "last_change_id",
         "applied_image_digest",
+        "write_pause_budget_ms",
     }
 )
 

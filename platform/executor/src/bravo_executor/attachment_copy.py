@@ -79,6 +79,24 @@ class Referenced:
     size_bytes: int
 
 
+def reference_set_sha256(referenced: Iterable[Referenced]) -> str:
+    """Contract 15 §11.3: SHA-256 over ``<object_key> <sha256> <size>\n`` for each distinct key, keys sorted by
+    code point. Equal hashes before and after the write stop mean the referenced object set did not change."""
+    unique = {r.object_key: r for r in referenced}
+    h = hashlib.sha256()
+    for key in sorted(unique):
+        r = unique[key]
+        h.update(f"{r.object_key} {r.sha256} {r.size_bytes}\n".encode())
+    return h.hexdigest()
+
+
+async def referenced_objects(chat: AsyncConnection, store_id: str) -> list[Referenced]:
+    cur = await chat.execute(
+        "SELECT object_key, sha256, size_bytes FROM attachments WHERE store_id = %s", (store_id,)
+    )
+    return sorted((Referenced(r[0], r[1], int(r[2])) for r in await cur.fetchall()), key=lambda r: r.object_key)
+
+
 def plan_copy(referenced: Iterable[Referenced], verified_keys: Iterable[str]) -> list[Referenced]:
     """Set difference, deterministic order: referenced keys that are not yet VERIFIED."""
     done = set(verified_keys)
@@ -176,6 +194,32 @@ class ObjectStore:
 
         await asyncio.to_thread(_put)
 
+    async def head(self, key: str) -> dict[str, Any] | None:
+        """Size and user metadata of one object, or None when it does not exist."""
+
+        def _head() -> dict[str, Any] | None:
+            try:
+                r = self._s3.head_object(Bucket=self.cfg.bucket, Key=key)
+            except Exception as exc:  # botocore ClientError: 404 / NoSuchKey / NotFound means absent
+                if getattr(exc, "response", {}).get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                    return None
+                raise
+            return {"size": int(r.get("ContentLength", -1)), "metadata": dict(r.get("Metadata") or {})}
+
+        return await asyncio.to_thread(_head)
+
+
+def reconcile_one(ref: Referenced, head: dict[str, Any] | None) -> str | None:
+    """None when the target object matches the row; else the reason (MISSING, SIZE, SHA256)."""
+    if head is None:
+        return "MISSING"
+    if head["size"] != ref.size_bytes:
+        return "SIZE"
+    meta = head.get("metadata") or {}
+    if meta.get("sha256") and meta["sha256"] != ref.sha256:
+        return "SHA256"
+    return None
+
 
 @dataclass(slots=True)
 class CopyReport:
@@ -212,11 +256,29 @@ class AttachmentCopier:
         self.target = target
 
     async def _referenced(self, chat: AsyncConnection) -> list[Referenced]:
-        cur = await chat.execute(
-            "SELECT object_key, sha256, size_bytes FROM attachments WHERE store_id = %s ORDER BY object_key",
-            (self.source.cfg.store_id,),
-        )
-        return [Referenced(r[0], r[1], int(r[2])) for r in await cur.fetchall()]
+        return await referenced_objects(chat, self.source.cfg.store_id)
+
+    async def reconcile(self, chat: AsyncConnection) -> dict[str, Any]:
+        """Contract 15 §11.3: every key of the final reference set (attachments frozen) is on the target store
+        with the row's size (and sha256 metadata when the object has it). Reads only; no ledger shortcut."""
+        refs = {r.object_key: r for r in await self._referenced(chat)}
+        heads = await asyncio.gather(*(self.target.head(k) for k in sorted(refs)), return_exceptions=True)
+        problems: list[dict[str, str]] = []
+        for key, head in zip(sorted(refs), heads, strict=True):
+            if isinstance(head, BaseException):
+                problems.append({"object_key": key, "reason": f"HEAD_ERROR:{type(head).__name__}"})
+                continue
+            reason = reconcile_one(refs[key], head)
+            if reason is not None:
+                problems.append({"object_key": key, "reason": reason})
+        return {
+            "referenced": len(refs),
+            "verified_on_target": len(refs) - len(problems),
+            "problems": problems[:20],
+            "problem_count": len(problems),
+            "reference_set_sha256": reference_set_sha256(refs.values()),
+            "complete": not problems,
+        }
 
     async def _verified_keys(self) -> list[str]:
         async with self._pool.connection() as conn:

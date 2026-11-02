@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -27,6 +27,7 @@ from .executor_client import ExecutorClient, ExecutorError
 from .gate import GatePolicy, Verdict, evaluate
 from .models import ApprovalDecision, EnvRegister, PlanCreate
 from .secretrefs import BaoSettings, SecretRefResolver
+from .shift import front_view, shift_summary
 from .statemachine import State, Trigger, lock_plan, transition
 from .upstreams import GAP_GRADES, ROOT_EMPTY, CollectorClient, GateControlsClient, UpstreamError
 
@@ -584,6 +585,67 @@ class Services:
         async with self.db.tenant_tx(p.tenant_id, p.id) as conn:
             return await self._plan_view(conn, plan_id)
 
+    async def run_replay(self, p: Principal, channel: Channel, plan_id: UUID, run_id: UUID) -> dict[str, Any]:
+        """Contract 15 §12: a finished run of this plan as ``mode: recorded`` events with their original times.
+        Reads only; nothing is written to ``events``."""
+        authorize(p, Action.PLAN_READ, channel)
+        async with self.db.tenant_tx(p.tenant_id, p.id) as conn:
+            cur = await conn.execute(
+                "SELECT run_id, plan_id, kind, status, write_pause_ms, started_at, ended_at FROM runs "
+                "WHERE run_id = %s AND plan_id = %s",
+                (run_id, plan_id),
+            )
+            run = await cur.fetchone()
+            if run is None:
+                raise NotFoundError("run")
+            if run["status"] == "RUNNING":
+                raise BusinessError("run_active")
+            cur = await conn.execute(
+                "SELECT seq, name, started_at, ms, result, detail FROM run_stages WHERE run_id = %s ORDER BY seq",
+                (run_id,),
+            )
+            stages = await cur.fetchall()
+            cur = await conn.execute(
+                "SELECT receipt_id, verdict, body, created_at FROM receipts WHERE run_id = %s "
+                "ORDER BY created_at DESC LIMIT 1",
+                (run_id,),
+            )
+            receipt = await cur.fetchone()
+        t0 = run["started_at"]
+        events: list[dict[str, Any]] = []
+
+        def add(kind: str, at: datetime | None, data: dict[str, Any]) -> None:
+            at = at or t0
+            events.append({
+                "id": f"r{len(events) + 1}", "plan_id": str(plan_id), "state": None, "kind": kind,
+                "at": _iso(at), "mode": "recorded", "run_id": str(run_id),
+                "actor": {"kind": "system", "principal": None},
+                "offset_ms": max(0, int((at - t0).total_seconds() * 1000)), "data": data,
+            })
+
+        for st in stages:
+            data: dict[str, Any] = {"seq": st["seq"], "name": st["name"], "ms": st["ms"], "result": st["result"],
+                                    "started_at": _iso(st["started_at"])}
+            front = front_view(st["name"], st["detail"])
+            if front is not None:
+                data["front"] = front
+            done_at = st["started_at"] + timedelta(milliseconds=st["ms"] or 0)
+            add("run.stage", done_at, data)
+        if receipt is not None:
+            add("receipt.saved", receipt["created_at"], {"receipt_id": str(receipt["receipt_id"]),
+                                                         "verdict": receipt["verdict"],
+                                                         "body": receipt_body(receipt["body"])})
+        events.sort(key=lambda e: e["offset_ms"])
+        add("run.done", run["ended_at"], {"kind": run["kind"], "status": run["status"],
+                                          "write_pause_ms": run["write_pause_ms"]})
+        if len(events) > 1:  # the run ends after its last stage, whatever the clocks say
+            events[-1]["offset_ms"] = max(events[-1]["offset_ms"], events[-2]["offset_ms"])
+        for i, e in enumerate(events, 1):
+            e["id"] = f"r{i}"
+        return {"mode": "recorded", "plan_id": str(plan_id), "run_id": str(run_id), "kind": run["kind"],
+                "status": run["status"], "recorded_at": _iso(t0), "ended_at": _iso(run["ended_at"]),
+                "generated_at": _iso(datetime.now(UTC)), "events": events}
+
     async def _plan_view(self, conn: Conn, plan_id: UUID) -> dict[str, Any]:
         cur = await conn.execute("SELECT * FROM plans WHERE plan_id = %s", (plan_id,))
         plan = await cur.fetchone()
@@ -660,18 +722,22 @@ class Services:
             )
             r = await cur.fetchone()
             cur = await conn.execute(
-                "SELECT seq, name, started_at, ms, result FROM run_stages WHERE run_id = %s ORDER BY seq", (run_id,)
+                "SELECT seq, name, started_at, ms, result, detail FROM run_stages WHERE run_id = %s ORDER BY seq",
+                (run_id,),
             )
-            stages = [
-                {
+            stages = []
+            for s in await cur.fetchall():
+                stage = {
                     "seq": s["seq"],
                     "name": s["name"],
                     "started_at": _iso(s["started_at"]),
                     "ms": s["ms"],
                     "result": s["result"],
                 }
-                for s in await cur.fetchall()
-            ]
+                front = front_view(s["name"], s["detail"])
+                if front is not None:
+                    stage["front"] = front
+                stages.append(stage)
             run = {
                 "run_id": str(run_id),
                 "active": plan["active_run_id"] is not None,
@@ -680,7 +746,7 @@ class Services:
                 "status": r["status"] if r else "UNKNOWN",
                 "epoch": r["epoch"] if r else plan["epoch"],
                 "write_pause_ms": r["write_pause_ms"] if r else None,
-                "write_pause_budget_ms": None,
+                "write_pause_budget_ms": plan.get("write_pause_budget_ms") if r and r["kind"] != "shift" else None,
                 "started_at": _iso(r["started_at"]) if r else None,
                 "ended_at": _iso(r["ended_at"]) if r else None,
                 "stages": stages,
@@ -755,6 +821,7 @@ class Services:
             # `last_run` and `run` are the same object: the active run, else the most recent one.
             "last_run": run,
             "run": run,
+            "shift": await shift_summary(conn, plan_id),
             "last_receipt": receipt,
             "change": change,
             "applied_image_digest": plan["applied_image_digest"],

@@ -8,7 +8,11 @@ the run unless:
 * its ``stage`` equals the run kind (``cutover`` or ``failback``);
 * the approver is not the requester (separation of duties, D-18);
 * it has not expired (``expires_at > now()``);
-* no other run of this Executor already used it (one approval, one run).
+* the platform API consumed it when an operator started the run in the console (``consumed_at`` set):
+  this is the evidence of the console start (contract 15 §10.1); the starter is not the approver;
+* no other run of the same kind already used it (one approval: one shift run and one cutover run,
+  or one failback run);
+* a cutover only: the shift run (10/50/100) with the same approval ended DONE (SHIFT before CUTOVER).
 
 Reading needs ``SELECT`` on ``approvals`` for the Executor's DB role (platform/api grants it).
 When the table is missing or unreadable the run is refused with APPROVAL_SOURCE_UNAVAILABLE:
@@ -38,8 +42,13 @@ class ApprovalRejected(Exception):
 class ApprovalCheck:
     approval_id: str
     plan_id: UUID
-    kind: str
+    kind: str                 # approval stage: cutover | failback
     idem_key: str
+    run_kind: str = ""        # runs.kind being admitted (shift | cutover | failback); empty = kind
+
+    @property
+    def admitted_kind(self) -> str:
+        return self.run_kind or self.kind
 
 
 class PlatformDbApprovals:
@@ -56,7 +65,7 @@ class PlatformDbApprovals:
                 await cur.execute(
                     """
                     SELECT approval_id, plan_id, stage, approver_id, requester_id, expires_at, consumed_at,
-                           expires_at > now() AS live
+                           consumed_by, expires_at > now() AS live
                     FROM approvals WHERE approval_id = %s
                     """,
                     (approval_id,),
@@ -65,12 +74,23 @@ class PlatformDbApprovals:
                 await cur.execute(
                     """
                     SELECT r.run_id FROM run_stages s JOIN runs r USING (run_id)
-                    WHERE s.seq = 1 AND s.detail->>'approval_id' = %s AND r.idem_key <> %s
+                    WHERE s.seq = 1 AND s.detail->>'approval_id' = %s AND r.idem_key <> %s AND r.kind = %s
                     LIMIT 1
                     """,
-                    (str(approval_id), check.idem_key),
+                    (str(approval_id), check.idem_key, check.admitted_kind),
                 )
                 reused = await cur.fetchone()
+                shift = None
+                if check.admitted_kind == "cutover":
+                    await cur.execute(
+                        """
+                        SELECT r.run_id, r.status FROM run_stages s JOIN runs r USING (run_id)
+                        WHERE s.seq = 1 AND s.detail->>'approval_id' = %s AND r.kind = 'shift'
+                        ORDER BY r.started_at DESC LIMIT 1
+                        """,
+                        (str(approval_id),),
+                    )
+                    shift = await cur.fetchone()
         except (psycopg.errors.UndefinedTable, psycopg.errors.InsufficientPrivilege) as exc:
             raise ApprovalRejected("APPROVAL_SOURCE_UNAVAILABLE", {"error": type(exc).__name__}) from exc
         if row is None:
@@ -82,6 +102,7 @@ class PlatformDbApprovals:
             "requester_id": str(row["requester_id"]),
             "expires_at": row["expires_at"].isoformat(),
             "consumed_at": None if row["consumed_at"] is None else row["consumed_at"].isoformat(),
+            "started_by": None if row["consumed_by"] is None else str(row["consumed_by"]),
             "source": "platform-db approvals",
         }
         if row["plan_id"] != check.plan_id:
@@ -92,6 +113,16 @@ class PlatformDbApprovals:
             raise ApprovalRejected("APPROVER_IS_REQUESTER", evidence)
         if not row["live"]:
             raise ApprovalRejected("APPROVAL_EXPIRED", evidence)
+        if row["consumed_at"] is None:
+            raise ApprovalRejected("APPROVAL_NOT_STARTED", evidence)  # no operator started it in the console
+        if row["consumed_by"] == row["approver_id"]:
+            raise ApprovalRejected("STARTER_IS_APPROVER", evidence)
         if reused is not None:
             raise ApprovalRejected("APPROVAL_ALREADY_USED", {**evidence, "run_id": str(reused["run_id"])})
+        if check.admitted_kind == "cutover":
+            if shift is None or shift["status"] != "DONE":
+                raise ApprovalRejected("SHIFT_NOT_DONE", {
+                    **evidence, "shift_run_id": None if shift is None else str(shift["run_id"]),
+                    "shift_status": None if shift is None else shift["status"]})
+            evidence["shift_run_id"] = str(shift["run_id"])
         return evidence

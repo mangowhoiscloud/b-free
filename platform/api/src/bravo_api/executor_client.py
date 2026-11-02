@@ -82,6 +82,13 @@ class ExecutorClient:
         """``POST /v1/failback``: same contract as ``/v1/cutover`` (§8.6 failback row, S4)."""
         return await self._start("/v1/failback", plan_id, epoch, approval_id, write_pause_budget_ms, idempotency_key)
 
+    async def start_shift(self, *, plan_id: UUID, epoch: int, approval_id: UUID, idempotency_key: str) -> UUID:
+        """``POST /v1/front/shift`` for a plan's SHIFT (contract 15 §10): Edge weights 10/50/100 % to the
+        destination, judged on real chat writes. The Executor checks the cutover approval like a cutover's."""
+        payload = {"target_env": "dst", "steps": [10, 50, 100], "plan_id": str(plan_id), "epoch": epoch,
+                   "approval_id": str(approval_id), "stage": "cutover"}
+        return await self._post("/v1/front/shift", payload, idempotency_key)
+
     async def _start(
         self, path: str, plan_id: UUID, epoch: int, approval_id: UUID, write_pause_budget_ms: int, idempotency_key: str
     ) -> UUID:
@@ -91,6 +98,9 @@ class ExecutorClient:
             "approval_id": str(approval_id),
             "write_pause_budget_ms": write_pause_budget_ms,
         }
+        return await self._post(path, payload, idempotency_key)
+
+    async def _post(self, path: str, payload: dict[str, Any], idempotency_key: str) -> UUID:
         try:
             resp = await self._client.post(path, json=payload, headers={"Idempotency-Key": idempotency_key})
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
@@ -98,7 +108,14 @@ class ExecutorClient:
         except httpx.HTTPError as exc:
             raise ExecutorAmbiguous("executor_response_lost") from exc
         if 400 <= resp.status_code < 500:
-            raise ExecutorUnreachable(f"executor_rejected_{resp.status_code}")
+            code = None
+            try:
+                detail = resp.json().get("detail")
+                code = detail.get("code") if isinstance(detail, dict) else None
+            except (ValueError, AttributeError):
+                code = None
+            # The Executor's refusal code (e.g. APPROVAL_NOT_STARTED, SHIFT_NOT_DONE) is the reason shown.
+            raise ExecutorUnreachable(f"executor_rejected_{resp.status_code}" + (f":{code}" if code else ""))
         if resp.status_code not in (200, 201, 202):
             raise ExecutorAmbiguous(f"executor_http_{resp.status_code}")
         try:

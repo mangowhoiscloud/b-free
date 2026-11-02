@@ -69,7 +69,7 @@ def create_app(settings: Settings | None = None, *, jwks: JWKSSource | None = No
     upstreams = [c for c in (gate_controls, collector, rehearsal_client) if c is not None]
     services = Services(db, executor, settings, gate_controls=gate_controls, collector=collector)
     rehearsals = RehearsalService(db, rehearsal_client, settings, collector=collector)
-    watcher = RunWatcher(db, settings.run_poll_interval_s, settings.approval_ttl_s)
+    watcher = RunWatcher(db, settings.run_poll_interval_s, settings.approval_ttl_s, executor)
     rehearsal_watcher = RehearsalWatcher(db, rehearsal_client, settings)
     change_watcher = ChangeWatcher(db, services, settings)
     manager: StreamableHTTPSessionManager | None = None

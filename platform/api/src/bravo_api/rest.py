@@ -206,6 +206,11 @@ def build_router(
     ) -> dict[str, Any]:
         return await exceptions.reject(p, Channel.CONSOLE, plan_id, exception_id, body, key)
 
+    @router.get("/plans/{plan_id}/runs/{run_id}/replay")
+    async def run_replay(plan_id: UUID, run_id: UUID, p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
+        """Contract 15 §12: a finished run as ``mode: recorded`` events (fallback scenes are never shown as live)."""
+        return await services.run_replay(p, Channel.CONSOLE, plan_id, run_id)
+
     @router.post("/plans/{plan_id}/shift", status_code=202)
     async def start_shift(
         plan_id: UUID, body: ShiftRequest, p: Annotated[Principal, Depends(principal)], key: IdemKey = None

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Front switch on its own (T17): executor-0 POST /v1/front/shift for b-free-chat, then wait for the run.
-# LB mode walks 10 -> 50 -> 100 % with executor-0's own HTTPS probe judging each step (error rate, p95)
-# and reverts the target pool to 0 % on a bad step. Never touches b-free (the platform; refused in code).
+# Front switch on its own (T17, tool path of contract 15 §10.9): executor-0 POST /v1/front/shift for b-free-chat
+# without a plan, then wait for the run. LB mode walks 10 -> 50 -> 100 %; each step is judged on real chat writes
+# through the front (room shift-probe, >= 100 answered by the target, error rate <= 1 %, p95) and a bad step
+# reverts the target pool to 0 %. A plan's SHIFT goes through the console instead (approval checked).
+# Never touches b-free (the platform; refused in code).
 #   front_shift.sh <dst|src> [evidence-dir]
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 target="${1:?usage: front_shift.sh <dst|src> [evidence-dir]}"

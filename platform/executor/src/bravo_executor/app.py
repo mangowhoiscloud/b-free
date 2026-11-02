@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -77,6 +78,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         service = ExecutorService(resolved or Settings.from_env())
         if broker is not None:
             app.state.secret_broker = broker
+        if os.environ.get("BRAVO_FRONT_APP", "").strip():
+            # Failback step 8 moves the front back to the source (contract 15 §10.7).
+            service.runner.front_mover = functools.partial(front_api.move_front, app)
         await service.start()
         app.state.service = service
         try:

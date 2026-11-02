@@ -8,5 +8,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   requester_id uuid NOT NULL,
   expires_at   timestamptz NOT NULL,
   created_at   timestamptz NOT NULL DEFAULT now(),
-  consumed_at  timestamptz
+  consumed_at  timestamptz,
+  consumed_by  uuid
 );
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS consumed_by uuid;

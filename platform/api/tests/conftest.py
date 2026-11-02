@@ -182,7 +182,9 @@ class ExecutorStub:
     cutovers: dict[str, str] = field(default_factory=dict)
     cutover_bodies: list[dict[str, Any]] = field(default_factory=list)
     failback_bodies: list[dict[str, Any]] = field(default_factory=list)
+    shift_bodies: list[dict[str, Any]] = field(default_factory=list)
     fail_cutover: bool = False
+    fail_shift: bool = False
 
     def healthy(self) -> None:
         self.controls = [
@@ -232,6 +234,16 @@ def executor() -> ExecutorStub:
             return JSONResponse({"error": "boom"}, status_code=503)
         run_id = stub.cutovers.setdefault(idempotency_key, str(uuid.uuid4()))
         return {"run_id": run_id}
+
+    @app.post("/v1/front/shift", status_code=202)
+    def front_shift(body: dict[str, Any], idempotency_key: str = Header(alias="Idempotency-Key")) -> Any:
+        # Contract 15 §10: the plan's SHIFT (platform/executor front_api).
+        stub.shift_bodies.append(body)
+        if stub.fail_shift:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse({"error": "boom"}, status_code=503)
+        return {"run_id": stub.cutovers.setdefault(idempotency_key, str(uuid.uuid4()))}
 
     @app.post("/v1/failback", status_code=202)
     def failback(body: dict[str, Any], idempotency_key: str = Header(alias="Idempotency-Key")) -> Any:

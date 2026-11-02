@@ -731,7 +731,7 @@ Executor는 그 단계의 판정이 끝난 즉시 목적지 pool 가중치를 0,
 
 대체 장면을 보일 때 콘솔은 지난 실행을 기록 재생으로만 보입니다. 재생 응답의 모든 이벤트가 `mode: "recorded"`와 원래 시각을 가지므로 화면이 실시간처럼 보이지 않습니다. 재생은 아무것도 쓰지 않습니다.
 
-`GET /v1/plans/{id}/runs/{run_id}/replay` (viewer 이상, 콘솔과 MCP):
+`GET /v1/plans/{id}/runs/{run_id}/replay` (viewer 이상, 콘솔):
 
 ```json
 {"mode": "recorded", "plan_id": "<uuid>", "run_id": "<uuid>", "kind": "shift",

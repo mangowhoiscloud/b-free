@@ -135,9 +135,28 @@ def receipt_summary(body: dict[str, Any]) -> dict[str, Any]:
         summary.update(pk_hash=None, content_hash=None, summary_of={"tables": [t.get("name") for t in app_tables]})
     if len(app_seqs) == 1:
         s = app_seqs[0]
-        summary["seq"] = {"src": s.get("src_last"), "dst": s.get("dst_set")}
+        if "origin_last" in s:  # Executor receipts: origin = the side that took writes when the run started
+            fb = body.get("direction") == "failback"
+            src, dst = (s.get("target_set"), s.get("origin_last")) if fb else (s.get("origin_last"), s.get("target_set"))
+        else:
+            src, dst = s.get("src_last"), s.get("dst_set")
+        summary["seq"] = {"src": src, "dst": dst}
         summary.setdefault("summary_of", {})["sequence"] = s.get("name")
     return summary
+
+
+def verification_scope(body: dict[str, Any]) -> dict[str, Any]:
+    """Contract 15 §11.4: what a receipt checked. Receipts written before 2026-11-03 have no ``scope``; the
+    scope is then derived from what the body holds, and objects are "not_in_receipt" when it holds none."""
+    scope = body.get("scope")
+    if isinstance(scope, dict):
+        return {"source": "receipt", **scope}
+    names = [t.get("name") for t in body.get("tables") or [] if isinstance(t, dict)]
+    seqs = [s.get("name") for s in body.get("sequences") or [] if isinstance(s, dict)]
+    parts = body.get("verdict_parts")
+    objects = parts.get("objects") if isinstance(parts, dict) else "not_in_receipt"
+    return {"source": "derived", "hash_rule": body.get("hash_rule"), "tables": names, "sequences": seqs,
+            "objects": objects}
 
 
 def receipt_body(body: Any) -> dict[str, Any]:
@@ -147,6 +166,7 @@ def receipt_body(body: Any) -> dict[str, Any]:
     out = dict(body)
     for key, value in receipt_summary(body).items():
         out.setdefault(key, value)
+    out.setdefault("verification_scope", verification_scope(body))
     return out
 
 

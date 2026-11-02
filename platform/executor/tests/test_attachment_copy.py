@@ -96,3 +96,19 @@ async def test_copy_against_real_stores_is_restartable(
         sha = hashlib.sha256(data).hexdigest()
         got = await target.get(f"att/{sha}")
         assert got is not None and verify_object(f"att/{sha}", sha, got) == sha
+
+
+def test_reference_set_hash_and_reconcile_rules() -> None:
+    """Contract 15 §11.3: the final reference set hash is order- and duplicate-free; a target object must
+    exist with the row's size and, when present, the row's sha256 metadata."""
+    from bravo_executor.attachment_copy import Referenced, reconcile_one, reference_set_sha256
+
+    a = Referenced("att/" + "a" * 64, "a" * 64, 3)
+    b = Referenced("att/" + "b" * 64, "b" * 64, 5)
+    assert reference_set_sha256([a, b]) == reference_set_sha256([b, a, a])
+    assert reference_set_sha256([a]) != reference_set_sha256([a, b])
+    assert reconcile_one(a, None) == "MISSING"
+    assert reconcile_one(a, {"size": 4, "metadata": {}}) == "SIZE"
+    assert reconcile_one(a, {"size": 3, "metadata": {"sha256": "b" * 64}}) == "SHA256"
+    assert reconcile_one(a, {"size": 3, "metadata": {"sha256": "a" * 64}}) is None
+    assert reconcile_one(a, {"size": 3, "metadata": {}}) is None

@@ -3,14 +3,45 @@
 #   t25.sh measure [N]   N roundtrips (rearm between runs): raw write_pause_ms, median, max.
 #                        Each run needs its own approvals: APPROVALS_FILE = JSON lines
 #                        {"plan_id", "cutover", "failback"} from the platform API, one per run.
-#   t25.sh fault         cutover, then destination app error responses (write block on the dst
-#                        app = HTTP 503 / WS nack), detected by probing the front -> automatic S4
+#                        Contract 15 §10.1: the Executor now refuses a cutover whose approval was not
+#                        consumed by a console start (APPROVAL_NOT_STARTED) or whose shift is not DONE
+#                        (SHIFT_NOT_DONE). Measured runs go through the console: SHIFT -> CUTOVER -> failback.
+#   t25.sh fault [rate]  S4 trigger only (contract 15 §10.8): destination app pods answer HTTP 5xx at
+#                        <rate> (default 0.3) through their admin port 8081 (PUT /admin/fault, fault.sh),
+#                        then 20 writes through the front show the errors. No cutover, no failback: the
+#                        failback starts only from the console after a human failback approval.
+#   t25.sh fault-clear   sets the destination fault rate back to 0 and shows 20 writes through the front
 #   t25.sh safe-hold     cutover with the Executor killed right after the dst PgBouncer target
 #                        switch (after the commit point) -> restart -> observe-only + SAFE_HOLD
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-executor_url; URL="$EXECUTOR_URL"
+case "${1:-measure}" in fault|fault-clear) ;; *) executor_url; URL="$EXECUTOR_URL" ;; esac
 OUT="$RUNS/cloud-t25-$(date +%Y%m%dT%H%M%S)-${1:-measure}"; mkdir -p "$OUT"
 latest_ev() { ls -dt "$RUNS"/cloud-*-"$1" 2>/dev/null | head -n 1; }
+# N real chat writes through the front (room fault-probe): status and X-Served-By per environment.
+front_writes() {
+  python3 - "https://${FRONT_APP}.mangowhois.ai/api/rooms/fault-probe/messages" "$1" <<'PY'
+import json, sys, time, urllib.error, urllib.request, uuid
+url, n = sys.argv[1], int(sys.argv[2])
+out = {"url": url, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "sent": n, "by_env": {}, "errors_by_env": {}, "statuses": {}}
+for i in range(n):
+    req = urllib.request.Request(url, method="POST", data=json.dumps({"author": "bravo-fault", "body": f"fault probe {i}"}).encode(),
+                                 headers={"Content-Type": "application/json", "Idempotency-Key": str(uuid.uuid4())})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            status, env = r.status, r.headers.get("X-Served-By")
+    except urllib.error.HTTPError as e:
+        status, env = e.code, e.headers.get("X-Served-By")
+    except Exception as e:  # noqa: BLE001
+        status, env = type(e).__name__, None
+    env = env or "none"
+    out["by_env"][env] = out["by_env"].get(env, 0) + 1
+    out["statuses"][str(status)] = out["statuses"].get(str(status), 0) + 1
+    if status not in (200, 201):
+        out["errors_by_env"][env] = out["errors_by_env"].get(env, 0) + 1
+    time.sleep(0.1)
+print(json.dumps(out))
+PY
+}
 
 case "${1:-measure}" in
   measure)
@@ -37,32 +68,15 @@ case "${1:-measure}" in
     ' "$OUT/runs.jsonl" | tee "$OUT/t25-summary.json"
     ;;
   fault)
-    SCENARIO=cutover "$CLOUD_DIR/run_e2e.sh" > "$OUT/cutover.log" 2>&1 || fail "cutover did not pass (see $OUT/cutover.log)"
-    ev="$(latest_ev cutover)"; echo "{\"cutover_evidence\": \"$ev\"}" > "$OUT/context.json"
-    log "fault: destination app write block (error responses) on ${DST_APP_ENV_ID}"
-    ops entry "$DST_APP_ENV_ID" block > "$OUT/fault-injected.json"
-    "$REPO/apps/demo/.venv/bin/python" "$REPO/deploy/pilot/scripts/demo_traffic.py" \
-      --url "wss://${FRONT_APP}.mangowhois.ai/ws" --rate 5 --duration 10 --drain 5 > "$OUT/watch-probe.json" 2>/dev/null || true
-    jq -c . "$OUT/watch-probe.json"
-    if jq -e '(.unacked // 0) + (.nack_final // 0) > 0' "$OUT/watch-probe.json" >/dev/null; then
-      log "WATCH judged FAIL (unacked writes on the destination front) -> automatic S4 failback"
-      epoch="$(date +%s)"
-      : "${APPROVAL_FAILBACK:?failback approval id from the platform API (the DB failback is never unapproved)}"
-      body="$(jq -nc --arg p "$PLAN_ID" --arg a "$APPROVAL_FAILBACK" --argjson e "$epoch" \
-        '{plan_id:$p, epoch:$e, approval_id:$a, write_pause_budget_ms:5000}')"
-      id="$(curl -fsS -X POST "$URL/v1/failback" -H 'Content-Type: application/json' -H "Idempotency-Key: t25-fault-$(uuidgen)" -d "$body" | jq -r .run_id)"
-      while [ "$(curl -fsS "$URL/v1/runs/$id" | jq -r .status)" = "RUNNING" ]; do sleep 1; done
-      curl -fsS "$URL/v1/runs/$id" > "$OUT/failback-run.json"
-      jq -c '{status, write_pause_ms, verdict: .receipt.verdict}' "$OUT/failback-run.json"
-      [ "${SKIP_FRONT:-0}" = "1" ] || {
-        fid="$(curl -fsS -X POST "$URL/v1/front/shift" -H 'Content-Type: application/json' -H "Idempotency-Key: t25-front-$(uuidgen)" -d '{"target_env":"src"}' | jq -r .run_id)"
-        while [ "$(curl -fsS "$URL/v1/runs/$fid" | jq -r .status)" = "RUNNING" ]; do sleep 1; done
-        curl -fsS "$URL/v1/runs/$fid" > "$OUT/front-back.json"; }
-    else
-      log "WATCH did not see errors: fault not effective"; fail "fault injection had no visible effect"
-    fi
-    log "fault cleared on the destination DB row (the env is now failed back)"
-    ops entry "$DST_APP_ENV_ID" get > "$OUT/after.json" || true
+    rate="${2:-0.3}"
+    log "fault: destination app pods answer HTTP 5xx at rate $rate (admin port 8081); no cutover, no failback"
+    "$CLOUD_DIR/fault.sh" dst "$rate" | tee "$OUT/fault-injected.jsonl"
+    front_writes 20 | tee "$OUT/front-writes.json"
+    log "next: the console shows the errors; failback = approver approves the failback request, operator starts it"
+    ;;
+  fault-clear)
+    "$CLOUD_DIR/fault.sh" dst 0 | tee "$OUT/fault-cleared.jsonl"
+    front_writes 20 | tee "$OUT/front-writes.json"
     ;;
   safe-hold)
     executor_set_fault "pgbouncer/dst/active:ACTIVATE_TARGET"
@@ -74,5 +88,5 @@ case "${1:-measure}" in
     jq -c '{status, stages: [.stages[] | .name], unknown: [.effects[] | select(.state != "CONFIRMED_APPLIED") | "\(.resource) \(.action) \(.state)"]}' "$OUT/run.json"
     jq -e '.status == "SAFE_HOLD"' "$OUT/run.json" >/dev/null && log "PASS SAFE_HOLD (evidence $OUT)" || fail "run is not SAFE_HOLD"
     ;;
-  *) fail "usage: t25.sh measure [N] | fault | safe-hold" ;;
+  *) fail "usage: t25.sh measure [N] | fault [rate] | fault-clear | safe-hold" ;;
 esac

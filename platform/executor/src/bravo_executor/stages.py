@@ -90,12 +90,15 @@ class StageRecorder:
     def last_seq(self) -> int:
         return self._seq
 
-    async def record_done(self, name: str, ms: int, detail: dict[str, Any]) -> None:
-        """An OK stage whose work already ran (timed by the caller), e.g. a front step: change, then hold."""
+    async def record_done(self, name: str, ms: int, detail: dict[str, Any], result: str = "OK") -> None:
+        """A stage whose work already ran (timed by the caller), e.g. a front step: change, then hold.
+        ``result`` is OK or FAILED (a front step judged unhealthy)."""
+        if result not in ("OK", "FAILED"):
+            raise ValueError(f"stage result {result!r}")
         self._seq += 1
         self.timings_ms[name] = ms
         started_at = self._wall() - timedelta(milliseconds=ms)
-        await self._ledger.record_stage(self._run_id, self._seq, name, started_at, ms, "OK", detail)
+        await self._ledger.record_stage(self._run_id, self._seq, name, started_at, ms, result, detail)
 
     @asynccontextmanager
     async def stage(self, name: str) -> AsyncIterator[StageHandle]:

@@ -11,7 +11,8 @@
 | `POST /v1/plans/{id}/rehearsals` | `task`, `role`(governance, app_migration, ci) → `rehearsal_id`, 시도 번호, `trial_id`, 상태(`requested`, `running`, `INFRA_ERROR`+이유). 판정은 리허설 서비스의 검증기가 내고, API는 결속을 확인한 결과만 받음(아래 "리허설") |
 | `POST /v1/plans/{id}/gate` | → 질문별 원본 · 대상 · 판정 |
 | `POST /v1/plans/{id}/approvals` | 콘솔 전용. `stage`(`change`, `cutover`, `failback`), 1회용 `approval_request_id`, 화면에 보인 `revision`, `change`이면 `change_id`. 결속 값(plan, diff, digest, 대상, 만료)은 그 revision이 고정함 → 결속된 승인. 승인자는 입력이 아니고 콘솔 세션의 주체임 |
-| `POST /v1/plans/{id}/shift` | 콘솔 전용. `cutover`(AWAIT_APPROVAL) 또는 `failback`(WATCH, Executor `POST /v1/failback`) → 실행 handle(`run_id`), 단계 결과, 쓰기 정지 ms, 무결성 영수증 |
+| `POST /v1/plans/{id}/shift` | 콘솔 전용. `cutover`(AWAIT_APPROVAL → SHIFT: Executor `POST /v1/front/shift`로 가중치 10/50/100, 통과하면 시스템이 같은 승인으로 컷오버 시작) 또는 `failback`(WATCH, Executor `POST /v1/failback`, 마지막 단계에서 앞단을 출발지로) → 실행 handle(`run_id`, `run_kind`), 단계 결과, 쓰기 정지 ms, 무결성 영수증. 계약 15 §10 |
+| `GET /v1/plans/{id}/runs/{run_id}/replay` | 끝난 실행을 `mode: recorded` 이벤트로 재생(계약 15 §12). 아무것도 쓰지 않음 |
 | `GET /v1/environments/{id}/controls` | → 통제별 시험 결과, 증거, 수집 시각 |
 | `GET /v1/plans/{id}/events` | SSE. `Last-Event-ID`로 재접속 |
 | `GET`, `POST /v1/plans/{id}/exceptions`, `POST …/exceptions/{exception_id}/approve`, `…/reject` | 통제 예외(스펙 S1 5b). 콘솔 operator가 요청, 콘솔 approver가 결정(요청자 · 계획 작성자와 다른 사람). 마지막 게이트 판정의 측정된 FAIL 행 · 목적지 · 증거 digest에 결속. UNKNOWN은 걸 수 없음. 계약 `docs/architecture/15-r2-contracts.md` 9절 |
@@ -98,7 +99,7 @@ SSE 이벤트 필드(제안): `id`, `plan_id`, `state`, `kind`, `at`, `mode`(`li
 
 ## 상태 경로와 리허설(2026-11-02)
 
-상태: `COLLECT → ANALYZE → (GATE | PROPOSE) ; PROPOSE → REHEARSE → GATE → AWAIT_APPROVAL → CUTOVER → WATCH → (DONE | FAILBACK → DONE_ROLLED_BACK)`, 실패 `ABORT_PRE_WRITE`, `SAFE_HOLD`, `NEEDS_HUMAN`. 전이표는 `src/bravo_api/statemachine.py` 하나입니다. SHIFT(Edge 가중치, FR-8)는 이름만 있고 전이가 없습니다. Edge 제어기 계약이 없기 때문입니다. 구현 선택은 `docs/spec/DEVIATIONS.md` D-25.
+상태: `COLLECT → ANALYZE → (GATE | PROPOSE) ; PROPOSE → REHEARSE → GATE → AWAIT_APPROVAL → SHIFT → CUTOVER → WATCH → (DONE | FAILBACK → DONE_ROLLED_BACK)`, 실패 `ABORT_PRE_WRITE`, `SAFE_HOLD`, `NEEDS_HUMAN`. 전이표는 `src/bravo_api/statemachine.py` 하나입니다. SHIFT(Edge 가중치, FR-8)는 콘솔 시작으로 들어가고, 단계마다 실제 채팅 쓰기로 판정합니다. 기준을 넘으면 목적지를 0%로 돌리고 AWAIT_APPROVAL로 돌아갑니다(계약 15 §10). AWAIT_APPROVAL에서 CUTOVER로 바로 가는 전이는 없습니다. 구현 선택은 `docs/spec/DEVIATIONS.md` D-25.
 
 **리허설.** `rehearsals` 표가 시도 카운터의 주인입니다. API는 리허설 서비스(`platform/rehearsal`, `BRAVO_REHEARSAL_URL`)에 시도 하나당 Trial 하나를 요청하고(`Idempotency-Key: rehearsal-<id>`), `RehearsalWatcher`가 결과를 읽습니다. 결과는 계획 · 시도 · Trial ID · 산출물 digest(다시 계산) · 검증기 기록(실행 ID, Pod UID, 이미지 digest, task 판, reward)이 맞을 때만 받고, 아니면 `INFRA_ERROR verdict_unbound:*`입니다. 종료 상태는 한 번만 정합니다. FAIL 3회면 NEEDS_HUMAN(FR-5), 인프라 오류는 2회 상한(07 3절). 아무것도 돌지 않은 전제 조건(`llm_unconfigured`, `cluster_unconfigured` 등)은 기록만 하고 세지 않습니다. 컷오버 뒤에는 `rehearsal_not_allowed`(S2-AC5).
 

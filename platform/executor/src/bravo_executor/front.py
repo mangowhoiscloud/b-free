@@ -11,12 +11,15 @@ cloudflare``) creates one tunnel per environment (``bravo-<app>-<env>``) and eit
   environment id from ``GET <front>/api/config`` (``env.id``: ``aws`` on the source, ``onprem`` on the
   destination, apps/demo).
 * LB mode (``lb_enabled = true``): a load balancer of the same name with one pool per environment and
-  random steering. A shift walks pool weights 10 -> 50 -> 100 % to the target. Each step holds for
-  ``hold_s`` while a metrics source collects samples; an error rate or p95 above the thresholds, or
-  fewer samples than ``min_samples``, reverts the target to 0 % at once. Each step's judgement keeps
-  ``by_env``: how many probes each environment answered, so the weights are shown to steer traffic.
-  Exercised against Cloudflare on 2026-11-02 (deploy/pilot/runs/cloud-front-*). It refuses to start
-  unless the LB object exists (it never falls back to pretending).
+  random steering. A shift walks pool weights 10 -> 50 -> 100 % to the target. After each weight is confirmed,
+  the Executor sends real chat writes through the front (``POST /api/rooms/<room>/messages``, contract 15
+  §10.4) and judges the step from the writes the target answered (``X-Served-By``): at least
+  ``min_target_samples`` of them (100: one error is 1.0 %, two are 2.0 %), error rate and p95 within the
+  thresholds, and the target answering at least ``min_target_share`` of its planned share. The hold ends
+  when the target has enough samples and ``min_hold_s`` has passed, or at ``max_hold_s`` (then
+  INSUFFICIENT_SAMPLES). A failed step reverts the target to 0 % at once (S3 1a). Each step's judgement keeps
+  ``by_env``: how many writes each environment answered, so the weights are shown to steer traffic.
+  It refuses to start unless the LB object exists (it never falls back to pretending).
 
 Every external change is described as (resource ID, action, call, observe) so the caller can wrap it
 in the effect ledger (``stages.EffectRunner``). The Cloudflare token comes from the platform OpenBao
@@ -28,10 +31,12 @@ from __future__ import annotations
 import asyncio
 import math
 import os
+import re
 import time
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
 
 import httpx
 
@@ -43,6 +48,8 @@ LB_REQUIRED = "LB 구독 필요"
 # CLOUD-E2E-CONTRACT.md 6: b-free.<zone> is the platform itself (console, API, MCP). The Executor
 # switches only the customer app front (b-free-chat). Names here are never flipped, whatever the env says.
 PROTECTED_APPS = frozenset({"b-free"})
+ROOM_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")  # apps/demo ROOM_RE
+WRITE_AUTHOR = "bravo-shift"
 
 # ---- configuration ---------------------------------------------------------------------------
 
@@ -50,21 +57,28 @@ PROTECTED_APPS = frozenset({"b-free"})
 @dataclass(frozen=True, slots=True)
 class FrontConfig:
     app: str                                   # "b-free-chat" -> b-free-chat.<zone>, tunnels bravo-b-free-chat-<env>
-    env_ids: dict[str, str]                    # environment key -> app env id served at /api/config
+    env_ids: dict[str, str]                    # environment key -> app env id (/api/config env.id, X-Served-By)
     lb_enabled: bool
-    probe_path: str = "/api/config"
+    probe_path: str = "/api/config"            # status and CNAME propagation only, never a step judgement
     probe_interval_s: float = 0.5
     probe_timeout_s: float = 5.0
     consecutive: int = 5                       # probes in a row that must show the target
     propagation_timeout_s: float = 180.0
-    hold_s: float = 60.0                       # LB mode: observation window per step
-    min_samples: int = 30                      # LB mode: below this the step is not judged as healthy
+    # LB-mode step judgement: real chat writes through the front (contract 15 §10.4)
+    write_rate: float = 60.0                   # writes per second, open loop
+    write_room: str = "shift-probe"
+    write_timeout_s: float = 5.0
+    write_max_in_flight: int = 128
+    min_target_samples: int = 100              # writes the target answered; below this the step is not judged
+    min_hold_s: float = 5.0
+    max_hold_s: float = 30.0
     max_error_rate: float = 0.01
     max_p95_ms: float = 800.0
-    # LB mode: the target must answer at least this fraction of its planned share (10 % step -> 2.5 % of
-    # probes). Cloudflare fails a pool over to the other one when its monitor sees it down: probes then all
-    # succeed from the old environment, and only this check notices that the target is not serving.
+    # The target must answer at least this fraction of its planned share (10 % step -> 2.5 % of writes).
+    # Cloudflare fails a pool over to the other one when its monitor sees it down: writes then all succeed
+    # from the old environment, and only this check notices that the target is not serving.
     min_target_share: float = 0.25
+    move_hold_s: float = 5.0                   # failback front move: writes recorded after the move, no revert
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> FrontConfig:
@@ -81,19 +95,31 @@ class FrontConfig:
             raw = e.get(name)
             return float(raw) if raw not in (None, "") else default
 
-        return cls(
+        room = (e.get("BRAVO_FRONT_WRITE_ROOM") or "shift-probe").strip()
+        if not ROOM_RE.match(room):
+            raise ValueError(f"BRAVO_FRONT_WRITE_ROOM {room!r} is not a room name")
+        cfg = cls(
             app=app,
             env_ids={k.strip(): v.strip() for k, v in env_ids.items()},
             lb_enabled=(e.get("BRAVO_FRONT_LB_ENABLED") or "0").strip() in ("1", "true"),
             probe_interval_s=f("BRAVO_FRONT_PROBE_INTERVAL_S", 0.5),
             consecutive=int(f("BRAVO_FRONT_CONSECUTIVE", 5)),
             propagation_timeout_s=f("BRAVO_FRONT_PROPAGATION_TIMEOUT_S", 180.0),
-            hold_s=f("BRAVO_FRONT_HOLD_S", 60.0),
-            min_samples=int(f("BRAVO_FRONT_MIN_SAMPLES", 30)),
+            write_rate=f("BRAVO_FRONT_WRITE_RATE", 60.0),
+            write_room=room,
+            write_timeout_s=f("BRAVO_FRONT_WRITE_TIMEOUT_S", 5.0),
+            write_max_in_flight=int(f("BRAVO_FRONT_WRITE_MAX_IN_FLIGHT", 128)),
+            min_target_samples=int(f("BRAVO_FRONT_MIN_TARGET_SAMPLES", 100)),
+            min_hold_s=f("BRAVO_FRONT_MIN_HOLD_S", 5.0),
+            max_hold_s=f("BRAVO_FRONT_MAX_HOLD_S", 30.0),
             max_error_rate=f("BRAVO_FRONT_MAX_ERROR_RATE", 0.01),
             max_p95_ms=f("BRAVO_FRONT_MAX_P95_MS", 800.0),
             min_target_share=f("BRAVO_FRONT_MIN_TARGET_SHARE", 0.25),
+            move_hold_s=f("BRAVO_FRONT_MOVE_HOLD_S", 5.0),
         )
+        if cfg.write_rate <= 0 or cfg.min_hold_s < 0 or cfg.max_hold_s < cfg.min_hold_s or cfg.min_target_samples < 1:
+            raise ValueError("front judgement settings out of range (rate > 0, min_hold <= max_hold, samples >= 1)")
+        return cfg
 
     def tunnel_name(self, env_key: str) -> str:
         return f"bravo-{self.app}-{env_key}"
@@ -145,41 +171,66 @@ def p95(values: Sequence[float]) -> float | None:
 @dataclass(frozen=True, slots=True)
 class Judgement:
     healthy: bool
-    samples: int
+    samples: int                     # every write of the window
+    errors: int
     error_rate: float | None
     p95_ms: float | None
+    target_samples: int              # writes the target answered, plus failures no environment answered
+    target_errors: int
+    target_error_rate: float | None
+    target_p95_ms: float | None
     reasons: tuple[str, ...]
-    by_env: Mapping[str, int] = field(default_factory=dict)  # which environment answered each probe
+    by_env: Mapping[str, int] = field(default_factory=dict)  # which environment answered each write
 
     def as_dict(self) -> dict[str, Any]:
-        return {"healthy": self.healthy, "samples": self.samples, "error_rate": self.error_rate,
-                "p95_ms": self.p95_ms, "reasons": list(self.reasons), "by_env": dict(self.by_env)}
+        return {"healthy": self.healthy, "samples": self.samples, "errors": self.errors,
+                "error_rate": self.error_rate, "p95_ms": self.p95_ms, "target_samples": self.target_samples,
+                "target_errors": self.target_errors, "target_error_rate": self.target_error_rate,
+                "target_p95_ms": self.target_p95_ms, "reasons": list(self.reasons), "by_env": dict(self.by_env)}
 
 
-def judge(samples: Sequence[Sample], cfg: FrontConfig, target_env_id: str | None = None,
-          weight_pct: int = 0) -> Judgement:
-    """A step is healthy only with enough samples, error rate <= max, p95 <= max and, given a target and
-    its weight, the target answering at least ``min_target_share`` of its planned share of the probes."""
+def _rate(errors: int, n: int) -> float | None:
+    return None if n == 0 else round(errors / n, 6)
+
+
+def is_target(s: Sample, target_env_id: str) -> bool:
+    """A write counts for the target when the target answered it, or when it failed before any environment
+    answered (Cloudflare 52x, timeout, connection error): conservative, it may have been the target."""
+    return s.env_id == target_env_id or (s.env_id is None and not s.ok)
+
+
+def target_count(samples: Sequence[Sample], target_env_id: str) -> int:
+    return sum(1 for s in samples if is_target(s, target_env_id))
+
+
+def judge(samples: Sequence[Sample], cfg: FrontConfig, target_env_id: str, weight_pct: int) -> Judgement:
+    """Contract 15 §10.4. A step is healthy only when the target answered at least ``min_target_samples``
+    writes, the target's error rate <= max, the target's p95 <= max, and the target answered at least
+    ``min_target_share`` of its planned share. The overall error rate and p95 are reported, not judged."""
     n = len(samples)
-    reasons: list[str] = []
-    if n < cfg.min_samples:
-        reasons.append(f"INSUFFICIENT_SAMPLES({n}<{cfg.min_samples})")
     errors = sum(1 for s in samples if not s.ok)
-    rate = None if n == 0 else errors / n
-    lat = p95([s.latency_ms for s in samples if s.ok])
-    if rate is not None and rate > cfg.max_error_rate:
-        reasons.append(f"ERROR_RATE({rate:.4f}>{cfg.max_error_rate})")
-    if lat is not None and lat > cfg.max_p95_ms:
-        reasons.append(f"P95({lat:.1f}ms>{cfg.max_p95_ms}ms)")
+    tgt = [s for s in samples if is_target(s, target_env_id)]
+    t_err = sum(1 for s in tgt if not s.ok)
+    t_rate = _rate(t_err, len(tgt))
+    t_p95 = p95([s.latency_ms for s in tgt if s.ok])
+    reasons: list[str] = []
+    if len(tgt) < cfg.min_target_samples:
+        reasons.append(f"INSUFFICIENT_SAMPLES({target_env_id}:{len(tgt)}<{cfg.min_target_samples})")
+    if t_rate is not None and t_rate > cfg.max_error_rate:
+        reasons.append(f"TARGET_ERROR_RATE({t_rate:.4f}>{cfg.max_error_rate})")
+    if t_p95 is not None and t_p95 > cfg.max_p95_ms:
+        reasons.append(f"TARGET_P95({t_p95:.1f}ms>{cfg.max_p95_ms}ms)")
     by_env: dict[str, int] = {}
     for s in samples:
         key = s.env_id or "none"
         by_env[key] = by_env.get(key, 0) + 1
-    if target_env_id is not None and weight_pct > 0 and n:
+    if weight_pct > 0 and n:
         share, floor = by_env.get(target_env_id, 0) / n, cfg.min_target_share * weight_pct / 100
         if share < floor:
             reasons.append(f"TARGET_SHARE({target_env_id}:{share:.3f}<{floor:.3f})")
-    return Judgement(not reasons, n, rate, lat, tuple(reasons), by_env)
+    lat = p95([s.latency_ms for s in samples if s.ok])
+    return Judgement(not reasons, n, errors, _rate(errors, n), None if lat is None else round(lat, 1), len(tgt),
+                     t_err, t_rate, None if t_p95 is None else round(t_p95, 1), tuple(reasons), by_env)
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,12 +276,6 @@ def lb_pool_weights(target_pool: str, other_pool: str, weight_pct: int) -> dict[
 # ---- probing -----------------------------------------------------------------------------------
 
 
-class MetricsSource(Protocol):
-    """Samples of user-facing requests during a step (LB-mode judgement)."""
-
-    async def collect(self, seconds: float) -> list[Sample]: ...
-
-
 class HttpProbe:
     """Real HTTPS requests to the front name; the body's env.id tells which environment answered."""
 
@@ -270,13 +315,77 @@ class HttpProbe:
             await asyncio.sleep(self.interval_s)
         return measure_propagation(samples, target_env_id, consecutive), samples
 
-    async def collect(self, seconds: float) -> list[Sample]:
+
+class WriteSampler:
+    """Real chat writes through the front (contract 15 §10.4): the step judgement's only input.
+
+    ``POST https://<front>/api/rooms/<room>/messages`` with a new Idempotency-Key per write, sent open loop
+    at ``rate`` per second (a slow answer does not slow the schedule). ACK = HTTP 200/201 with an integer
+    ``message.id`` and an ``X-Served-By`` header. Anything else is an error and is not retried."""
+
+    def __init__(self, front: str, cfg: FrontConfig, label: str) -> None:
+        self.url = f"https://{front}/api/rooms/{cfg.write_room}/messages"
+        self.cfg = cfg
+        self.label = label
+        self.sent = 0
+        self._http = httpx.AsyncClient(
+            timeout=cfg.write_timeout_s,
+            limits=httpx.Limits(max_connections=cfg.write_max_in_flight,
+                                max_keepalive_connections=cfg.write_max_in_flight),
+            headers={"Cache-Control": "no-cache", "User-Agent": "bravo-executor-shift"},
+        )
+
+    async def close(self) -> None:
+        await self._http.aclose()
+
+    async def once(self, t0: float) -> Sample:
+        self.sent += 1
+        body = {"author": WRITE_AUTHOR, "body": f"shift sample {self.label} {self.sent}"}
+        start = time.monotonic()
+        try:
+            resp = await self._http.post(self.url, json=body, headers={"Idempotency-Key": str(uuid.uuid4())})
+            latency = (time.monotonic() - start) * 1000
+            env_id = resp.headers.get("x-served-by") or None
+            acked = False
+            if resp.status_code in (200, 201):
+                try:
+                    msg = (resp.json() or {}).get("message") or {}
+                    acked = isinstance(msg.get("id"), int) and not isinstance(msg.get("id"), bool)
+                except (ValueError, AttributeError):
+                    acked = False
+            return Sample(start - t0, acked and env_id is not None, latency, env_id, resp.status_code)
+        except Exception:  # noqa: BLE001 - any failure of one write is one error sample
+            return Sample(start - t0, False, (time.monotonic() - start) * 1000, None, None)
+
+    async def collect(self, done: Callable[[list[Sample], float], bool], max_s: float) -> list[Sample]:
+        """Send until ``done(answered, elapsed_s)`` or ``max_s``; then wait for the writes already sent."""
         t0 = time.monotonic()
+        interval = 1.0 / self.cfg.write_rate
         out: list[Sample] = []
-        while time.monotonic() - t0 < seconds:
-            out.append(await self.once(t0))
-            await asyncio.sleep(self.interval_s)
-        return out
+        pending: set[asyncio.Task[Sample]] = set()
+
+        def finished(task: asyncio.Task[Sample]) -> None:
+            pending.discard(task)
+            if not task.cancelled():
+                out.append(task.result())
+
+        k = 0
+        while True:
+            elapsed = time.monotonic() - t0
+            if elapsed >= max_s or done(out, elapsed):
+                break
+            delay = t0 + k * interval - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            if len(pending) >= self.cfg.write_max_in_flight:
+                await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            task = asyncio.create_task(self.once(t0))
+            pending.add(task)
+            task.add_done_callback(finished)
+            k += 1
+        if pending:
+            await asyncio.wait(set(pending), timeout=self.cfg.write_timeout_s + 1.0)
+        return sorted(out, key=lambda s: s.t)
 
 
 # ---- Cloudflare API ----------------------------------------------------------------------------
@@ -373,6 +482,7 @@ class Cloudflare:
 # ---- switch ------------------------------------------------------------------------------------
 
 Observation = tuple[bool, dict[str, Any]]
+RecordStep = Callable[[str, dict[str, Any], str], Awaitable[None]]
 EffectApply = Callable[
     [str, str, Callable[[], Awaitable[dict[str, Any] | None]], Callable[[], Awaitable[Observation]]],
     Awaitable[dict[str, Any]],
@@ -434,10 +544,14 @@ class FrontSwitch:
 
     async def shift(
         self, target_env: str, steps: Sequence[int], apply: EffectApply, probe: HttpProbe,
-        record_step: Callable[[str, dict[str, Any]], Awaitable[None]],
+        record_step: RecordStep, sampler: WriteSampler | None = None, *, revert: bool = True,
     ) -> dict[str, Any]:
         """Walk the plan. `apply` wraps each external change in the effect ledger; `record_step` stores
-        a stage row (name, detail). Returns the summary; raises nothing for a judged revert."""
+        a stage row (name, detail, result). Returns the summary; raises nothing for a judged revert.
+
+        LB mode needs `sampler` (real writes, contract 15 §10.4). ``revert=False`` is the failback front move
+        (steps [100] to the source): the step is judged and recorded but never reverted, because the side
+        traffic leaves is the faulty one."""
         if target_env not in self.cfg.env_ids:
             raise ValueError(f"unknown environment {target_env!r}")
         target_id = self.cfg.env_ids[target_env]
@@ -460,7 +574,7 @@ class FrontSwitch:
                 if not step.applied:
                     entry = {"weight": step.weight, "applied": False, "reason": step.reason}
                     summary["steps"].append(entry)
-                    await record_step(f"front.step_{step.weight}", entry)
+                    await record_step(f"front.step_{step.weight}", entry, "OK")
                     continue
                 if step.weight != 100:
                     raise ValueError("CNAME mode can only move all traffic (100)")
@@ -483,13 +597,15 @@ class FrontSwitch:
                 evidence = await apply(self.resource_dns(), f"CNAME_TO_{target_env.upper()}", flip, observe_flip)
                 entry = {"weight": 100, "applied": True, **evidence}
                 summary["steps"].append(entry)
-                await record_step("front.step_100", entry)
+                await record_step("front.step_100", entry, "OK")
             summary["propagation_ms"] = (summary["steps"][-1].get("observed") or {}).get(
                 "propagation", {}).get("propagation_ms")
             return summary
 
         # LB mode
         summary["mode"] = "lb"
+        if sampler is None:
+            raise ValueError("LB mode needs a write sampler (contract 15 §10.4)")
         lb = await self.cf.load_balancer(self.front)
         if lb is None:
             raise CloudflareError(f"load balancer {self.front} not found (lb_enabled=true but no LB object)")
@@ -498,6 +614,12 @@ class FrontSwitch:
         tp, op = pools.get(self.cfg.tunnel_name(target_env)), pools.get(self.cfg.tunnel_name(other))
         if not tp or not op:
             raise CloudflareError("LB pools for both environments are required")
+        summary["judge"] = {"input": f"POST {sampler.url}", "write_rate": self.cfg.write_rate,
+                            "min_target_samples": self.cfg.min_target_samples, "min_hold_s": self.cfg.min_hold_s,
+                            "max_hold_s": self.cfg.max_hold_s if revert else self.cfg.move_hold_s,
+                            "max_error_rate": self.cfg.max_error_rate, "max_p95_ms": self.cfg.max_p95_ms,
+                            "min_target_share": self.cfg.min_target_share, "revert": revert}
+        need = self.cfg.min_target_samples
         for step in plan_steps(True, steps):
             weights = lb_pool_weights(tp, op, step.weight)
 
@@ -513,27 +635,43 @@ class FrontSwitch:
             evidence = await apply(
                 self.resource_lb(), f"WEIGHT_{target_env.upper()}_{step.weight}", set_weights, observe_weights
             )
-            samples = await probe.collect(self.cfg.hold_s)
-            verdict = judge(samples, self.cfg, self.cfg.env_ids[target_env], step.weight)
-            entry = {"weight": step.weight, "applied": True, "judgement": verdict.as_dict(),
-                     "step_ms": int((time.monotonic() - t_step) * 1000), **evidence}
+            await record_step(f"front.set_{step.weight}",
+                              {"weight": step.weight, "pool_weights": weights,
+                               "step_ms": int((time.monotonic() - t_step) * 1000), **evidence}, "OK")
+            t_hold = time.monotonic()
+            if revert:
+                samples = await sampler.collect(
+                    lambda got, elapsed: elapsed >= self.cfg.min_hold_s and target_count(got, target_id) >= need,
+                    self.cfg.max_hold_s,
+                )
+            else:
+                samples = await sampler.collect(lambda _got, elapsed: False, self.cfg.move_hold_s)
+            hold_ms = int((time.monotonic() - t_hold) * 1000)
+            verdict = judge(samples, self.cfg, target_id, step.weight)
+            judgement = {**verdict.as_dict(), "hold_ms": hold_ms,
+                         "step_ms": int((time.monotonic() - t_step) * 1000)}
+            entry = {"weight": step.weight, "applied": True, "judgement": judgement,
+                     "hold_ms": hold_ms, "step_ms": judgement["step_ms"]}
             summary["steps"].append(entry)
-            await record_step(f"front.step_{step.weight}", entry)
-            if not verdict.healthy:
-                revert = lb_pool_weights(tp, op, 0)
+            await record_step(f"front.step_{step.weight}", entry, "OK" if verdict.healthy else "FAILED")
+            if not verdict.healthy and revert:
+                revert_to = lb_pool_weights(tp, op, 0)
 
-                async def call_revert(revert: dict[str, float] = revert) -> dict[str, Any]:
-                    return await self.cf.set_pool_weights(lb["id"], revert)
+                async def call_revert(revert_to: dict[str, float] = revert_to) -> dict[str, Any]:
+                    return await self.cf.set_pool_weights(lb["id"], revert_to)
 
-                async def observe_revert(revert: dict[str, float] = revert) -> Observation:
+                async def observe_revert(revert_to: dict[str, float] = revert_to) -> Observation:
                     now = await self.cf.load_balancer(self.front)
                     got = (now or {}).get("random_steering", {}).get("pool_weights")
-                    return got == revert, {"pool_weights": got}
+                    return got == revert_to, {"pool_weights": got}
 
                 t_rev = time.monotonic()
                 ev = await apply(self.resource_lb(), f"REVERT_{target_env.upper()}_0", call_revert, observe_revert)
                 summary["reverted"] = {"at_weight": step.weight, "reasons": list(verdict.reasons),
+                                       "pool_weights": revert_to,
                                        "step_ms": int((time.monotonic() - t_rev) * 1000), **ev}
-                await record_step("front.revert_0", summary["reverted"])
+                await record_step("front.revert_0", summary["reverted"], "OK")
                 return summary
+            if not verdict.healthy:
+                summary["unhealthy"] = {"at_weight": step.weight, "reasons": list(verdict.reasons)}
         return summary

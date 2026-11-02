@@ -100,6 +100,50 @@ def test_secret_ref_must_stay_in_tenant(console: Console) -> None:
     assert r.status_code == 422 and r.json()["error"] == "secret_ref_out_of_scope"
 
 
+def shift_finishes(pg: dict[str, str], run_id: str, pid: str, approval_id: str, status: str = "DONE",
+                   reverted_reason: str | None = None) -> None:
+    """What platform/executor front_api writes for a plan's SHIFT (contract 15 §10.3), with its own role."""
+    with psycopg.connect(pg["bravo_executor"], autocommit=True) as ex:
+        ex.execute(
+            "INSERT INTO runs (run_id, plan_id, kind, epoch, idem_key, status) VALUES (%s, %s, 'shift', 1, %s, 'RUNNING')",
+            (run_id, pid, f"shift-{approval_id}"),
+        )
+        stages: list[tuple[str, str, dict[str, Any]]] = [
+            ("front.preflight", "OK", {"approval_id": approval_id, "origin": "plan", "mode": "lb", "target_env": "dst"}),
+        ]
+        for w in (10, 50, 100):
+            healthy = not (reverted_reason and w == 10)
+            j = {"healthy": healthy, "samples": 1000, "errors": 0 if healthy else 6, "error_rate": 0.0,
+                 "p95_ms": 90.0, "target_samples": 104, "target_errors": 0 if healthy else 6,
+                 "target_error_rate": 0.0 if healthy else 0.0577, "target_p95_ms": 210.0,
+                 "reasons": [] if healthy else [reverted_reason], "by_env": {"aws": 896, "onprem": 104},
+                 "hold_ms": 16000, "step_ms": 16500}
+            stages.append((f"front.set_{w}", "OK", {"weight": w, "pool_weights": {"pd": w / 100}, "step_ms": 400}))
+            stages.append((f"front.step_{w}", "OK" if healthy else "FAILED",
+                           {"weight": w, "applied": True, "judgement": j, "hold_ms": 16000, "step_ms": 16500}))
+            if not healthy:
+                stages.append(("front.revert_0", "OK", {"at_weight": w, "reasons": [reverted_reason]}))
+                break
+        for seq, (name, result, detail) in enumerate(stages, start=1):
+            ex.execute(
+                "INSERT INTO run_stages (run_id, seq, name, started_at, ms, result, detail) "
+                "VALUES (%s, %s, %s, now(), 100, %s, %s)",
+                (run_id, seq, name, result, json.dumps(detail)),
+            )
+        ex.execute("UPDATE runs SET status = %s, ended_at = now() WHERE run_id = %s", (status, run_id))
+
+
+def wait_cutover_started(executor: ExecutorStub, approval_id: str, timeout: float = 10) -> str:
+    """After SHIFT DONE the API itself starts the cutover with the same approval (key cutover-<approval_id>)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        run_id = executor.cutovers.get(f"cutover-{approval_id}")
+        if run_id:
+            return run_id
+        time.sleep(0.05)
+    raise AssertionError("the API did not start the cutover after SHIFT")
+
+
 def wait_state(console: Console, pid: str, state: str, timeout: float = 10) -> dict[str, Any]:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -148,15 +192,34 @@ def test_full_pilot_flow(console: Console, executor: ExecutorStub, pg: dict[str,
     assert reused.status_code == 409 and reused.json()["error"] == "approval_request_used"
 
     assert console.post("approver", f"/plans/{pid}/shift", {"stage": "cutover"}).status_code == 403
-    shift = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover"}, key="shift-key-0001")
+    shift = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover", "write_pause_budget_ms": 4000},
+                         key="shift-key-0001")
     assert shift.status_code == 202, shift.text
-    run_id = shift.json()["run_id"]
-    assert run_id and executor.cutover_bodies[-1]["epoch"] == 1
-    assert executor.cutover_bodies[-1]["approval_id"] == granted.json()["approval_id"]
-    replay = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover"}, key="shift-key-0001")
-    assert replay.json()["run_id"] == run_id  # A8
+    started = shift.json()
+    aid = granted.json()["approval_id"]
+    assert started["state"] == "SHIFT" and started["run_kind"] == "shift" and started["approval_id"] == aid
+    shift_run = started["run_id"]
+    assert executor.shift_bodies[-1] == {"target_env": "dst", "steps": [10, 50, 100], "plan_id": pid, "epoch": 1,
+                                         "approval_id": aid, "stage": "cutover"}
+    replay = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover", "write_pause_budget_ms": 4000},
+                          key="shift-key-0001")
+    assert replay.json()["run_id"] == shift_run  # A8
     second = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover"})
     assert second.status_code == 409  # approval consumed / state moved on
+    with psycopg.connect(pg["owner"]) as c:
+        consumed = c.execute("SELECT consumed_by IS NOT NULL, run_idem_key FROM approvals WHERE approval_id = %s",
+                             (aid,)).fetchone()
+    assert consumed == (True, f"cutover-{aid}")  # the console start the Executor checks (contract 15 §10.1)
+
+    # SHIFT: the Executor walks 10/50/100 and records each step; DONE -> CUTOVER with the same approval.
+    shift_finishes(pg, shift_run, pid, aid)
+    run_id = wait_cutover_started(executor, aid)
+    assert executor.cutover_bodies[-1]["epoch"] == 1 and executor.cutover_bodies[-1]["approval_id"] == aid
+    assert executor.cutover_bodies[-1]["write_pause_budget_ms"] == 4000
+    in_cutover = wait_state(console, pid, "CUTOVER")
+    assert in_cutover["shift"]["status"] == "DONE" and in_cutover["shift"]["current_weight"] == 100
+    assert [s["weight"] for s in in_cutover["shift"]["steps"]] == [10, 50, 100]
+    assert in_cutover["shift"]["steps"][0]["target_samples"] == 104 and in_cutover["shift"]["reverted"] is None
 
     # The Executor writes the contract tables with its own role.
     with psycopg.connect(pg["bravo_executor"], autocommit=True) as ex:
@@ -229,7 +292,7 @@ def test_full_pilot_flow(console: Console, executor: ExecutorStub, pg: dict[str,
         modes = {r[0] for r in c.execute("SELECT DISTINCT mode FROM events WHERE plan_id = %s", (pid,))}
     assert modes == {"live"}
     # CUTOVER -> WATCH issues the failback request (approval.requested, stage failback) in the same step.
-    assert kinds.count("run.stage") == 4
+    assert kinds.count("run.stage") == 4 + 7  # cutover stages + shift stages (preflight, 3 x set and step)
     assert kinds[-4:] == ["run.done", "receipt.saved", "state.changed", "approval.requested"]
     assert "approval.granted" in kinds and kinds.count("gate.verdict") == 2
     with psycopg.connect(pg["owner"]) as c:
@@ -302,18 +365,55 @@ def test_expired_approval_request_is_stale(console: Console, pg: dict[str, str])
     assert r.json() == {"error": "approval_stale", "detail": {"cause": "approval_request_expired"}}
 
 
-def test_lost_cutover_response_reads_runs_then_safe_hold(console: Console, executor: ExecutorStub) -> None:
+def test_lost_shift_response_reads_runs_then_safe_hold(console: Console, executor: ExecutorStub) -> None:
     """Executor answers 5xx (ambiguous): no runs row for the key -> SAFE_HOLD, never a resend."""
     pid = console.plan()
     gate = console.post("operator", f"/plans/{pid}/gate").json()
     console.post("approver", f"/plans/{pid}/approvals", {"approval_request_id": gate["approval_request_id"], "revision": 1})
-    sent = len(executor.cutover_bodies)
-    executor.fail_cutover = True
+    sent = len(executor.shift_bodies)
+    executor.fail_shift = True
     try:
         r = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover"})
     finally:
-        executor.fail_cutover = False
+        executor.fail_shift = False
     assert r.status_code == 202 and r.json()["state"] == "SAFE_HOLD"
-    assert len(executor.cutover_bodies) == sent + 1  # exactly one attempt
+    assert len(executor.shift_bodies) == sent + 1  # exactly one attempt
     plan = console.get("viewer", f"/plans/{pid}").json()
-    assert plan["state"] == "SAFE_HOLD" and plan["state_reason"].startswith("cutover_unconfirmed:")
+    assert plan["state"] == "SAFE_HOLD" and plan["state_reason"].startswith("shift_unconfirmed:")
+
+
+def test_shift_revert_returns_to_await_approval_with_a_fresh_request(
+    console: Console, executor: ExecutorStub, pg: dict[str, str]
+) -> None:
+    """S3 1a: a step over the threshold -> the Executor puts the target at 0 % -> AWAIT_APPROVAL, new request."""
+    pid = console.plan()
+    gate = console.post("operator", f"/plans/{pid}/gate").json()
+    granted = console.post("approver", f"/plans/{pid}/approvals",
+                           {"approval_request_id": gate["approval_request_id"], "revision": 1}).json()
+    started = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover"}).json()
+    cutovers = len(executor.cutover_bodies)
+    shift_finishes(pg, started["run_id"], pid, granted["approval_id"], status="ABORT_PRE_WRITE",
+                   reverted_reason="TARGET_ERROR_RATE(0.0577>0.01)")
+    plan = wait_state(console, pid, "AWAIT_APPROVAL")
+    assert plan["state_reason"] == "shift_reverted:TARGET_ERROR_RATE(0.0577>0.01)"
+    assert plan["awaiting_approval"]["stage"] == "cutover"
+    assert plan["awaiting_approval"]["approval_request_id"] != gate["approval_request_id"]
+    assert plan["shift"]["reverted"] == {"at_weight": 10, "reasons": ["TARGET_ERROR_RATE(0.0577>0.01)"]}
+    assert plan["shift"]["current_weight"] == 0 and plan["shift"]["steps"][0]["healthy"] is False
+    assert len(executor.cutover_bodies) == cutovers  # no DB cutover after a reverted shift
+    stages = {s["name"]: s for s in plan["run"]["stages"]}
+    assert stages["front.step_10"]["result"] == "FAILED"
+    assert stages["front.step_10"]["front"]["judgement"]["target_error_rate"] == 0.0577
+
+    # Contract 15 §12: the finished run replays as recorded events, nothing is written to the plan's events.
+    with psycopg.connect(pg["owner"]) as c:
+        before = c.execute("SELECT count(*) FROM events WHERE plan_id = %s", (pid,)).fetchone()
+    rec = console.get("viewer", f"/plans/{pid}/runs/{started['run_id']}/replay").json()
+    assert rec["mode"] == "recorded" and rec["run_id"] == started["run_id"] and rec["kind"] == "shift"
+    assert rec["recorded_at"] and all(e["mode"] == "recorded" for e in rec["events"])
+    assert [e["kind"] for e in rec["events"]][-1] == "run.done" and rec["events"][-1]["data"]["kind"] == "shift"
+    with psycopg.connect(pg["owner"]) as c:
+        after = c.execute("SELECT count(*) FROM events WHERE plan_id = %s", (pid,)).fetchone()
+    assert before == after
+    missing = console.get("viewer", f"/plans/{pid}/runs/{uuid.uuid4()}/replay")
+    assert missing.status_code == 404 and missing.json()["error"] == "run_not_found"

@@ -15,6 +15,9 @@ Cutover  (origin=src, target=dst)                Failback (origin=dst, target=sr
   7  dst writer GRANT + LOGIN, pool -> dst,        6  src writer GRANT + LOGIN, pool -> src,
      RELOAD, RESUME                                   RELOAD, RESUME
   8  business write through PgBouncer (timer stops on its ACK; it must be served by the target)
+                                                  8  front: all traffic to the source in one step (S4 basic
+                                                     flow 4, contract 15 §10.7); a failed move leaves the run
+                                                     DONE with this stage FAILED (the DB is already back)
 
 Failure before the commit point -> ABORT_PRE_WRITE: undo only what this run changed, in
 reverse order, each undo recorded as its own effect. Failure after it -> SAFE_HOLD; nothing
@@ -24,6 +27,7 @@ is resumed automatically.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import socket
 import time
@@ -38,7 +42,7 @@ import psycopg
 from opentelemetry import trace
 from psycopg import AsyncConnection
 
-from .attachment_copy import AttachmentCopier
+from .attachment_copy import AttachmentCopier, reference_set_sha256, referenced_objects
 from .chatdb import DIGEST_TABLES, SEQUENCES, ChatDb, connect, wait_until
 from .config import Resources, Settings
 from .entry import WriteBlockClient
@@ -49,6 +53,7 @@ from .pgbouncer import PgBouncerAdmin
 from .pools import PoolSpec, host_of
 from .stages import EffectRunner, Observation, StageRecorder, StepFailed, error_evidence
 
+log = logging.getLogger(__name__)
 CUTOVER = "cutover"
 FAILBACK = "failback"
 
@@ -106,6 +111,7 @@ class Sides:
 
 
 CopierFactory = Callable[[str, str], "AttachmentCopier | None"]
+FrontMover = Callable[[str, EffectRunner, StageRecorder], Awaitable[dict[str, Any]]]
 
 
 class CutoverRunner:
@@ -115,6 +121,7 @@ class CutoverRunner:
         self._copier_factory = copier_factory
         self._clock_ns = time.monotonic_ns
         self._owner = instance_owner()
+        self.front_mover: FrontMover | None = None  # set by the app when BRAVO_FRONT_APP is configured
 
     async def run(self, req: CutoverRequest) -> RunOutcome:
         tracer = trace.get_tracer("bravo_executor")
@@ -173,8 +180,10 @@ class CutoverRunner:
 
             async with rec.stage(name("1b_freeze_attachments", "1b_freeze_attachments")) as st:
                 freeze_ns = await self._freeze_attachments(req, fx, sides, origin, target, applied, st.detail)
-                # Final delta copy under freeze, before the write stop (does not extend write_pause_ms).
-                st.detail["objects"] = await self._copy_objects(sides.db[origin], origin, target)
+                # Final delta copy under freeze, then the reconciliation of the final reference set on the
+                # target store (contract 15 §11.3). Before the write stop: does not extend write_pause_ms.
+                objects_pre = await self._copy_objects(sides.db[origin], origin, target)
+                st.detail["objects"] = objects_pre
 
             async with rec.stage(name("2_block_writes", "2_block_writes")) as st:
                 long_tx = await sides.db[origin].long_transactions(s.app_role, s.long_tx_max_s)
@@ -200,7 +209,7 @@ class CutoverRunner:
                 receiving_side, receiving_sub = (("dst", s.fwd_sub) if cutover else ("src", s.rev_sub))
                 receipt = await self._barrier_and_compare(
                     req, fx, sides.db[origin], sides.db[target], receiving_side, receiving_sub, rec,
-                    pause_start_ns, st.detail,
+                    pause_start_ns, st.detail, objects_pre,
                 )
                 st.detail["verdict"] = receipt["verdict"]
                 st.detail["receipt_id"] = receipt["receipt_id"]
@@ -241,6 +250,9 @@ class CutoverRunner:
                 await self._switch_attachments(req, fx, sides.db[target], st.detail)
                 st.detail["attachment_freeze_ms"] = (self._clock_ns() - freeze_ns) // 1_000_000
 
+            if not cutover:
+                await self._front_to_source(fx, rec)
+
             return RunOutcome(RunStatus.DONE, write_pause_ms, dict(rec.timings_ms))
 
         except BaseException as exc:  # noqa: BLE001 - every failure must end in ABORT_PRE_WRITE or SAFE_HOLD
@@ -263,6 +275,19 @@ class CutoverRunner:
         finally:
             if sides is not None:
                 await sides.close()
+
+    async def _front_to_source(self, fx: EffectRunner, rec: StageRecorder) -> None:
+        """Failback step 8 (S4 basic flow 4): Edge weights back to the source. The DB is already back on the
+        source with writes open, so a failure here is recorded on this stage and never turns into SAFE_HOLD."""
+        try:
+            async with rec.stage("failback.8_front_to_src") as st:
+                if self.front_mover is None:
+                    raise StepFailed("FRONT_NOT_CONFIGURED")
+                st.detail.update(await self.front_mover("src", fx, rec))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - recorded as FAILED by the stage; the plan shows front_not_moved
+            log.warning("failback front move not done: %s", type(exc).__name__)
 
     # ---- step helpers ----------------------------------------------------------------------
 
@@ -551,6 +576,7 @@ class CutoverRunner:
         rec: StageRecorder,
         pause_start_ns: int,
         detail: dict[str, Any],
+        objects_pre: dict[str, Any],
     ) -> dict[str, Any]:
         s = self._s
         barrier: dict[str, Any] = {}
@@ -621,7 +647,7 @@ class CutoverRunner:
                  "match": ok}
             )
 
-        objects = await self._copy_objects(origin, origin.side, target.side)
+        objects = await self._objects_final(origin, objects_pre)
         # MATCH only when everything was compared. Objects not checked (no stores configured) gives
         # MATCH_PARTIAL: the DB part matched, the object part is visibly unverified (audit B10).
         if not (tables_match and seq_match) or objects["verdict"] == "MISMATCH":
@@ -657,6 +683,19 @@ class CutoverRunner:
                 "sequences": "MATCH" if seq_match else "MISMATCH",
                 "objects": objects["verdict"],
             },
+            # What each part checked (contract 15 §11.1); receipts without it are older than 2026-11-03.
+            "scope": {
+                "hash_rule": HASH_RULE,
+                "tables": list(DIGEST_TABLES),
+                "sequences": list(SEQUENCES),
+                "objects": {
+                    "checked": objects.get("checked"),
+                    "referenced": objects.get("referenced"),
+                    "reference_set_sha256": objects.get("reference_set_sha256"),
+                    "store_from": (objects.get("source") or {}).get("store_id"),
+                    "store_to": (objects.get("target") or {}).get("store_id"),
+                },
+            },
             "created_at": datetime.now(UTC).isoformat(),
         }
         # Saved before any write is opened on the target (S3-AC2).
@@ -664,20 +703,33 @@ class CutoverRunner:
         return body
 
     async def _copy_objects(self, origin: ChatDb, from_side: str, to_side: str) -> dict[str, Any]:
-        """D-04 objects check: referenced keys of the origin store must be VERIFIED on the target store.
+        """D-04 objects, step 1b under the attachment freeze (contract 15 §11.3): final delta copy, then every key
+        of the final reference set is checked on the target store (HEAD: present, size, sha256 metadata).
 
         NOT_CHECKED (honestly reported, does not fail the receipt) when no object stores are
         configured (BRAVO_ATT_SRC_S3_BUCKET / BRAVO_ATT_DST_S3_BUCKET)."""
         copier = self._copier_factory(from_side, to_side) if self._copier_factory else None
+        refs = await referenced_objects(origin.conn, self._s.store_id(from_side))
+        ref_hash = reference_set_sha256(refs)
         if copier is None:
-            cur = await origin.conn.execute(
-                "SELECT count(DISTINCT object_key) FROM attachments WHERE store_id = %s", (self._s.store_id(from_side),)
-            )
-            row = await cur.fetchone()
-            return {"verdict": "NOT_CHECKED", "reason": "OBJECT_STORES_NOT_CONFIGURED",
-                    "referenced": int(row[0]) if row else 0}
+            return {"verdict": "NOT_CHECKED", "reason": "OBJECT_STORES_NOT_CONFIGURED", "checked": "not_configured",
+                    "referenced": len({r.object_key for r in refs}), "reference_set_sha256": ref_hash}
         report = await copier.run(origin.conn)
-        return {"verdict": "MATCH" if report.complete else "MISMATCH", **report.as_dict()}
+        recon = await copier.reconcile(origin.conn)
+        complete = report.complete and recon["complete"] and recon["reference_set_sha256"] == ref_hash
+        return {"verdict": "MATCH" if complete else "MISMATCH", "checked": "target_head_after_final_copy",
+                **report.as_dict(), "reconcile": recon, "verified_on_target": recon["verified_on_target"],
+                "reference_set_sha256": recon["reference_set_sha256"]}
+
+    async def _objects_final(self, origin: ChatDb, pre: dict[str, Any]) -> dict[str, Any]:
+        """Step 5 (writes paused): the reference set must be the one reconciled at 1b. A cheap DB read; the
+        object store is not called again inside the write pause."""
+        refs = await referenced_objects(origin.conn, self._s.store_id(origin.side))
+        final = reference_set_sha256(refs)
+        out = {**pre, "final_reference_set_sha256": final}
+        if final != pre.get("reference_set_sha256"):
+            out.update(verdict="MISMATCH", reason="OBJECT_SET_CHANGED")
+        return out
 
     async def _set_sub(
         self, fx: EffectRunner, db: ChatDb, sub: str, enabled: bool, epoch: int, applied: Applied | None

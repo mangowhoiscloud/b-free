@@ -16,7 +16,7 @@ from bravo_api.app import create_app
 from bravo_api.config import Mode
 
 from .conftest import ExecutorStub, Keys, make_settings
-from .test_api_flow import Console, wait_state
+from .test_api_flow import Console, shift_finishes, wait_cutover_started, wait_state
 
 
 @pytest.fixture(scope="module")
@@ -31,13 +31,21 @@ def console(api: TestClient, keys: Keys, executor: ExecutorStub) -> Console:
     return Console(api, keys)
 
 
-def executor_finishes(pg: dict[str, str], run_id: str, pid: str, kind: str, epoch: int) -> None:
+def executor_finishes(pg: dict[str, str], run_id: str, pid: str, kind: str, epoch: int,
+                      front_moved: bool | None = None) -> None:
     """What platform/executor writes with its own role when a run ends (CONTRACT.md 5)."""
     with psycopg.connect(pg["bravo_executor"], autocommit=True) as ex:
         ex.execute(
             "INSERT INTO runs (run_id, plan_id, kind, epoch, idem_key, status) VALUES (%s, %s, %s, %s, %s, 'RUNNING')",
             (run_id, pid, kind, epoch, f"{kind}-{uuid.uuid4()}"),
         )
+        if front_moved is not None:  # failback step 8 (contract 15 §10.7)
+            ex.execute(
+                "INSERT INTO run_stages (run_id, seq, name, started_at, ms, result, detail) "
+                "VALUES (%s, 1, 'failback.8_front_to_src', now(), 900, %s, %s)",
+                (run_id, "OK" if front_moved else "FAILED",
+                 json.dumps({"moved": True} if front_moved else {"reason": "FRONT_NOT_CONFIGURED"})),
+            )
         ex.execute(
             "INSERT INTO receipts (receipt_id, run_id, body, verdict) VALUES (%s, %s, %s, 'MATCH')",
             (uuid.uuid4(), run_id, json.dumps({"verdict": "MATCH", "direction": kind, "epoch": epoch})),
@@ -45,20 +53,24 @@ def executor_finishes(pg: dict[str, str], run_id: str, pid: str, kind: str, epoc
         ex.execute("UPDATE runs SET status = 'DONE', write_pause_ms = 300, ended_at = now() WHERE run_id = %s", (run_id,))
 
 
-def to_watch(console: Console, pg: dict[str, str]) -> tuple[str, str]:
+def to_watch(console: Console, pg: dict[str, str], executor: ExecutorStub) -> tuple[str, str]:
     pid = console.plan()
     gate = console.post("operator", f"/plans/{pid}/gate").json()
     assert gate["state"] == "AWAIT_APPROVAL"
     decision = {"approval_request_id": gate["approval_request_id"], "revision": 1, "gate_verdict_id": gate["verdict_id"]}
-    assert console.post("approver", f"/plans/{pid}/approvals", decision).status_code == 201
-    run_id = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover"}).json()["run_id"]
+    granted = console.post("approver", f"/plans/{pid}/approvals", decision)
+    assert granted.status_code == 201
+    aid = granted.json()["approval_id"]
+    shift_run = console.post("operator", f"/plans/{pid}/shift", {"stage": "cutover"}).json()["run_id"]
+    shift_finishes(pg, shift_run, pid, aid)
+    run_id = wait_cutover_started(executor, aid)
     executor_finishes(pg, run_id, pid, "cutover", 1)
     wait_state(console, pid, "WATCH")
     return pid, run_id
 
 
-def test_control_retest_in_watch_closes_the_move(console: Console, pg: dict[str, str]) -> None:
-    pid, _ = to_watch(console, pg)
+def test_control_retest_in_watch_closes_the_move(console: Console, executor: ExecutorStub, pg: dict[str, str]) -> None:
+    pid, _ = to_watch(console, pg, executor)
     r = console.post("operator", f"/plans/{pid}/gate").json()
     assert r["verdict"] == "PASS" and r["state"] == "DONE"
     plan = console.get("viewer", f"/plans/{pid}").json()
@@ -66,7 +78,7 @@ def test_control_retest_in_watch_closes_the_move(console: Console, pg: dict[str,
 
 
 def test_control_regression_in_watch_keeps_watching(console: Console, executor: ExecutorStub, pg: dict[str, str]) -> None:
-    pid, _ = to_watch(console, pg)
+    pid, _ = to_watch(console, pg, executor)
     executor.readiness["lag_bytes"] = 10**9  # replication readiness is not part of the WATCH re-test
     executor.controls[1]["dst"] = "FAIL"
     r = console.post("operator", f"/plans/{pid}/gate").json()
@@ -76,7 +88,7 @@ def test_control_regression_in_watch_keeps_watching(console: Console, executor: 
 
 
 def test_failback_flow(console: Console, executor: ExecutorStub, pg: dict[str, str]) -> None:
-    pid, cutover_run = to_watch(console, pg)
+    pid, cutover_run = to_watch(console, pg, executor)
     plan = console.get("viewer", f"/plans/{pid}").json()
     awaiting: dict[str, Any] = plan["awaiting_approval"]
     assert awaiting["stage"] == "failback" and awaiting["bound_run_id"] == cutover_run
@@ -99,9 +111,10 @@ def test_failback_flow(console: Console, executor: ExecutorStub, pg: dict[str, s
     assert body["state"] == "FAILBACK" and body["epoch"] == 2 and body["run_id"]
     assert executor.failback_bodies[-1]["epoch"] == 2
     assert executor.failback_bodies[-1]["approval_id"] == granted.json()["approval_id"]
-    executor_finishes(pg, body["run_id"], pid, "failback", 2)
+    executor_finishes(pg, body["run_id"], pid, "failback", 2, front_moved=True)
     done = wait_state(console, pid, "DONE_ROLLED_BACK")
     assert done["run"]["kind"] == "failback" and done["last_receipt"]["verdict"] == "MATCH"
+    assert done["state_reason"] is None and done["run"]["stages"][0]["front"]["moved"] is True
     # S2-AC5: no rehearsal on a plan whose move was committed.
     r = console.post("operator", f"/plans/{pid}/rehearsals", {"task": "fix-bucket-policy", "role": "governance"})
     assert r.status_code == 409 and r.json()["error"] == "rehearsal_not_allowed"
