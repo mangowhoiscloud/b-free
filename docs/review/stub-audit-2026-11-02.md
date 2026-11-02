@@ -70,3 +70,14 @@
 |---|---|
 | 26 | 고침. `GET /v1/plans/{id}`의 `security_holds`는 `null`, `security_holds_reason`은 `not_implemented:D-20`. 빈 배열 상수를 없앰 |
 | 44 | 플랫폼 API 몫 고침. `deploy/pilot/devauth`(키 · 토큰 · JWKS)를 지우고 제품 경로에서 개발 키를 읽는 코드를 없앰. 금고 보관 파일 집중은 열림 |
+
+게이트 통제 갈래(2026-11-03 01:1x KST). 감사 뒤 게이트 실행에서 나온 인프라 공백과 플랫폼 게이트 연결입니다. 결과는 `docs/evidence/gate/`에 있습니다.
+
+| # | 등급 | 문제 | 상태 |
+|---|---|---|---|
+| G1 | 높음 | 온프렘 RGW OBJ-ENC FAIL `no_default_encryption` | 고침(`ac4e1aa`). RGW SSE-KMS, 키는 플랫폼 OpenBao transit `rgw-target-onprem`(내보내기 불가, 봉투 암호화). 토큰은 그 키의 datakey · decrypt만, TTL 1h, 15분마다 갱신, 168h마다 재발급. OBJ-ENC 온프렘 PASS. 남음: 기존 객체 5개는 암호화 전 그대로, 암호화 객체 PUT · GET은 OpenBao 링크가 끊기면 500(측정) |
+| G2 | 높음 | DR-RESTORE UNKNOWN(복구 클러스터 없음) | 고침(`8542cda`). 세 환경 CNPG 백업(barmanObjectStore, system 이미지) → `chat/chat-db-restore`(복원 지점까지 복구, 행 수 같음). DR-RESTORE · DR-ARCHIVE 세 환경 PASS. 남음: 정기 백업 없음, CNPG 1.31 전에 Barman Cloud Plugin으로 옮겨야 함 |
+| G3 | 높음 | GKE OBJ-06 FAIL `plain_http_accepted` | 측정 후 FAIL 유지. 프로젝트 수준 `storage.secureHttpTransport`는 403(`orgpolicy.policies.create`), 조직 없는 프로젝트라 `orgpolicy.policyAdmin`을 줄 수 없음(`docs/evidence/gate/obj06-gke-orgpolicy-20261102T143014Z/`). 예외 승인(S1 5b) 대상 |
+| G4 | 치명 | 플랫폼 게이트에 자격 · 레지스트리 절이 없어 모든 질문 UNKNOWN, `target-gcp` 404 | 고침(`db4c4e3`, `1a84e8c`, `0980ff7`, 게이트 고정 `00e34755`). 환경마다 게이트 자기 읽기 신원, `target-gcp` 등록, 링크 `t1-dst-s3http` · `t1-gke-db` 추가. push 전이라 미리 보기 Pod로 측정(`docs/evidence/gate/platform-gate-20261102T161443Z/`). **push 필요**: 커밋이 main에 가야 Deployment `gate`가 바뀜 |
+| G5 | 중간 | 두 쌍이 늘 BLOCK인 UNKNOWN: OBJ-03 · OBJ-04(GET은 쓰기 시험 안 함), 비 AWS 목적지의 AWS 절 질문 3개, NET-PATHS | 열림. 게이트 질문 설계 결정 필요(승인된 쓰기 시험 경로, 온프렘 · GKE 대응 질문) |
+| G6 | 중간 | 측정된 FAIL: DB-TLS 세 환경(`host` 규칙이 평문 접속 허용), DB-AUDIT(`log_connections` 꺼짐, 목적지 pgaudit 없음), NET-DEFAULT-DENY 출발지 · 온프렘 | 열림. 랜딩 존 갈래 몫 |

@@ -114,7 +114,23 @@ environments:
 
 ## 실제 대상
 
-공용 환경 등록 파일은 `deploy/environments/real-targets.yaml`입니다(출발지 EKS `bravo-source`, 목적지 K3s `bravo-onprem`). 참조만 둡니다. 자격은 실행하는 쪽의 표준 체인에서 받습니다.
+**플랫폼(콘솔 · API가 읽는 길).** 레지스트리는 `deploy/platform/control/config/environments.yaml`입니다(`source-aws`, `target-onprem`, `target-gcp`). 게이트는 환경마다 자기 읽기 신원을 씁니다. 수집기와 나눕니다. 신원과 길은 `docs/architecture/15-r2-contracts.md` 2절 표, 권한은 `deploy/platform/link/gate-rbac/README.md`, 자격 전달은 `deploy/platform/scripts/gate-credentials.sh`, DB 역할은 `sql/gate_ro.sql`입니다. 두 쌍의 실행과 비교표는 `docs/evidence/gate/run-platform-gate.sh`가 만듭니다.
+
+레지스트리 키(플랫폼용):
+
+| 키 | 뜻 |
+|---|---|
+| `kubernetes.provider: eks` + `eks_cluster_name`, `aws_region`, `api_server` | `eks:DescribeCluster`로 CA와 엔드포인트, 게이트 AWS 신원으로 EKS 토큰. `api_server`(D-16 링크)로 붙고 TLS는 실제 엔드포인트 호스트로 확인 |
+| `kubernetes.provider: gke` + `api_server` | GKE DNS 엔드포인트, Google ADC(WIF) 토큰(`userinfo.email` 범위: RBAC 주체가 이메일) |
+| `postgres.dial_host` | libpq `hostaddr`로 링크에 붙음. `verify-full`은 DSN `host`(DB 이름)로 확인 |
+| `object_store.ca_file` | 사설 CA 파일(온프렘 RGW) |
+| `object_store.plain_http_endpoint_url` | OBJ-06 평문 요청을 보낼 곳(링크 너머 저장소의 평문 수신) |
+
+- 앱 Secret `get` 권한을 주지 않습니다. SEC-SECRET-READ-K8S는 403이면 Secret이 있는지 확인하지 않고 증거에 `secret_existence: not_checked_no_get_right`를 남깁니다. 404면 그대로 UNKNOWN(`app_secret_missing`)입니다.
+- OBJ-06은 앱 자격이 없으면 읽기 자격(`read_credential`)으로 잽니다. 질문이 전송 방식에 관한 것이라서입니다.
+- OBJ-ENC는 GCS가 `GetBucketEncryption`에 `NotImplemented`를 주면 JSON API `buckets.get?fields=encryption`의 `defaultKmsKeyName`을 봅니다. 있으면 PASS(`customer_managed_key`), 없으면 FAIL(`not_customer_key`).
+
+**노트북.** `deploy/environments/real-targets.yaml`은 운영자 노트북 전용입니다(출발지 EKS 공개 엔드포인트는 운영자 IP만 허용). 자격은 실행하는 쪽의 표준 체인에서 받습니다.
 
     BRAVO_ENVIRONMENTS_FILE=../../deploy/environments/real-targets.yaml \
       uv run --frozen python -m bravo_gate run --source source-aws --target target-onprem --report

@@ -10,6 +10,10 @@
 | `dst-k8s` | 443 | `t1-dst-k8s.mangowhois.ai` | `secret/envs/platform/cf-link-dst-k8s` |
 | `dst-db` | 5432 | `t1-dst-db.mangowhois.ai` | `secret/envs/platform/cf-link-dst-db` |
 | `dst-pgb` | 6432 | `t1-dst-pgb.mangowhois.ai` | `secret/envs/platform/cf-link-dst-pgb` |
+| `dst-s3http` | 80 | `t1-dst-s3http.mangowhois.ai`(RGW 평문 수신 80 → Pod 8080) | `secret/envs/platform/cf-link-dst-s3http` |
+| `gke-db` | 5432 | `t1-gke-db.mangowhois.ai`(GKE 관리 Tunnel `t1-gke-mgmt`) | `secret/envs/platform/cf-link-gke-db` |
+
+`dst-s3http`와 `gke-db`는 2026-11-03 01:0x–01:1x KST에 더했습니다. 소비자는 플랫폼 게이트뿐입니다. `dst-s3http`는 OBJ-06의 평문 요청(TLS 전용 버킷 정책이 `AccessDenied`를 내야 함)만, `gke-db`는 GKE chat-db의 DB 질문(DB-*, DR-ARCHIVE)만 씁니다. 두 링크 클라이언트는 Argo CD 동기화 전에 같은 매니페스트로 먼저 적용했습니다.
 
 Service 이름은 임시 링크와 같습니다. 그래서 바꿀 때 소비자(수집기, Executor, 게이트, 리허설 서비스)의 설정이 그대로입니다. `*-k8s`는 API 서버 인증서를 끝에서 끝으로 확인합니다. 링크는 TCP만 넘기고 TLS는 소비자와 API 서버 사이에서 맺습니다.
 
@@ -18,6 +22,10 @@ Service 이름은 임시 링크와 같습니다. 그래서 바꿀 때 소비자(
 | 수집기(`GET /v1/clusters`, 스냅숏) | `src-k8s` | EKS IAM 토큰(웹 아이덴티티 역할, access entry `bravo-collector`) | 실제 EKS 엔드포인트 호스트(`eks:DescribeCluster`에서 읽음). 레지스트리 `deploy/platform/control/config/environments.yaml`의 `api_server` |
 | Executor | `src-k8s` | EKS IAM 토큰(access entry `bravo-executor`) | `kubernetes.default.svc`(`deploy/cloud/in-cluster/kubeconfig.template.yaml`) |
 | 수집기, 리허설 서비스, Executor | `dst-k8s` | 읽기 전용 · 리허설 · Executor SA 토큰(OpenBao에서 Secret으로) | `kubernetes.default.svc` |
+| 게이트 | `src-k8s` | EKS IAM 토큰(웹 아이덴티티 역할 `gate-ro`, access entry `bravo-gate`) | 실제 EKS 엔드포인트 호스트(수집기와 같은 방식) |
+| 게이트 | `dst-k8s` | SA `kube-system/bravo-gate` 토큰(OpenBao `secret/envs/target-onprem/k8s-gate`) | `kubernetes.default.svc` |
+| 게이트 | `src-db`, `dst-db`, `gke-db` | DB 역할 `gate_ro`(비밀번호 OpenBao `secret/envs/<env>/gate-db`) | `chat-db-rw.chat.svc`(libpq `hostaddr`로 링크에 붙고 `verify-full`은 DB 이름으로) |
+| 게이트 | `dst-s3`, `dst-s3http` | RGW 앱 키 · 권한 없는 `bravo-gate-other` 키(OpenBao) | `127.0.0.1`(게이트 사이드카 `s3-local`, RGW 인증서 IP SAN) |
 
 `kubernetes.default.svc`와 EKS 엔드포인트 호스트는 둘 다 EKS API 인증서의 SAN에 있습니다(2026-11-02 확인, `docs/evidence/d16-source-k8s/`). 출발지 EKS 공개 엔드포인트 허용 목록에는 플랫폼 NAT IP가 없습니다. 플랫폼이 출발지 API에 닿는 길은 이 링크뿐입니다.
 

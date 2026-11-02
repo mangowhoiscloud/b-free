@@ -77,6 +77,18 @@ S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` P
 
 증거 객체(`src_evidence`, `dst_evidence`): `{"verdict": "PASS|FAIL|UNKNOWN", "reason": "<코드>", "evidence": {...}}`. `evidence`에는 비밀이 없습니다(오류 문자열도 가림, 감사 38). 여러 하위 관찰은 `{"parts": [...]}`. 절이 없는 쪽은 `UNKNOWN` · `not_configured`로 남고 게이트를 막습니다(감사 B16).
 
+**플랫폼에서 무엇으로 재나(2026-11-03).** 플랫폼 게이트(`gate.bravo-control.svc:8084`)는 레지스트리 `deploy/platform/control/config/environments.yaml`의 `source-aws`, `target-onprem`, `target-gcp`를 씁니다. 환경마다 수집기와 다른 자기 읽기 신원입니다(`deploy/platform/link/gate-rbac/README.md`).
+
+| 환경 | K8s | DB(역할 `gate_ro`) | 첨부 저장소 | AWS |
+|---|---|---|---|---|
+| `source-aws` | `src-k8s`, EKS 토큰(역할 `gate-ro`, 그룹 `bravo-gate`) | `src-db` | S3, 역할 `gate-ro`(canary 한 개 GET, 암호화 설정 읽기), OBJ-05는 권한 없는 역할 `gate-other` | 역할 `gate-ro`(읽기 · 시뮬레이션) |
+| `target-onprem` | `dst-k8s`, SA `kube-system/bravo-gate` | `dst-db` | RGW, `dst-s3`(TLS) · `dst-s3http`(평문 수신, OBJ-06), 앱 키 · `bravo-gate-other` 키 | 없음 |
+| `target-gcp` | GKE DNS 엔드포인트, Google SA `bravo-gate-ro`(WIF) | `gke-db` | GCS XML API, 앱 HMAC · `gate-other` HMAC. OBJ-ENC는 JSON API `buckets.get`의 `defaultKmsKeyName` | 없음 |
+
+- K8s 권한은 질문이 부르는 것뿐입니다. SubjectAccessReview 만들기, 네임스페이스 읽기, ns `chat`의 NetworkPolicy 목록과 CNPG Cluster 읽기입니다. Secret `get`은 없습니다. 그래서 SEC-SECRET-READ-K8S는 앱 Secret이 있는지 확인하지 않고 증거에 `secret_existence: not_checked_no_get_right`를 남깁니다.
+- 레지스트리 키(`platform/gate/README.md`): `kubernetes.provider`(`eks` · `gke`), `api_server`, `postgres.dial_host`(링크에 붙고 `verify-full`은 DSN의 DB 이름으로), `object_store.ca_file`, `object_store.plain_http_endpoint_url`. OBJ-06은 앱 자격이 없으면 읽기 자격으로 잽니다.
+- 늘 UNKNOWN인 질문(측정 불가, 이유 고정): OBJ-03 · OBJ-04의 쓰기 시험(HTTP GET은 쓰지 않음, 감사 48. 출발지 OBJ-04는 앱 자격이 IRSA라 게이트에 없음), AWS 절 질문(SEC-SECRET-READ-AWS, SEC-ENC-CMK, AUD-PLATFORM)의 비 AWS 목적지(`not_configured`), NET-PATHS(대조 · 거부 경로를 정하지 않음). 그래서 두 쌍 모두 지금은 BLOCK입니다.
+
 ## 3. 의존성 인벤토리(`platform/collector`, :8083)
 
 `GET /v1/inventory`(`BRAVO_INVENTORY_ROOT`가 없으면 503). 스캔할 파일이 하나도 없으면(빈 emptyDir, 실패한 checkout) 503 `inventory_root_empty`입니다. "의존성 없음"이 아닙니다. 형식 `inventory/v1`:

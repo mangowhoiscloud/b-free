@@ -1,0 +1,4 @@
+name: projects/b-free-target-20261102/policies/storage.secureHttpTransport
+spec:
+  rules:
+  - enforce: true

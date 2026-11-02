@@ -1,0 +1,10 @@
+$ gcloud org-policies set-policy 01-policy.yaml --project=b-free-target-20261102   # 2026-11-02 23:30:14 KST
+ERROR: (gcloud.org-policies.set-policy) [ryoo0504@gmail.com] does not have permission to access projects instance [b-free-target-20261102] (or it may not exist): Permission 'orgpolicy.policies.create' denied on resource '//cloudresourcemanager.googleapis.com/projects/b-free-target-20261102' (or it may not exist). Remediate access with this Troubleshooter URL or share it with your administrator - https://console.cloud.google.com/iam-admin/troubleshooter/summary;errorId=CiQwMWExOWNhYi0wNjIzLTcyNzItOTY0ZS0wMTRkYTM1Yjc5YTcSH3Byb2plY3RzL2ItZnJlZS10YXJnZXQtMjAyNjExMDI%3D . This command is authenticated as ryoo0504@gmail.com which is the active account specified by the [core/account] property.
+- '@type': type.googleapis.com/google.rpc.ErrorInfo
+  domain: cloudresourcemanager.googleapis.com
+  metadata:
+    error_info_id: CiQwMWExOWNhYi0wNjIzLTcyNzItOTY0ZS0wMTRkYTM1Yjc5YTcSH3Byb2plY3RzL2ItZnJlZS10YXJnZXQtMjAyNjExMDI=
+    permission: orgpolicy.policies.create
+    resource: projects/b-free-target-20261102
+    troubleshooter_url: https://console.cloud.google.com/iam-admin/troubleshooter/summary;errorId=CiQwMWExOWNhYi0wNjIzLTcyNzItOTY0ZS0wMTRkYTM1Yjc5YTcSH3Byb2plY3RzL2ItZnJlZS10YXJnZXQtMjAyNjExMDI%3D
+  reason: IAM_PERMISSION_DENIED

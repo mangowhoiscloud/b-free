@@ -1,0 +1,10 @@
+$ gcloud projects describe b-free-target-20261102 (parent) / get-ancestors   # 2026-11-02 23:29 KST
+parent: null
+ancestors: b-free-target-20261102 (project only, no organization or folder)
+
+$ gcloud projects get-iam-policy b-free-target-20261102 (roles of the operator account)
+roles/owner
+
+$ gcloud iam list-grantable-roles //cloudresourcemanager.googleapis.com/projects/b-free-target-20261102 | grep orgpolicy
+roles/orgpolicy.policyViewer
+(roles/orgpolicy.policyAdmin is not grantable on this project)

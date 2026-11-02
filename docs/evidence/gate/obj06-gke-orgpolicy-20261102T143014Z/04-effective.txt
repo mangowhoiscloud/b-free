@@ -1,0 +1,5 @@
+$ gcloud org-policies describe storage.secureHttpTransport --project=b-free-target-20261102 --effective   # 2026-11-03 01:15:31 KST
+name: projects/510055025217/policies/storage.secureHttpTransport
+spec:
+  rules:
+  - enforce: false
