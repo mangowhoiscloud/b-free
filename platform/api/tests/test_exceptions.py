@@ -1,6 +1,6 @@
 """Control exception (spec S1 exception flow 5b, contract 15 §9) through the running API and a real postgres:16.
 
-The gate service is an HTTP stub serving ``/v1/controls/report`` in platform/gate's shape (question rows with
+The gate service is an HTTP stub serving ``POST /v1/controls/report`` in platform/gate's shape (question rows with
 ``dst_evidence_digest``, see platform/gate ``build_rows``); the Executor stub and everything else are the same
 as the other API tests. Covered: separation of duties (API and DB trigger), UNKNOWN not exceptable (API and DB
 trigger), parity excludes EXCEPTION, stale on evidence change.
@@ -43,8 +43,9 @@ def gate() -> GateStub:
     app = FastAPI()
     stub = GateStub()
 
-    @app.get("/v1/controls/report")
-    def report(source: str, target: str) -> dict[str, Any]:
+    @app.post("/v1/controls/report")
+    def report(body: dict[str, str]) -> dict[str, Any]:
+        source, target = body["source"], body["target"]  # the plan evaluation run (write probes on), contract 15 §2
         stub.calls.append((source, target))
         questions = [{"control_id": cid, "question": "q", "src_evidence_digest": SRC_DIGEST, **row}
                      for cid, row in stub.rows.items()]

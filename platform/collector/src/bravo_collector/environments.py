@@ -53,6 +53,10 @@ class KubernetesSection(_Section):
     # EKS CA and the name tls_server_name (default: the host of the DescribeCluster endpoint).
     api_server: str | None = None
     tls_server_name: str | None = None
+    # provider=gke: projects/<p>/locations/<l>/clusters/<c>. The collector dials api_server (the D-16 link gke-k8s),
+    # checks the cluster CA read from the container API and the name tls_server_name (default kubernetes.default.svc),
+    # and sends a Google access token of its own WIF identity (GOOGLE_APPLICATION_CREDENTIALS).
+    gke_cluster: str | None = None
     # Empty -> every namespace except kube-system, kube-public, kube-node-lease.
     namespaces: tuple[str, ...] = ()
 

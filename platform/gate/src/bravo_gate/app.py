@@ -5,7 +5,12 @@ GET /v1/controls?source=ID&target=ID[&level=question|control]
     ``level=question`` (default) gives one row per question (OBJ-01, DB-TLS, ...); ``level=control`` gives
     one row per control (SEC-01, ENC-01, AUD-01, NET-01, IAM-01, DR-01).
 GET /v1/controls/report?source=ID&target=ID
-    The same run with evidence, 4-state labels, per-row verdicts, input digest, collected_at, expires_at.
+    The same run with evidence, 4-state labels, per-row verdicts, input digest, collected_at, expires_at. Read-only:
+    OBJ-03/OBJ-04 write probes answer ``write_probe_not_allowed_here`` (audit 48).
+POST /v1/controls/report  body {"source": ID, "target": ID}
+    The run the platform API makes when it evaluates a plan. Same report, and the write probes run on stores whose
+    registry entry has ``write_probes: true``: PUT on the gate's own keys under ``_gate/`` only, each deleted again
+    with the cleanup result in the evidence.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from . import __version__
 from .controls import CONTROLS, QUESTIONS, RULE_VERSION, contract_rows
@@ -55,7 +61,7 @@ def create_app(registry: Registry | None = None) -> FastAPI:
     @app.get("/v1/environments")
     def environments() -> list[dict[str, Any]]:
         return [{"environment_id": e.environment_id, "display_name": e.display_name,
-                 "sections": [s for s in ("object_store", "postgres", "kubernetes", "aws", "network")
+                 "sections": [s for s in ("object_store", "postgres", "kubernetes", "aws", "network", "platform")
                               if getattr(e, s) is not None]}
                 for e in reg().environments.values()]
 
@@ -76,4 +82,14 @@ def create_app(registry: Registry | None = None) -> FastAPI:
         s, t = pair(source, target)
         return compare(s, t)
 
+    @app.post("/v1/controls/report")
+    def report_run(body: RunRequest) -> dict[str, Any]:
+        s, t = pair(body.source, body.target)
+        return compare(s, t, allow_writes=True)
+
     return app
+
+
+class RunRequest(BaseModel):
+    source: str = Field(min_length=1)
+    target: str = Field(min_length=1)

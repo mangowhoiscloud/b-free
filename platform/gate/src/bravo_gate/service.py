@@ -10,6 +10,7 @@ from typing import Any
 from . import __version__
 from .controls import QUESTIONS, SideResults, build_rows
 from .environments import Environment
+from .probes.neutral import PlatformProbe
 from .probes.objstore import ObjectStoreProbe
 from .probes.platform import AwsProbe, KubernetesProbe, network_paths
 from .probes.postgres import PostgresProbe
@@ -18,36 +19,39 @@ from .result import Obs, error_text, unknown
 TTL_ENV = "BRAVO_EVIDENCE_TTL_S"
 
 
-SECTIONS = ("object_store", "postgres", "kubernetes", "aws", "network")
+SECTIONS = ("object_store", "postgres", "kubernetes", "platform", "network")
 
 
-def _probe_for(env: Environment, section: str, allow_writes: bool = False) -> Any:
+def _probe_for(env: Environment, section: str, allow_writes: bool = False,
+               kube: KubernetesProbe | None = None) -> Any:
     if section == "object_store" and env.object_store:
         return ObjectStoreProbe(env.object_store, allow_writes=allow_writes)
     if section == "postgres" and env.postgres:
         return PostgresProbe(env.postgres)
     if section == "kubernetes" and env.kubernetes:
-        return KubernetesProbe(env.kubernetes)
-    if section == "aws" and env.aws:
-        return AwsProbe(env.aws)
+        return kube
+    if section == "platform" and env.platform:
+        return PlatformProbe(env, kube=kube, aws=AwsProbe(env.aws) if env.aws else None)
     if section == "network" and env.network:
         net = env.network
 
         class _Net:
             def paths(self) -> Obs:
-                return network_paths(net)
+                return network_paths(net, kube)
 
         return _Net()
     return None
 
 
 def observe(env: Environment, sections: set[str] | None = None, *, allow_writes: bool = False) -> dict[str, Obs]:
-    """Run every question (all five sections by default). Questions run in a fixed order per section."""
+    """Run every question (all five sections by default). Questions run in a fixed order per section.
+    ``allow_writes`` (POST runs only) lets OBJ-03/OBJ-04 PUT their probe keys on stores with ``write_probes``."""
     out: dict[str, Obs] = {}
+    kube = KubernetesProbe(env.kubernetes) if env.kubernetes else None  # one API client per environment
     for section in sorted(sections or SECTIONS):
         probe = None
         try:
-            probe = _probe_for(env, section, allow_writes)
+            probe = _probe_for(env, section, allow_writes, kube)
         except Exception as exc:  # noqa: BLE001
             err = unknown("probe_setup_error", error=error_text(exc))
             for q in QUESTIONS:

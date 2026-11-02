@@ -237,6 +237,8 @@ class ObjectStoreProbe:
     # OBJ-04 the app credential can read the canary and write a probe key (control path).
     def obj04(self) -> Obs:
         if self.s.app_credential is None:
+            if self.s.app_principal_arn and self.s.endpoint_url is None:
+                return self._obj04_simulated()
             return unknown("app_credential_missing", **self._ev())
         app_head = _client(self.s, self.s.app_credential)
         c = (_attempt(lambda: app_head.head_object(Bucket=self.s.bucket, Key=self.s.canary_key))
@@ -262,6 +264,62 @@ class ObjectStoreProbe:
         if w.kind == "denied":
             return failed("app_write_denied", **ev)
         return unknown("probe_error", **ev)
+
+    def _obj04_simulated(self) -> Obs:
+        """AWS without the app's credential (it is the app's IRSA role, never given to the gate): ask IAM whether the
+        app principal may GET the canary and PUT the probe key, evaluating the bucket policy as resource policy, and
+        whether it may use the bucket's KMS key (key policy as resource policy, through S3). Context: TLS on, the
+        principal's own ARN (the bucket policy keys on aws:PrincipalArn). Method recorded in the evidence."""
+        arn, region, bucket = self.s.app_principal_arn or "", self.s.region, self.s.bucket
+        cred = self.s.read_credential
+        sess = _session(cred, region) if cred else None
+        ev = self._ev(method="iam:SimulatePrincipalPolicy", principal=arn)
+        if sess is None:
+            return unknown("read_credential_missing", **ev)
+        account = arn.split(":")[4] if arn.count(":") >= 5 else ""
+        base_ctx = [{"ContextKeyName": "aws:SecureTransport", "ContextKeyValues": ["true"],
+                     "ContextKeyType": "boolean"},
+                    {"ContextKeyName": "aws:PrincipalArn", "ContextKeyValues": [arn], "ContextKeyType": "string"}]
+        try:
+            s3 = sess.client("s3", region_name=region, config=_config(self.s, unsigned=False))
+            try:
+                bucket_policy = s3.get_bucket_policy(Bucket=bucket)["Policy"]
+            except ClientError as exc:
+                if str(exc.response.get("Error", {}).get("Code")) != "NoSuchBucketPolicy":
+                    raise
+                bucket_policy = None
+            rules = s3.get_bucket_encryption(Bucket=bucket)["ServerSideEncryptionConfiguration"]["Rules"]
+            key = next((r["ApplyServerSideEncryptionByDefault"].get("KMSMasterKeyID") for r in rules
+                        if str(r.get("ApplyServerSideEncryptionByDefault", {}).get("SSEAlgorithm", ""))
+                        .startswith("aws:kms")),
+                       None)
+            iam = sess.client("iam", region_name=region)
+
+            def sim(actions: list[str], resource: str, policy: str | None, ctx: list[dict[str, Any]]) -> dict[str, str]:
+                kw: dict[str, Any] = {"PolicySourceArn": arn, "ActionNames": actions, "ResourceArns": [resource],
+                                      "ContextEntries": ctx, "ResourceOwner": f"arn:aws:iam::{account}:root"}
+                if policy:
+                    kw["ResourcePolicy"] = policy
+                return {r["EvalActionName"]: r["EvalDecision"]
+                        for r in iam.simulate_principal_policy(**kw)["EvaluationResults"]}
+
+            decisions = sim(["s3:GetObject"], f"arn:aws:s3:::{bucket}/{self.s.canary_key}", bucket_policy, base_ctx)
+            decisions.update(sim(["s3:PutObject"], f"arn:aws:s3:::{bucket}/{APP_PUT_KEY}", bucket_policy, base_ctx))
+            if key:
+                kms = sess.client("kms", region_name=region)
+                key_arn = kms.describe_key(KeyId=key)["KeyMetadata"]["Arn"]
+                key_policy = kms.get_key_policy(KeyId=key_arn, PolicyName="default")["Policy"]
+                decisions.update(sim(["kms:GenerateDataKey", "kms:Decrypt"], key_arn, key_policy, base_ctx + [
+                    {"ContextKeyName": "kms:ViaService", "ContextKeyValues": [f"s3.{region}.amazonaws.com"],
+                     "ContextKeyType": "string"}]))
+        except Exception as exc:  # noqa: BLE001
+            return unknown("simulation_error", error=error_text(exc), **ev)
+        ev.update(decisions=decisions, bucket_policy_evaluated=bucket_policy is not None, kms_key_evaluated=bool(key))
+        if all(d == "allowed" for d in decisions.values()):
+            return passed("app_read_write_allowed", **ev)
+        if decisions.get("s3:GetObject") != "allowed":
+            return failed("app_read_denied", **ev)
+        return failed("app_write_denied", **ev)
 
     # OBJ-05 a different credential must be denied reading the canary (a real AccessDenied only).
     def obj05(self) -> Obs:

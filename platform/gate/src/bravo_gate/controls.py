@@ -2,6 +2,9 @@
 
 Each question needs one environment section (``needs``). A question applies to a (source, target) pair when
 either side has that section; the side without it answers UNKNOWN (``not_configured``), which blocks.
+Every question is provider-neutral (2026-11-03.1): the ``platform`` questions ask the same thing of EKS, RKE2 and
+GKE and only the probe behind them differs (probes/neutral.py). Renamed IDs: SEC-SECRET-READ-AWS ->
+SEC-SECRET-STORE-READ, SEC-ENC-CMK -> SEC-SECRET-AT-REST, AUD-PLATFORM -> AUD-CONTROL-PLANE.
 Judging is a pure function of the observations (no LLM, NFR-5): same observations -> same rows and digest.
 """
 
@@ -15,7 +18,7 @@ from typing import Any
 
 from .result import FAIL, PASS, UNKNOWN, Obs
 
-RULE_VERSION = "gate-controls/2026-11-02.1"
+RULE_VERSION = "gate-controls/2026-11-03.1"
 
 # 4-state vocabulary for evidence text (review condition 3). "대체 불가" is an approved exception.
 # The gate never emits EXCEPTION itself: the platform API turns a row into EXCEPTION ("예외 승인") only for an
@@ -56,7 +59,7 @@ class Question:
     qid: str
     control_id: str
     question: str
-    needs: str  # environment section: object_store | postgres | kubernetes | aws | network
+    needs: str  # environment section: object_store | postgres | kubernetes | platform | network
     probe: str  # method name on the probe for that section
 
 
@@ -74,20 +77,26 @@ QUESTIONS: tuple[Question, ...] = (
     # SEC-01 / ENC-02 secrets
     Question("SEC-SECRET-READ-K8S", "SEC-01", "Can another service account read the app secret?", "kubernetes",
              "secret_read"),
-    Question("SEC-SECRET-READ-AWS", "SEC-01", "Can another IAM principal read the app secret?", "aws", "secret_read"),
+    Question("SEC-SECRET-STORE-READ", "SEC-01",
+             "Can another identity read the app secrets in their store of record (Secrets Manager or OpenBao)?",
+             "platform", "secret_store_read"),
     Question("OBJ-ENC", "SEC-01", "Is the attachment bucket encrypted at rest with a customer-managed key?",
              "object_store", "obj_enc"),
-    Question("SEC-ENC-CMK", "SEC-01", "Are app secrets encrypted with a customer-managed key?", "aws", "secret_cmk"),
+    Question("SEC-SECRET-AT-REST", "SEC-01",
+             "Are app secrets at rest under a customer-controlled key, in the store and in the cluster?",
+             "platform", "secret_at_rest"),
     # ENC-01 transport
     Question("OBJ-06", "ENC-01", "Is plain HTTP to the attachment store rejected?", "object_store", "obj06"),
     Question("DB-TLS", "ENC-01", "Does the DB refuse plaintext and verify CA and hostname?", "postgres", "tls"),
     # AUD-01 audit
     Question("DB-AUDIT", "AUD-01", "Does the DB record logins, DDL and role changes?", "postgres", "audit"),
-    Question("AUD-PLATFORM", "AUD-01", "Is control-plane audit logging on?", "aws", "audit"),
+    Question("AUD-CONTROL-PLANE", "AUD-01", "Is control-plane audit logging on and recording now?", "platform",
+             "control_plane_audit"),
     # NET-01 network exposure
     Question("NET-DEFAULT-DENY", "NET-01", "Does the app namespace default-deny ingress and egress?", "kubernetes",
              "default_deny"),
-    Question("NET-PATHS", "NET-01", "Are only allowed paths reachable (control path succeeds)?", "network", "paths"),
+    Question("NET-PATHS", "NET-01",
+             "From the app namespace, does the control path connect and a disallowed path fail?", "network", "paths"),
     # DR-01 backup and restore
     Question("DR-ARCHIVE", "DR-01", "Is WAL archiving running without failures?", "postgres", "archive"),
     Question("DR-RESTORE", "DR-01", "Did a restore into a new cluster come up healthy?", "kubernetes", "restore"),

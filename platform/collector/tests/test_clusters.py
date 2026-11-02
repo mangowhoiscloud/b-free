@@ -240,3 +240,14 @@ def test_failed_read_is_unknown_not_absent():
     assert by["storageclass bravo-db"]["present"] is True  # storage classes were read
     rows2 = cl.detect_landing_zone([{"name": "kube-system"}], [], ["bravo-db"], [])
     assert {r["component"]: r for r in rows2}["cloudnative-pg"]["present"] is False
+
+
+def test_gke_provider_needs_cluster_and_link() -> None:
+    from bravo_collector.clusters import is_gke
+    from bravo_collector.environments import KubernetesSection
+
+    link = "https://gke-k8s.bravo-link.svc.cluster.local:443"
+    cluster = "projects/p/locations/asia-northeast1-b/clusters/c"
+    assert is_gke(KubernetesSection(provider="gke", gke_cluster=cluster, api_server=link))
+    assert not is_gke(KubernetesSection(provider="gke", api_server=link))  # no cluster -> no CA source
+    assert not is_gke(KubernetesSection(provider="k3s", gke_cluster=cluster, api_server=link))

@@ -60,7 +60,9 @@ class _Client:
 
 
 class GateControlsClient(_Client):
-    """``GET /v1/controls/report?source=&target=`` on platform/gate for one plan's environment names.
+    """``POST /v1/controls/report`` ``{"source", "target"}`` on platform/gate for one plan's environment names.
+    The POST run is the plan evaluation: the gate also runs its write probes (OBJ-03 anonymous PUT, OBJ-04 app PUT on
+    its own ``_gate/`` keys, deleted again) on stores approved for them. GET on the gate stays read-only.
 
     Returns the question rows in the Executor's control schema plus the destination evidence digest:
     ``{control_id, question, src, dst, evidence_digest}`` (contract 15 §9.5). A control exception binds that
@@ -71,7 +73,7 @@ class GateControlsClient(_Client):
 
     async def report(self, source: str, target: str) -> tuple[list[dict[str, Any]], str | None]:
         """(question rows, the report's ``expires_at``: end of the evidence validity, spec §8.5)."""
-        resp = await self._request("GET", "/v1/controls/report", params={"source": source, "target": target})
+        resp = await self._request("POST", "/v1/controls/report", json={"source": source, "target": target})
         if resp.status_code == 404:
             raise UpstreamError("gate_controls_unknown_environment", 404, self._json(resp, self.name))
         if resp.status_code != 200:

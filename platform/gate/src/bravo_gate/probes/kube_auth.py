@@ -4,8 +4,9 @@ eks  endpoint and CA from ``eks:DescribeCluster``; bearer token = ``k8s-aws-v1.`
      ``sts:GetCallerIdentity`` URL (what ``aws eks get-token`` prints), signed with the gate's AWS identity (standard
      chain; web identity on the platform). With ``api_server`` the client dials that address (a D-16 link such as
      ``src-k8s.bravo-link.svc``) and TLS still checks the EKS CA and the real endpoint host (``tls_server_name``).
-gke  the cluster's DNS endpoint (``api_server``, public CA) with a Google access token from application default
-     credentials (Workload Identity Federation on the platform). Kubernetes RBAC sees the impersonated service account.
+gke  ``api_server`` = the D-16 link gke-k8s with ``gke_cluster`` set (cluster CA from the container API, TLS name
+     kubernetes.default.svc), or the cluster's public DNS endpoint without it. Bearer token: Google application default
+     credentials (Workload Identity Federation on the platform); RBAC sees the impersonated service account's email.
 Same approach as platform/collector clusters.py; tokens and kubeconfigs never reach logs or evidence.
 """
 
@@ -81,12 +82,20 @@ def gke_client(s: KubernetesSection) -> Any:
     from kubernetes import client
 
     if not s.api_server:
-        raise NotConfigured("provider gke needs api_server (the cluster DNS endpoint)")
+        raise NotConfigured("provider gke needs api_server (the D-16 link gke-k8s or the cluster DNS endpoint)")
     creds, _ = google.auth.default(scopes=list(GKE_SCOPES))
-    creds.refresh(google.auth.transport.requests.Request())
     cfg = client.Configuration()
     cfg.host = s.api_server.rstrip("/")
     cfg.verify_ssl = True
+    if s.gke_cluster:  # through the D-16 link: cluster CA from the container API, TLS name kubernetes.default.svc
+        from google.auth.transport.requests import AuthorizedSession
+
+        r = AuthorizedSession(creds).get(f"https://container.googleapis.com/v1/{s.gke_cluster}",
+                                         params={"fields": "masterAuth.clusterCaCertificate"}, timeout=15)
+        r.raise_for_status()
+        cfg.ssl_ca_cert = _ca_file(base64.b64decode(r.json()["masterAuth"]["clusterCaCertificate"]), "gke")
+        cfg.tls_server_name = s.tls_server_name or "kubernetes.default.svc"
+    creds.refresh(google.auth.transport.requests.Request())
     cfg.api_key = {"authorization": creds.token}
     cfg.api_key_prefix = {"authorization": "Bearer"}
     return client.ApiClient(cfg)

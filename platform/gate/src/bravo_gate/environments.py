@@ -58,6 +58,9 @@ class ObjectStoreSection(_Section):
     # OBJ-06 sends its plain-HTTP request here instead of the https endpoint with the scheme swapped. For a store the
     # gate reaches only through a TLS link, this is the store's own plain listener behind its own link.
     plain_http_endpoint_url: str | None = None
+    # AWS only: the app's IAM principal. Without the app's credential, OBJ-04 asks iam:SimulatePrincipalPolicy whether
+    # this principal may GET the canary and PUT the probe key (bucket policy and KMS key policy included).
+    app_principal_arn: str | None = None
 
 
 class PostgresTls(_Section):
@@ -81,8 +84,11 @@ class KubernetesSection(_Section):
     provider: str | None = None  # eks | gke | None (kubeconfig)
     eks_cluster_name: str | None = None
     aws_region: str | None = None
-    api_server: str | None = None  # eks: D-16 link address; gke: the DNS endpoint
+    api_server: str | None = None  # eks / gke: D-16 link address (or the GKE DNS endpoint)
     tls_server_name: str | None = None
+    # gke: projects/<p>/locations/<l>/clusters/<c>. With it the client reads the cluster CA (container API) and dials
+    # api_server (the D-16 link gke-k8s) with tls_server_name; without it api_server must be the public DNS endpoint.
+    gke_cluster: str | None = None
     app_namespace: str | None = None
     app_secret: str | None = None
     # "namespace/name" of service accounts that must not read the app secret.
@@ -106,6 +112,39 @@ class NetworkSection(_Section):
     control_paths: tuple[str, ...] = ()  # "host:port" that must connect (proves the prober works)
     denied_paths: tuple[str, ...] = ()  # "host:port" that must not connect
     timeout_s: float = 2.0
+    # probe_from "pod": the connects run in a short-lived Pod in the app namespace (kubernetes.app_namespace) with the
+    # app Deployment's labels and image, so the app's NetworkPolicies apply to it. "gate": from the gate process.
+    probe_from: Literal["gate", "pod"] = "gate"
+    app_deployment: str | None = None
+
+
+class SecretStoreSection(_Section):
+    """The app's secret store of record when it is the platform OpenBao (on-prem, GKE: delivered by ESO / keys.sh).
+    The gate logs in with Kubernetes auth as two roles of its own service account: ``meta_role`` may read only the
+    KV metadata of ``paths`` (the paths exist), ``other_role`` has no grant (must get 403 on the data)."""
+
+    kind: Literal["openbao"] = "openbao"
+    address: str
+    ca_file: str | None = None
+    jwt_file: str = "/var/run/secrets/openbao/token"
+    auth_mount: str = "kubernetes"
+    meta_role: str = "gate-meta"
+    other_role: str = "gate-other"
+    kv_mount: str = "secret"
+    paths: tuple[str, ...] = ()
+    timeout_s: float = 5.0
+
+
+class PlatformSection(_Section):
+    """Where the provider-neutral questions (SEC-SECRET-STORE-READ, SEC-SECRET-AT-REST, AUD-CONTROL-PLANE) look.
+    eks: the ``aws`` section (Secrets Manager, KMS, CloudTrail, EKS). rke2: the kube-apiserver of the
+    ``kubernetes`` section (/metrics, static Pod flags). gke: the container and logging APIs for ``gke_cluster``.
+    rke2 and gke keep app secrets in ``secret_store`` (platform OpenBao)."""
+
+    kind: Literal["eks", "rke2", "gke"]
+    gke_cluster: str | None = None  # projects/<p>/locations/<l>/clusters/<c>
+    apiserver_pod: str | None = None  # rke2: "kube-system/kube-apiserver-<node>" (audit and encryption flags)
+    secret_store: SecretStoreSection | None = None
 
 
 class Environment(_Section):
@@ -116,6 +155,7 @@ class Environment(_Section):
     kubernetes: KubernetesSection | None = None
     aws: AwsSection | None = None
     network: NetworkSection | None = None
+    platform: PlatformSection | None = None
 
 
 class Registry(_Section):

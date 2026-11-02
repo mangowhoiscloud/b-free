@@ -249,6 +249,31 @@ class AwsProbe:
                          else failed("aws_managed_key", secret=sid, key_manager=manager))
         return worst(parts)
 
+    def eks_secrets_cmk(self) -> Obs:
+        """EKS envelope encryption of Kubernetes Secrets (encryptionConfig, resources=secrets) with a CUSTOMER key."""
+        if not self.s.eks_clusters:
+            return unknown("eks_clusters_not_configured")
+        eks, kms = self._c("eks"), self._c("kms")
+        parts: list[Obs] = []
+        for name in sorted(self.s.eks_clusters):
+            try:
+                cfg = eks.describe_cluster(name=name)["cluster"].get("encryptionConfig") or []
+            except Exception as exc:  # noqa: BLE001
+                parts.append(unknown("eks_read_error", cluster=name, error=error_text(exc)))
+                continue
+            keys = [c.get("provider", {}).get("keyArn") for c in cfg if "secrets" in (c.get("resources") or [])]
+            if not keys or not keys[0]:
+                parts.append(failed("cluster_secrets_not_encrypted", cluster=name))
+                continue
+            try:
+                manager = kms.describe_key(KeyId=keys[0])["KeyMetadata"]["KeyManager"]
+            except Exception as exc:  # noqa: BLE001
+                parts.append(unknown("kms_read_error", cluster=name, error=error_text(exc)))
+                continue
+            parts.append(passed("cluster_secrets_encrypted", cluster=name, key_manager=manager) if manager == "CUSTOMER"
+                         else failed("cluster_secrets_aws_managed_key", cluster=name, key_manager=manager))
+        return worst(parts)
+
     def audit(self) -> Obs:
         ct = self._c("cloudtrail")
         try:
@@ -314,12 +339,38 @@ def _tcp(path: str, timeout_s: float) -> str:
         return f"error:{type(exc).__name__}"
 
 
-def network_paths(section: NetworkSection) -> Obs:
+def network_paths(section: NetworkSection, kube: KubernetesProbe | None = None) -> Obs:
     if not section.control_paths:
         return unknown("control_path_not_configured")
+    if section.probe_from == "pod":
+        return _paths_from_pod(section, kube)
     control = {p: _tcp(p, section.timeout_s) for p in sorted(section.control_paths)}
     denied = {p: _tcp(p, section.timeout_s) for p in sorted(section.denied_paths)}
-    ev = {"control_paths": control, "denied_paths": denied}
+    return judge_paths(control, denied, {"probe_from": "gate"})
+
+
+def _paths_from_pod(section: NetworkSection, kube: KubernetesProbe | None) -> Obs:
+    """The connects run in a short-lived Pod in the app namespace with the app's labels and image (netpod.py)."""
+    from .netpod import run_in_pod
+
+    if kube is None or not kube.s.app_namespace or not section.app_deployment:
+        return unknown("probe_pod_not_configured", detail="needs kubernetes.app_namespace and network.app_deployment")
+    api = kube.api_client()
+    if api is None:
+        return unknown("cluster_unreachable", error=kube._error)
+    paths = sorted(section.control_paths) + sorted(section.denied_paths)
+    try:
+        res, facts = run_in_pod(api, kube.s.app_namespace, section.app_deployment, paths, section.timeout_s)
+    except Exception as exc:  # noqa: BLE001
+        return unknown("probe_pod_failed", error=error_text(exc))
+    control = {p: res.get(p, "missing") for p in sorted(section.control_paths)}
+    denied = {p: res.get(p, "missing") for p in sorted(section.denied_paths)}
+    facts.pop("pod_phase", None)
+    return judge_paths(control, denied, {"probe_from": "pod", **facts})
+
+
+def judge_paths(control: dict[str, str], denied: dict[str, str], extra: dict[str, Any]) -> Obs:
+    ev = {"control_paths": control, "denied_paths": denied, **extra}
     if any(v != "connected" for v in control.values()):
         return unknown("control_path_failed", **ev)
     if not denied:

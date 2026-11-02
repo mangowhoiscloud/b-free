@@ -84,3 +84,30 @@ def test_gcs_obj_enc_reads_the_json_api_default_kms_key(monkeypatch: pytest.Monk
     monkeypatch.setattr(objstore, "gcs_bucket_encryption", lambda b: None)
     obs = objstore.ObjectStoreProbe(s).obj_enc()
     assert (obs.verdict, obs.reason) == ("FAIL", "not_customer_key")
+
+
+def test_secret_transformers_judge_provider_from_apiserver_metrics() -> None:
+    from bravo_gate.probes.neutral import judge_secret_transformers, parse_metrics
+
+    text = "\n".join([
+        "# HELP apiserver_storage_transformation_operations_total x",
+        'apiserver_storage_transformation_operations_total{resource="secrets",status="OK",'
+        'transformation_type="to_storage",transformer_prefix="k8s:enc:aescbc:v1:"} 175',
+        'apiserver_storage_transformation_operations_total{resource="secrets",status="OK",'
+        'transformation_type="from_storage",transformer_prefix="aescbckey:"} 6386',
+    ])
+    obs = judge_secret_transformers(parse_metrics(text, {"apiserver_storage_transformation_operations_total"}))
+    assert (obs.verdict, obs.reason) == ("PASS", "cluster_secrets_encrypted")
+    assert "aescbc" in obs.evidence["secret_transformers"]
+    ident = 'apiserver_storage_transformation_operations_total{resource="secrets",status="OK",transformer_prefix=""} 3'
+    obs = judge_secret_transformers(parse_metrics(ident, {"apiserver_storage_transformation_operations_total"}))
+    assert (obs.verdict, obs.reason) == ("FAIL", "cluster_secrets_not_encrypted")
+
+
+def test_neutral_question_ids_replace_the_aws_only_ones() -> None:
+    from bravo_gate.controls import QUESTION_BY_ID
+
+    for old in ("SEC-SECRET-READ-AWS", "SEC-ENC-CMK", "AUD-PLATFORM"):
+        assert old not in QUESTION_BY_ID
+    for new in ("SEC-SECRET-STORE-READ", "SEC-SECRET-AT-REST", "AUD-CONTROL-PLANE"):
+        assert QUESTION_BY_ID[new].needs == "platform"

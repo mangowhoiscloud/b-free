@@ -152,9 +152,52 @@ def eks_api_client_for(section: KubernetesSection) -> ApiClient:
                           tls_server_name=section.tls_server_name)
 
 
+# --- GKE auth (Google ADC = the collector's WIF identity, no kubeconfig exec plugin) -----------------------------
+GKE_SCOPES = ["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email"]
+_gke_ca_cache: dict[str, tuple[str, float]] = {}
+
+
+def is_gke(section: KubernetesSection) -> bool:
+    return (section.provider or "").lower() == "gke" and bool(section.gke_cluster and section.api_server)
+
+
+def gke_api_client_for(section: KubernetesSection) -> ApiClient:
+    """GKE over the D-16 link: cluster CA from the container API (cached), TLS name kubernetes.default.svc, bearer
+    token of the collector's Google identity (userinfo.email scope: RBAC subject is the service account email)."""
+    import google.auth
+    from google.auth.transport.requests import AuthorizedSession, Request
+
+    assert section.gke_cluster and section.api_server
+    try:
+        creds, _ = google.auth.default(scopes=GKE_SCOPES)
+    except Exception as exc:  # noqa: BLE001 - no GOOGLE_APPLICATION_CREDENTIALS etc.
+        raise NotConfigured(f"no Google credentials: {short_error(exc)}") from exc
+    hit = _gke_ca_cache.get(section.gke_cluster)
+    if not hit or time.monotonic() - hit[1] > EKS_DESCRIBE_TTL_S:
+        r = AuthorizedSession(creds).get(f"https://container.googleapis.com/v1/{section.gke_cluster}",
+                                         params={"fields": "masterAuth.clusterCaCertificate"}, timeout=CALL_TIMEOUT_S)
+        r.raise_for_status()
+        fd, path = tempfile.mkstemp(prefix="gke-", suffix=".crt")
+        with os.fdopen(fd, "wb") as f:
+            f.write(base64.b64decode(r.json()["masterAuth"]["clusterCaCertificate"]))
+        hit = (path, time.monotonic())
+        _gke_ca_cache[section.gke_cluster] = hit
+    creds.refresh(Request())
+    cfg = client.Configuration()
+    cfg.host = section.api_server.rstrip("/")
+    cfg.tls_server_name = section.tls_server_name or "kubernetes.default.svc"
+    cfg.ssl_ca_cert = hit[0]
+    cfg.verify_ssl = True
+    cfg.api_key = {"authorization": creds.token}
+    cfg.api_key_prefix = {"authorization": "Bearer"}
+    return ApiClient(configuration=cfg)
+
+
 def default_api_factory(section: KubernetesSection) -> ApiClient:
     if is_eks(section):
         return eks_api_client_for(section)
+    if is_gke(section):
+        return gke_api_client_for(section)
     if section.kubeconfig_env and not os.environ.get(section.kubeconfig_env):
         raise NotConfigured(f"environment variable {section.kubeconfig_env} (kubeconfig path) is not set")
     try:
