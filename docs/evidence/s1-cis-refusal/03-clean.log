@@ -1,0 +1,7 @@
+
+## 2026-11-02 23:52:38 KST  delete the throwaway VM bravo-cis-demo and the scratch kubeconfig
+time="2026-11-02T23:52:38+09:00" level=info msg="Deleted \"bravo-cis-demo\" (\"/Users/mango/.lima/bravo-cis-demo\")"
+$ limactl list
+NAME                   STATUS     SSH                CPUS    MEMORY    DISK     DIR
+bravo-onprem-agent     Running    127.0.0.1:51529    6       14GiB     40GiB    ~/.lima/bravo-onprem-agent
+bravo-onprem-server    Running    127.0.0.1:51500    4       8GiB      40GiB    ~/.lima/bravo-onprem-server

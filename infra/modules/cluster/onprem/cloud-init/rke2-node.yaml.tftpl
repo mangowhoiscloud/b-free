@@ -1,4 +1,7 @@
 #cloud-config
+%{ if !cis_preconditions ~}
+# S1 4a DEMO ONLY (cis_preconditions = false): no CIS sysctls, no etcd user. RKE2 profile: cis must refuse to start.
+%{ endif ~}
 # Common RKE2 node cloud-init (spec FR-3, §7.2, T2: "RKE2 ... 플랫폼 · 온프렘 공용 cloud-init으로 설치").
 # One document for the on-prem Lima VMs and the platform EC2 node; rendered by
 # infra/modules/cluster/onprem/cloud-init (role=${role}). No secret in it: the agent join token
@@ -9,10 +12,12 @@ write_files:
   - path: /etc/sysctl.d/60-rke2-cis.conf
     permissions: "0644"
     content: |
+%{ if cis_preconditions ~}
       vm.panic_on_oom=0
       vm.overcommit_memory=1
       kernel.panic=10
       kernel.panic_on_oops=1
+%{ endif ~}
       fs.inotify.max_user_instances=8192
       fs.inotify.max_user_watches=524288
   # Ceph RBD through rbd-nbd (the kernel 6.8 krbd cannot use Ceph Tentacle keys).
@@ -93,10 +98,14 @@ write_files:
       # CIS host conditions.
       sysctl --system >/dev/null
       modprobe nbd 2>/dev/null || log "nbd module not loaded (RBD rbd-nbd mounts will fail)"
+%{ if cis_preconditions ~}
       if [ "$ROLE" = server ]; then
         getent group etcd >/dev/null || groupadd --system etcd
         id etcd >/dev/null 2>&1 || useradd --system --no-create-home --gid etcd --shell /sbin/nologin --comment "etcd user" etcd
       fi
+%{ else ~}
+      log "S1 4a demo: CIS preconditions left out (cis_preconditions = false): no CIS sysctls, no etcd user"
+%{ endif ~}
       # No sleep or power-save on a cluster node.
       systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
       # Node address: lima0 (Lima user-v2 as second NIC), else the default-route source address.

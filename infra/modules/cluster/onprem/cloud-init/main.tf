@@ -39,14 +39,24 @@ variable "tls_sans" {
   default     = ["127.0.0.1", "localhost"]
 }
 
+variable "cis_preconditions" {
+  description = <<-EOT
+    Write the CIS host conditions (kernel sysctls, etcd user and group). Keep true. false is only for the
+    spec S1 exception 4a run (docs/evidence/s1-cis-refusal): RKE2 with profile: cis then refuses to start.
+  EOT
+  type        = bool
+  default     = true
+}
+
 locals {
   user_data = templatefile("${path.module}/rke2-node.yaml.tftpl", {
-    role         = var.role
-    rke2_version = var.rke2.version
-    rke2_sha256  = var.rke2.sha256
-    arch         = var.arch
-    node_name    = var.node_name
-    tls_sans     = var.tls_sans
+    role              = var.role
+    rke2_version      = var.rke2.version
+    rke2_sha256       = var.rke2.sha256
+    arch              = var.arch
+    node_name         = var.node_name
+    tls_sans          = var.tls_sans
+    cis_preconditions = var.cis_preconditions
   })
 }
 

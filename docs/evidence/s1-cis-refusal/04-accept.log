@@ -1,0 +1,127 @@
+
+## 2026-11-02 23:54:14 KST  render the common cloud-init (module infra/modules/cluster/onprem/cloud-init, RKE2 v1.36.5+rke2r1, defaults)
+
+## 2026-11-02 23:54:14 KST  empty Ubuntu VM bravo-cis-demo (image https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img)
+$ limactl create --tty=false --name bravo-cis-demo $WORK/bravo-cis-demo.yaml
+time="2026-11-02T23:54:16+09:00" level=info msg="Expanding to 30GiB"
+time="2026-11-02T23:54:16+09:00" level=info msg="Run `limactl start bravo-cis-demo` to start the instance."
+$ limactl start --tty=false --timeout 15m bravo-cis-demo
+time="2026-11-02T23:54:27+09:00" level=info msg="READY. Run `limactl shell bravo-cis-demo` to open the shell."
+$ [bravo-cis-demo] . /etc/os-release; echo "$PRETTY_NAME $(uname -m) kernel $(uname -r)"
+Ubuntu 24.04.5 LTS aarch64 kernel 6.8.0-147-generic
+$ [bravo-cis-demo] command -v rke2 || echo "rke2: not installed"; ls /etc/rancher 2>&1 || true
+rke2: not installed
+ls: cannot access '/etc/rancher': No such file or directory
+$ [bravo-cis-demo] echo "etcd user: $(id etcd 2>&1)"; echo "etcd group: $(getent group etcd || echo none)"
+etcd user: id: ‘etcd’: no such user
+etcd group: none
+$ [bravo-cis-demo] sysctl vm.panic_on_oom vm.overcommit_memory kernel.panic kernel.panic_on_oops
+vm.panic_on_oom = 0
+vm.overcommit_memory = 0
+kernel.panic = 0
+kernel.panic_on_oops = 0
+
+## 2026-11-02 23:54:28 KST  install with the common path (scripts/rke2-node.sh server), common cloud-init as shipped
+$ infra/modules/cluster/onprem/scripts/rke2-node.sh server bravo-cis-demo $WORK/cloud-config-cis.yaml 36443
+Valid schema /etc/bravo-cloud-config.yaml
+/tmp/rke2.tgz: OK
+bravo-rke2-bootstrap[server]: rke2 version v1.36.5+rke2r1 (e1d699d2c3a3d3c1f3247c4f9eb140f20d369776), node-ip 192.168.104.4
+Created symlink /etc/systemd/system/multi-user.target.wants/rke2-server.service → /usr/local/lib/systemd/system/rke2-server.service.
+rke2-server[bravo-cis-demo]: API ready (laptop: https://127.0.0.1:36443)
+install to API ready: 75 s
+
+## 2026-11-02 23:55:43 KST  CIS profile in effect
+$ [bravo-cis-demo] echo "etcd user: $(id etcd 2>&1)"; echo "etcd group: $(getent group etcd || echo none)"
+etcd user: uid=999(etcd) gid=988(etcd) groups=988(etcd)
+etcd group: etcd:x:988:
+$ [bravo-cis-demo] sysctl vm.panic_on_oom vm.overcommit_memory kernel.panic kernel.panic_on_oops
+vm.panic_on_oom = 0
+vm.overcommit_memory = 1
+kernel.panic = 10
+kernel.panic_on_oops = 1
+$ [bravo-cis-demo] sudo cat /etc/rancher/rke2/config.yaml /etc/rancher/rke2/config.yaml.d/10-node.yaml
+# bravo RKE2 server (common cloud-init). Node address: config.yaml.d/10-node.yaml (runtime).
+profile: cis
+protect-kernel-defaults: true
+write-kubeconfig-mode: "0600"
+kubelet-arg:
+  - streaming-connection-idle-timeout=5m
+  - event-qps=0
+# CNI: none here; the landing zone installs its own Cilium (same version on every environment, D-23).
+cni: none
+disable-kube-proxy: true
+disable: [rke2-ingress-nginx, rke2-traefik]
+secrets-encryption: true
+agent-token-file: /etc/rancher/rke2/agent-token
+pod-security-admission-config-file: /etc/rancher/rke2/psa.yaml
+audit-policy-file: /etc/rancher/rke2/audit-policy.yaml
+kube-apiserver-arg:
+  - audit-log-maxage=30
+  - audit-log-maxbackup=10
+  - audit-log-maxsize=100
+tls-san: [127.0.0.1, localhost]
+node-ip: 192.168.104.4
+node-name: bravo-cis-demo
+advertise-address: 192.168.104.4
+tls-san+: [192.168.104.4]
+$ [bravo-cis-demo] ps -eo user:10,comm | awk "\$2==\"etcd\" || \$2==\"kube-apiserver\" || \$2==\"kubelet\"" | sort -u
+etcd       etcd
+root       kube-apiserver
+root       kubelet
+$ [bravo-cis-demo] ps -o args= -C kube-apiserver | tr ' ' '\n' | grep -E '^--(admission-control-config-file|audit-policy-file|audit-log-path|encryption-provider-config|anonymous-auth|profiling)='
+--admission-control-config-file=/etc/rancher/rke2/psa.yaml
+--audit-policy-file=/etc/rancher/rke2/audit-policy.yaml
+--audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log
+--anonymous-auth=false
+--encryption-provider-config=/var/lib/rancher/rke2/server/cred/encryption-config.json
+--profiling=false
+$ [bravo-cis-demo] systemctl show rke2-server -p ActiveState -p SubState -p NRestarts
+NRestarts=0
+ActiveState=active
+SubState=running
+refusals since the install started: 0
+
+## 2026-11-02 23:55:43 KST  kubeconfig (scratch file, ~/.kube/config untouched)
+$ infra/modules/cluster/onprem/scripts/kubeconfig.sh add bravo-cis-demo bravo-cis-demo 36443
+kubeconfig: context bravo-cis-demo -> https://127.0.0.1:36443 (current context unchanged: none)
+$ kubectl --context bravo-cis-demo get node -o wide
+NAME             STATUS     ROLES                AGE   VERSION          INTERNAL-IP     EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION              CONTAINER-RUNTIME
+bravo-cis-demo   NotReady   control-plane,etcd   21s   v1.36.5+rke2r1   192.168.104.4   <none>        Ubuntu 24.04.5 LTS   6.8.0-147-generic (arm64)   containerd://2.3.4-k3s1
+
+## 2026-11-02 23:55:44 KST  landing-zone Cilium (RKE2 runs with cni: none): deploy/landing-zone/install.sh rke2 <ctx> cilium
+$ deploy/landing-zone/install.sh rke2 bravo-cis-demo cilium
+
+== landing-zone[rke2/bravo-cis-demo] Gateway API v1.7.0 CRDs, Cilium 1.20.4 (VXLAN, kube-proxy replacement, Hubble; RKE2 cni: none)
+daemon set "cilium" successfully rolled out
+deployment "cilium-operator" successfully rolled out
+deployment "hubble-relay" successfully rolled out
+node/bravo-cis-demo condition met
+NAME     CONTROLLER                     ACCEPTED   AGE
+cilium   io.cilium/gateway-controller   True       2m20s
+ciliumloadbalancerippool.cilium.io/bravo-internal created
+
+== landing-zone[rke2/bravo-cis-demo] done: cilium
+$ kubectl --context bravo-cis-demo get node -o wide
+NAME             STATUS   ROLES                AGE     VERSION          INTERNAL-IP     EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION              CONTAINER-RUNTIME
+bravo-cis-demo   Ready    control-plane,etcd   2m49s   v1.36.5+rke2r1   192.168.104.4   <none>        Ubuntu 24.04.5 LTS   6.8.0-147-generic (arm64)   containerd://2.3.4-k3s1
+$ kubectl --context bravo-cis-demo get pods -A
+NAMESPACE     NAME                                                   READY   STATUS      RESTARTS      AGE
+kube-system   cilium-envoy-jkddf                                     1/1     Running     0             2m20s
+kube-system   cilium-fjqcc                                           1/1     Running     0             2m20s
+kube-system   cilium-operator-55b88cf477-hqfs4                       1/1     Running     0             2m20s
+kube-system   cloud-controller-manager-bravo-cis-demo                1/1     Running     0             2m35s
+kube-system   etcd-bravo-cis-demo                                    1/1     Running     0             2m44s
+kube-system   helm-install-rke2-coredns-l852k                        0/1     Completed   0             2m28s
+kube-system   helm-install-rke2-metrics-server-mpd4w                 0/1     Completed   0             2m28s
+kube-system   helm-install-rke2-runtimeclasses-rjbcr                 0/1     Completed   0             2m28s
+kube-system   helm-install-rke2-snapshot-controller-crd-v698c        0/1     Completed   0             2m28s
+kube-system   helm-install-rke2-snapshot-controller-dwpdb            0/1     Completed   1 (69s ago)   2m28s
+kube-system   helm-install-rke2-traefik-crd-7rbcz                    0/1     Error       3 (56s ago)   2m28s
+kube-system   hubble-relay-7b9cc7bdd5-d8q7f                          1/1     Running     0             2m20s
+kube-system   kube-apiserver-bravo-cis-demo                          1/1     Running     0             2m44s
+kube-system   kube-controller-manager-bravo-cis-demo                 1/1     Running     0             2m39s
+kube-system   kube-scheduler-bravo-cis-demo                          1/1     Running     0             2m39s
+kube-system   rke2-coredns-rke2-coredns-747b86f67b-zcg7t             1/1     Running     0             2m17s
+kube-system   rke2-coredns-rke2-coredns-autoscaler-878589fc9-tgq86   1/1     Running     0             2m17s
+kube-system   rke2-metrics-server-956b4b7f5-9z9b7                    1/1     Running     0             69s
+kube-system   rke2-snapshot-controller-5574cc88bf-qw4lt              1/1     Running     0             68s
