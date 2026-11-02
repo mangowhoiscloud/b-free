@@ -150,8 +150,9 @@ metadata:
 # - target-onprem: kubeconfig Secret gate-onprem-kubeconfig (SA kube-system/bravo-gate, link dst-k8s); RGW through the
 #   link dst-s3 behind the s3-local sidecar (127.0.0.1:18443, the RGW certificate has IP SAN 127.0.0.1) and its plain
 #   listener through dst-s3http (127.0.0.1:18080, OBJ-06); Postgres over dst-db.
-# - target-gcp: Google SA bravo-gate-ro via WIF (pod token audience bravo-platform-gcp-wif, no key file) for the GKE DNS
-#   endpoint; GCS HMAC from gate-credentials; Postgres over gke-db.
+# - target-gcp: Google SA bravo-gate-ro via WIF (pod token audience bravo-platform-gcp-wif, no key file) for the GKE API
+#   over the link gke-k8s, the container API and Cloud Audit Logs; GCS HMAC from gate-credentials; Postgres over gke-db.
+# - OpenBao (on-prem and GKE app secrets): Kubernetes-auth roles gate-meta / gate-other of this service account.
 # Secret gate-credentials (DSNs of role gate_ro, object-store keys) and ConfigMap gate-ca (public CAs) are piped from
 # OpenBao by gate-credentials.sh; both optional, so a missing one gives UNKNOWN answers, not a crash loop.
 spec:
@@ -231,6 +232,8 @@ spec:
             - {name: gcp-token, mountPath: /var/run/secrets/gcp, readOnly: true}
             - {name: onprem-kubeconfig, mountPath: /etc/bravo/onprem, readOnly: true}
             - {name: gate-ca, mountPath: /etc/bravo/gate-ca, readOnly: true}
+            - {name: bao-ca, mountPath: /etc/bravo/openbao, readOnly: true}
+            - {name: bao-jwt, mountPath: /var/run/secrets/openbao, readOnly: true}
       volumes:
         - {name: registry, configMap: {name: environments}}
         - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
@@ -246,6 +249,13 @@ spec:
               - serviceAccountToken: {audience: bravo-platform-gcp-wif, expirationSeconds: 3600, path: token}
         - {name: onprem-kubeconfig, secret: {secretName: gate-onprem-kubeconfig, optional: true, defaultMode: 0440}}
         - {name: gate-ca, configMap: {name: gate-ca, optional: true}}
+        # OpenBao Kubernetes auth (roles gate-meta, gate-other; keys.sh gate-bao-setup): SEC-SECRET-STORE-READ and
+        # SEC-SECRET-AT-REST on targets whose app secrets live in the platform OpenBao.
+        - {name: bao-ca, configMap: {name: openbao-ca}}
+        - name: bao-jwt
+          projected:
+            sources:
+              - serviceAccountToken: {expirationSeconds: 3600, path: token}
 ---
 apiVersion: v1
 kind: Service
@@ -259,6 +269,14 @@ kind: ServiceAccount
 metadata: {name: rehearsal, namespace: bravo-control}
 automountServiceAccountToken: false
 imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
+---
+# OpenBao Kubernetes auth (keys.sh gate-bao-setup, roles gate-meta / gate-other) reviews the gate's own JWT.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: bravo-gate-tokenreview, labels: {app.kubernetes.io/part-of: bravo-platform}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator}
+subjects:
+  - {kind: ServiceAccount, name: gate, namespace: bravo-control}
 ---
 # OpenBao Kubernetes auth (keys.sh k8s-auth-setup) uses this account's own JWT for TokenReview.
 apiVersion: rbac.authorization.k8s.io/v1

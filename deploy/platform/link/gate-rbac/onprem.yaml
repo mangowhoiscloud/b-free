@@ -20,6 +20,9 @@ rules:
   - apiGroups: [""]
     resources: [namespaces]
     verbs: [get]
+  # AUD-CONTROL-PLANE / SEC-SECRET-AT-REST (rke2): kube-apiserver audit and Secret storage transformer counters.
+  - nonResourceURLs: ["/metrics"]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -43,6 +46,18 @@ rules:
   - apiGroups: [postgresql.cnpg.io]
     resources: [clusters]
     verbs: [get]
+  # NET-PATHS: one short-lived probe Pod with the app Deployment's labels and image (probes/netpod.py), deleted after.
+  # Pod create in the app namespace is the widest right of this identity: it could start any image there. The Pod
+  # the gate makes has no service account token, a restricted security context and a 90 s deadline.
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -51,5 +66,28 @@ metadata:
   namespace: chat
   labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: bravo-gate-read}
+subjects:
+  - {kind: ServiceAccount, name: bravo-gate, namespace: kube-system}
+---
+# SEC-SECRET-AT-REST / AUD-CONTROL-PLANE flags: the kube-apiserver static Pod's --audit-* and --encryption-provider-config.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bravo-gate-apiserver-flags
+  namespace: kube-system
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    resourceNames: [kube-apiserver-bravo-onprem-server]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bravo-gate-apiserver-flags
+  namespace: kube-system
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: bravo-gate-apiserver-flags}
 subjects:
   - {kind: ServiceAccount, name: bravo-gate, namespace: kube-system}

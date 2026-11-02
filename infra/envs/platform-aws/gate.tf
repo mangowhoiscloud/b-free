@@ -2,15 +2,16 @@
 # web_identity_roles): 서비스 계정 bravo-control/gate의 웹 신원. 출발지 EKS 권한은 access entry 그룹 bravo-gate에만
 # 묶음(deploy/platform/link/source-rbac/gate.yaml). 아래 권한은 게이트 질문이 읽는 것뿐이고 쓰기는 없음.
 #   OBJ-ENC   s3:GetEncryptionConfiguration(첨부 버킷), kms:DescribeKey
+#   OBJ-04    앱 자격 없이 iam:SimulatePrincipalPolicy(앱 역할)에 넣을 버킷 정책 · 키 정책: s3:GetBucketPolicy, kms:GetKeyPolicy
 #   OBJ-01/06 s3:GetObject는 canary 키 하나만(출발지 버킷 정책의 canary 예외 canary_reader_principal_arns와 짝)
-#   SEC-*     secretsmanager:DescribeSecret · GetResourcePolicy, iam:GetRole · SimulatePrincipalPolicy
+#   SEC-*     secretsmanager:DescribeSecret · GetResourcePolicy, iam:GetRole · SimulatePrincipalPolicy, EKS encryptionConfig
 #   AUD-*     cloudtrail:DescribeTrails · GetTrailStatus · GetEventSelectors, eks:DescribeCluster(rke2.tf)
 data "aws_iam_policy_document" "gate_read" {
   count = var.source_attachments_bucket == null ? 0 : 1
 
   statement {
-    sid       = "AttachmentBucketEncryptionFacts"
-    actions   = ["s3:GetEncryptionConfiguration"]
+    sid       = "AttachmentBucketEncryptionAndPolicyFacts"
+    actions   = ["s3:GetEncryptionConfiguration", "s3:GetBucketPolicy"]
     resources = ["arn:aws:s3:::${var.source_attachments_bucket}"]
   }
   statement {
@@ -20,7 +21,7 @@ data "aws_iam_policy_document" "gate_read" {
   }
   statement {
     sid       = "KeyAndSecretFacts"
-    actions   = ["kms:DescribeKey", "secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]
+    actions   = ["kms:DescribeKey", "kms:GetKeyPolicy", "secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]
     resources = ["*"]
   }
   statement {

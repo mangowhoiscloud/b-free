@@ -1,4 +1,5 @@
-# GKE: DNS through NodeLocal DNSCache as well; egress only to chat-db 5432 in chat and the Cloudflare edge.
+# GKE: DNS through NodeLocal DNSCache as well; egress only to chat-db 5432 in chat, the control plane and the
+# Cloudflare edge.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -30,6 +31,12 @@ spec:
               cnpg.io/cluster: chat-db
       ports:
         - {port: 5432, protocol: TCP}
+    # GKE control plane private endpoint (kubernetes.default.svc -> 10.30.0.3:443, link t1-gke-k8s).
+    - to:
+        - ipBlock:
+            cidr: 10.30.0.3/32
+      ports:
+        - {port: 443, protocol: TCP}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

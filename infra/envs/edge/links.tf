@@ -57,6 +57,8 @@ locals {
       environment_id = "target-gcp"
       links = {
         db = { service = "tcp://chat-db-rw.chat.svc:5432", clients = ["plat"] }
+        # GKE API for the platform collector and gate (Google WIF identities, cluster CA from the container API).
+        k8s = { service = "tcp://kubernetes.default.svc:443", clients = ["plat"] }
       }
     }
   }

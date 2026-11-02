@@ -54,16 +54,16 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:dda00a9ec3c0cac242e3dd4a4c04651f0b31108e505710b191ca4b810bdd86ad # merge-20261102T144519Z (API lane: Executor + gate rows for one control merged per side, sources_disagree blocks; over exception-20261102T143819Z; tree at 1293507)
+    digest: sha256:59f6ba2b9fcddcf3b106663319bbaadfa7ea6f969be7bbbd7c3548eab2e51ae4 # neutral-20261102T163611Z (gate lane: gate report by POST = plan evaluation run with write probes; over merge-20261102T144519Z; tree at 50218ea)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
     digest: sha256:9db331e04ff03d85c368901fabff632fdc8e984765da87b5a79080ea26f5da89 # r15 (console lane: gate rows show measuring source, sources_disagree stays blocked)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
-    digest: sha256:00e347550d102fb2a3f7ceec1f1907a0b71260db338cff514cf6fb69a536db66 # gateid-20261102T160001Z (gate lane: own read identity per env: EKS token over src-k8s, GKE WIF, DB dial_host, RGW link CA/plain listener, GCS OBJ-ENC via JSON API; tree at 1a84e8c, over exception 71428216)
+    digest: sha256:6ef05ddbcb4714147364d0f926c6015e47eed58acb614e2660744609884cb235 # neutral-20261102T163916Z (gate lane: provider-neutral SEC/AUD questions, POST run with write probes, OBJ-04 IAM simulation, NET-PATHS probe Pod, GKE over link gke-k8s; tree at 21f45cb)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
-    digest: sha256:8de337b9f53bd5c9ccef050ea3fc431d55ca539948255164a756b7b56326667c # d16link-20261102T143435Z (D-16: source EKS API over the link src-k8s, tls_server_name = EKS endpoint host; over cost-20261102T141430Z)
+    digest: sha256:af3c66c17932423a23a4121f184b149fdf83f526f4b3d9e8dcd97645fdab5a79 # neutral-20261102T163611Z (gate lane: provider gke over link gke-k8s with its WIF identity bravo-cost-reader; over d16link-20261102T143435Z; tree at 50218ea)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
     digest: sha256:f5ec7dfdbe01e7a37a6fdbdde4125c12b921f99cbe51dee787b9c8b8de0caeb0 # cloud-202611022259 (data/cutover lane: + attachment_copy CLI in topology mode for T8 pre-copy in executor-0)

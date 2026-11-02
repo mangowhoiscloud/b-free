@@ -56,3 +56,12 @@ resource "google_storage_bucket_iam_member" "gate_reader_attachments_metadata" {
   role   = "roles/storage.bucketViewer"
   member = "serviceAccount:${google_service_account.gate_reader[0].email}"
 }
+
+# AUD-CONTROL-PLANE on GKE: Cloud Audit Logs admin-activity entries for the cluster (logging entries.list). logging.viewer
+# reads the _Required/_Default buckets (admin activity, system events), not Data Access logs (privateLogViewer).
+resource "google_project_iam_member" "gate_reader_audit_logs" {
+  count   = local.cost_reader_enabled ? 1 : 0
+  project = var.project_id
+  role    = "roles/logging.viewer"
+  member  = "serviceAccount:${google_service_account.gate_reader[0].email}"
+}

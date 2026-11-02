@@ -31,6 +31,8 @@
 #   keys.sh signer-pubkey [FILE]                public key of bravo-supply-chain (PEM) -> FILE or stdout (not secret)
 #   keys.sh env-fields ENV NAME                   field names of secret/envs/ENV/NAME (no values)
 #   keys.sh k8s-auth-setup                        platform-rke2: Kubernetes auth + roles rehearsal, api (root once, revoked)
+#   keys.sh gate-bao-setup                        platform-rke2: roles gate-meta (KV metadata of app secrets) and gate-other
+#                                                 (no grant) for the gate's service account (SEC-SECRET-STORE-READ)
 #   keys.sh env-list [ENV]                        secret names under secret/envs/ (or secret/envs/ENV/), no values
 #   keys.sh rgw-kms-init [ENV]                    RGW SSE-KMS (D-26): transit key rgw-ENV (aes256-gcm96, not exportable,
 #                                               no plaintext backup), policy platform-rgw-kms-ENV, AppRole rgw-kms-ENV,
@@ -1051,6 +1053,38 @@ cmd_k8s_auth_setup() {
 }
 
 # Platform API: environment secret_ref check reads KV metadata only (15-r2-contracts, platform/api secretrefs.py).
+# Platform gate (SEC-SECRET-STORE-READ, SEC-SECRET-AT-REST on on-prem and GKE): two Kubernetes-auth roles of the gate's
+# own service account bravo-control/gate. gate-meta reads only KV metadata of the app secret paths (do they exist?),
+# gate-other has no grant at all (default policy only) and must get 403 on their data.
+POLICY_GATE_META='# Platform gate: existence of the app secrets on non-AWS targets, never their values.
+path "secret/metadata/envs/target-onprem/chat-db" { capabilities = ["read"] }
+path "secret/metadata/envs/target-onprem/chat-admin" { capabilities = ["read"] }
+path "secret/metadata/envs/target-gcp/chat-db" { capabilities = ["read"] }
+path "secret/metadata/envs/target-gcp/chat-admin" { capabilities = ["read"] }'
+
+cmd_gate_bao_setup() {
+  [[ $BAO_TARGET == platform-rke2 ]] || die "gate-bao-setup is for --target platform-rke2"
+  need_custody; need_unsealed
+  local admin tok role body pol
+  admin="$(custody_get .admin_token)"
+  put_policy platform-gate-meta "$POLICY_GATE_META" "$admin"
+  for role in gate-meta gate-other; do
+    if [[ $role == gate-meta ]]; then pol='["platform-gate-meta"]'; else pol='[]'; fi
+    body="$(jq -nc --argjson p "$pol" '{bound_service_account_names: ["gate"], bound_service_account_namespaces: ["bravo-control"],
+      token_policies: $p, token_ttl: "5m", token_max_ttl: "10m", token_type: "service"}')"
+    tok="$admin"
+    if ! printf '%s' "$body" | api -d POST "auth/kubernetes/role/$role" "$tok" >/dev/null 2>&1; then
+      cmd_generate_root >/dev/null; tok="$(custody_get .root_token)"
+      printf '%s' "$body" | api -d POST "auth/kubernetes/role/$role" "$tok" >/dev/null
+      api POST auth/token/revoke-self "$tok" >/dev/null
+      jq -n --arg at "$(now)" '{root_token_revoked_at: $at}' | custody_merge
+      log "auth/kubernetes role $role written with root (revoked)"
+    else
+      log "auth/kubernetes role $role (SA bravo-control/gate -> ${pol})"
+    fi
+  done
+}
+
 POLICY_API_SECRETREF='# Platform API (D-26): existence/version of environment chat-db secrets, never their values.
 path "secret/metadata/envs/+/chat-db" { capabilities = ["read"] }'
 
@@ -1211,6 +1245,7 @@ case $cmd in
   env-replace) cmd_env_replace "$@" ;;
   env-fields) cmd_env_fields "$@" ;;
   k8s-auth-setup) cmd_k8s_auth_setup ;;
+  gate-bao-setup) cmd_gate_bao_setup ;;
   env-list) cmd_env_list "$@" ;;
   llm-run) cmd_llm_run "$@" ;;
   llm-status) cmd_llm_status ;;

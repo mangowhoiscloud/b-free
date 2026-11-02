@@ -1,6 +1,8 @@
 # target-gcp 관리 Tunnel t1-gke-mgmt 의 라우트(config_src = local). infra/envs/edge links.tf 의 gke 링크와 같음.
-# 지금은 플랫폼 게이트의 DB 질문(DB-*, DR-ARCHIVE)용 chat-db 하나(2026-11-03).
+# 플랫폼 게이트의 DB 질문(DB-*, DR-ARCHIVE)용 chat-db, 수집기 · 게이트의 GKE API(2026-11-03).
 ingress:
+  - hostname: t1-gke-k8s.mangowhois.ai
+    service: tcp://kubernetes.default.svc:443
   - hostname: t1-gke-db.mangowhois.ai
     service: tcp://chat-db-rw.chat.svc:5432
   - service: http_status:404

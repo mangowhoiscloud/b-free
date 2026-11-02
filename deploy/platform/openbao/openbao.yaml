@@ -184,7 +184,7 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: ["executor", "rehearsal", "api"]
+                values: ["executor", "rehearsal", "api", "gate"]
       ports:
         - port: https
     # D-16 link t1-plat-bao: the platform tunnel connector carries GKE External Secrets (Access service token).

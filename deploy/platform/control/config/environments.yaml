@@ -8,7 +8,8 @@
 #   The source EKS public endpoint allowlist no longer has the platform NAT IP (infra/envs/source-aws).
 # target-onprem: RKE2 API through the D-16 link t1-dst-k8s (Service dst-k8s in bravo-link). Kubeconfig comes from
 #   Secret onprem-kubeconfig (OpenBao, read-only SA token, tls-server-name kubernetes.default.svc).
-# target-gcp: GKE DNS endpoint (IAM container.clusters.connect). The collector has no GKE credential (not configured).
+# target-gcp: GKE API through the D-16 link t1-gke-k8s (Service gke-k8s in bravo-link); cluster CA from the container
+#   API (gke_cluster), TLS name kubernetes.default.svc. Collector: Google SA bravo-cost-reader (WIF), gate: bravo-gate-ro.
 # Gate keys (platform/gate environments.py; the collector ignores them): app_namespace .. restore_cluster in
 #   kubernetes, and the sections aws, object_store, postgres. The gate brings its OWN read identity for every entry
 #   (deploy/platform/link/gate-rbac/README.md, deploy/platform/scripts/gate-credentials.sh): same addresses, other
@@ -35,13 +36,23 @@ environments:
       region: ap-northeast-2
       read_credential: {default_chain: true}   # gate role: canary only + encryption facts (bucket policy exception)
       other_credential: {profile: gate-other}  # role without permissions (OBJ-05)
-      write_probes: false
+      # OBJ-04 without the app's credential: iam:SimulatePrincipalPolicy of the app role (bucket + key policy).
+      app_principal_arn: arn:aws:iam::721622471953:role/bravo-source-chat-app-d0fe673177d4c1201078daddec
+      write_probes: true                       # POST runs only: OBJ-03 unsigned PUT under _gate/ (must be denied)
     postgres:
       dsn_env: SRC_PG_DSN
       dial_host: src-db.bravo-link.svc.cluster.local   # D-16 link; verify-full checks chat-db-rw.chat.svc
       app_role: app_writer
       app_tables: [messages, attachments]
       tls: {sslrootcert_env: SRC_PG_CA}
+    platform:
+      kind: eks                                # neutral questions read the aws section (Secrets Manager, KMS, EKS, CloudTrail)
+    network:
+      probe_from: pod                     # short-lived Pod in ns chat with the app's labels and image (gate netpod.py)
+      app_deployment: chat-bravo-demo
+      control_paths: ["chat-pgbouncer.chat.svc:6432"]          # the app's own DB path must connect
+      denied_paths: ["169.254.169.254:80", "1.1.1.1:80"]       # instance metadata, an outside host on a non-app port
+      timeout_s: 3
   target-onprem:
     display_name: "목적지 · 온프렘 RKE2 CIS (Lima VM 2대)"
     kubernetes:
@@ -59,18 +70,33 @@ environments:
       ca_file: /etc/bravo/gate-ca/onprem-rgw.crt
       app_credential: {access_key_env: ONPREM_S3_AK, secret_key_env: ONPREM_S3_SK}
       other_credential: {access_key_env: ONPREM_OTHER_AK, secret_key_env: ONPREM_OTHER_SK}
-      write_probes: false
+      write_probes: true                              # POST runs only: PUT _gate/*-probe, deleted again
     postgres:
       dsn_env: ONPREM_PG_DSN
       dial_host: dst-db.bravo-link.svc.cluster.local
       app_role: app_writer
       app_tables: [messages, attachments]
       tls: {sslrootcert_env: ONPREM_PG_CA}
+    platform:
+      kind: rke2
+      apiserver_pod: kube-system/kube-apiserver-bravo-onprem-server
+      secret_store:
+        address: https://openbao.openbao.svc:8200
+        ca_file: /etc/bravo/openbao/ca.crt
+        paths: [envs/target-onprem/chat-db, envs/target-onprem/chat-admin]
+    network:
+      probe_from: pod                     # short-lived Pod in ns chat with the app's labels and image (gate netpod.py)
+      app_deployment: chat-bravo-demo
+      control_paths: ["chat-pgbouncer.chat.svc:6432"]          # the app's own DB path must connect
+      denied_paths: ["169.254.169.254:80", "1.1.1.1:80"]       # instance metadata, an outside host on a non-app port
+      timeout_s: 3
   target-gcp:
     display_name: "목적지 · GKE (b-free-target-20261102)"
     kubernetes:
       provider: gke
-      api_server: https://gke-f06891ae4d0346d08ef7adcd75fdbd1d1aa3-510055025217.asia-northeast1-b.gke.goog
+      api_server: https://gke-k8s.bravo-link.svc.cluster.local:443   # D-16 link t1-gke-k8s
+      gke_cluster: projects/b-free-target-20261102/locations/asia-northeast1-b/clusters/bravo-target-gcp
+      tls_server_name: kubernetes.default.svc
       app_namespace: chat
       app_secret: chat-admin
       other_service_accounts: [chat/chat-db, chat/bravo-executor, default/default]
@@ -82,10 +108,23 @@ environments:
       addressing_style: path
       app_credential: {access_key_env: GCS_AK, secret_key_env: GCS_SK}
       other_credential: {access_key_env: GCS_OTHER_AK, secret_key_env: GCS_OTHER_SK}
-      write_probes: false
+      write_probes: true                               # POST runs only: PUT _gate/*-probe, deleted again
     postgres:
       dsn_env: GCP_PG_DSN
       dial_host: gke-db.bravo-link.svc.cluster.local
       app_role: app_writer
       app_tables: [messages, attachments]
       tls: {sslrootcert_env: GCP_PG_CA}
+    platform:
+      kind: gke
+      gke_cluster: projects/b-free-target-20261102/locations/asia-northeast1-b/clusters/bravo-target-gcp
+      secret_store:
+        address: https://openbao.openbao.svc:8200
+        ca_file: /etc/bravo/openbao/ca.crt
+        paths: [envs/target-gcp/chat-db, envs/target-gcp/chat-admin]
+    network:
+      probe_from: pod                     # short-lived Pod in ns chat with the app's labels and image (gate netpod.py)
+      app_deployment: chat-bravo-demo
+      control_paths: ["chat-pgbouncer.chat.svc:6432"]          # the app's own DB path must connect
+      denied_paths: ["169.254.169.254:80", "1.1.1.1:80"]       # instance metadata, an outside host on a non-app port
+      timeout_s: 3

@@ -12,6 +12,9 @@ rules:
   - apiGroups: [""]
     resources: [namespaces]
     verbs: [get]
+  # AUD-CONTROL-PLANE / SEC-SECRET-AT-REST (rke2): kube-apiserver audit and Secret storage transformer counters.
+  - nonResourceURLs: ["/metrics"]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -34,6 +37,18 @@ rules:
     verbs: [list]
   - apiGroups: [postgresql.cnpg.io]
     resources: [clusters]
+    verbs: [get]
+  # NET-PATHS: one short-lived probe Pod with the app Deployment's labels and image (probes/netpod.py), deleted after.
+  # Pod create in the app namespace is the widest right of this identity: it could start any image there. The Pod
+  # the gate makes has no service account token, a restricted security context and a 90 s deadline.
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
     verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
