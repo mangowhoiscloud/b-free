@@ -4,9 +4,11 @@
 module "ci_identity" {
   source = "../../modules/ci_identity/aws"
 
-  name                 = "${var.name}-ci"
-  github_repository    = var.github_repository
-  github_ref           = var.github_ref
+  name              = "${var.name}-ci"
+  github_repository = var.github_repository
+  github_ref        = var.github_ref
+  # 저장소가 변하지 않는 subject를 씀(2026-11-03 실측: sub_claim_prefix). 옛 형식으로는 AssumeRole이 거부됨.
+  github_sub_prefix    = "repo:mangowhoiscloud@191002565/b-free@1442868036"
   create_oidc_provider = false
   ecr_repository_arns  = [for r in aws_ecr_repository.platform : r.arn]
   tags                 = local.tags

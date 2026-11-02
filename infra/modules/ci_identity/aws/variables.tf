@@ -13,6 +13,17 @@ variable "github_repository" {
   }
 }
 
+variable "github_sub_prefix" {
+  description = "sub 클레임 접두어. null이면 repo:<owner>/<repo>. 변하지 않는 subject를 쓰는 저장소는 sub_claim_prefix 값"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.github_sub_prefix == null || can(regex("^repo:[^*?:]+$", var.github_sub_prefix))
+    error_message = "repo: 로 시작하고 와일드카드와 콜론이 없는 접두어 하나만 받습니다."
+  }
+}
+
 variable "github_ref" {
   description = "신뢰할 Git ref 하나. 이 ref의 워크플로만 역할을 받음(NFR-6). 예: refs/heads/main"
   type        = string

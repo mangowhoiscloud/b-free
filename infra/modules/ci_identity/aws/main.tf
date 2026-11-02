@@ -4,7 +4,9 @@
 locals {
   oidc_host = "token.actions.githubusercontent.com"
   # sub 클레임 형식: repo:<owner>/<repo>:ref:<ref>(GitHub 문서 "About security hardening with OpenID Connect").
-  subject = "repo:${var.github_repository}:ref:${var.github_ref}"
+  # 저장소가 변하지 않는 subject(use_immutable_subject)를 쓰면 접두어가 repo:<owner>@<id>/<repo>@<id> 꼴이라
+  # 그 접두어를 그대로 받음(gh api repos/<owner>/<repo>/actions/oidc/customization/sub 의 sub_claim_prefix).
+  subject = "${coalesce(var.github_sub_prefix, "repo:${var.github_repository}")}:ref:${var.github_ref}"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
