@@ -58,7 +58,7 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:a99f5aa229c4159bb2c34ba4d9f0acdababece93248e392086b0174aeb322c92 # shift-20261102T175005Z (cutover lane L1: SHIFT state 10/50/100 -> CUTOVER, replay, receipt scope, migration 0009; tree at 9253b8b)
+    digest: sha256:be216ca95ca351654baa73f59a681a13bcbe48921f9853e148c7ebee3a95c275 # shift-20261102T185505Z (cutover lane L1: shift.thresholds; over 9253b8b; tree at 1c0094c)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
     digest: sha256:a2d8c7df850fecaa5f76c6e5c54f89515e87c3debeac24eadd0b5cc73b9bf310 # r17 (console lane: SHIFT 10/50/100 + start rules, receipt scope/hash_rule, recorded replay, failback front)
@@ -70,7 +70,7 @@ images:
     digest: sha256:af3c66c17932423a23a4121f184b149fdf83f526f4b3d9e8dcd97645fdab5a79 # neutral-20261102T163611Z (gate lane: provider gke over link gke-k8s with its WIF identity bravo-cost-reader; over d16link-20261102T143435Z; tree at 50218ea)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
-    digest: sha256:14c7f0d545f39750654db9cb2169ab7ca7ec82c8be3c4a451ba78531759aa194 # shift-20261102T181150Z (cutover lane L1: step judgement on real writes, approval console start + SHIFT_NOT_DONE, failback front move, reverse slot at 6a, attachment reconcile; tree at b65f9cd)
+    digest: sha256:b2732beda7e0802c7e27ed32442ef2d7a240264b1f068d65abcaffa0c06b6526 # shift-20261102T185505Z (cutover lane L1: judge on loadgen series or a new-connection probe, thresholds per stage, durable PgBouncer target, reverse slot at 6a; tree at 1c0094c)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
     digest: sha256:1e1337fa61e03e7dbbcbf19ab101021ab2abe455e0e28736412fde39f4f6cacd # b7-20261102T144209Z (rehearsal lane: B7 behavioural verification Job for rgw_bucket_policy proposals, verifier_kind behavioral+static_rules; over readyz-20261102T131522Z; arm64)
