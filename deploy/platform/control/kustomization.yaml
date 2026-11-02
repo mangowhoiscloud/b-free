@@ -51,7 +51,7 @@ images:
     digest: sha256:eefdcf9f8af3e884fe6f17b47db6d34bd7542e173efe01c819f72bd9a963cff2 # cost-20261102T134535Z (obs/cost lane: + GET /v1/cost over r2-20261102T130026Z; tree at 59883af)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:fac924f27de534668e169d2bd60f33ab124a621f45de7f77b6a760076d7f1835 # cost-v1-r9 (console lane: cost/v1 bases flat + api_equivalent, lower bound, CE reference; §7.4 PromQL bravo_env)
+    digest: sha256:d00eca258afcd1b8e8fe3f966693d6e551ee1338636ee8c3e2fe6645c25952b5 # r10 (console lane: cost units/precision, chart ticks+legend+5th color, services layout, demo-app-only empty wording)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)
@@ -60,7 +60,7 @@ images:
     digest: sha256:ddeb284ba1bbf773c9dc78fdbcf8f85f1903a4293b178566b09e85c95c9592ae # cost-20261102T135034Z (obs/cost lane: GET /v1/cost with stale-while-revalidate caches and start-up warm-up)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
-    digest: sha256:98f57c71e87884577b4a83e51101a791635995df2feacc8b14524140cb89c34d # cloud-202611022246 (data/cutover lane: + front judge TARGET_SHARE, LB failover no longer passes as DONE)
+    digest: sha256:f5ec7dfdbe01e7a37a6fdbdde4125c12b921f99cbe51dee787b9c8b8de0caeb0 # cloud-202611022259 (data/cutover lane: + attachment_copy CLI in topology mode for T8 pre-copy in executor-0)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
     digest: sha256:929b414d3658b07ce0c3489620f6268333555ed0fd4474a5f4691103a3321614 # readyz-20261102T131522Z (rehearsal lane: worker imports via site-packages .pth, no PYTHONPATH; /readyz checks a usable OpenBao token; arm64)

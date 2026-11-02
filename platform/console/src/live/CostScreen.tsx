@@ -162,6 +162,14 @@ function csv(r: Receipt): string {
   return [head.join(','), ...r.lines.map((l) => [l.id, l.resource, l.component, l.environment, l.unitPrice, l.unit, l.quantity, l.quantityUnit, l.subtotal, l.basisLabel, l.inTotal, l.priceSource].map(esc).join(','))].join('\n');
 }
 
+const UNIT_KO: Record<string, string> = { hour: '시간', hours: '시간', 'GB-month': 'GB·월', GB: 'GB', 'key-month': '키·월', event: '건', events: '건', tokens: '토큰', month: '월', 'vCPU-hours': 'vCPU·시간', 'GiB-hours': 'GiB·시간', request: '요청', requests: '요청' };
+/** API unit is like "USD/hour": the currency is already in the price, so show "/시간". */
+const perUnit = (u: string | null) => {
+  if (!u) return '';
+  const base = u.replace(/^[A-Z]{3}\//, '');
+  return ` /${UNIT_KO[base] ?? base}`;
+};
+const qty = (v: number, u: string | null) => `${v === 0 ? '0' : Math.abs(v) < 1 ? v.toLocaleString('en-US', { maximumSignificantDigits: 3 }) : v.toLocaleString('en-US', { maximumFractionDigits: 2 })}${u ? ` ${UNIT_KO[u] ?? u}` : ''}`;
 const BASIS_TEXT: Record<Exclude<Basis, null>, string> = { billed: '청구', estimated: '추정', flat: '정액(구독)', api_equivalent: 'API 가격 환산(청구 아님)' };
 
 export function CostScreen({ session }: { session: Session }) {
@@ -185,7 +193,7 @@ export function CostScreen({ session }: { session: Session }) {
   const options = [{ value: 'all', label: '전체 계획' }, ...(plans.data ?? []).map((p) => ({ value: p.plan_id, label: `${shortId(p.plan_id)} · ${p.workload ?? '—'} · ${p.source ?? '—'} → ${p.target ?? '—'}` }))];
   const r = cost.data;
   const cur = r?.currency ?? 'USD';
-  const m = (v: number | null, unitPrice = false) => (v === null ? '—' : fmtMoney(v, cur, unitPrice));
+  const m = (v: number | null, unitPrice = false) => (v === null ? '—' : !unitPrice && v > 0 && v < 0.005 ? `<${fmtMoney(0.01, cur)}` : fmtMoney(v, cur, unitPrice));
   const download = () => {
     if (!r) return;
     const url = URL.createObjectURL(new Blob([csv(r)], { type: 'text/csv;charset=utf-8' }));
@@ -340,12 +348,12 @@ export function CostScreen({ session }: { session: Session }) {
                     ...items.map((l) => (
                       <tr key={l.id} className="receipt-line--sub">
                         <td>
-                          └ {l.resource}
-                          {l.priceSource && <div className="meta">{l.priceSource}</div>}
+                          <span title={l.priceSource ?? undefined}>└ {l.resource}</span>
+                          {l.priceSource && <div className="meta">{l.priceSource.split(' · ')[0]}</div>}
                         </td>
                         <td className="mono">{l.environment ?? '—'}</td>
-                        <td className="td-end num">{l.unitPrice !== null ? `${m(l.unitPrice, true)}${l.unit ? ` /${l.unit}` : ''}` : <span className="meta">{l.basis === 'flat' ? '가격 미기록' : '—'}</span>}</td>
-                        <td className="td-end num">{l.quantity !== null ? `${l.quantity.toLocaleString('en-US', { maximumFractionDigits: 2 })}${l.quantityUnit ? ` ${l.quantityUnit}` : ''}` : <span className="meta">사용량 자료 없음</span>}</td>
+                        <td className="td-end num nowrap">{l.unitPrice !== null ? `${m(l.unitPrice, true)}${perUnit(l.unit)}` : <span className="meta">{l.basis === 'flat' ? '가격 미기록' : '—'}</span>}</td>
+                        <td className="td-end num nowrap">{l.quantity !== null ? qty(l.quantity, l.quantityUnit) : <span className="meta">사용량 자료 없음</span>}</td>
                         <td className="td-end num">{subtotalCell(l)}</td>
                         <td>{l.basis ? BASIS_TEXT[l.basis] : <span className="meta">— {l.basisLabel ?? '근거 없음'}</span>}</td>
                       </tr>
@@ -388,7 +396,7 @@ export function CostScreen({ session }: { session: Session }) {
                 empty="—"
                 cols={[
                   { key: 'r', header: '실행 · 자원', weight: 3, render: (l) => <span className="mono">{l.resource}</span> },
-                  { key: 'q', header: '수량', numeric: true, px: 140, render: (l) => (l.quantity !== null ? `${l.quantity.toLocaleString('en-US')}${l.quantityUnit ? ` ${l.quantityUnit}` : ''}` : '—') },
+                  { key: 'q', header: '수량', numeric: true, px: 140, render: (l) => (l.quantity !== null ? qty(l.quantity, l.quantityUnit) : '—') },
                   { key: 's', header: 'API 가격 환산', numeric: true, px: 140, render: (l) => <span className="muted-num">{m(l.subtotal)}</span> },
                   { key: 'p', header: '가격 출처', weight: 2, render: (l) => <span className="meta">{l.priceSource ?? '—'}</span> },
                 ]}

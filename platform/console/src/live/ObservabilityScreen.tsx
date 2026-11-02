@@ -7,6 +7,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@astryxdesign/core/Link';
 import { Selector } from '@astryxdesign/core/Selector';
+import { VStack } from '@astryxdesign/core/Stack';
 import type { ConsoleView } from '../api/derive';
 import type { PlanEvent } from '../api/types';
 import { fmtCount, fmtLatency, fmtPct } from '../lib/format';
@@ -112,10 +113,17 @@ function Services({ w }: { w: TimeWindow }) {
           rowKey={(r) => r.url}
           empty={st.isLoading ? '불러오는 중…' : 'httpcheck_status 시계열이 없습니다.'}
           cols={[
-            { key: 'u', header: '상태 경로', weight: 3, render: (r) => <span className="mono">{r.url.replace(/^https?:\/\//, '')}</span> },
-            { key: 's', header: '상태', render: (r) => <StatusText h={r.ok ? 'ok' : 'bad'} /> },
+            {
+              key: 'u', header: '상태 경로', weight: 3,
+              render: (r) => (
+                <VStack gap={0}>
+                  <span className="mono">{r.url.replace(/^https?:\/\//, '').replace('.svc', '')}</span>
+                  {r.errs.length > 0 && <span className="meta">최근 5분 실패: {r.errs.join(' · ')}</span>}
+                </VStack>
+              ),
+            },
+            { key: 's', header: '상태', render: (r) => <StatusText h={r.ok ? 'ok' : 'bad'} text={r.ok ? (r.errs.length ? '정상 · 최근 실패' : '정상') : '응답 없음'} /> },
             { key: 'ms', header: '응답', numeric: true, render: (r) => fmtLatency(r.ms) },
-            { key: 'e', header: '최근 실패(5분)', weight: 2, render: (r) => (r.errs.length ? <span className="meta">{r.errs.join(' · ')}</span> : <span className="meta">없음</span>) },
           ]}
         />
       )}
@@ -194,12 +202,12 @@ export function ObservabilityScreen({ view, planId, events }: { view: ConsoleVie
                     return age > STALE_S ? <span className="meta">○ 연결 안 됨 · 마지막 수신 {Math.round(age)}초 전</span> : <StatusText h="ok" text={`수신 ${Math.round(age)}초 전`} />;
                   },
                 },
-                { key: 'r', header: '요청/s', numeric: true, render: (e) => (hasSeries(rate.data, e) ? fmtValue(last(rate.data, e), 1) : <Val v={null} why="트래픽 없음" />) },
-                { key: 'x', header: '오류율', numeric: true, render: (e) => { const v = last(errors.data, e); return v === null ? <Val v={null} why="트래픽 없음" /> : fmtPct(v); } },
+                { key: 'r', header: '요청/s', numeric: true, render: (e) => (hasSeries(rate.data, e) ? fmtValue(last(rate.data, e), 1) : <Val v={null} why="데모 앱 지표 없음" />) },
+                { key: 'x', header: '오류율', numeric: true, render: (e) => { if (!hasSeries(rate.data, e)) return <Val v={null} />; const v = last(errors.data, e); return v === null ? <Val v={null} why="트래픽 없음" /> : fmtPct(v); } },
                 { key: 'p50', header: 'p50', numeric: true, render: (e) => fmtLatency(at(p50.data, e)) },
                 { key: 'p95', header: 'p95', numeric: true, render: (e) => fmtLatency(at(p95.data, e)) },
                 { key: 'p99', header: 'p99', numeric: true, render: (e) => fmtLatency(at(p99.data, e)) },
-                { key: 'w', header: '쓰기/s', numeric: true, render: (e) => (hasSeries(writes.data, e) ? fmtValue(last(writes.data, e), 1) : <Val v={null} why="쓰기 0건(Pod 시작 뒤)" />) },
+                { key: 'w', header: '쓰기/s', numeric: true, render: (e) => (hasSeries(writes.data, e) ? fmtValue(last(writes.data, e), 2) : hasSeries(rate.data, e) ? <Val v={null} why="쓰기 0건(Pod 시작 뒤)" /> : <Val v={null} />) },
               ]}
             />
             <p className="meta">데모 앱(bravo-demo) 지표, 프로브 경로 제외. 요청/s · 쓰기/s는 범위 끝의 1분 비율, 오류율과 백분위는 5분 창입니다. 연결은 target_info 마지막 수신(120초 넘으면 연결 안 됨). SLO가 정해지지 않아 상태 판정 열은 두지 않습니다. 환경 라벨 bravo_env(15-r2-contracts §7).</p>

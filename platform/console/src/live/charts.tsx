@@ -28,7 +28,7 @@ export interface Marker {
   label: string;
 }
 
-const SERIES_VARS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)'];
+const SERIES_VARS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)'];
 const M = { top: 12, right: 16, bottom: 26, left: 52 };
 
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
@@ -78,6 +78,8 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
   const x = (t: number) => M.left + (t1 === t0 ? iw / 2 : ((t - t0) / (t1 - t0)) * iw);
   const y = (v: number) => M.top + ih - (v / yMax) * ih;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * yMax);
+  // Enough decimals that the five tick labels never repeat (step = yMax / 4).
+  const tickDigits = Math.max(0, Math.min(4, Math.ceil(-Math.log10(yMax / 4)) + 1));
   const xTicks = hasData ? [0, 0.25, 0.5, 0.75, 1].map((f) => t0 + f * (t1 - t0)) : [];
   const spanMin = (t1 - t0) / 60_000;
   const hoverT = hover !== null ? times[hover] : undefined;
@@ -111,7 +113,7 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
       <figcaption className="chart__head">
         <span className="chart__title">{title}</span>
         <span className="chart__unit">단위: {unit}</span>
-        {series.length >= 2 && (
+        {series.length >= 1 && (
           <span className="chart__legend">
             {series.map((s, i) => (
               <span key={s.id} className="chart__key">
@@ -162,7 +164,7 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
                 <g key={v}>
                   <line x1={M.left} x2={M.left + iw} y1={y(v)} y2={y(v)} className="chart__grid" />
                   <text x={M.left - 6} y={y(v) + 4} textAnchor="end" className="chart__tick">
-                    {fmtValue(v, v < 10 ? 2 : 0)}
+                    {fmtValue(v, tickDigits)}
                   </text>
                 </g>
               ))}

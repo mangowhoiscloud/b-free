@@ -11,11 +11,14 @@
 #   4. cutover (step 2 blocks writes through each app's admin switch; step 7 retargets both
 #      PgBouncers with pods/exec; 1b freezes attachments and copies objects S3 -> RGW when the
 #      object stores are configured)
-#   5. load on dst for HOLD_S, then failback, then front shift back to src
+#   5. load on dst for HOLD_S; 장애 주입 (spec S4 "목적지 앱 오류 응답": dst app pods answer FAULT_RATE of HTTP
+#      with 500, deploy/cloud/fault.sh); failback started in the console; front back to src in one 100 % step
+#      (a rollback, not a canary: a 10 % step would still send 90 % to the failing dst); fault cleared
 #   6. NFR-2 against the final DB, S4-AC1, every run record exported to the evidence folder
 #
 # WAIT_RUN_S (default 900): how long to wait for the console to start each run.
 # Env: SKIP_FRONT=1 skips the front shifts (recorded), HOLD_S (default 20), LOAD_S (default 120),
+#      FAULT_RATE (default 0.3; 0 = no fault injection),
 #      CUTOVER_AFTER_S (default 15), BUDGET_MS (default 5000), SCENARIO (roundtrip|cutover).
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 executor_url; URL="$EXECUTOR_URL"
@@ -46,12 +49,13 @@ wait_run() {  # wait_run <run_id> <out> [timeout_s]
   jq -c '{kind, status, write_pause_ms, stages: [.stages[] | {name, ms, result}], verdict: .receipt.verdict}' "$2" >&2
   echo "$st"
 }
-front_shift() {  # front_shift <env> <tag>
+front_shift() {  # front_shift <env> <tag> [steps-json]
   if [ "${SKIP_FRONT:-0}" = "1" ]; then
     echo '{"skipped": true, "reason": "SKIP_FRONT=1"}' > "$EV/front-$2.json"; log "front shift to $1 skipped"; return 0
   fi
   local id st
-  id="$(post /v1/front/shift "{\"target_env\": \"$1\"}" "front-$2-$(uuidgen)" "$EV/front-$2-accepted.json")"
+  id="$(post /v1/front/shift "{\"target_env\": \"$1\"${3:+, \"steps\": $3}}" "front-$2-$(uuidgen)" \
+    "$EV/front-$2-accepted.json")"
   st="$(wait_run "$id" "$EV/front-$2.json" 600 | tail -n 1)"
   log "front shift to $1: $st ($(jq -c '[.stages[]? | {name, ms, result}]' "$EV/front-$2.json"))"
 }
@@ -114,10 +118,20 @@ log "cutover: $cut_status"
 fb_status="skipped"
 if [ "$SCENARIO" = "roundtrip" ] && [ "$cut_status" = "DONE" ]; then
   curl -fsS "$URL/v1/readiness" > "$EV/readiness-after-cutover.json"
+  sleep "$HOLD_S"
+  if [ "${FAULT_RATE:-0.3}" != "0" ]; then
+    log "장애 주입: dst app HTTP 5xx rate ${FAULT_RATE:-0.3} (spec S4 목적지 앱 오류 응답)"
+    "$CLOUD_DIR/fault.sh" dst "${FAULT_RATE:-0.3}" > "$EV/fault-on.jsonl"
+    for _ in $(seq 1 40); do  # what a user of the front sees during the fault (evidence only)
+      curl -s -o /dev/null -w '%{http_code}\n' -m 10 "https://$ZONE_HOST/api/config?_fault_probe=$RANDOM"
+    done | sort | uniq -c | awk '{printf "{\"http\": %s, \"count\": %s}\n", $2, $1}' > "$EV/fault-observed.jsonl"
+    jq -c . "$EV/fault-observed.jsonl" >&2
+  fi
   log "load on dst; failback is manual from the console (D-18)"
   fb_status="$(wait_console_run failback "$t_cut" "$EV/failback-run.json")"
   log "failback: $fb_status"
-  [ "$fb_status" != "DONE" ] || front_shift src to-src
+  [ "$fb_status" != "DONE" ] || front_shift src to-src "[100]"
+  [ "${FAULT_RATE:-0.3}" = "0" ] || "$CLOUD_DIR/fault.sh" dst 0 > "$EV/fault-off.jsonl"
 fi
 
 # ---- 6. verification -----------------------------------------------------------------------
