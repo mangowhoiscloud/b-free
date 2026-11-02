@@ -5,7 +5,7 @@ import type { ConsoleView } from '../api/derive';
 import type { ControlException, ControlRow, DevToken, GateResult } from '../api/types';
 import { fmtDateTime, fmtTs } from '../lib/format';
 import { idemKey, releaseIdemKey } from '../lib/idem';
-import { useApi } from '../state';
+import { useApi, useNow } from '../state';
 import { ActorBadge, ControlValueMark, ErrorLine, Mark, Panel, Reasons } from './bits';
 import { EXCEPTION_STATUS, exceptionsError, useExceptions } from './ExceptionsPanel';
 
@@ -129,9 +129,12 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
   const api = useApi();
   const qc = useQueryClient();
   const scope = `gate:${planId}`;
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const now = useNow(1000);
   const run = useMutation({
     mutationFn: () => {
       if (!user) throw new Error('사용자를 고르세요.');
+      setStartedAt(Date.now());
       return api.runGate(user.token, planId, idemKey(scope));
     },
     onSettled: (_d, err) => {
@@ -179,10 +182,15 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
           disabled={disabled}
           aria-describedby={reasons.length ? 'gate-reasons' : undefined}
         >
-          {run.isPending ? '게이트 실행 중…' : '게이트 실행'}
+          {run.isPending ? `게이트 실행 중… ${startedAt ? Math.max(0, Math.round((now - startedAt) / 1000)) : 0}초` : '게이트 실행'}
         </button>
       }
     >
+      {run.isPending && (
+        <p className="muted" role="status">
+          게이트가 출발 · 목적 환경을 지금 측정합니다. 보통 16초에서 60초 걸리고, API는 150초까지 기다립니다. 창을 닫아도 실행은 계속되고 결과는 이벤트로 옵니다.
+        </p>
+      )}
       <Reasons id="gate-reasons" reasons={reasons} />
       <ErrorLine text={run.error ? errorText(run.error) : null} />
 

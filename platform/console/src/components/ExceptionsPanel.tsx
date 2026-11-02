@@ -12,7 +12,7 @@ import type { ControlException, DevToken } from '../api/types';
 import { fmtTs, shortId } from '../lib/format';
 import { idemKey, releaseIdemKey } from '../lib/idem';
 import { getJson, useConfig } from '../live/live';
-import { useApi } from '../state';
+import { useApi, useNow } from '../state';
 import { ErrorLine, Mark, Panel, Reasons, type Tone } from './bits';
 
 /** A 404 without a reason code means the route itself is missing, not the plan. */
@@ -39,6 +39,16 @@ function short(d: string | null, n = 14) {
   return d ? shortId(d.replace(/^sha256:/, ''), n) : '—';
 }
 
+function MeasuringNote({ since }: { since: number | null }) {
+  const [start] = useState(() => since ?? Date.now());
+  const now = useNow(1000);
+  return (
+    <p className="muted" role="status">
+      게이트가 지금 측정하는 중… {Math.round((now - start) / 1000)}초 (보통 16–60초, 90초가 지나면 연결 안 됨으로 표시)
+    </p>
+  );
+}
+
 /** Current measurement from the gate service (GET /v1/controls/report, read-only), on demand. */
 function CurrentEvidence({ controlId, source, target, expected }: { controlId: string; source: string | null; target: string | null; expected: string | null }) {
   const { svcBase } = useConfig();
@@ -50,7 +60,7 @@ function CurrentEvidence({ controlId, source, target, expected }: { controlId: s
     retry: 0,
     staleTime: 60_000,
     queryFn: async () => {
-      const o = (await getJson(`${svcBase}/gate/${path}`, 20_000)) as { questions?: Record<string, unknown>[] };
+      const o = (await getJson(`${svcBase}/gate/${path}`, 90_000)) as { questions?: Record<string, unknown>[] };
       return (o.questions ?? []).find((r) => r.control_id === controlId) ?? null;
     },
   });
@@ -61,7 +71,7 @@ function CurrentEvidence({ controlId, source, target, expected }: { controlId: s
         현재 측정 증거 보기 (게이트 보고서)
       </button>
     );
-  if (q.isLoading) return <p className="muted">게이트가 지금 측정하는 중… (최대 20초)</p>;
+  if (q.isLoading) return <MeasuringNote since={q.dataUpdatedAt || null} />;
   if (q.error) return <p className="muted">현재 측정: 연결 안 됨 · GET /svc/gate/{path} · {errorText(q.error)}</p>;
   const row = q.data as Record<string, unknown> | null;
   if (!row) return <p className="muted">현재 측정: 게이트 보고서에 {controlId} 행이 없습니다.</p>;

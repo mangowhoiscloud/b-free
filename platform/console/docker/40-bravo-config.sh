@@ -64,6 +64,8 @@ printf '{"apiBase":"%s","grafanaUrl":"%s","prometheusUrl":"%s","tempoUrl":"%s","
     printf 'resolver %s valid=10s ipv6=off;\n' "$RESOLVER"
     for pair in "collector=$COLLECTOR_UP" "gate=$GATE_UP" "prometheus=$PROMETHEUS_UP"; do
         name="${pair%%=*}"; up="${pair#*=}"; up="${up%/}"
+        # The gate measures live when its report is read (about 16 s per environment pair, up to ~60 s).
+        read_timeout=20s; [ "$name" = gate ] && read_timeout=90s
         cat <<CONF
 location /svc/$name/ {
     limit_except GET { deny all; }
@@ -75,7 +77,7 @@ location /svc/$name/ {
     proxy_set_header Cf-Access-Jwt-Assertion "";
     proxy_hide_header Set-Cookie;
     proxy_connect_timeout 2s;
-    proxy_read_timeout 20s;
+    proxy_read_timeout $read_timeout;
     include /etc/nginx/bravo-headers.conf;
     add_header Cache-Control "no-store" always;
 }
