@@ -183,6 +183,8 @@
 
 **제안.** `POST /v1/plans/{id}/approvals`의 `stage`에 `exception`을 더합니다. 입력은 통제 ID, 사유, 대체 통제, 만료입니다. 예: `istio-system`의 Pod Security 예외(D-15).
 
+**구현(2026-11-02, 상태는 제안 그대로).** 스펙 S1 5b를 위해 승인 API의 단계가 아니라 별도 경로 `/v1/plans/{id}/exceptions`로 넣었습니다. 입력은 이 제안과 같습니다(통제 ID, 사유, 대체 통제, 만료). 계획 단위 승인 요청(`approval_request_id`)과 섞지 않으려고 표를 나눴습니다(`control_exceptions`, 마이그레이션 0008). 계약 `docs/architecture/15-r2-contracts.md` 9절.
+
 스펙 §7.5대로 Tailscale operator 프록시를 쓰면 그 네임스페이스도 privileged 예외가 됩니다. D-16을 채택하면 이 예외는 사라집니다. `cloudflared` 이미지는 `restricted`를 지킬 수 있기 때문입니다(`docs/architecture/02-network.md` 6절).
 
 ## D-12. 리허설 NetworkPolicy에 필요한 예외

@@ -18,7 +18,17 @@ from .result import FAIL, PASS, UNKNOWN, Obs
 RULE_VERSION = "gate-controls/2026-11-02.1"
 
 # 4-state vocabulary for evidence text (review condition 3). "대체 불가" is an approved exception.
+# The gate never emits EXCEPTION itself: the platform API turns a row into EXCEPTION ("예외 승인") only for an
+# approved control exception bound to that row's destination evidence digest (spec S1 5b, contract 15 §9).
 STATUS_KO = {PASS: "충족", FAIL: "보완 필요", "EXCEPTION": "대체 불가", UNKNOWN: "미검증"}
+
+
+def evidence_digest(obs: Obs) -> str:
+    """``sha256:`` + sha256 of one side's evidence object ``{verdict, reason, evidence}`` as canonical JSON
+    (sorted keys, ``,``/``:`` separators, UTF-8). Evidence holds no timestamps, so the same observation gives
+    the same digest. A control exception (contract 15 §9) is bound to the destination's digest."""
+    body = json.dumps(obs.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return "sha256:" + hashlib.sha256(body.encode()).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +138,7 @@ def build_rows(src: SideResults, dst: SideResults) -> dict[str, Any]:
             "src_status": STATUS_KO[so.verdict], "dst_status": STATUS_KO[do.verdict],
             "verdict": verdict, "reason": reason,
             "src_evidence": so.as_dict(), "dst_evidence": do.as_dict(),
+            "src_evidence_digest": evidence_digest(so), "dst_evidence_digest": evidence_digest(do),
         })
     controls = []
     for c in CONTROLS:

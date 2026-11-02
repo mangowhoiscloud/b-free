@@ -30,7 +30,17 @@ from .config import Settings
 from .db import Database
 from .errors import AuthError, BusinessError, ForbiddenError, NotFoundError
 from .events import list_events, parse_cursor, sse_payload
-from .models import ApprovalDecision, EnvRegister, PlanCreate, RehearsalStart, ShiftRequest
+from .exceptions import ExceptionService
+from .models import (
+    ApprovalDecision,
+    EnvRegister,
+    ExceptionApprove,
+    ExceptionReject,
+    ExceptionRequest,
+    PlanCreate,
+    RehearsalStart,
+    ShiftRequest,
+)
 from .rehearsal import RehearsalService
 from .service import Services
 from .shift import ShiftService
@@ -82,6 +92,7 @@ def build_router(
     rehearsals: RehearsalService,
     tickets: TicketSigner,
     changes: ChangeService,
+    exceptions: ExceptionService,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1")
 
@@ -169,6 +180,31 @@ def build_router(
         plan_id: UUID, body: ApprovalDecision, p: Annotated[Principal, Depends(principal)], key: IdemKey = None
     ) -> dict[str, Any]:
         return await services.approve(p, Channel.CONSOLE, plan_id, body, key)
+
+    # Control exceptions (spec S1 5b, contract 15 §9): operator requests, approver decides, console only.
+    @router.get("/plans/{plan_id}/exceptions")
+    async def exception_list(plan_id: UUID, p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
+        return await exceptions.list(p, Channel.CONSOLE, plan_id)
+
+    @router.post("/plans/{plan_id}/exceptions", status_code=201)
+    async def exception_request(
+        plan_id: UUID, body: ExceptionRequest, p: Annotated[Principal, Depends(principal)], key: IdemKey = None
+    ) -> dict[str, Any]:
+        return await exceptions.request(p, Channel.CONSOLE, plan_id, body, key)
+
+    @router.post("/plans/{plan_id}/exceptions/{exception_id}/approve")
+    async def exception_approve(
+        plan_id: UUID, exception_id: UUID, body: ExceptionApprove, p: Annotated[Principal, Depends(principal)],
+        key: IdemKey = None,
+    ) -> dict[str, Any]:
+        return await exceptions.approve(p, Channel.CONSOLE, plan_id, exception_id, body, key)
+
+    @router.post("/plans/{plan_id}/exceptions/{exception_id}/reject")
+    async def exception_reject(
+        plan_id: UUID, exception_id: UUID, body: ExceptionReject, p: Annotated[Principal, Depends(principal)],
+        key: IdemKey = None,
+    ) -> dict[str, Any]:
+        return await exceptions.reject(p, Channel.CONSOLE, plan_id, exception_id, body, key)
 
     @router.post("/plans/{plan_id}/shift", status_code=202)
     async def start_shift(

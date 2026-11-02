@@ -22,6 +22,7 @@ from .config import Settings
 from .db import Conn, Database
 from .errors import BusinessError, NotFoundError
 from .events import SYSTEM, Actor, EventKind, EventMode, emit, list_events, receipt_body
+from .exceptions import gate_inputs, record_verdict
 from .executor_client import ExecutorClient, ExecutorError
 from .gate import GatePolicy, Verdict, evaluate
 from .models import ApprovalDecision, EnvRegister, PlanCreate
@@ -36,6 +37,7 @@ class Snapshot:
     readiness: dict[str, Any] | None
     errors: tuple[str, ...]
     collected_at: datetime
+    evidence_expires_at: datetime | None = None  # platform/gate report ``expires_at`` (spec §8.5), else None
 
     def as_json(self) -> dict[str, Any]:
         controls = [
@@ -118,6 +120,16 @@ def _iso(value: datetime | None) -> str | None:
 
 def _uuid(value: Any) -> str | None:
     return str(value) if value else None
+
+
+def _parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return ts if ts.tzinfo else None
 
 
 class Services:
@@ -315,7 +327,8 @@ class Services:
         digest = idempotency.request_digest({"action": "plan_create", **req.model_dump(mode="json")})
         actor = Actor.of(p)
         await self.refresh_secret_refs(p.tenant_id, p.id, [req.source_environment_id, req.target_environment_id])
-        snapshot = await self.collect_snapshot()  # network I/O outside any transaction
+        names = await self._env_names(p.tenant_id, p.id, req.source_environment_id, req.target_environment_id)
+        snapshot = await self.collect_snapshot(*names)  # network I/O outside any transaction
         inventory = await self.read_inventory()
         async with self.db.tenant_tx(p.tenant_id, p.id) as conn:
             replay = await idempotency.claim(
@@ -377,11 +390,25 @@ class Services:
             )
             return result
 
-    async def collect_snapshot(self) -> Snapshot:
-        """Read-only snapshot of Executor controls and readiness (pilot COLLECT)."""
+    async def _env_names(
+        self, tenant_id: str, principal_id: UUID | None, source_id: UUID, target_id: UUID
+    ) -> tuple[str | None, str | None]:
+        """Environment names (= the gate registry's environment ids) of a plan's source and target."""
+        async with self.db.tenant_tx(tenant_id, principal_id) as conn:
+            cur = await conn.execute(
+                "SELECT environment_id, name FROM environments WHERE environment_id = ANY(%s)", ([source_id, target_id],)
+            )
+            names = {r["environment_id"]: r["name"] for r in await cur.fetchall()}
+        return names.get(source_id), names.get(target_id)
+
+    async def collect_snapshot(self, source: str | None, target: str | None) -> Snapshot:
+        """Read-only snapshot of Executor controls and readiness (pilot COLLECT), plus the platform/gate report
+        for this plan's (source, target) environment names: question rows with the destination evidence digest
+        (contract 15 §9.5)."""
         errors: list[str] = []
         controls: list[dict[str, Any]] | None = None
         readiness: dict[str, Any] | None = None
+        evidence_expires_at: datetime | None = None
         try:
             controls = await self.executor.controls()
         except ExecutorError as exc:
@@ -394,12 +421,16 @@ class Services:
             # Controls from platform/gate are appended as read. A control id reported by both
             # sources is contradictory evidence and the gate treats it as UNKNOWN (fail closed).
             try:
-                extra = await self.gate_controls.controls()
+                if source is None or target is None:
+                    raise UpstreamError("gate_controls_environment_missing")
+                extra, expires = await self.gate_controls.report(source, target)
                 controls = [*(controls or []), *extra] if controls is not None else None
+                evidence_expires_at = _parse_ts(expires)
             except UpstreamError as exc:
                 errors.append(exc.reason)
         return Snapshot(
-            controls=controls, readiness=readiness, errors=tuple(sorted(set(errors))), collected_at=datetime.now(UTC)
+            controls=controls, readiness=readiness, errors=tuple(sorted(set(errors))), collected_at=datetime.now(UTC),
+            evidence_expires_at=evidence_expires_at,
         )
 
     async def refresh_secret_refs(self, tenant_id: str, principal_id: UUID | None, env_ids: list[UUID]) -> None:
@@ -532,7 +563,8 @@ class Services:
                     "AND data->>'to' IN ('DONE', 'DONE_ROLLED_BACK')",
                     (plan_id,),
                 )
-                done = (await cur.fetchone())["done_at"]
+                done_row = await cur.fetchone()
+                done = done_row["done_at"] if done_row else None
             params.update(plan_id=str(plan_id), plan_created_at=_iso(plan["created_at"]) or "",
                           plan_state=plan["state"], workload=plan["workload"])
             if done is not None:
@@ -562,8 +594,8 @@ class Services:
         last_gate = None
         if plan["last_gate_verdict_id"]:
             cur = await conn.execute(
-                "SELECT verdict_id, verdict, reasons, controls, readiness, plan_revision, created_at FROM gate_verdicts "
-                "WHERE verdict_id = %s",
+                "SELECT verdict_id, verdict, reasons, controls, readiness, plan_revision, created_at, exceptions, "
+                "evidence_expires_at FROM gate_verdicts WHERE verdict_id = %s",
                 (plan["last_gate_verdict_id"],),
             )
             g = await cur.fetchone()
@@ -573,6 +605,8 @@ class Services:
                     "verdict": g["verdict"],
                     "reasons": list(g["reasons"]),
                     "controls": g["controls"],
+                    "exceptions": g["exceptions"],
+                    "evidence_expires_at": _iso(g["evidence_expires_at"]),
                     "readiness": g["readiness"],
                     "plan_revision": g["plan_revision"],
                     "at": _iso(g["created_at"]),
@@ -755,7 +789,13 @@ class Services:
         # Cheap pre-check so an obviously wrong state does not call the Executor.
         async with self.db.tenant_tx(p.tenant_id, p.id) as conn:
             cur = await conn.execute(
-                "SELECT state, source_environment_id, target_environment_id FROM plans WHERE plan_id = %s", (plan_id,)
+                """SELECT p.state, p.source_environment_id, p.target_environment_id, s.name AS source_name,
+                          t.name AS target_name
+                     FROM plans p
+                     JOIN environments s ON s.environment_id = p.source_environment_id
+                     JOIN environments t ON t.environment_id = p.target_environment_id
+                    WHERE p.plan_id = %s""",
+                (plan_id,),
             )
             row = await cur.fetchone()
             if row is None:
@@ -764,9 +804,8 @@ class Services:
             await self.refresh_secret_refs(
                 p.tenant_id, p.id, [row["source_environment_id"], row["target_environment_id"]]
             )
-        snap = await self.collect_snapshot()  # network I/O outside any transaction
+        snap = await self.collect_snapshot(row["source_name"], row["target_name"])  # network I/O outside any tx
         inventory = await self.read_inventory() if row["state"] in (State.COLLECT.value, State.ANALYZE.value) else None
-        result = evaluate(snap.controls, snap.readiness, self.gate_policy, snap.errors)
         actor = Actor.of(p)
         async with self.db.tenant_tx(p.tenant_id, p.id) as conn:
             replay = await idempotency.claim(
@@ -786,6 +825,9 @@ class Services:
                     conn, plan_id, snap, inventory or Inventory("error", None, "inventory_not_read"), actor
                 )
                 state = State(plan["state"])
+            # Control exceptions (S1 5b) are read under the plan lock so a decision cannot interleave.
+            open_exceptions, effective = await gate_inputs(conn, plan, actor)
+            result = evaluate(snap.controls, snap.readiness, self.gate_policy, snap.errors, effective)
             verdict_id = uuid.uuid4()
             controls = [c.as_dict() for c in result.controls]
             verdict, reasons = result.verdict, list(result.reasons)
@@ -796,11 +838,12 @@ class Services:
                 verdict = Verdict.PASS if controls and not reasons else Verdict.BLOCK
             # Display values as read (seq/rows are not rule inputs, so not in input_digest).
             readiness_view = {**snap.as_json()["readiness"], "max_lag_bytes": self.gate_policy.max_lag_bytes}
+            applied = list(result.exceptions)
             await conn.execute(
                 """INSERT INTO gate_verdicts (verdict_id, tenant_id, plan_id, plan_revision, verdict, reasons,
                                               controls, readiness, input_digest, rule_version, requested_by, channel,
-                                              purpose)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                              purpose, exceptions, evidence_expires_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     verdict_id,
                     p.tenant_id,
@@ -815,6 +858,8 @@ class Services:
                     p.id,
                     channel.value,
                     "control_retest" if state is State.WATCH else "gate",
+                    Jsonb(applied),
+                    snap.evidence_expires_at,
                 ),
             )
             await emit(
@@ -828,12 +873,15 @@ class Services:
                     "verdict": verdict.value,
                     "reasons": reasons,
                     "controls": controls,
+                    "exceptions": applied,
+                    "evidence_expires_at": _iso(snap.evidence_expires_at),
                     "readiness": readiness_view,
                     "input_digest": result.input_digest,
                     "rule_version": result.rule_version,
                     "purpose": "control_retest" if state is State.WATCH else "gate",
                 },
             )
+            await record_verdict(conn, plan_id, verdict_id, result, open_exceptions, actor)
             common = {"actor": actor, "data": {"verdict_id": str(verdict_id)}}
             if verdict is Verdict.PASS and state in (State.GATE, State.AWAIT_APPROVAL, State.NEEDS_HUMAN):
                 plan = await transition(
@@ -880,6 +928,8 @@ class Services:
                 "verdict": verdict.value,
                 "reasons": reasons,
                 "controls": controls,
+                "exceptions": applied,
+                "evidence_expires_at": _iso(snap.evidence_expires_at),
                 "readiness": {**readiness_view, "schema_match": _schema_match(readiness_view)},
                 "input_digest": result.input_digest,
                 "rule_version": result.rule_version,
@@ -898,22 +948,37 @@ class Services:
         Same rules as ``gate_run``; recorded as channel ``system``, purpose ``change_recheck``. PASS issues the
         cutover approval request, requested on behalf of the change's requester (so they cannot approve it).
         """
-        snap = await self.collect_snapshot()  # network I/O outside any transaction
-        result = evaluate(snap.controls, snap.readiness, self.gate_policy, snap.errors)
+        async with self.db.tenant_tx(tenant_id) as conn:
+            cur = await conn.execute(
+                """SELECT s.name AS source_name, t.name AS target_name
+                     FROM plans p
+                     JOIN environments s ON s.environment_id = p.source_environment_id
+                     JOIN environments t ON t.environment_id = p.target_environment_id
+                    WHERE p.plan_id = %s""",
+                (plan_id,),
+            )
+            names = await cur.fetchone()
+        snap = await self.collect_snapshot(  # network I/O outside any transaction
+            names["source_name"] if names else None, names["target_name"] if names else None
+        )
         async with self.db.tenant_tx(tenant_id) as conn:
             plan = await lock_plan(conn, plan_id)
             if plan["state"] != State.GATE.value:
                 return None
+            open_exceptions, effective = await gate_inputs(conn, plan, SYSTEM)
+            result = evaluate(snap.controls, snap.readiness, self.gate_policy, snap.errors, effective)
             verdict_id = uuid.uuid4()
             controls = [c.as_dict() for c in result.controls]
+            applied = list(result.exceptions)
             readiness_view = {**snap.as_json()["readiness"], "max_lag_bytes": self.gate_policy.max_lag_bytes}
             await conn.execute(
                 """INSERT INTO gate_verdicts (verdict_id, tenant_id, plan_id, plan_revision, verdict, reasons,
                                               controls, readiness, input_digest, rule_version, requested_by, channel,
-                                              purpose)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, 'system', 'change_recheck')""",
+                                              purpose, exceptions, evidence_expires_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, 'system', 'change_recheck', %s, %s)""",
                 (verdict_id, tenant_id, plan_id, plan["revision"], result.verdict.value, list(result.reasons),
-                 Jsonb(controls), Jsonb(readiness_view), result.input_digest, result.rule_version),
+                 Jsonb(controls), Jsonb(readiness_view), result.input_digest, result.rule_version, Jsonb(applied),
+                 snap.evidence_expires_at),
             )
             await emit(
                 conn,
@@ -926,12 +991,15 @@ class Services:
                     "verdict": result.verdict.value,
                     "reasons": list(result.reasons),
                     "controls": controls,
+                    "exceptions": applied,
+                    "evidence_expires_at": _iso(snap.evidence_expires_at),
                     "readiness": readiness_view,
                     "input_digest": result.input_digest,
                     "rule_version": result.rule_version,
                     "purpose": "change_recheck",
                 },
             )
+            await record_verdict(conn, plan_id, verdict_id, result, open_exceptions, SYSTEM)
             if result.verdict is Verdict.PASS:
                 plan = await transition(
                     conn,

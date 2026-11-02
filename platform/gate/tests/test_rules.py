@@ -89,3 +89,21 @@ def test_gate_imports_no_llm_client() -> None:
         text = f.read_text(encoding="utf-8")
         for b in banned:
             assert f"import {b}" not in text and f"from {b}" not in text, f"{f}: {b}"
+
+
+def test_evidence_digest_is_stable_and_tracks_destination_evidence() -> None:
+    """Contract 15 §9.5: a control exception binds the destination evidence digest of the FAIL row."""
+    src, dst = _sides()
+    a = {r["control_id"]: r for r in build_rows(src, dst)["questions"]}
+    b = {r["control_id"]: r for r in build_rows(*_sides())["questions"]}
+    row = a["OBJ-01"]
+    assert row["dst_evidence_digest"].startswith("sha256:") and len(row["dst_evidence_digest"]) == 71
+    assert row["dst_evidence_digest"] == b["OBJ-01"]["dst_evidence_digest"]
+    assert row["dst_evidence_digest"] != row["src_evidence_digest"]
+    other = Obs(FAIL, "anonymous_read_allowed", {"response": "206"})
+    changed = SideResults("dst", {**dst.observations, "OBJ-01": other})
+    c = {r["control_id"]: r for r in build_rows(src, changed)["questions"]}
+    assert c["OBJ-01"]["dst_evidence_digest"] != row["dst_evidence_digest"]
+    assert c["OBJ-01"]["src_evidence_digest"] == row["src_evidence_digest"]
+    # The CONTRACT.md §6 rows keep exactly four keys.
+    assert set(contract_rows(build_rows(src, dst), "question")[0]) == {"control_id", "question", "src", "dst"}

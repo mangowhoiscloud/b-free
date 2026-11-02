@@ -14,6 +14,7 @@
 | `POST /v1/plans/{id}/shift` | 콘솔 전용. `cutover`(AWAIT_APPROVAL) 또는 `failback`(WATCH, Executor `POST /v1/failback`) → 실행 handle(`run_id`), 단계 결과, 쓰기 정지 ms, 무결성 영수증 |
 | `GET /v1/environments/{id}/controls` | → 통제별 시험 결과, 증거, 수집 시각 |
 | `GET /v1/plans/{id}/events` | SSE. `Last-Event-ID`로 재접속 |
+| `GET`, `POST /v1/plans/{id}/exceptions`, `POST …/exceptions/{exception_id}/approve`, `…/reject` | 통제 예외(스펙 S1 5b). 콘솔 operator가 요청, 콘솔 approver가 결정(요청자 · 계획 작성자와 다른 사람). 마지막 게이트 판정의 측정된 FAIL 행 · 목적지 · 증거 digest에 결속. UNKNOWN은 걸 수 없음. 계약 `docs/architecture/15-r2-contracts.md` 9절 |
 
 - 모든 실행 요청에 `Idempotency-Key`. 키의 범위는 (테넌트, 동작, 입력 digest)입니다. 같은 키에 다른 입력이면 409입니다.
 - 같은 키에 같은 입력이 다시 오면 처음 만든 실행 handle(`run_id`, `rehearsal_id`)과 그 결과를 돌려줍니다. 새 실행을 만들지 않습니다.
@@ -25,7 +26,7 @@
 | 항목 | 제안 |
 |---|---|
 | 가중치 단계 전환 | `POST /v1/plans/{id}/weights`(D-10). 콘솔 전용 |
-| 예외 승인 | `approvals`의 `stage=exception`(D-11) |
+| 예외 승인 | D-11은 `approvals`의 `stage=exception`을 제안. 2026-11-02 구현은 별도 경로 `/v1/plans/{id}/exceptions`와 표 `control_exceptions`(마이그레이션 0008, 계약 15 9절) |
 | 위치 필드 | `environments`에 `location`. GOV-01 표시용(§2.1). 판정에는 D-03b 채택 뒤에만 씀 |
 | 계획 조회 | `GET /v1/plans/{id}`: 상태, 마지막 게이트 판정, 승인 대기와 승인 주소, 걸린 보류, 진행 중 실행, 마지막 영수증 요약. MCP `plan_get`과 콘솔이 같이 씀(D-18) |
 | 보안 보류 | `POST /v1/holds`, `GET /v1/holds`, `POST /v1/holds/{id}/release-requests`, `POST /v1/holds/{id}/release`. 생성은 콘솔의 operator 이상, 해제 승인은 콘솔의 `security_approver`. P0에 최소 해제 양식 하나를 둠. 실행 요청은 `security_hold`로 거부될 수 있음(D-20, `docs/architecture/04-governance.md` 5절) |
@@ -107,4 +108,4 @@ SSE 이벤트 필드(제안): `id`, `plan_id`, `state`, `kind`, `at`, `mode`(`li
 |---|---|
 | `BRAVO_REHEARSAL_URL`, `BRAVO_REHEARSAL_API_TOKEN` | 리허설 서비스. 없으면 `rehearsal_unconfigured`(503) |
 | `BRAVO_COLLECTOR_URL` | ANALYZE가 `GET /v1/inventory`를 읽음. 형식은 `upstreams.CollectorClient` 주석(11/3 수집기 계약으로 확정) |
-| `BRAVO_GATE_URL` | 게이트가 `GET /v1/controls`(Executor와 같은 형식)를 더 읽음. 같은 통제 ID가 두 곳에서 오면 UNKNOWN → BLOCK |
+| `BRAVO_GATE_URL`, `BRAVO_GATE_TIMEOUT_S`(기본 60) | 게이트가 `GET /v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`의 질문 행(목적지 증거 digest 포함)과 증거 만료 시각을 더 읽음. 같은 통제 ID가 두 곳에서 오면 UNKNOWN → BLOCK. 게이트가 모르는 환경이면 `gate_controls_unknown_environment` |

@@ -104,7 +104,10 @@ def evidence_from(inventory: dict[str, Any], gate: dict[str, Any] | None) -> lis
     items: list[dict[str, Any]] = []
     if gate is not None:
         for c in gate["controls"] or []:
-            if not isinstance(c, dict) or c.get("verdict") == "PASS" or not isinstance(c.get("control_id"), str):
+            # PASS rows and approved exceptions (S1 5b, accepted as they are) are not work for the agent.
+            if not isinstance(c, dict) or c.get("verdict") in ("PASS", "EXCEPTION") or not isinstance(
+                c.get("control_id"), str
+            ):
                 continue
             items.append(
                 {

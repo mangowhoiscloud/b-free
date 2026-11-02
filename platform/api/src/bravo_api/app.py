@@ -22,6 +22,7 @@ from .auth import JWKSSource, NotConnectedVerifier, RemoteJWKS, TokenVerifier, V
 from .changes import ChangeService, ChangeWatcher
 from .config import Mode, Settings
 from .db import Bootstrap, Database
+from .exceptions import ExceptionService
 from .executor_client import ExecutorClient
 from .mcp_server import MCPGuard, build_server
 from .rehearsal import RehearsalService, RehearsalWatcher
@@ -56,7 +57,9 @@ def create_app(settings: Settings | None = None, *, jwks: JWKSSource | None = No
                   "every authenticated request is refused with 503 access_not_connected")
         verifier = NotConnectedVerifier()
     timeout = settings.executor_timeout_s
-    gate_controls = GateControlsClient(settings.gate_controls_url, timeout) if settings.gate_controls_url else None
+    gate_controls = (
+        GateControlsClient(settings.gate_controls_url, settings.gate_timeout_s) if settings.gate_controls_url else None
+    )
     collector = CollectorClient(settings.collector_url, timeout) if settings.collector_url else None
     rehearsal_client = (
         RehearsalClient(settings.rehearsal_url, settings.rehearsal_timeout_s, os.environ.get("BRAVO_REHEARSAL_API_TOKEN"))
@@ -127,6 +130,7 @@ def create_app(settings: Settings | None = None, *, jwks: JWKSSource | None = No
                 rehearsals,
                 TicketSigner(settings.sse_ticket_secret),
                 ChangeService(db),
+                ExceptionService(db),
             )
         )
         if settings.cors_origins:

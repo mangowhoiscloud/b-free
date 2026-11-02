@@ -71,6 +71,7 @@ class Action(StrEnum):
     APPROVE = "approve"
     SHIFT = "shift"
     CHANGE_REQUEST = "change_request"  # ask the T31 pipeline to prepare a candidate again (console only)
+    EXCEPTION_REQUEST = "exception_request"  # control exception (spec S1 5b); decided with APPROVE
 
 
 _READERS = frozenset(Role)
@@ -88,6 +89,7 @@ POLICY: dict[Action, tuple[frozenset[Channel], frozenset[Role]]] = {
     Action.APPROVE: (_CONSOLE, frozenset({Role.APPROVER})),
     Action.SHIFT: (_CONSOLE, frozenset({Role.OPERATOR})),
     Action.CHANGE_REQUEST: (_CONSOLE, frozenset({Role.OPERATOR})),
+    Action.EXCEPTION_REQUEST: (_CONSOLE, frozenset({Role.OPERATOR})),
 }
 
 

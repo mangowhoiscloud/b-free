@@ -125,11 +125,11 @@ environments:
 |---|---|
 | `GET /v1/controls?source=ID&target=ID` | `CONTRACT.md` 6절 형식 그대로: `[{control_id, question, src, dst}]`, 값 `PASS` · `FAIL` · `UNKNOWN`. 질문마다 한 행 |
 | `GET /v1/controls?source=ID&target=ID&level=control` | 같은 형식으로 통제마다 한 행(SEC-01, ENC-01, AUD-01, NET-01, IAM-01, DR-01) |
-| `GET /v1/controls/report?source=ID&target=ID` | 같은 실행의 전체 결과: 행별 판정과 `reason`, 증거, 네 상태 문구, `input_digest`, `rule_version`, `test_version`, `collected_at`, `expires_at` |
+| `GET /v1/controls/report?source=ID&target=ID` | 같은 실행의 전체 결과: 행별 판정과 `reason`, 증거, 증거 digest(`src_evidence_digest`, `dst_evidence_digest`), 네 상태 문구, `input_digest`, `rule_version`, `test_version`, `collected_at`, `expires_at` |
 | `GET /v1/catalog` | 통제와 질문 목록 |
 | `GET /v1/environments` | 등록된 환경과 설정된 절(비밀 없음) |
 
-플랫폼 API 게이트는 `BRAVO_EXECUTOR_URL`의 `/v1/controls`를 읽습니다. 이 서비스를 쓰려면 API 쪽에서 `source`와 `target`을 붙여 이 주소를 읽게 바꿔야 합니다. 이 폴더 밖이라 바꾸지 않았습니다.
+플랫폼 API 게이트는 Executor의 `/v1/controls`와 이 서비스의 `/v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`을 읽습니다(2026-11-02 23:xx부터, 계약 15 9.5). 증거 digest는 `"sha256:"` + 증거 객체(`{verdict, reason, evidence}`)의 정렬 JSON sha256입니다. 통제 예외(스펙 S1 5b)는 목적지 digest에 묶이고, `EXCEPTION`(예외 승인) 판정은 API가 조립할 때만 나옵니다. 이 서비스는 예외를 모릅니다.
 
 ## 실행
 

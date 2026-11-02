@@ -100,3 +100,67 @@ def test_readiness_thresholds(readiness: dict, reason: str) -> None:
 
 def test_lag_at_threshold_passes() -> None:
     assert evaluate(controls(("PASS", "PASS")), {**READY, "lag_bytes": 65536}, POLICY).verdict is Verdict.PASS
+
+
+# Control exception (spec S1 5b, contract 15 §9.4) ------------------------------------------------------------
+
+D1 = "sha256:" + "d1" * 32
+D2 = "sha256:" + "d2" * 32
+
+
+def obj06(src: str, dst: str, digest: str | None = D1) -> dict[str, str | None]:
+    return {"control_id": "OBJ-06", "src": src, "dst": dst, "evidence_digest": digest}
+
+
+def ex(src: str = "PASS", dst: str = "FAIL", digest: str = D1):
+    from bravo_api.gate import ControlException
+
+    return ControlException("e-1", "OBJ-06", src, dst, digest, "2026-11-09T00:00:00+00:00", "approver@bravo.test")
+
+
+def test_matching_exception_is_shown_apart_and_left_out_of_parity() -> None:
+    blocked = evaluate([*controls(("PASS", "PASS")), obj06("PASS", "FAIL")], READY, POLICY)
+    assert blocked.verdict is Verdict.BLOCK and blocked.reasons == ("OBJ-06:regression",)
+    r = evaluate([*controls(("PASS", "PASS")), obj06("PASS", "FAIL")], READY, POLICY, exceptions=(ex(),))
+    row = next(c for c in r.controls if c.control_id == "OBJ-06")
+    assert (row.verdict, row.reason, row.exception_id, row.evidence_digest) == ("EXCEPTION", "exception_approved", "e-1", D1)
+    assert r.verdict is Verdict.PASS and r.reasons == ()
+    assert [e["exception_id"] for e in r.exceptions] == ["e-1"]
+    assert r.input_digest != blocked.input_digest  # the applied exception is a gate input
+    assert r == evaluate([obj06("PASS", "FAIL"), *controls(("PASS", "PASS"))], READY, POLICY, exceptions=(ex(),))
+
+
+@pytest.mark.parametrize(
+    ("row", "exc"),
+    [
+        (obj06("PASS", "UNKNOWN"), ex(dst="FAIL")),  # 5a: UNKNOWN on the destination never becomes an exception
+        (obj06("UNKNOWN", "FAIL"), ex()),  # nor UNKNOWN on the source
+        (obj06("PASS", "FAIL", D2), ex()),  # other evidence
+        (obj06("PASS", "FAIL", None), ex()),  # no evidence
+        (obj06("FAIL", "FAIL"), ex()),  # other pair (the exception was for regression)
+        (obj06("PASS", "PASS"), ex()),  # fixed: passes on its own
+    ],
+)
+def test_exception_applies_only_to_the_same_measured_fail(row: dict, exc) -> None:
+    r = evaluate([*controls(("PASS", "PASS")), row], READY, POLICY, exceptions=(exc,))
+    got = next(c for c in r.controls if c.control_id == "OBJ-06")
+    assert got.verdict != "EXCEPTION" and r.exceptions == ()
+    if row["dst"] != "PASS" or row["src"] != "PASS":
+        assert r.verdict is Verdict.BLOCK
+
+
+def test_unknown_elsewhere_still_blocks_with_an_exception() -> None:
+    r = evaluate([*controls(("PASS", "UNKNOWN")), obj06("PASS", "FAIL")], READY, POLICY, exceptions=(ex(),))
+    assert r.verdict is Verdict.BLOCK and r.reasons == ("DB-ANON-READ:unknown",)
+
+
+def test_drift_marks_only_measured_changes() -> None:
+    from bravo_api.gate import exception_drift
+
+    open_ex = [{"exception_id": "e-1", "control_id": "OBJ-06", "src": "PASS", "dst": "FAIL", "evidence_digest": D1}]
+    same = evaluate([obj06("PASS", "FAIL")], READY, POLICY)
+    assert exception_drift(same, open_ex) == []
+    assert exception_drift(evaluate([obj06("PASS", "FAIL", D2)], READY, POLICY), open_ex)[0][1] == "evidence_changed"
+    assert exception_drift(evaluate([obj06("PASS", "PASS")], READY, POLICY), open_ex)[0][1] == "verdict_changed"
+    assert exception_drift(evaluate([obj06("PASS", "UNKNOWN")], READY, POLICY), open_ex) == []  # not measured
+    assert exception_drift(evaluate([], READY, POLICY), open_ex) == []  # gate unreachable: row missing

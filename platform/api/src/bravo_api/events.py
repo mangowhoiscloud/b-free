@@ -41,6 +41,12 @@ class EventKind(StrEnum):
     CHANGE_APPLIED = "change.applied"
     CHANGE_REFUSED = "change.refused"
     CHANGE_FAILED = "change.failed"
+    # Control exception (spec S1 5b, contract 15 §9)
+    EXCEPTION_REQUESTED = "exception.requested"
+    EXCEPTION_APPROVED = "exception.approved"
+    EXCEPTION_REJECTED = "exception.rejected"
+    EXCEPTION_STALE = "exception.stale"
+    EXCEPTION_EXPIRED = "exception.expired"
 
 
 class EventMode(StrEnum):

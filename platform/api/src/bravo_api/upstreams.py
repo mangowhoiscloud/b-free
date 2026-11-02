@@ -60,18 +60,32 @@ class _Client:
 
 
 class GateControlsClient(_Client):
-    """``GET /v1/controls`` on platform/gate: same schema as the Executor's controls."""
+    """``GET /v1/controls/report?source=&target=`` on platform/gate for one plan's environment names.
+
+    Returns the question rows in the Executor's control schema plus the destination evidence digest:
+    ``{control_id, question, src, dst, evidence_digest}`` (contract 15 §9.5). A control exception binds that
+    digest. The gate does not know the environment -> ``gate_controls_unknown_environment``.
+    """
 
     name = "gate_controls"
 
-    async def controls(self) -> list[dict[str, Any]]:
-        resp = await self._request("GET", "/v1/controls")
+    async def report(self, source: str, target: str) -> tuple[list[dict[str, Any]], str | None]:
+        """(question rows, the report's ``expires_at``: end of the evidence validity, spec §8.5)."""
+        resp = await self._request("GET", "/v1/controls/report", params={"source": source, "target": target})
+        if resp.status_code == 404:
+            raise UpstreamError("gate_controls_unknown_environment", 404, self._json(resp, self.name))
         if resp.status_code != 200:
             raise UpstreamError(f"gate_controls_http_{resp.status_code}", resp.status_code)
         body = self._json(resp, self.name)
-        if not isinstance(body, list):
+        questions = body.get("questions") if isinstance(body, dict) else None
+        if not isinstance(questions, list) or not all(
+            isinstance(q, dict) and isinstance(q.get("control_id"), str) for q in questions
+        ):
             raise UpstreamError("gate_controls_bad_response")
-        return body
+        rows = [{"control_id": q["control_id"], "question": q.get("question"), "src": q.get("src"),
+                 "dst": q.get("dst"), "evidence_digest": q.get("dst_evidence_digest")} for q in questions]
+        expires_at = body.get("expires_at") if isinstance(body.get("expires_at"), str) else None
+        return rows, expires_at
 
 
 INVENTORY_SCHEMA = "inventory/v1"

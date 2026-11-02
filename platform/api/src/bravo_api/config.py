@@ -149,6 +149,7 @@ class Settings:
     rehearsal_max_infra_errors: int = 2  # 07 3
     collector_url: str | None = None  # platform/collector inventory (FR-1, FR-2)
     gate_controls_url: str | None = None  # platform/gate control results (FR-12)
+    gate_timeout_s: float = 60.0  # the gate report runs every probe of both environments
     jwks_url: str | None = None  # Access certs URL; keys are fetched from here only
     jwks_ttl_s: float = 300.0
     # First-login bootstrap (A3): this exact email may become the first member of this tenant.
@@ -211,6 +212,7 @@ class Settings:
             rehearsal_max_infra_errors=int(_env("BRAVO_REHEARSAL_MAX_INFRA_ERRORS", "2")),
             collector_url=_opt_url("BRAVO_COLLECTOR_URL"),
             gate_controls_url=_opt_url("BRAVO_GATE_URL"),
+            gate_timeout_s=float(_env("BRAVO_GATE_TIMEOUT_S", "60")),
             jwks_url=jwks_url,
             jwks_ttl_s=float(_env("BRAVO_JWKS_TTL_S", "300")),
             bootstrap_email=os.environ.get("BRAVO_BOOTSTRAP_EMAIL", "").strip() or None,
