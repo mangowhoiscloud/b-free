@@ -1,0 +1,72 @@
+Terraform will perform the following actions:
+
+  # module.edge.cloudflare_load_balancer_monitor.app[0] will be updated in-place
+  ~ resource "cloudflare_load_balancer_monitor" "app" {
+      ~ created_on       = "2026-11-02T11:42:31.986768Z" -> (known after apply)
+      + header           = {
+          + "Host" = [
+              + "b-free-chat.mangowhois.ai",
+            ]
+        }
+        id               = "c69c5f5fbd5dcd5f2953392384926c70"
+      ~ modified_on      = "2026-11-02T11:42:31.986768Z" -> (known after apply)
+        # (13 unchanged attributes hidden)
+    }
+
+  # module.edge.cloudflare_load_balancer_pool.env["dst"] will be updated in-place
+  ~ resource "cloudflare_load_balancer_pool" "env" {
+      + disabled_at         = (known after apply)
+        id                  = "d9c73f91c86b318e6e26394fc6fb688a"
+      + load_shedding       = (known after apply)
+      ~ modified_on         = "2026-11-02T11:42:32.321795Z" -> (known after apply)
+        name                = "bravo-b-free-chat-dst"
+      ~ networks            = [
+          - "cloudflare",
+        ] -> (known after apply)
+      + notification_filter = (known after apply)
+      + origin_steering     = (known after apply)
+      ~ origins             = [
+          ~ {
+              + disabled_at   = (known after apply)
+              - header        = {
+                  - host = [
+                      - "b-free-chat-dst.mangowhois.ai",
+                    ] -> null
+                } -> null
+                name          = "dst"
+              + port          = (known after apply)
+                # (4 unchanged attributes hidden)
+            },
+        ]
+        # (7 unchanged attributes hidden)
+    }
+
+  # module.edge.cloudflare_load_balancer_pool.env["src"] will be updated in-place
+  ~ resource "cloudflare_load_balancer_pool" "env" {
+      + disabled_at         = (known after apply)
+        id                  = "5c876af75bf51b4667c67a3affc021e8"
+      + load_shedding       = (known after apply)
+      ~ modified_on         = "2026-11-02T11:42:32.333349Z" -> (known after apply)
+        name                = "bravo-b-free-chat-src"
+      ~ networks            = [
+          - "cloudflare",
+        ] -> (known after apply)
+      + notification_filter = (known after apply)
+      + origin_steering     = (known after apply)
+      ~ origins             = [
+          ~ {
+              + disabled_at   = (known after apply)
+              - header        = {
+                  - host = [
+                      - "b-free-chat-src.mangowhois.ai",
+                    ] -> null
+                } -> null
+                name          = "src"
+              + port          = (known after apply)
+                # (4 unchanged attributes hidden)
+            },
+        ]
+        # (7 unchanged attributes hidden)
+    }
+
+Plan: 0 to add, 3 to change, 0 to destroy.

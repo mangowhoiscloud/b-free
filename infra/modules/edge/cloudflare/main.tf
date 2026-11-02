@@ -78,10 +78,13 @@ resource "cloudflare_load_balancer_monitor" "app" {
   method         = "GET"
   path           = var.health_path
   expected_codes = "200"
-  interval       = 60
-  timeout        = 5
-  retries        = 2
-  description    = "bravo ${var.app} health"
+  # The pool origins no longer override Host (below), so the monitor names a host the tunnels route: the LB name,
+  # which every app tunnel's ingress and every chat HTTPRoute serve (Cloudflare tunnel-behind-LB setup).
+  header      = { Host = ["${var.app}.${local.zone_name}"] }
+  interval    = 60
+  timeout     = 5
+  retries     = 2
+  description = "bravo ${var.app} health"
 }
 
 resource "cloudflare_load_balancer_pool" "env" {
@@ -93,7 +96,8 @@ resource "cloudflare_load_balancer_pool" "env" {
     name    = each.key
     address = "${cloudflare_zero_trust_tunnel_cloudflared.env[each.key].id}.cfargotunnel.com"
     enabled = true
-    header  = { host = [local.hostnames[each.key]] }
+    # No Host override (2026-11-03): requests keep Host = the LB name, which each tunnel's ingress and HTTPRoute
+    # accept, so a plain-HTTP 301 points back to b-free-chat instead of the environment name the LB picked.
   }]
 }
 

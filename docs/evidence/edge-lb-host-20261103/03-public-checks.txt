@@ -1,0 +1,11 @@
+## public checks from this Mac via Cloudflare, 2026-11-03 03:57:18 KST
+https /api/config 200 served=aws
+https /api/config 200 served=aws
+https /api/config 200 served=aws
+http /api/config 301 -> https://b-free-chat.mangowhois.ai:443/api/config?i=1
+http /api/config 301 -> https://b-free-chat.mangowhois.ai:443/api/config?i=2
+http /api/config 301 -> https://b-free-chat.mangowhois.ai:443/api/config?i=3
+http /ws 301 -> https://b-free-chat.mangowhois.ai:443/ws?room=probe
+wss upgrade 101
+b-free-chat-src https 200 | http 301 -> https://b-free-chat-src.mangowhois.ai:443/api/config
+b-free-chat-dst https 200 | http 301 -> https://b-free-chat-dst.mangowhois.ai:443/api/config
