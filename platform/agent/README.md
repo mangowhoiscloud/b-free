@@ -11,7 +11,7 @@
 | `images/<name>/Dockerfile` | 샌드박스 이미지. 기반은 digest, 바이너리는 판 + 체크섬, 실행 사용자 65532, 패키지 관리자 없음. `expected-binaries.txt`가 감사 기준선 |
 | `templates/bravo-app/` | CI 에이전트가 값만 채우는 고정 Helm 차트. `values.schema.json`이 값 범위를 막고, `imageRef`는 플랫폼만 넣음 |
 | `harbor/<role>/` | Harbor 0.25.0 task(분리 검증기, 산출물은 `/out/proposal.json` 하나). `harbor/_shared/verify.py`가 원본 |
-| `requirements.lock`, `harbor/requirements.lock` | 해시 고정 의존성(`uv pip compile pyproject.toml --extra openai --generate-hashes`). Harbor 휠도 sha256으로 고정 |
+| `requirements.lock`, `harbor/requirements.lock` | 해시 고정 의존성(`uv pip compile pyproject.toml --extra openai --generate-hashes -c harbor/requirements.lock`: 두 파일을 한 환경에 함께 설치하므로 겹치는 판은 Harbor 쪽에 맞춤). Harbor 휠도 sha256으로 고정 |
 
 ## 역할과 이미지
 

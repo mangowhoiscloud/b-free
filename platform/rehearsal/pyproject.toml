@@ -27,6 +27,13 @@ dev = ["pytest==8.4.2", "pytest-asyncio==1.2.0"]
 [tool.uv.sources]
 bravo-agents = { path = "../agent", editable = true }
 
+# Installed into the venv (editable with `uv sync`), so `python -m bravo_rehearsal.worker` resolves in a
+# child process whose environment is built from scratch (no PYTHONPATH), as the service starts it.
+# Same backend pin as platform/agent.
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

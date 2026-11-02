@@ -16,7 +16,7 @@ MIB = 1024 * 1024
 
 
 def test_queries_parallel_connections_and_bytes(publisher: PgContainer, tunnel: Tunnel) -> None:
-    dsn = publisher.dsn(port=tunnel.client_port)
+    dsn = publisher.dsn(host=tunnel.client_host, port=tunnel.client_port)
     with psycopg.connect(dsn) as conn:
         assert conn.execute("SELECT 1").fetchone() == (1,)
         assert conn.execute("SELECT inet_server_port()").fetchone() == (5432,)
@@ -65,7 +65,7 @@ def test_queries_parallel_connections_and_bytes(publisher: PgContainer, tunnel: 
 
 
 def test_agent_loss_rejects_then_reconnects(publisher: PgContainer, tunnel: Tunnel) -> None:
-    dsn = publisher.dsn(port=tunnel.client_port)
+    dsn = publisher.dsn(host=tunnel.client_host, port=tunnel.client_port)
     held = psycopg.connect(dsn)
     assert held.execute("SELECT 1").fetchone() == (1,)
     tunnel.agent.kill()

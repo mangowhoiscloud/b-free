@@ -10,7 +10,14 @@ COPY tsconfig.json vite.config.ts index.html ./
 COPY src ./src
 RUN pnpm build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+# nginx 1.30.6 stable on Alpine 3.24 (multi-arch index digest, 2026-10-19). 1.27-alpine was Alpine 3.21 (EOL) with
+# CRITICAL fixed CVEs in brotli-libs and OpenSSL that the image scan gate blocks.
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+# That base still ships brotli-libs 1.2.0-r1 (CVE-2026-111497, CRITICAL, fixed in Alpine 1.2.1-r0; pulled in by
+# libcurl and freetype). Take the fixed package; the constraint fails the build if the repo lacks it.
+# Drop this line when the base digest ships brotli-libs >= 1.2.1-r0.
+USER root
+RUN apk add --no-cache 'brotli-libs>=1.2.1-r0'
 COPY --chmod=0644 docker/default.conf /etc/nginx/conf.d/default.conf
 COPY --chmod=0644 docker/bravo-headers.conf /etc/nginx/bravo-headers.conf
 COPY --chmod=0755 docker/40-bravo-config.sh /docker-entrypoint.d/40-bravo-config.sh

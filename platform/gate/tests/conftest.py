@@ -82,12 +82,17 @@ def _make_certs(d: Path) -> Path:
         "local all all scram-sha-256\nhostssl all all all scram-sha-256\nhost all all all reject\n")
     for f in d.iterdir():
         f.chmod(0o644)
+    # The directory is bind-mounted as /certs and the server (uid postgres, not the host user) reads
+    # /certs/pg_hba.conf directly. pytest creates tmp dirs 0700, so on Docker Engine (Linux) postgres
+    # could not enter /certs and exited at startup. Docker Desktop's file sharing hides this.
+    d.chmod(0o755)
     return d / "ca.crt"
 
 
 def _start_pg(tls_dir: Path | None) -> tuple[str, Pg]:
     su_pw, ro_pw, app_pw = (secrets.token_urlsafe(18) for _ in range(3))
-    args = ["run", "-d", "--rm", "-P", "-e", f"POSTGRES_PASSWORD={su_pw}", "-e", "POSTGRES_DB=chat",
+    # No --rm: if the server exits during startup, the container (and its log) stays for the error below.
+    args = ["run", "-d", "-P", "-e", f"POSTGRES_PASSWORD={su_pw}", "-e", "POSTGRES_DB=chat",
             "-e", "POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256"]
     if tls_dir is None:
         args += [PG_IMAGE, "postgres", "-c", "password_encryption=scram-sha-256"]
@@ -99,21 +104,28 @@ def _start_pg(tls_dir: Path | None) -> tuple[str, Pg]:
                  "-c ssl_key_file=/tmp/server.key -c ssl_min_protocol_version=TLSv1.2 "
                  "-c hba_file=/certs/pg_hba.conf -c log_connections=on"]
     cid = _docker(*args)
-    port = _host_port(cid, "5432/tcp")
-    host = "localhost" if tls_dir else "127.0.0.1"
-    su = f"host={host} port={port} dbname=chat user=postgres password={su_pw}"
-    deadline = time.monotonic() + 90
-    while True:
-        try:
-            with psycopg.connect(su, connect_timeout=2, autocommit=True) as conn:
-                conn.execute(sql.SQL(PROBE_SQL).format(pw=sql.Literal(ro_pw), app_pw=sql.Literal(app_pw)))
-            break
-        except psycopg.OperationalError:
-            if time.monotonic() > deadline:
-                logs = _docker("logs", cid)
-                _docker("rm", "-f", cid)
-                raise RuntimeError(f"postgres did not start: {logs[-1000:]}") from None
-            time.sleep(1)
+    try:
+        port = _host_port(cid, "5432/tcp")
+        host = "localhost" if tls_dir else "127.0.0.1"
+        su = f"host={host} port={port} dbname=chat user=postgres password={su_pw}"
+        deadline = time.monotonic() + 90
+        while True:
+            try:
+                with psycopg.connect(su, connect_timeout=2, autocommit=True) as conn:
+                    conn.execute(sql.SQL(PROBE_SQL).format(pw=sql.Literal(ro_pw), app_pw=sql.Literal(app_pw)))
+                break
+            except psycopg.OperationalError:
+                exited = _docker("inspect", "--format", "{{.State.Running}}", cid) != "true"
+                if exited or time.monotonic() > deadline:
+                    # postgres logs to stderr; keep both streams.
+                    logs = subprocess.run(["docker", "logs", cid], capture_output=True, text=True,  # noqa: S603,S607
+                                          timeout=60, check=False)
+                    raise RuntimeError(f"postgres did not start ({'exited' if exited else 'timeout'}): "
+                                       f"{(logs.stdout + logs.stderr)[-2000:]}") from None
+                time.sleep(1)
+    except BaseException:
+        subprocess.run(["docker", "rm", "-f", cid], capture_output=True, check=False, timeout=60)  # noqa: S603,S607
+        raise
     probe = f"host={host} port={port} dbname=chat user=gate_ro password={ro_pw}"
     return cid, Pg(su, probe, str(tls_dir / "ca.crt") if tls_dir else None)
 

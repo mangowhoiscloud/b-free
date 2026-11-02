@@ -16,7 +16,7 @@
 
 - 이미지에는 API 주소가 없습니다. 컨테이너가 시작할 때 `BRAVO_API_BASE`로 `/config.json`을 만듭니다. 값이 없거나 http(s)가 아니면 시작하지 않습니다.
 - API는 콘솔 출처를 CORS에 넣어야 합니다(`PLATFORM_CORS_ORIGINS`).
-- 기본 이미지는 digest로 고정합니다. 빌드는 `node:22-alpine`, 제공은 `nginxinc/nginx-unprivileged:1.27-alpine`(uid 101, 읽기 전용 루트 가능)입니다.
+- 기본 이미지는 digest로 고정합니다. 빌드는 `node:22-alpine`, 제공은 `nginxinc/nginx-unprivileged:1.30.6-alpine3.24`(uid 101, 읽기 전용 루트 가능)입니다.
 
 ## 화면
 
