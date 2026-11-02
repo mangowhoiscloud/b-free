@@ -66,28 +66,97 @@ def _rbac(doc: dict) -> list[str]:
     return errs
 
 
-def _openbao(doc: dict) -> list[str]:
+HCL_PATH = re.compile(r'path\s+"([^"]+)"\s*\{\s*capabilities\s*=\s*\[([^\]]*)\]\s*\}', re.S)
+RESERVED_NAMES = ("bravo-", "rehearsal-", "verify-", "system:")
+
+
+def openbao_paths(doc: dict) -> dict | None:
+    """{path: capabilities} from the JSON form ({"path": {...}}) or HCL text ({"policy": "path ... {}"}). None when the
+    HCL has a stanza this cannot read (then nothing is assumed about it)."""
+    if isinstance(doc.get("path"), dict):
+        return {str(k): set((v or {}).get("capabilities") or []) for k, v in doc["path"].items()}
+    text = doc.get("policy") if isinstance(doc.get("policy"), str) else doc.get("hcl")
+    if not isinstance(text, str):
+        return None
+    found = HCL_PATH.findall(text)
+    if not found or len(found) != len(re.findall(r'\bpath\s+"', text)):
+        return None
+    return {p: {c.strip().strip('"') for c in caps.split(",") if c.strip()} for p, caps in found}
+
+
+def _openbao(doc: dict, prefix: str | None = None, kv: str = "secret") -> list[str]:
     errs = []
-    for path, body in (doc.get("path") or {}).items():
-        caps = set((body or {}).get("capabilities") or [])
+    paths = openbao_paths(doc)
+    if paths is None:
+        return ["openbao_policy_unreadable"]
+    for path, caps in paths.items():
         if path.strip() in ("*", "+", "sys/*") or "sudo" in caps or "root" in caps:
             errs.append("openbao_overbroad")
+        if caps - {"read", "list"}:
+            errs.append("openbao_capabilities_beyond_read")  # T31 applies read/list only
+        p = path.strip().lstrip("/")
+        if prefix and not p.startswith((f"{kv}/data/{prefix}", f"{kv}/metadata/{prefix}")):
+            errs.append("secret_path_outside_profile")  # B11: paths come from the destination profile, not a guess
     return errs
 
 
-def check_role(p: dict) -> list[str]:
+def _k8s_names(target: str, doc: dict, namespace: str | None) -> list[str]:
+    """T31 applies a Kubernetes object only if its name is the target name or starts with "<target>-", is not a reserved
+    name, and it sits in the destination's app namespace: the same rule here, so a PASS is something T31 accepts."""
+    errs = []
+    for obj in _as_list(doc.get("items") or doc):
+        meta = (obj.get("metadata") or {}) if isinstance(obj, dict) else {}
+        name = str(meta.get("name", ""))
+        if not (name == target or name.startswith(target + "-")) or name.startswith(RESERVED_NAMES):
+            errs.append("k8s_name_out_of_scope")
+        if namespace and meta.get("namespace") not in (None, namespace):
+            errs.append("k8s_namespace_out_of_scope")
+    return errs
+
+
+def _bucket_resources(doc: dict, bucket: str | None) -> list[str]:
+    if not bucket:
+        return []
+    arn = "arn:aws:s3:::" + bucket
+    for st in _as_list(doc.get("Statement") or []):
+        for r in _as_list((st or {}).get("Resource") or []) if isinstance(st, dict) else []:
+            if not (r == arn or str(r).startswith(arn + "/")):
+                return ["bucket_resource_outside_profile"]
+    return []
+
+
+def _external_secret(doc: dict, prefix: str | None) -> list[str]:
+    """ExternalSecret keys are relative to the store's KV mount and must sit under the destination's prefix."""
+    if not prefix:
+        return []
+    keys = []
+    for obj in _as_list(doc.get("items") or doc):
+        spec = obj.get("spec") or {} if isinstance(obj, dict) else {}
+        keys += [(d.get("remoteRef") or {}).get("key") for d in spec.get("data") or [] if isinstance(d, dict)]
+        keys += [((d.get("extract") or d.get("find") or {}).get("key")) for d in spec.get("dataFrom") or []
+                 if isinstance(d, dict)]
+    return ["secret_path_outside_profile" for k in keys if not str(k or "").lstrip("/").startswith(prefix)][:1]
+
+
+def check_role(p: dict, expected: dict | None = None) -> list[str]:
     role, errs = p.get("role"), []
+    prefix = (expected or {}).get("secret_path_prefix")  # e.g. envs/target-onprem/ (destination profile, B11)
+    namespace = (expected or {}).get("app_namespace")
+    bucket = (expected or {}).get("bucket")
     if role == "governance":
         for t in p.get("translations") or []:
             ttype, doc = (t.get("target") or {}).get("type"), t.get("document") or {}
             if not t.get("control_ids"):
                 errs.append("translation_without_control")
+            tname = str((t.get("target") or {}).get("name") or "")
             if ttype in ("rgw_bucket_policy", "s3_bucket_policy"):
-                errs += _bucket_policy(doc)
+                errs += _bucket_policy(doc) + _bucket_resources(doc, bucket)
             elif ttype == "k8s_rbac":
-                errs += _rbac(doc)
+                errs += _rbac(doc) + _k8s_names(tname, doc, namespace)
             elif ttype == "openbao_policy":
-                errs += _openbao(doc)
+                errs += _openbao(doc, prefix)
+            elif ttype == "external_secret":
+                errs += _external_secret(doc, prefix) + _k8s_names(tname, doc, namespace)
             elif ttype == "gcs_iam_policy":
                 members = [m for b in doc.get("bindings") or [] for m in b.get("members") or []]
                 if {"allUsers", "allAuthenticatedUsers"} & set(members):
@@ -150,7 +219,7 @@ def verify(proposal_path: Path, expected: dict) -> tuple[int, list[str]]:
     unknown = _refs(p) - set(expected.get("evidence_ids") or [])
     if unknown:
         errs.append("unknown_evidence_ref")
-    errs += check_role(p)
+    errs += check_role(p, expected)
     return (0 if errs else 1), errs
 
 

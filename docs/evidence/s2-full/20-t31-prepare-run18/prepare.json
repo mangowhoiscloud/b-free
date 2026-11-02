@@ -1,0 +1,64 @@
+{
+  "image_repository": "bravo.local/bravo-demo",
+  "image_digest": "sha256:0a6278522627e0750fde4d8de7482b7c9a72123bed6e71f16c937c4ddcee0226",
+  "sbom_digest": "sha256:8906f0ae389454283dbf5e03cab9a337574ebe7ef5f33df999fa28361880e8e0",
+  "scan": {
+    "scanner": "trivy",
+    "version": "0.76.1",
+    "db": {
+      "Version": 2,
+      "NextUpdate": "2026-11-03T07:17:05.526947983Z",
+      "UpdatedAt": "2026-11-02T07:17:05.526948404Z",
+      "DownloadedAt": "2026-11-02T11:35:58.754274Z"
+    },
+    "counts": {
+      "LOW": 62,
+      "HIGH": 45,
+      "MEDIUM": 76,
+      "UNKNOWN": 8
+    },
+    "policy": {
+      "block_severities": [
+        "CRITICAL"
+      ],
+      "fixable_only": true,
+      "result": "pass",
+      "blocking": [],
+      "blocking_total": 0
+    },
+    "artifact": "/var/folders/87/xrylhnl16vd6bdmcdzl07xzr0000gn/T/bravo-apply-oci-6v168x22",
+    "file": "trivy.json"
+  },
+  "build": {
+    "builder": "docker buildx (type=oci, rewrite-timestamp=true, provenance/sbom attestations off)",
+    "tools": {
+      "docker-buildx": {
+        "version": "v0.29.1-desktop.1",
+        "sha256": "788523acf0989189c8226e5178c4b11d8f3ef11a2ca9982cda3703e3bc45055f"
+      },
+      "syft": {
+        "version": "1.55.0",
+        "sha256": "bcee50644b22c754432eab51dd723b995b197aead7fc9760724bebe6ce3c61e2"
+      },
+      "trivy": {
+        "version": "0.76.1",
+        "sha256": "b42e7d10db15a07a59ab557682bdb24311607f2e5c4c1bad80b7f7e94344e48b"
+      }
+    },
+    "base": {
+      "repo_commit": "54d36a06b740318b6c5370e0b9f6fc4c7b9aadc1",
+      "git_tree": "87f1d6e91bfda964f47201bbd6f83eb47e994bc5",
+      "subdir": "apps/demo",
+      "source_date_epoch": 1793645735,
+      "source_digest": "sha256:eb72c748bf2c16517d7e0c77d30caae36cc504beb5153e71ce292f9a03a1431a",
+      "files": 51
+    },
+    "platform": "linux/arm64",
+    "archive_name": "bravo.local/bravo-demo:change-751983c8-a2d",
+    "layers": 7,
+    "size_bytes": 84373504,
+    "sbom_packages": 132,
+    "reproducible": false,
+    "reproducible_note": "two --no-cache builds of apps/demo differ in the last layer (/app/.venv bytecode); apply uses this content-addressed archive instead of rebuilding"
+  }
+}

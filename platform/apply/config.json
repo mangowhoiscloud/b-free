@@ -43,14 +43,28 @@
       "rollout_timeout_s": 240,
       "policy_types": [
         "k8s_rbac",
-        "external_secret"
+        "external_secret",
+        "rgw_bucket_policy",
+        "openbao_policy"
       ],
       "gate": {
         "source": "source-aws",
         "target": "target-onprem"
       },
       "ctr": "/var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock",
-      "ctr_comment": "on-prem rebuilt as RKE2 (2026-11-02 evening). K3s used 'k3s ctr'. kube_context is whatever the on-prem thread reports; bravo-onprem is absent right now."
+      "ctr_comment": "on-prem rebuilt as RKE2 (2026-11-02 evening). K3s used 'k3s ctr'. kube_context is whatever the on-prem thread reports; bravo-onprem is absent right now.",
+      "object_store": {
+        "bucket": "bravo-demo-attachments",
+        "secret": "envs/target-onprem/object-store",
+        "rgw_service": "rook-ceph/rook-ceph-rgw-bravo",
+        "comment": "rgw_bucket_policy: PutBucketPolicy as the bucket owner (key from the platform OpenBao, D-26) through a private port-forward to the RGW Service; read back."
+      },
+      "secret_store": {
+        "kv_mount": "secret",
+        "path_prefix": "envs/target-onprem/",
+        "policy_prefix": "app-target-onprem-",
+        "comment": "openbao_policy: PUT sys/policies/acl/<policy_prefix><target> in the platform OpenBao (custody token, as keys.sh); paths only under <kv_mount>/data|metadata/<path_prefix>, read/list only; read back."
+      }
     },
     "target-gcp": {
       "kind": "gke-artifact-registry",

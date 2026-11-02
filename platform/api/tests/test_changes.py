@@ -409,3 +409,38 @@ def test_secret_refs_resolve_in_openbao_or_block_collect(
     # Once OpenBao is reachable again the same plan resolves its refs and moves on.
     r = console.post("operator", f"/plans/{pid}/gate")
     assert r.status_code == 200 and console.get("viewer", f"/plans/{pid}").json()["state"] != "COLLECT"
+
+
+def test_watcher_labels_probe_denials_and_emits_each_trial_phase_once(
+    console: Console, settings: Settings, pg: dict[str, str]
+) -> None:
+    """B10/P13: tool.denied carries origin (a probe's denial is not the agent's). B04/P2: trial.progress once per phase,
+    even when two API replicas poll the same Trial (the events table is the dedupe record)."""
+    from bravo_api.rehearsal import RehearsalWatcher
+
+    pid = console.plan()
+    rid = _to_rehearse(pg, pid, "operator@bravo.test")
+    events = [{"seq": 1, "tool": "rehearsal_exec", "allowed": False, "rule": "free_text_command", "origin": "probe"},
+              {"seq": 2, "tool": "rehearsal_exec", "allowed": False, "rule": "path_outside_workspace", "origin": "agent"},
+              {"seq": 3, "tool": "repo_read", "allowed": True, "rule": "ok", "origin": "agent"}]
+    body = {"trial_id": "t-test", "phase": "agent_running", "tool_events": events,
+            "timings": {"elapsed_s": 14.2, "phase_s": {"provisioning": 14.2}},
+            "tool_summary": {"agent": {"allowed": 1, "denied": 1}, "probe": {"allowed": 0, "denied": 1}}}
+
+    async def go() -> None:
+        db = Database(pg["bravo_api"])
+        await db.open()
+        try:
+            for watcher in (RehearsalWatcher(db, None, settings), RehearsalWatcher(db, None, settings)):  # two replicas
+                async with db.tenant_tx("t1") as conn:
+                    await watcher._apply(conn, await _row(conn, rid), body)  # noqa: SLF001
+        finally:
+            await db.close()
+
+    asyncio.run(go())
+    with psycopg.connect(pg["owner"], row_factory=dict_row) as c:
+        rows = c.execute("SELECT kind, data FROM events WHERE plan_id = %s AND kind IN ('tool.denied', 'trial.progress') "
+                         "ORDER BY seq", (pid,)).fetchall()
+    assert [(r["kind"], r["data"].get("origin"), r["data"].get("phase")) for r in rows] == [
+        ("tool.denied", "probe", None), ("tool.denied", "agent", None), ("trial.progress", None, "agent_running")]
+    assert rows[2]["data"]["elapsed_s"] == 14.2 and rows[2]["data"]["tool_summary"]["probe"]["denied"] == 1

@@ -1,0 +1,38 @@
+{
+ "trial_id": "t-b6a800a0f43f49efa91cf60787d6ae04",
+ "artifact_digest": "sha256:d90cb9b1a0696836ca5cdf3f1ccfbfa84db1dbd727a78913ad1450fd34c848b4",
+ "bound": {
+  "diff_digest": null,
+  "policy_diff_digest": "sha256:16f413057e829c35548f6ade87b6749da5ce155369ed06f200199047b89a8154",
+  "policy_targets": [
+   {
+    "type": "external_secret",
+    "name": "chat-db-password"
+   },
+   {
+    "type": "k8s_rbac",
+    "name": "chat-app-db-secret-reader"
+   },
+   {
+    "type": "openbao_policy",
+    "name": "app-target-onprem-chat-db"
+   },
+   {
+    "type": "rgw_bucket_policy",
+    "name": "demo-attachments"
+   }
+  ]
+ },
+ "what": "T31 policies.scope (pure, nothing applied) on the PASS governance proposal with platform/apply/config.json",
+ "scope": {
+  "result": "refused",
+  "reason": "policy_out_of_scope",
+  "detail": {
+   "problems": [
+    "app-target-onprem-chat-db:no_paths",
+    "chat-db-password:name_out_of_scope:bravo-demo-db",
+    "demo-attachments:bucket_not_destination:bravo-demo-attachments"
+   ]
+  }
+ }
+}

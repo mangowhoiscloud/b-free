@@ -1,0 +1,33 @@
+# External Secrets on this cluster -> the PLATFORM OpenBao (D-26), through the existing D-16 link client
+# rook-ceph/plat-bao-link (rgw-kms-link.yaml: cloudflared access tcp, Access service token dst-plat-bao, TLS ends at
+# OpenBao). ESO's controller dials https://openbao:8200 from its own namespace: this ExternalName Service points that
+# name at rook-ceph/openbao, and the OpenBao certificate names "openbao", so verification stays on.
+# First user: the rehearsal app verification Job (platform/rehearsal behavioral_app.py) with a namespaced SecretStore and
+# a short-lived AppRole secret_id (rehearsal-eso-<env>: one rehearsal path only, 120 s, 4 uses). The ClusterSecretStore
+# bravo-platform-openbao (base/eso-store.yaml) can use the same address once its AppRole eso-<env> exists.
+apiVersion: v1
+kind: Service
+metadata:
+  name: openbao
+  namespace: external-secrets
+  labels: {app.kubernetes.io/name: plat-bao-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  type: ExternalName
+  externalName: openbao.rook-ceph.svc.cluster.local
+  ports: [{name: client, port: 8200}]
+---
+# Additive to rook-ceph/plat-bao-link: the ESO controller may reach the link client too (nothing else changes).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: plat-bao-link-from-eso
+  namespace: rook-ceph
+  labels: {app.kubernetes.io/name: plat-bao-link, app.kubernetes.io/part-of: bravo-link}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: plat-bao-link}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: external-secrets}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: external-secrets}}
+      ports: [{port: client}]

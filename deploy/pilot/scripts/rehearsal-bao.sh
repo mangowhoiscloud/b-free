@@ -11,6 +11,9 @@
 #   rehearsal-bao.sh with-rehearsal -- CMD    run CMD with BRAVO_BAO_ROLE_ID / BRAVO_BAO_SECRET_ID
 #                                             (one fresh secret_id: 60 s, 1 use) in its env only
 #   rehearsal-bao.sh status                   policy, role settings, issuer token, which secrets exist (no values)
+#   rehearsal-bao.sh eso-setup ENV            app verification Job (S2 code fix): policy + AppRole rehearsal-eso-ENV
+#                                             (read secret/envs/ENV/rehearsal-app-db only; secret_id 120 s / 4 uses,
+#                                             token 10 min) and that secret's random password if absent
 #   rehearsal-bao.sh --target pilot|platform-eks|platform-rke2 <cmd>   which OpenBao (default: custody bao_target,
 #                                             through a private kubectl port-forward kept open for <cmd>)
 #
@@ -210,6 +213,44 @@ cmd_with_rehearsal() {
     BRAVO_BAO_ROLE_ID="$role_id" BRAVO_BAO_SECRET_ID="$secret_id" "$@"
 }
 
+cmd_eso_setup() {
+  local env=${1-} admin
+  [[ $env =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] || die "usage: rehearsal-bao.sh eso-setup <env>"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  jq -n --arg p "# ESO on $env, rehearsal verification namespaces only (platform/rehearsal behavioral_app.py).
+path \"secret/data/envs/$env/rehearsal-app-db\" { capabilities = [\"read\"] }" '{policy: $p}' \
+    | api -d PUT "sys/policies/acl/rehearsal-eso-$env" "$admin" >/dev/null
+  log "policy rehearsal-eso-$env (read secret/envs/$env/rehearsal-app-db)"
+  # ESO logs in once to validate the SecretStore and again from the ExternalSecret controller (no shared token), so a
+  # one-use secret_id fails the sync ("invalid role or secret ID", measured 2026-11-03 03:15 KST). 4 uses, 120 s, and
+  # the service deletes the Secret holding it right after the sync.
+  printf '%s' '{"token_policies":["rehearsal-eso-'"$env"'"],"token_type":"service","token_ttl":"10m","token_max_ttl":"15m",
+    "bind_secret_id":true,"secret_id_ttl":"120s","secret_id_num_uses":4}' \
+    | api -d POST "auth/approle/role/rehearsal-eso-$env" "$admin" >/dev/null
+  log "approle rehearsal-eso-$env (token 10m, secret_id 120s / 4 uses)"
+  # Login check: a fresh secret_id must log in (2026-11-03 03:3x KST the first-created role refused every login with
+  # 403 "permission denied" until it was deleted and created again; cause not found). The token is revoked at once.
+  local rid sid tok
+  rid="$(api GET "auth/approle/role/rehearsal-eso-$env/role-id" "$admin" | jq -er .data.role_id)"
+  sid="$(printf '{"ttl":"60s","num_uses":1}' | api -d POST "auth/approle/role/rehearsal-eso-$env/secret-id" "$admin" | jq -er .data.secret_id)"
+  if tok="$(jq -n --arg r "$rid" --arg s "$sid" '{role_id: $r, secret_id: $s}' | api -d POST auth/approle/login 2>/dev/null \
+      | jq -er .auth.client_token)"; then
+    api POST auth/token/revoke-self "$tok" >/dev/null 2>&1 || true
+    log "approle rehearsal-eso-$env: login check ok"
+  else
+    die "approle rehearsal-eso-$env: login check failed (delete the role and run eso-setup again)"
+  fi
+  if api GET "secret/metadata/envs/$env/rehearsal-app-db" "$admin" >/dev/null 2>&1; then
+    log "secret/envs/$env/rehearsal-app-db: present (kept)"
+  else
+    # 32 random bytes as hex: printable ASCII for the synthetic DB role; never printed.
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | jq -Rs '{data: {password: .}}' \
+      | api -d POST "secret/data/envs/$env/rehearsal-app-db" "$admin" >/dev/null
+    log "secret/envs/$env/rehearsal-app-db: generated (value not shown)"
+  fi
+}
+
 cmd_status() {
   need_custody; need_unsealed
   local admin p; admin="$(custody_get .admin_token)"
@@ -233,6 +274,7 @@ case $cmd in
   put-collector-ro) cmd_put_collector_ro "$@" ;;
   with-rehearsal) cmd_with_rehearsal "$@" ;;
   status) cmd_status ;;
+  eso-setup) cmd_eso_setup "$@" ;;
   help | -h | --help) sed -n '2,21p' "${BASH_SOURCE[0]}" ;;
   *) die "unknown command: $cmd (rehearsal-bao.sh help)" ;;
 esac

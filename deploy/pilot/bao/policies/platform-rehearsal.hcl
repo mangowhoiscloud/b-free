@@ -16,3 +16,11 @@ path "auth/approle/role/llm-claude/role-id" { capabilities = ["read"] }
 path "auth/approle/role/llm-claude/secret-id" { capabilities = ["update"] }
 path "auth/approle/role/llm-openai/role-id" { capabilities = ["read"] }
 path "auth/approle/role/llm-openai/secret-id" { capabilities = ["update"] }
+# App verification Job (platform/rehearsal behavioral_app.py, S2 code fix): one secret_id (120 s, 4 uses) per Trial for
+# AppRole rehearsal-eso-<env>, handed to a namespaced SecretStore in verify-<plan>-<role>-<n>-app; ESO on the
+# destination logs in with it and reads only secret/envs/<env>/rehearsal-app-db (policy rehearsal-eso-<env>,
+# rehearsal-bao.sh eso-setup). The service never reads that value itself. One pair of lines per destination: a "+"
+# glob only matches a whole path segment and "rehearsal-eso-*" would also match the role itself (role update), so the
+# names are explicit (measured 2026-11-03 03:00 KST: "rehearsal-eso-+" -> 403 on secret-id).
+path "auth/approle/role/rehearsal-eso-target-onprem/role-id" { capabilities = ["read"] }
+path "auth/approle/role/rehearsal-eso-target-onprem/secret-id" { capabilities = ["update"] }

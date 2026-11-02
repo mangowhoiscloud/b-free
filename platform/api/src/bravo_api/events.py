@@ -33,6 +33,7 @@ class EventKind(StrEnum):
     TRIAL_PROPOSED = "trial.proposed"
     TOOL_DENIED = "tool.denied"
     TRIAL_VERDICT = "trial.verdict"
+    TRIAL_PROGRESS = "trial.progress"  # each Trial phase change with its timings (B04/P2, migration 0010)
     # T31 change path (spec r2): requested -> stage* -> prepared -> approval -> stage* -> applied | refused | failed
     CHANGE_REQUESTED = "change.requested"
     CHANGE_STAGE = "change.stage"

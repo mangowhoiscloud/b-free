@@ -1,0 +1,2 @@
+2026-11-03T03:35:10+0900
+rehearsal@sha256:ecdafb696d42113ee79a18914bcec879025e0aade90bd86158af5f6fe4fe5869 (preview Pod rehearsal-preview-s2full3 10.42.0.112): ESO secret_id 4 uses; AppRole rehearsal-eso-target-onprem recreated (login check ok). app_migration attempts in 09: 1 FAIL no_valid_proposal, 2 INFRA_ERROR eso_not_synced -> continue as attempt 2 (INFRA_ERROR does not count)

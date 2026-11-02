@@ -206,7 +206,9 @@ class ToolLayer:
     async def _propose(self, trial: Trial, args: dict[str, Any]) -> dict[str, Any]:
         p, problems = proposal_mod.check(args.get("proposal"), trial.role, _binding(trial))
         if p is None or problems:
-            trial.record("plan_propose", args, False, "proposal_rejected")
+            # The problems (schema paths, lint rule names) go into the record: a rejected final proposal is otherwise
+            # only "no_valid_proposal" in the evidence (measured 2026-11-03 03:26 KST).
+            trial.record("plan_propose", args, False, "proposal_rejected", result=";".join(map(str, problems))[:300])
             return {"blocked": "proposal_rejected", "accepted": False, "problems": problems}
         artifact = p.model_dump(mode="json")
         trial.artifact, trial.artifact_digest = artifact, proposal_mod.digest(artifact)

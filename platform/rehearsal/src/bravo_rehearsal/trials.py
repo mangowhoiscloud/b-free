@@ -10,6 +10,7 @@ namespaces carry the ``bravo.dev/trial-id`` label for cleanup (07 3 "재기동")
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import hashlib
 import json
 import time
@@ -22,6 +23,10 @@ from .cluster import Names, Sandbox
 
 PHASES = ("provisioning", "agent_running", "proposed", "verifying", "done")
 MAX_EVENTS = 500
+# Who made a tool-layer call. ``agent``: the agent worker through /mcp. ``probe``: an operator demo probe sent with the
+# Trial's own token or through the service (B10/P13: a planted attempt is never shown as the agent's behaviour).
+ORIGINS = ("agent", "probe")
+CALL_ORIGIN: contextvars.ContextVar[str] = contextvars.ContextVar("bravo_call_origin", default="agent")
 
 
 def now_iso() -> str:
@@ -63,6 +68,33 @@ class Trial:
     verifier_kind: str | None = None  # what the verifier did (harbor_task.STATIC_RULES today)
     proposed: asyncio.Event = field(default_factory=asyncio.Event)
     created_at: str = field(default_factory=now_iso)
+    # Every phase change with its wall-clock time (progress for the console, duration per phase; B04/P2).
+    phase_history: list[dict[str, Any]] = field(default_factory=list)
+    network_drops: dict[str, Any] | None = None  # Hubble drop counters of the Trial namespaces (Prometheus)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "phase":
+            hist = self.__dict__.get("phase_history")
+            if hist is None:  # first assignment in __init__, before phase_history exists
+                object.__setattr__(self, "_first_phase", value)
+            elif not hist or hist[-1]["phase"] != value:
+                hist.append({"phase": value, "at": now_iso(), "t": time.time()})
+        object.__setattr__(self, name, value)
+
+    def __post_init__(self) -> None:
+        first = self.__dict__.pop("_first_phase", self.phase)
+        self.phase_history.append({"phase": first, "at": self.created_at, "t": time.time()})
+
+    def timings(self) -> dict[str, Any]:
+        """Seconds per phase and in total, from the recorded phase changes (wall clock of this service)."""
+        hist = self.phase_history
+        per: dict[str, float] = {}
+        for cur, nxt in zip(hist, hist[1:], strict=False):
+            per[cur["phase"]] = round(per.get(cur["phase"], 0.0) + nxt["t"] - cur["t"], 1)
+        end = hist[-1]["t"] if self.verdict is not None else time.time()
+        return {"started_at": hist[0]["at"] if hist else self.created_at,
+                "finished_at": hist[-1]["at"] if self.verdict is not None and hist else None,
+                "elapsed_s": round(end - hist[0]["t"], 1) if hist else None, "phase_s": per}
 
     def running(self) -> bool:
         return self.phase == "agent_running" and not self.locked and time.time() < self.deadline
@@ -76,6 +108,7 @@ class Trial:
             "allowed": allowed,
             "rule": rule,
             "result": result,
+            "origin": CALL_ORIGIN.get(),
             "at": now_iso(),
         }
         if len(self.tool_events) < MAX_EVENTS:
@@ -83,10 +116,12 @@ class Trial:
         return ev
 
     def mark_last(self, tool: str, args: Any, origin: str) -> int | None:
-        """Label the latest event for (tool, args) with its origin (e.g. a demo probe): the record says who called."""
+        """Label the latest agent-labelled event for (tool, args) with another origin (the CLI runner's probes go
+        through /mcp with the Trial token, so the service first records them as ``agent``): the record says who
+        called."""
         sha = hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode()).hexdigest()
         for ev in reversed(self.tool_events):
-            if ev["tool"] == tool and ev["args_sha256"] == sha and "origin" not in ev:
+            if ev["tool"] == tool and ev["args_sha256"] == sha and ev.get("origin", "agent") == "agent":
                 ev["origin"] = origin
                 return int(ev["seq"])
         return None
@@ -136,7 +171,19 @@ class Trial:
             "worker_started": self.worker_started,
             "verifier_observed": self.verifier_observed,
             "created_at": self.created_at,
+            "phase_history": [{"phase": h["phase"], "at": h["at"]} for h in self.phase_history],
+            "timings": self.timings(),
+            "tool_summary": self.tool_summary(),
+            "network_drops": self.network_drops,
         }
+
+    def tool_summary(self) -> dict[str, Any]:
+        """Allowed and denied calls by origin, so a probe's denial is never counted as the agent's (B10)."""
+        out: dict[str, dict[str, int]] = {}
+        for ev in self.tool_events:
+            o = out.setdefault(ev.get("origin", "agent"), {"allowed": 0, "denied": 0})
+            o["allowed" if ev["allowed"] else "denied"] += 1
+        return out
 
 
 class TrialStore:

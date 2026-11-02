@@ -48,7 +48,7 @@ from starlette.routing import Route
 
 from . import allowlist as allowlist_mod
 from . import behavioral as behavioral_mod
-from . import harbor_binding, harbor_run, harbor_task, task_generator, trial_token
+from . import behavioral_app, drops, harbor_binding, harbor_run, harbor_task, task_generator, trial_token
 from .cluster import Cluster, ClusterError, Names
 from .harbor_env import DefinitionInvalid
 from .mcp_tools import ToolLayer, TrialGuard, build_server
@@ -56,7 +56,7 @@ from .sdk_options import LLMUnconfigured, llm_env, vault_approle
 from .sdk_options import provider as llm_provider
 from .server_tools import OpenBao, ServerTools, ServerToolSettings, ToolBlocked
 from .snapshot import Snapshot, SnapshotRejected, SnapshotStore
-from .trials import Trial, TrialStore
+from .trials import CALL_ORIGIN, Trial, TrialStore
 
 LOG = logging.getLogger("bravo_rehearsal.service")
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]  # platform/rehearsal
@@ -83,6 +83,15 @@ class ServiceSettings:
     budget_usd: float
     idle_s: int
     trials_dir: Path = PACKAGE_ROOT / "runs"
+    # Verification Jobs on the destination (digest-pinned images present on its nodes). gate_probe_image: the platform
+    # gate image (bravo_gate OBJ-01..06 for bucket policies). app_image / db_image: the destination's current app and
+    # PostgreSQL images (app_migration). Unset -> that Job does not run and a PASS needing it is an INFRA_ERROR.
+    gate_probe_image: str | None = None
+    app_image: str | None = None
+    db_image: str | None = None
+    profiles_file: Path | None = None  # destination profiles (deploy/platform/control/config/destination-profiles.json)
+    prometheus_url: str | None = None  # Hubble drop counters of the Trial namespaces (hubble_drop_total)
+    eso_openbao_addr: str = "https://openbao:8200"  # what the destination's ESO controller dials (D-16 link)
 
     @property
     def snapshots_dir(self) -> Path:
@@ -109,7 +118,24 @@ class ServiceSettings:
             budget_usd=float(e("BRAVO_REHEARSAL_BUDGET_USD", "2.0")),
             idle_s=int(e("BRAVO_REHEARSAL_IDLE_S", "60")),
             trials_dir=Path(e("BRAVO_REHEARSAL_TRIALS_DIR") or PACKAGE_ROOT / "runs").expanduser(),
+            gate_probe_image=e("BRAVO_REHEARSAL_GATE_PROBE_IMAGE") or None,
+            app_image=e("BRAVO_REHEARSAL_APP_IMAGE") or None,
+            db_image=e("BRAVO_REHEARSAL_DB_IMAGE") or None,
+            profiles_file=Path(e("BRAVO_REHEARSAL_PROFILES")) if e("BRAVO_REHEARSAL_PROFILES") else None,
+            prometheus_url=(e("BRAVO_REHEARSAL_PROMETHEUS_URL") or "").rstrip("/") or None,
+            eso_openbao_addr=e("BRAVO_REHEARSAL_ESO_OPENBAO_ADDR") or "https://openbao:8200",
         )
+
+    def profile(self, target_env: str | None) -> dict[str, Any] | None:
+        """The destination profile for ``target_env`` (names and paths only), or None."""
+        if not target_env or self.profiles_file is None:
+            return None
+        try:
+            doc = json.loads(self.profiles_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        prof = (doc.get("profiles") or {}).get(target_env) if isinstance(doc, dict) else None
+        return prof if isinstance(prof, dict) else None
 
 
 class TrialRequest(BaseModel):
@@ -158,9 +184,18 @@ def envelope_plan_id(plan_id: str) -> str:
     return pid if pid.startswith("p-") else f"p-{pid}"
 
 
+def secret_path_prefix(target_env: str | None, profile: dict[str, Any] | None) -> str | None:
+    """Where the destination's secrets live in the platform OpenBao: the profile's prefix, else the D-26 layout
+    ``envs/<target_env>/`` (keys.sh). The private verifier refuses OpenBao paths and ExternalSecret keys outside it."""
+    pfx = ((profile or {}).get("secret_store") or {}).get("path_prefix")
+    if isinstance(pfx, str) and pfx:
+        return pfx
+    return f"envs/{target_env}/" if target_env else None
+
+
 def build_envelope(req: TrialRequest, trial_id: str, deadline: float, budget_usd: float,
                    al: allowlist_mod.Allowlist, instruction: str | None,
-                   snapshot: Snapshot | None = None) -> dict[str, Any]:
+                   snapshot: Snapshot | None = None, profile: dict[str, Any] | None = None) -> dict[str, Any]:
     """``bravo_agents.StateEnvelope`` as JSON. The approved scope is the role's allowlist, never wider."""
     spec = al.spec
     return {
@@ -174,7 +209,7 @@ def build_envelope(req: TrialRequest, trial_id: str, deadline: float, budget_usd
         "prior_failures": req.prior_failures, "evidence": req.evidence,
         "inputs": {k: v for k, v in {
             "instruction": instruction, "source_env": req.source_env, "target_env": req.target_env,
-            "analysis": req.analysis,
+            "analysis": req.analysis, "destination_profile": profile,
             "repo_snapshot": {**{k2: snapshot.manifest.get(k2) for k2 in ("input_digest", "files", "withheld")},
                               "sandbox_path": "/src"} if snapshot else None,
             "sandbox_paths": {"read": list(spec.sandbox.paths.read), "write": list(spec.sandbox.paths.write)}
@@ -185,8 +220,14 @@ def build_envelope(req: TrialRequest, trial_id: str, deadline: float, budget_usd
 def expected_for(trial: Trial) -> dict[str, Any]:
     """What the private verifier binds the proposal to: the Trial's own envelope, never the proposal."""
     env = trial.envelope
+    inputs = env.get("inputs") or {}
+    profile = inputs.get("destination_profile") or {}
     return {"role": trial.role, "plan_id": env.get("plan_id"), "trial_id": trial.trial_id, "attempt": trial.attempt,
-            "evidence_ids": sorted(str(e.get("id")) for e in env.get("evidence") or [])}
+            "evidence_ids": sorted(str(e.get("id")) for e in env.get("evidence") or []),
+            "secret_path_prefix": secret_path_prefix(inputs.get("target_env"), profile or None),
+            # T31 applies only inside these (policies.scoped): the verifier checks the same, so PASS predicts apply.
+            "app_namespace": (profile.get("app") or {}).get("namespace"),
+            "bucket": (profile.get("object_store") or {}).get("bucket")}
 
 
 def envelope_problem(envelope: dict[str, Any]) -> str | None:
@@ -212,7 +253,7 @@ def new_trial(req: TrialRequest, settings: ServiceSettings, idem_key: str, reque
         rehearsal_id=req.rehearsal_id, attempt=req.attempt, max_attempts=req.max_attempts, task=req.task,
         role=req.role, idem_key=idem_key, request_digest=request_digest, deadline=deadline, allowlist=al,
         envelope=build_envelope(req, trial_id, deadline, settings.budget_usd, al,
-                                task["instruction"] if task else None, snapshot),
+                                task["instruction"] if task else None, snapshot, settings.profile(req.target_env)),
         repo_snapshot=str(snapshot.root) if snapshot else None,
     )
 
@@ -273,7 +314,10 @@ class Orchestrator:
         return await self.bao.secret_present(spec.path)
 
     def start(self, trial: Trial) -> None:
-        t = asyncio.create_task(self.run(trial), name=f"trial-{trial.trial_id}")
+        self._spawn(self.run(trial), f"trial-{trial.trial_id}")
+
+    def _spawn(self, coro: Any, name: str) -> None:
+        t = asyncio.create_task(coro, name=name)
         self._tasks.add(t)
         t.add_done_callback(self._tasks.discard)
 
@@ -290,7 +334,7 @@ class Orchestrator:
         assert self.cluster is not None and self.s.kubeconfig is not None
         task = load_task(self.s.tasks_dir, trial.task)
         assert task is not None
-        trial.names = Names.of(trial.plan_id, trial.attempt, trial.trial_id)
+        trial.names = Names.of(trial.plan_id, trial.attempt, trial.trial_id, trial.role)
         binding = harbor_binding.Binding(trial=trial, worker_env=lambda d: self._worker_env(trial, task, d),
                                          cluster=self.cluster)
         harbor_binding.register(binding)
@@ -319,6 +363,7 @@ class Orchestrator:
             harbor_run.accept_result(trial, binding, result, verifier_dir=ht.paths.verifier_dir,
                                      verifier_image=str(self.s.verifier_image), task_version=task["version"],
                                      behavioral=beh)
+            self._spawn(self.network_drops(trial), f"drops-{trial.trial_id}")
         except ClusterError as exc:
             trial.finish("INFRA_ERROR", exc.reason)
         except (harbor_task.TaskInvalid, DefinitionInvalid) as exc:
@@ -334,9 +379,16 @@ class Orchestrator:
             harbor_binding.release(trial.trial_id)
 
     async def behavioral(self, trial: Trial) -> dict[str, Any] | None:
-        """The behavioural verification Job (``behavioral.py``) for the frozen proposal's bucket policies, or None
-        when the proposal has none. Never raises: a Job that cannot run is a record with ``ran: False`` and a reason.
-        The test bucket key is read here from OpenBao and goes only to the Job's Secret."""
+        """The verification Job the frozen proposal needs, or None when it needs none. Never raises: a Job that cannot
+        run is a record with ``ran: False`` and a reason (a would-be PASS then becomes INFRA_ERROR, never static-only).
+
+        - ``rgw_bucket_policy`` translations: the gate's own OBJ-01..06 against the RGW test bucket (``behavioral.py``).
+        - ``app_migration``: the patched app in the destination's runtime with its password from OpenBao through ESO,
+          serving a chat write (``behavioral_app.py``).
+        Keys are read here from OpenBao and go only to the Job's namespace (deleted after)."""
+        if trial.role == behavioral_app.ROLE and trial.artifact is not None:
+            trial.phase = "verifying"
+            return await self._app_job(trial)
         docs = behavioral_mod.proposed_policies(trial.artifact)
         if not docs:
             return None
@@ -346,6 +398,8 @@ class Orchestrator:
             return {"ran": False, "reason": "target_env_missing"}
         if self.bao is None or self.s.kubeconfig is None or trial.names is None:
             return {"ran": False, "reason": "openbao_unconfigured" if self.bao is None else "cluster_unconfigured"}
+        if not (self.s.gate_probe_image and _digest_pinned(self.s.gate_probe_image)):
+            return {"ran": False, "reason": "gate_probe_image_unconfigured"}
         try:
             record = await self.bao.read(behavioral_mod.SECRET_PATH.format(env=env))
         except ToolBlocked as exc:
@@ -353,11 +407,11 @@ class Orchestrator:
         missing = [k for k in behavioral_mod.SECRET_FIELDS if not record.get(k)]
         if missing:
             return {"ran": False, "reason": "test_bucket_record_incomplete", "missing": missing}
-        kubeconfig, names = self.s.kubeconfig, trial.names
+        kubeconfig, names, image = self.s.kubeconfig, trial.names, str(self.s.gate_probe_image)
 
         def work() -> dict[str, Any]:
             return behavioral_mod.JobRun(kubeconfig, self.s.kube_context).run(
-                names=names, trial_id=trial.trial_id, image=str(self.s.verifier_image), record=record, docs=docs,
+                names=names, trial_id=trial.trial_id, image=image, record=record, docs=docs,
                 deadline_s=self.s.verifier_deadline_s)
 
         try:
@@ -365,6 +419,62 @@ class Orchestrator:
         except Exception as exc:  # cluster unreachable, config errors: the Job did not run
             LOG.warning("behavioral job failed trial_id=%s error=%s", trial.trial_id, type(exc).__name__)
             return {"ran": False, "reason": f"job_error:{type(exc).__name__}"}
+
+    async def _app_job(self, trial: Trial) -> dict[str, Any]:
+        env = (trial.envelope.get("inputs") or {}).get("target_env")
+        images = {"app": self.s.app_image, "db": self.s.db_image, "probe": self.s.verifier_image}
+        if not env:
+            return {"ran": False, "reason": "target_env_missing", "kind": behavioral_app.KIND}
+        if not all(v and _digest_pinned(v) for v in images.values()):
+            return {"ran": False, "reason": "app_job_images_unconfigured", "kind": behavioral_app.KIND}
+        if self.bao is None or not self.bao.cfg.addr or self.s.kubeconfig is None or trial.names is None:
+            return {"ran": False, "reason": "openbao_unconfigured", "kind": behavioral_app.KIND}
+        if not trial.repo_snapshot:
+            return {"ran": False, "reason": "repo_unconfigured", "kind": behavioral_app.KIND}
+        try:
+            original = behavioral_app.read_tree(Path(trial.repo_snapshot))
+            patched, changed = behavioral_app.apply_diff(original, str((trial.artifact or {}).get("diff") or ""))
+        except behavioral_app.DiffError as exc:
+            # The proposal's diff does not apply to the snapshot it was made from: the proposal fails (not infra).
+            return {"ran": False, "reason": f"diff_rejected:{exc.reason}", "proposal_fault": True,
+                    "kind": behavioral_app.KIND,
+                    "checks": [{"name": "app:diff_applies_to_snapshot", "ok": False, "detail": exc.reason}]}
+        try:
+            role_id, secret_id = await self.bao.mint_secret_id(behavioral_app.ESO_APPROLE.format(env=env), ttl="120s",
+                                                               num_uses=behavioral_app.ESO_SECRET_ID_USES)
+        except ToolBlocked as exc:
+            return {"ran": False, "reason": f"eso_approle:{exc.reason}", "kind": behavioral_app.KIND}
+        ca = Path(self.bao.cfg.ca_cert).read_text(encoding="utf-8") if self.bao.cfg.ca_cert else ""
+        eso = {"server": self.s.eso_openbao_addr, "ca_pem": ca, "role_id": role_id, "secret_id": secret_id,
+               "kv_key": behavioral_app.ESO_KV_PATH.format(env=env)}
+        kubeconfig, names = self.s.kubeconfig, trial.names
+        pinned = {k: str(v) for k, v in images.items()}
+
+        def work() -> dict[str, Any]:
+            return behavioral_app.AppJobRun(kubeconfig, self.s.kube_context).run(
+                names=names, trial_id=trial.trial_id, images=pinned, eso=eso, original=original, patched=patched,
+                changed=changed, deadline_s=max(self.s.verifier_deadline_s, 240))
+
+        try:
+            return await asyncio.to_thread(work)
+        except Exception as exc:  # noqa: BLE001 - the Job did not run; recorded, never a pass
+            LOG.warning("app job failed trial_id=%s error=%s", trial.trial_id, type(exc).__name__)
+            return {"ran": False, "reason": f"job_error:{type(exc).__name__}", "kind": behavioral_app.KIND}
+        finally:
+            eso["secret_id"] = ""  # spent or not, it is not kept
+
+    async def network_drops(self, trial: Trial) -> None:
+        """After the verdict: Hubble's drop counters for the Trial's namespaces from the platform Prometheus (the
+        agents' ring buffers hold seconds of flows, so ``hubble observe --last`` after a Trial reads 0; P13)."""
+        if not self.s.prometheus_url or trial.names is None:
+            trial.network_drops = {"source": "unconfigured"}
+            return
+        env = (trial.envelope.get("inputs") or {}).get("target_env") or ""
+        nss = [trial.names.rehearsal_ns, trial.names.verify_ns, behavioral_mod.namespace_of(trial.names),
+               behavioral_app.namespace_of(trial.names)]
+        start = trial.phase_history[0]["t"] if trial.phase_history else time.time()
+        await asyncio.sleep(drops.SCRAPE_WAIT_S)  # let the last drops reach Prometheus (remote write from the link)
+        trial.network_drops = await drops.collect(self.s.prometheus_url, env, nss, start, time.time())
 
     async def _worker_env(self, trial: Trial, task: dict[str, Any], config_dir: str) -> dict[str, str]:
         """07 7 / 13 6: built from scratch, exact names only. Route settings, the Trial token and, for the
@@ -400,6 +510,29 @@ class Orchestrator:
             "BRAVO_AGENT_ROLE": trial.role,
             "BRAVO_AGENT_ALLOWLIST_DIR": str(self.s.allowlists_dir),
         }
+
+
+# Demo probes (spec S2 4b scene "버킷 삭제 시도 차단"), sent by an operator through the platform, never by the agent:
+# the same tool-layer decision the agent's calls get, recorded with origin=probe so no screen or evidence counts them as
+# agent behaviour (B10/P13).
+PROBE_OPS: tuple[Any, ...] = (
+    "aws s3 rb s3://chat-attachments --force",
+    {"op": "kubectl", "verb": "delete", "kind": "objectbucketclaim", "name": "chat-attachments"},
+)
+
+
+async def run_probes(layer: ToolLayer, trial: Trial) -> list[dict[str, Any]]:
+    """Send ``PROBE_OPS`` through the tool layer for a running Trial; every record says ``origin: probe``."""
+    token = CALL_ORIGIN.set("probe")
+    try:
+        out = []
+        for op in PROBE_OPS:
+            await layer.call(trial, "rehearsal_exec", {"op": op})
+            ev = trial.tool_events[-1] if trial.tool_events else {}
+            out.append({"op": op, **{k: ev.get(k) for k in ("seq", "allowed", "rule", "origin", "at")}})
+        return out
+    finally:
+        CALL_ORIGIN.reset(token)
 
 
 def create_app(settings: ServiceSettings | None = None) -> FastAPI:
@@ -542,6 +675,19 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
         orch.start(trial)
         return {"trial_id": trial.trial_id, "phase": trial.phase}
 
+    @app.post("/v1/trials/{trial_id}/probes")
+    async def probes(trial_id: str, authorization: str | None = Header(default=None)) -> Any:
+        """Operator demo probes for a running Trial (API token, never the Trial token, so the agent cannot label its
+        own calls). Results and the Trial record carry ``origin: probe``."""
+        if not caller_ok(authorization):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        trial = store.get(trial_id)
+        if trial is None:
+            return JSONResponse({"error": "trial_not_found"}, status_code=404)
+        if not trial.running():
+            return JSONResponse({"error": "trial_not_running", "phase": trial.phase}, status_code=409)
+        return {"trial_id": trial_id, "origin": "probe", "results": await run_probes(layer, trial)}
+
     @app.get("/v1/trials/{trial_id}")
     async def get(trial_id: str, authorization: str | None = Header(default=None)) -> Any:
         if not caller_ok(authorization):
@@ -553,4 +699,5 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
 
     app.state.store = store
     app.state.orchestrator = orch
+    app.state.layer = layer
     return app

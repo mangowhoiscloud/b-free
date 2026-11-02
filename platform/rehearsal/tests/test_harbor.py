@@ -476,7 +476,8 @@ async def test_harbor_trial_runs_our_environment_and_fails_closed_on_unreachable
                                       verifier_deadline_s=30)
         ht = await HarborTrial.create(cfg)
         assert isinstance(ht.agent_environment, RehearsalNamespaceEnvironment)
-        assert ht.agent_environment.namespace == "rehearsal-11111111-1"
+        # One plan runs its tasks side by side, so the role is part of the name (rehearsal-<plan>-<role>-<n>).
+        assert ht.agent_environment.namespace == "rehearsal-11111111-gov-1"
         result = await asyncio.wait_for(ht.run(), 120)
         harbor_run.accept_result(trial, binding, result, verifier_dir=ht.paths.verifier_dir,
                                  verifier_image=VERIFIER, task_version="v1")
@@ -629,6 +630,6 @@ async def test_harbor_builds_separate_verifier_in_verify_namespace(tmp_path: Pat
         network_policy=plan.verifier_env_baseline, phase_network_policies=[plan.verifier_phase])
     ht._validate_separate_verifier_env_policies(env, plan=plan)
     assert isinstance(env, RehearsalNamespaceEnvironment) and env.is_verifier
-    assert (env.namespace, env.image) == ("verify-11111111-1", VERIFIER)
+    assert (env.namespace, env.image) == ("verify-11111111-gov-1", VERIFIER)
     assert plan.verifier_phase.network_mode == NetworkMode.NO_NETWORK
     assert not env._upload_allowed("/logs/artifacts") and env._upload_allowed("/tests/verify.py")

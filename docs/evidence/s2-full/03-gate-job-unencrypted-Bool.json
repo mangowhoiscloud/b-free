@@ -1,0 +1,202 @@
+{
+ "ran": true,
+ "reason": null,
+ "namespace": "verify-dbg1gate-gov-1-job",
+ "test_bucket": "bravo-rehearsal-verify",
+ "kind": "behavioral:gate_obj01_06+static_rules",
+ "pinned_image": "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate@sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959",
+ "pinned_image_digest": "sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959",
+ "questions": "bravo_gate.probes.objstore OBJ-01..06 (gate image)",
+ "endpoint": "https://rook-ceph-rgw-bravo.rook-ceph.svc",
+ "policies": 1,
+ "rendered": [
+  {
+   "Version": "2012-10-17",
+   "Statement": [
+    {
+     "Sid": "DenyInsecureTransport",
+     "Effect": "Deny",
+     "Principal": "*",
+     "Action": "s3:*",
+     "Resource": [
+      "arn:aws:s3:::bravo-rehearsal-verify",
+      "arn:aws:s3:::bravo-rehearsal-verify/*"
+     ],
+     "Condition": {
+      "Bool": {
+       "aws:SecureTransport": "false"
+      }
+     }
+    },
+    {
+     "Sid": "AppReadWrite",
+     "Effect": "Allow",
+     "Principal": {
+      "AWS": [
+       "arn:aws:iam:::user/bravo-rehearsal-verify"
+      ]
+     },
+     "Action": [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket"
+     ],
+     "Resource": [
+      "arn:aws:s3:::bravo-rehearsal-verify",
+      "arn:aws:s3:::bravo-rehearsal-verify/*"
+     ]
+    }
+   ]
+  }
+ ],
+ "started_at": "2026-11-02T18:04:07.200308+00:00",
+ "baseline_notes": [],
+ "other_credential": true,
+ "job": "verify-job-t-dbg1gate02",
+ "secret_deleted": true,
+ "pod": "verify-job-t-dbg1gate02-x8g9n",
+ "pod_uid": "ef468d17-cfa0-47bb-aace-5dd1d20c9d4f",
+ "node": "bravo-onprem-agent",
+ "image": "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate:neutral-20261102T164936Z",
+ "image_id": "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate@sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959",
+ "job_succeeded": true,
+ "image_names": [
+  "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate@sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959",
+  "docker.io/library/bravo-gate-probe:import"
+ ],
+ "result": {
+  "bucket": "bravo-rehearsal-verify",
+  "canary_put": "200",
+  "cleanup": {
+   "canary_delete": "204",
+   "policy_delete": "204"
+  },
+  "control": {
+   "gate_obj01": {
+    "evidence": {
+     "bucket": "bravo-rehearsal-verify",
+     "endpoint": "https://rook-ceph-rgw-bravo.rook-ceph.svc",
+     "key": "_verify/t-dbg1gate02",
+     "request": "unsigned GET",
+     "response": "200"
+    },
+    "reason": "anonymous_read_allowed",
+    "verdict": "FAIL"
+   },
+   "ok": true,
+   "policy_delete": "204",
+   "policy_put": "204"
+  },
+  "egress": [
+   {
+    "blocked": true,
+    "error": "TimeoutError",
+    "target": "1.1.1.1:443"
+   },
+   {
+    "blocked": true,
+    "error": "TimeoutError",
+    "target": "169.254.169.254:80"
+   }
+  ],
+  "policies": [
+   {
+    "checks": [
+     {
+      "detail": "204",
+      "name": "policy_applied",
+      "ok": true
+     },
+     {
+      "detail": "PASS anonymous_read_denied 403 AccessDenied",
+      "name": "gate_OBJ-01",
+      "ok": true,
+      "reason": "anonymous_read_denied",
+      "verdict": "PASS"
+     },
+     {
+      "detail": "PASS anonymous_list_denied 403 AccessDenied",
+      "name": "gate_OBJ-02",
+      "ok": true,
+      "reason": "anonymous_list_denied",
+      "verdict": "PASS"
+     },
+     {
+      "detail": "PASS anonymous_write_denied 403 AccessDenied",
+      "name": "gate_OBJ-03",
+      "ok": true,
+      "reason": "anonymous_write_denied",
+      "verdict": "PASS"
+     },
+     {
+      "detail": "PASS app_read_write_allowed ok 200",
+      "name": "gate_OBJ-04",
+      "ok": true,
+      "reason": "app_read_write_allowed",
+      "verdict": "PASS"
+     },
+     {
+      "detail": "PASS other_credential_denied 403 AccessDenied",
+      "name": "gate_OBJ-05",
+      "ok": true,
+      "reason": "other_credential_denied",
+      "verdict": "PASS"
+     },
+     {
+      "detail": "FAIL plain_http_accepted ok 200",
+      "name": "gate_OBJ-06",
+      "ok": false,
+      "reason": "plain_http_accepted",
+      "verdict": "FAIL"
+     }
+    ],
+    "index": 0,
+    "policy_delete": "204"
+   }
+  ],
+  "questions": "bravo_gate.probes.objstore OBJ-01..06",
+  "reset": "204",
+  "run": "t-dbg1gate02"
+ },
+ "control_ok": true,
+ "egress_blocked": true,
+ "checks": [
+  {
+   "name": "behavioral:policy_applied",
+   "ok": true,
+   "detail": "204"
+  },
+  {
+   "name": "behavioral:gate_OBJ-01",
+   "ok": true,
+   "detail": "PASS anonymous_read_denied 403 AccessDenied"
+  },
+  {
+   "name": "behavioral:gate_OBJ-02",
+   "ok": true,
+   "detail": "PASS anonymous_list_denied 403 AccessDenied"
+  },
+  {
+   "name": "behavioral:gate_OBJ-03",
+   "ok": true,
+   "detail": "PASS anonymous_write_denied 403 AccessDenied"
+  },
+  {
+   "name": "behavioral:gate_OBJ-04",
+   "ok": true,
+   "detail": "PASS app_read_write_allowed ok 200"
+  },
+  {
+   "name": "behavioral:gate_OBJ-05",
+   "ok": true,
+   "detail": "PASS other_credential_denied 403 AccessDenied"
+  },
+  {
+   "name": "behavioral:gate_OBJ-06",
+   "ok": false,
+   "detail": "FAIL plain_http_accepted ok 200"
+  }
+ ],
+ "finished_at": "2026-11-02T18:04:19.310948+00:00",
+ "leftovers": []
+}

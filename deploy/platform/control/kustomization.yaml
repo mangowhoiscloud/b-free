@@ -32,6 +32,10 @@ configMapGenerator:
   - name: cost-config
     files:
       - cost.yaml=config/cost.yaml
+  # Rehearsal service: destination profiles (names and paths only) for the agent envelope and the verifier (B11/P14).
+  - name: destination-profiles
+    files:
+      - destination-profiles.json=config/destination-profiles.json
   - name: gcp-wif-collector
     files:
       - credential.json=config/gcp-wif-collector.json

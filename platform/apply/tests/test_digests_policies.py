@@ -71,11 +71,11 @@ def test_scope_refuses_when_translations_differ_from_the_approved_policy_diff() 
 
 
 def test_scope_reports_unwired_target_types_as_not_connected() -> None:
-    items = [{**TRANSLATIONS[0], "target": {"type": "rgw_bucket_policy", "name": "chat-attachments"}}]
+    items = [{**TRANSLATIONS[0], "target": {"type": "gcs_iam_policy", "name": "chat-attachments"}}]
     with pytest.raises(Stop) as e:
         policies.check_scope(items, digests.policy_diff_digest({"translations": items}), DEST)
     assert e.value.status == "failed" and e.value.result is Result.NOT_CONNECTED
-    assert e.value.reason == "policy_target_not_connected:rgw_bucket_policy"
+    assert e.value.reason == "policy_target_not_connected:gcs_iam_policy"
 
 
 @pytest.mark.parametrize(

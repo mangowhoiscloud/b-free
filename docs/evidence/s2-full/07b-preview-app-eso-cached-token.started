@@ -1,0 +1,2 @@
+2026-11-03T03:17:04+0900
+--skip-gate: platform gate Pod restarting (gate pin c841a75e rollout) -> gate_controls_response_lost

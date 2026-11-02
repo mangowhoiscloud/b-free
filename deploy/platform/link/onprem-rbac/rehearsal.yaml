@@ -25,6 +25,12 @@ rules:
   - apiGroups: [""]
     resources: [pods, serviceaccounts, configmaps, resourcequotas, limitranges]
     verbs: [create, get, list, watch, delete]
+  # The exec Role it creates in rehearsal-* (cluster.exec_rbac) grants configmaps update/patch; Kubernetes refuses to
+  # create a Role that grants more than the creator holds (403 "attempting to grant RBAC permissions not currently
+  # held", measured 2026-11-03 02:37 KST on the first platform-path Trial). Still confined to rehearsal-*/verify-*.
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [update, patch]
   - apiGroups: [""]
     resources: [pods/exec, pods/log, serviceaccounts/token]
     verbs: [create, get]
@@ -46,6 +52,15 @@ rules:
   - apiGroups: [""]
     resources: [nodes]
     verbs: [get]
+  # App verification Job (platform/rehearsal behavioral_app.py) in verify-<plan>-<n>-<role>-app: the app's DB password
+  # comes from the platform OpenBao through ESO (a namespaced SecretStore with a one-use AppRole secret_id, and one
+  # ExternalSecret), and "another service account cannot read that Secret" is asked with a LocalSubjectAccessReview.
+  - apiGroups: [external-secrets.io]
+    resources: [secretstores, externalsecrets]
+    verbs: [create, get, list, delete]
+  - apiGroups: [authorization.k8s.io]
+    resources: [localsubjectaccessreviews]
+    verbs: [create]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -1,0 +1,169 @@
+{
+ "queried_at": "2026-11-02T18:27:09Z",
+ "how": "drops.collect via kubectl port-forward to bravo-observe/prometheus (the preview Pods are not in prometheus-ingress)",
+ "9540d3d9 (02)": {
+  "source": "prometheus hubble_drop_total",
+  "query": "sum by (source, reason, protocol) (hubble_drop_total{bravo_env=\"target-onprem\",source=~\"rehearsal-9540d3d9-gov-1|verify-9540d3d9-gov-1|verify-9540d3d9-gov-1-job|rehearsal-9540d3d9-app-1|verify-9540d3d9-app-1|verify-9540d3d9-app-1-app\"})",
+  "env": "target-onprem",
+  "window": [
+   "2026-11-02T12:27:09.409180+00:00",
+   "2026-11-02T18:27:09.409181+00:00"
+  ],
+  "rows": [
+   {
+    "namespace": "rehearsal-9540d3d9-app-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "rehearsal-9540d3d9-gov-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-9540d3d9-app-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-9540d3d9-gov-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   }
+  ],
+  "total": 48,
+  "policy_denied": 48
+ },
+ "778b074a (06-11)": {
+  "source": "prometheus hubble_drop_total",
+  "query": "sum by (source, reason, protocol) (hubble_drop_total{bravo_env=\"target-onprem\",source=~\"rehearsal-778b074a-gov-1|verify-778b074a-gov-1|verify-778b074a-gov-1-job|verify-778b074a-gov-1-app|rehearsal-778b074a-gov-2|verify-778b074a-gov-2|verify-778b074a-gov-2-job|verify-778b074a-gov-2-app|rehearsal-778b074a-gov-3|verify-778b074a-gov-3|verify-778b074a-gov-3-job|verify-778b074a-gov-3-app|rehearsal-778b074a-app-1|verify-778b074a-app-1|verify-778b074a-app-1-job|verify-778b074a-app-1-app|rehearsal-778b074a-app-2|verify-778b074a-app-2|verify-778b074a-app-2-job|verify-778b074a-app-2-app|rehearsal-778b074a-app-3|verify-778b074a-app-3|verify-778b074a-app-3-job|verify-778b074a-app-3-app\"})",
+  "env": "target-onprem",
+  "window": [
+   "2026-11-02T12:27:09.566541+00:00",
+   "2026-11-02T18:27:09.566542+00:00"
+  ],
+  "rows": [
+   {
+    "namespace": "rehearsal-778b074a-app-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 36,
+    "counter_end": 36
+   },
+   {
+    "namespace": "rehearsal-778b074a-gov-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 24,
+    "counter_end": 24
+   },
+   {
+    "namespace": "rehearsal-778b074a-gov-2",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "rehearsal-778b074a-gov-3",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-778b074a-app-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 24,
+    "counter_end": 24
+   },
+   {
+    "namespace": "verify-778b074a-gov-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-778b074a-gov-1-job",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-778b074a-gov-2",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-778b074a-gov-2-job",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-778b074a-gov-3",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-778b074a-gov-3-job",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   }
+  ],
+  "total": 180,
+  "policy_denied": 180
+ },
+ "f545fcb5 (11/2 CLI t-3ac2e611)": {
+  "source": "prometheus hubble_drop_total",
+  "query": "sum by (source, reason, protocol) (hubble_drop_total{bravo_env=\"target-onprem\",source=~\"rehearsal-f545fcb5-1|verify-f545fcb5-1|verify-f545fcb5-1-job\"})",
+  "env": "target-onprem",
+  "window": [
+   "2026-11-02T12:27:09.652332+00:00",
+   "2026-11-02T18:27:09.652332+00:00"
+  ],
+  "rows": [
+   {
+    "namespace": "rehearsal-f545fcb5-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-f545fcb5-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-f545fcb5-1-job",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   }
+  ],
+  "total": 36,
+  "policy_denied": 36
+ }
+}

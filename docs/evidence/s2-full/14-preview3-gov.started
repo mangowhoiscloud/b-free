@@ -1,0 +1,2 @@
+2026-11-03T03:38:06+0900
+governance after reset, attempt 1 again (11 was INFRA_ERROR behavioral_job:k8s_400 = gate c841 container never started: CRI name docker.io/bravo-import/gate:... missing; fixed on both nodes). Preview 3 (10.42.0.112)

@@ -76,6 +76,11 @@ spec:
             matchLabels: { kubernetes.io/metadata.name: bravo-control }
           podSelector:
             matchLabels: { app.kubernetes.io/name: executor }
+        # Rehearsal service: Hubble drop counters of its Trial namespaces after each verdict (P13, instant queries).
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: bravo-control }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: rehearsal }
       ports:
         - { protocol: TCP, port: 9090 }
 ---

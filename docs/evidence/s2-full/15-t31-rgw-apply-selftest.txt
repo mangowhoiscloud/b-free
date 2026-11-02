@@ -1,0 +1,23 @@
+2026-11-03T03:43:40+0900
+{"scope": "ok", "rgw_bucket_policy": ["bravo-rehearsal-verify"]}
+{
+ "result": "OK",
+ "detail": {
+  "applied": [
+   {
+    "type": "rgw_bucket_policy",
+    "target": "bravo-rehearsal-verify",
+    "bucket": "bravo-rehearsal-verify",
+    "applied_digest": "sha256:98a221647c4f7cfe896694ce967571fae0639a82a18608736ec5e46894fd3ab1",
+    "readback": "equal",
+    "replaced": {
+     "digest": null,
+     "sids": []
+    }
+   }
+  ]
+ }
+}
+{"cleanup_delete": 204, "after_get": 404}
+{"refused": "policy_out_of_scope", "problems": ["bravo-rehearsal-verify:anonymous_allow"]}
+exit=0

@@ -56,7 +56,7 @@ def trial_config(trial: Trial, task_dir: Path, trials_dir: Path, *, kubeconfig: 
             import_path=ENV_IMPORT, delete=True,
             kwargs={"kubeconfig": str(kubeconfig), "kube_context": kube_context, "trial_id": trial.trial_id,
                     "plan_id": trial.plan_id, "attempt": trial.attempt, "sandbox_image": sandbox_image,
-                    "verifier_image": verifier_image},
+                    "verifier_image": verifier_image, "role": trial.role},
         ),
         verifier=VerifierConfig(override_timeout_sec=float(verifier_deadline_s)),
     )
@@ -143,10 +143,18 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
     failed = [] if static_ok else [str(c.get("name")) for c in checks if isinstance(c, dict) and not c.get("ok")]
     if behavioral is not None:
         trial.verifier["behavioral"] = behavioral
+        if not behavioral.get("ran") and behavioral.get("proposal_fault"):
+            # The proposal itself cannot be put under test (e.g. its diff does not apply to its own snapshot).
+            failed += [str(c.get("name")) for c in behavioral.get("checks") or [] if isinstance(c, dict)]
+            trial.verifier["checks"] = checks + list(behavioral.get("checks") or [])
+            trial.finish("FAIL", "verifier:" + ",".join(failed))
+            return
         problem = None
+        # Each Job names the image it was pinned to (gate image, verifier image); the Pod must have run exactly that.
+        job_digest = str(behavioral.get("pinned_image_digest") or expected)
         if not behavioral.get("ran"):
             problem = f"behavioral_job:{behavioral.get('reason') or 'not_run'}"
-        elif not _image_bound(behavioral, expected):
+        elif not _image_bound(behavioral, job_digest):
             problem = "behavioral_image_mismatch"
         elif not behavioral.get("egress_blocked"):
             problem = "behavioral_job_egress_open"
@@ -158,7 +166,7 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
             else:
                 trial.finish("FAIL", "verifier:" + ",".join(failed))
             return
-        trial.verifier_kind = trial.verifier["verifier_kind"] = KIND_BEHAVIORAL
+        trial.verifier_kind = trial.verifier["verifier_kind"] = str(behavioral.get("kind") or KIND_BEHAVIORAL)
         b_checks = [c for c in behavioral.get("checks") or [] if isinstance(c, dict)]
         if not b_checks:
             trial.finish("INFRA_ERROR", "behavioral_job:no_checks")

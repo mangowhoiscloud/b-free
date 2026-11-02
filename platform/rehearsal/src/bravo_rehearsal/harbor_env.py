@@ -283,18 +283,19 @@ class RehearsalNamespaceEnvironment(BaseEnvironment):
 
     Environment kwargs (``EnvironmentConfig.kwargs``, set by the rehearsal service only):
     ``kubeconfig``, ``kube_context``, ``trial_id``, ``plan_id``, ``attempt``, ``sandbox_image``,
-    ``verifier_image`` (both digest-pinned), ``ready_timeout_sec``.
+    ``verifier_image`` (both digest-pinned), ``ready_timeout_sec``, ``role`` (part of the namespace names).
     """
 
     def __init__(self, *args: Any, kubeconfig: str | None = None, kube_context: str | None = None,
                  trial_id: str | None = None, plan_id: str | None = None, attempt: int | None = None,
                  sandbox_image: str | None = None, verifier_image: str | None = None,
-                 ready_timeout_sec: int = 120, **kwargs: Any) -> None:
+                 ready_timeout_sec: int = 120, role: str | None = None, **kwargs: Any) -> None:
         self._kubeconfig = Path(kubeconfig).expanduser() if kubeconfig else None
         self._kube_context = kube_context
         self._trial_id = trial_id or ""
         self._plan_id = plan_id or ""
         self._attempt = int(attempt or 0)
+        self._role = role
         self._sandbox_image = sandbox_image
         self._verifier_image = verifier_image
         self._ready_timeout_sec = ready_timeout_sec
@@ -321,7 +322,7 @@ class RehearsalNamespaceEnvironment(BaseEnvironment):
 
     @property
     def names(self) -> Names:
-        return Names.of(self._plan_id, self._attempt, self._trial_id)
+        return Names.of(self._plan_id, self._attempt, self._trial_id, self._role)
 
     @property
     def namespace(self) -> str:
@@ -485,6 +486,9 @@ class RehearsalNamespaceEnvironment(BaseEnvironment):
         base = self._client().configuration
         cfg = k8s.Configuration()
         cfg.host, cfg.ssl_ca_cert, cfg.verify_ssl = base.host, base.ssl_ca_cert, base.verify_ssl
+        # Link Service host != certificate name: the kubeconfig's tls-server-name must carry over (measured
+        # 2026-11-03 02:38 KST: "Hostname mismatch ... dst-k8s.bravo-link.svc.cluster.local" on the platform path).
+        cfg.tls_server_name = base.tls_server_name
         cfg.api_key = {"authorization": f"Bearer {req.status.token}"}
         t.exec_api, t.exec_exp = k8s.ApiClient(cfg), time.time() + EXEC_TOKEN_TTL_S
         return t.exec_api

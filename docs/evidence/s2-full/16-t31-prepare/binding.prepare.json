@@ -1,0 +1,75 @@
+{
+ "change_id": "7f08c324-1cf1-458f-bf2a-a40988c79d69",
+ "role": "app_migration",
+ "target_environment": "target-onprem",
+ "artifact": {
+  "plan_id": "p-778b074a-a07a-4362-8987-0481e4aa4e67",
+  "trial_id": "t-f58b9ecc8a494333b5a4c0f277fcaaee",
+  "attempt": 2,
+  "rationale": "Removes the direct Secrets Manager SDK client and the GetSecretValue call (inv:3ccbf876f57f08e8 secrets.py:41, inv:9de663601b600ca9 secrets.py:48), along with the branch that chose the password source. The DB password is now read only from the file named by DB_PASSWORD_FILE. In the destination that file is the ESO-synced Secret bravo-demo-db mounted at /var/run/bravo/db/password. config.load() no longer requires DB_PASSWORD_SOURCE, DB_PASSWORD_SECRET_ID, DB_PASSWORD_SECRET_KEY, DB_PASSWORD_SECRET_REGION, AWS_REGION or DB_PASSWORD_SECRET_ENDPOINT_URL. It requires DB_DSN (inv:a5ccbeca75df0ace, unchanged) and DB_PASSWORD_FILE, so the app starts with only what the landing zone provides. The original code does not start under those conditions, because DB_PASSWORD_SOURCE is required. DbSettings drops the secret_* fields, and password_source is fixed to \"env-file\" so the startup log fields in app.py stay unchanged. No other module referenced the removed fields (checked app.py, db.py, admin.py, telemetry.py, __main__.py). No dependency, test, CI or deployment file is touched, and no secret values were added. The S3 config findings (inv:baa6de5a5e72c850, inv:4b2a570efa066af8) already read the endpoint from S3_ENDPOINT_URL, so no change was needed. inv:c6b9dab5de3d8a70 and inv:ecedbaf5b23990db are in chart/ deployment files and are out of scope. Note: the platform's tool output redacts one line of config.py (the DSN password check). Attempt 1 may have failed because that redacted line was written back. Here the line was rebuilt exactly: make_diff shows no hunk for it, and compile passes. The error message on the next line, which still mentions DB_PASSWORD_SOURCE, was deliberately left as is so the redacted line does not appear as diff context and the patch applies cleanly with -p1. Risk is medium because any tests that construct DbSettings with the removed secret_* fields, or that test the aws-secrets-manager mode, would need updating by humans. Tests were not changed.",
+  "risk": "medium",
+  "evidence_refs": [
+   "inv:3ccbf876f57f08e8",
+   "inv:9de663601b600ca9",
+   "inv:a5ccbeca75df0ace",
+   "inv:baa6de5a5e72c850",
+   "inv:4b2a570efa066af8",
+   "inv:c6b9dab5de3d8a70",
+   "inv:ecedbaf5b23990db"
+  ],
+  "role": "app_migration",
+  "step": "fix",
+  "diff": "diff -ruN src/src/bravo_demo/config.py app/src/bravo_demo/config.py\n--- src/src/bravo_demo/config.py\t1970-01-01 00:00:00.000000000 +0000\n+++ app/src/bravo_demo/config.py\t2026-11-02 18:40:20.122844745 +0000\n@@ -70,12 +70,8 @@\n class DbSettings:\n     # libpq DSN without the password, e.g. \"host=pgbouncer port=6432 dbname=chat user=app_writer\".\n     dsn: str\n-    password_source: str  # aws-secrets-manager | env-file\n-    password_file: str | None\n-    secret_id: str | None\n-    secret_key: str | None  # JSON key inside the secret; None = the secret string is the password\n-    secrets_region: str | None\n-    secrets_endpoint_url: str | None\n+    password_source: str  # always env-file: the password is a mounted file (DB_PASSWORD_FILE)\n+    password_file: str\n     pool_min: int\n     pool_max: int\n     statement_timeout_ms: int  # per write transaction (SET LOCAL), §8.10 max 200 ms\n@@ -147,18 +143,11 @@\n     keys, an on-prem S3-compatible store): there is no per-cloud code path.\"\"\"\n     env = dict(os.environ) if env is None else env\n \n-    source = _req(env, \"DB_PASSWORD_SOURCE\")\n-    if source not in (\"aws-secrets-manager\", \"env-file\"):\n-        raise ConfigError(\"DB_PASSWORD_SOURCE must be aws-secrets-manager or env-file\")\n     statement_timeout_ms = _int(env, \"DB_STATEMENT_TIMEOUT_MS\", 200, 10, 200)\n     db = DbSettings(\n         dsn=_req(env, \"DB_DSN\"),\n-        password_source=source,\n-        password_file=_req(env, \"DB_PASSWORD_FILE\") if source == \"env-file\" else None,\n-        secret_id=_req(env, \"DB_PASSWORD_SECRET_ID\") if source == \"aws-secrets-manager\" else None,\n-        secret_key=_opt(env, \"DB_PASSWORD_SECRET_KEY\"),\n-        secrets_region=_opt(env, \"DB_PASSWORD_SECRET_REGION\") or _opt(env, \"AWS_REGION\"),\n-        secrets_endpoint_url=_opt(env, \"DB_PASSWORD_SECRET_ENDPOINT_URL\"),\n+        password_source=\"env-file\",  # noqa: S106 - a mode name, not a secret\n+        password_file=_req(env, \"DB_PASSWORD_FILE\"),\n         pool_min=_int(env, \"DB_POOL_MIN\", 1, 0, 50),\n         pool_max=_int(env, \"DB_POOL_MAX\", 8, 1, 100),\n         statement_timeout_ms=statement_timeout_ms,\ndiff -ruN src/src/bravo_demo/secrets.py app/src/bravo_demo/secrets.py\n--- src/src/bravo_demo/secrets.py\t1970-01-01 00:00:00.000000000 +0000\n+++ app/src/bravo_demo/secrets.py\t2026-11-02 18:39:42.430985157 +0000\n@@ -1,14 +1,11 @@\n-\"\"\"Database password sources (§8.10).\n+\"\"\"Database password source (§8.10).\n \n-``aws-secrets-manager`` calls the AWS Secrets Manager API directly with the SDK at startup.\n-This direct cloud dependency is intentional: it is the \"code fix\" material of scenario S2.\n-``env-file`` reads a mounted file (Kubernetes Secret, Docker secret); this is the mode the\n-fix switches to, so the app no longer calls a cloud API.\n+The password is read only from a mounted file (Kubernetes Secret synced by the platform,\n+Docker secret) named by ``DB_PASSWORD_FILE``. The app calls no cloud API for it.\n \"\"\"\n \n from __future__ import annotations\n \n-import json\n import logging\n from pathlib import Path\n \n@@ -31,51 +28,9 @@\n     return value\n \n \n-def _from_secrets_manager(settings: DbSettings) -> str:\n-    import boto3  # imported here: the env-file mode must not need AWS at all\n-    from botocore.config import Config\n-    from botocore.exceptions import BotoCoreError, ClientError\n-\n-    if not settings.secret_id:\n-        raise ConfigError(\"DB_PASSWORD_SECRET_ID is required\")\n-    client = boto3.client(\n-        \"secretsmanager\",\n-        region_name=settings.secrets_region,\n-        endpoint_url=settings.secrets_endpoint_url,\n-        config=Config(connect_timeout=3, read_timeout=5, retries={\"max_attempts\": 3, \"mode\": \"standard\"}),\n-    )\n-    try:\n-        resp = client.get_secret_value(SecretId=settings.secret_id)\n-    except ClientError as exc:\n-        code = exc.response.get(\"Error\", {}).get(\"Code\", \"Unknown\")\n-        raise SecretError(f\"Secrets Manager GetSecretValue failed: {code}\") from exc\n-    except BotoCoreError as exc:\n-        raise SecretError(f\"Secrets Manager call failed: {type(exc).__name__}\") from exc\n-    raw = resp.get(\"SecretString\")\n-    if raw is None:\n-        raise SecretError(\"secret has no SecretString\")\n-    if settings.secret_key:\n-        try:\n-            doc = json.loads(raw)\n-        except json.JSONDecodeError as exc:\n-            raise SecretError(\"secret is not JSON but DB_PASSWORD_SECRET_KEY is set\") from exc\n-        value = doc.get(settings.secret_key) if isinstance(doc, dict) else None\n-        if not isinstance(value, str) or not value:\n-            raise SecretError(\"secret JSON has no string value for DB_PASSWORD_SECRET_KEY\")\n-        return value\n-    if not raw:\n-        raise SecretError(\"secret string is empty\")\n-    return raw\n-\n-\n def db_password(settings: DbSettings) -> str:\n-    if settings.password_source == \"env-file\":  # noqa: S105 - a mode name, not a secret\n-        if not settings.password_file:\n-            raise ConfigError(\"DB_PASSWORD_FILE is required\")\n-        value = _from_file(settings.password_file)\n-    elif settings.password_source == \"aws-secrets-manager\":  # noqa: S105 - a mode name\n-        value = _from_secrets_manager(settings)\n-    else:  # config.load() rejects anything else\n-        raise ConfigError(\"unknown DB_PASSWORD_SOURCE\")\n+    if not settings.password_file:\n+        raise ConfigError(\"DB_PASSWORD_FILE is required\")\n+    value = _from_file(settings.password_file)\n     log.info(\"database password loaded\", extra={\"source\": settings.password_source})\n     return value\n",
+  "files": [
+   "src/bravo_demo/secrets.py",
+   "src/bravo_demo/config.py"
+  ],
+  "sdk_calls_replaced": [
+   {
+    "file": "src/bravo_demo/secrets.py",
+    "line": 41,
+    "before_api": "boto3.client('secretsmanager')",
+    "after": "removed; password read from DB_PASSWORD_FILE mounted Secret"
+   },
+   {
+    "file": "src/bravo_demo/secrets.py",
+    "line": 48,
+    "before_api": "secretsmanager.GetSecretValue",
+    "after": "_from_file(settings.password_file) via DB_PASSWORD_FILE"
+   }
+  ],
+  "config_changes": [
+   {
+    "key": "DB_PASSWORD_SOURCE",
+    "before": "required: aws-secrets-manager | env-file",
+    "after": "removed (always file-based)"
+   },
+   {
+    "key": "DB_PASSWORD_FILE",
+    "before": "required only when DB_PASSWORD_SOURCE=env-file",
+    "after": "always required (landing-zone mount path)"
+   },
+   {
+    "key": "DB_PASSWORD_SECRET_ID",
+    "before": "required for aws-secrets-manager",
+    "after": "removed"
+   },
+   {
+    "key": "DB_PASSWORD_SECRET_KEY",
+    "before": "optional",
+    "after": "removed"
+   },
+   {
+    "key": "DB_PASSWORD_SECRET_REGION",
+    "before": "optional (fallback AWS_REGION)",
+    "after": "removed"
+   },
+   {
+    "key": "DB_PASSWORD_SECRET_ENDPOINT_URL",
+    "before": "optional",
+    "after": "removed"
+   }
+  ]
+ },
+ "provenance": "T31 prepare (CLI, no DB) of the PASS rehearsal artifact sha256:8e0e719fcedc7d92366200f2ed0de8f01c4fc029eec4c1c2f1152986bc2e7460 of Trial t-f58b9ecc8a494333b5a4c0f277fcaaee (plan 778b074a, platform rehearsal service preview Pod, 2026-11-03). Stops before any approval: the image digest below is what a change approval would bind."
+}

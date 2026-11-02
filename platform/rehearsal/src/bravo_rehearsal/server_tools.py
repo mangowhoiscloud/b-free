@@ -336,10 +336,11 @@ class OpenBao:
             raise ToolBlocked("openbao_denied")
         return self._accept(r.json().get("auth") or {})
 
-    async def mint_secret_id(self, approle: str, ttl: str = "60s") -> tuple[str, str]:
-        """One single-use secret_id (and the role_id) for another AppRole, e.g. ``llm-claude`` for the worker's
-        model credential. Needs ``update`` on ``auth/approle/role/<approle>/secret-id`` in this service's policy.
-        The service never reads the credential the worker will fetch with it."""
+    async def mint_secret_id(self, approle: str, ttl: str = "60s", num_uses: int = 1) -> tuple[str, str]:
+        """One short-lived secret_id (and the role_id) for another AppRole, e.g. ``llm-claude`` for the worker's
+        model credential (single use). Needs ``update`` on ``auth/approle/role/<approle>/secret-id`` in this service's
+        policy. The service never reads the credential the worker will fetch with it. ``num_uses`` may not exceed the
+        role's ``secret_id_num_uses`` (ESO logs in more than once: ``rehearsal-eso-<env>`` allows 4)."""
         if not self.cfg.addr:
             raise ToolBlocked("openbao_unconfigured")
         try:
@@ -348,7 +349,7 @@ class OpenBao:
                 headers = {"X-Vault-Token": token}
                 r1 = await http.get(f"/v1/auth/approle/role/{approle}/role-id", headers=headers)
                 r2 = await http.post(f"/v1/auth/approle/role/{approle}/secret-id", headers=headers,
-                                     json={"ttl": ttl, "num_uses": 1})
+                                     json={"ttl": ttl, "num_uses": num_uses})
         except httpx.HTTPError as exc:
             raise ToolBlocked("openbao_unreachable") from exc
         if r1.status_code in (401, 403) or r2.status_code in (401, 403):

@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 
 from . import quadrant
 from .harbor_env import ENV_TYPE
-from .service import PACKAGE_ROOT, ServiceSettings, TrialRequest, create_app, load_task, new_trial
+from .service import PACKAGE_ROOT, ServiceSettings, TrialRequest, create_app, load_task, new_trial, run_probes
 
 EVIDENCE = PACKAGE_ROOT / "docs" / "evidence" / "rehearsals.tsv"
 
@@ -114,36 +114,14 @@ def _request(settings: ServiceSettings, meta: dict[str, Any], a: argparse.Namesp
                         source_env=a.source_env, target_env=a.target_env, inventory_digest=a.inventory_digest)
 
 
-# Demo probe (spec demo scene, labelled): calls the operator makes with the Trial's own token while the agent
-# runs, to show the tool layer's decision on a bucket delete. They are marked origin=probe in the record.
-PROBE_OPS: tuple[Any, ...] = (
-    "aws s3 rb s3://chat-attachments --force",
-    {"op": "kubectl", "verb": "delete", "kind": "objectbucketclaim", "name": "chat-attachments"},
-)
-
-
-async def _probe(trial: Any, tool_layer_url: str, token_key: bytes) -> None:
-    import httpx
-
-    from . import trial_token
-
+async def _probe(trial: Any, layer: Any) -> None:
+    """Demo probes (labelled origin=probe) once the agent runs: the service's own probe path (``run_probes``)."""
     while trial.phase != "agent_running" and trial.verdict is None:
         await asyncio.sleep(0.2)
     if trial.verdict is not None or trial.names is None:
         return
-    token = trial_token.issue(token_key, trial_token.TrialClaims(
-        trial_id=trial.trial_id, tenant_id=trial.tenant_id, plan_id=trial.plan_id, attempt=trial.attempt,
-        namespace=trial.names.rehearsal_ns, ops=tuple(sorted(trial.allowlist.ops)), budget_usd=0.0,
-        exp=int(trial.deadline)))
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json",
-               "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25"}
-    async with httpx.AsyncClient(timeout=30) as http:
-        for i, op in enumerate(PROBE_OPS, start=1):
-            body = {"jsonrpc": "2.0", "id": f"probe-{i}", "method": "tools/call",
-                    "params": {"name": "rehearsal_exec", "arguments": {"op": op}}}
-            r = await http.post(f"{tool_layer_url}/mcp", json=body, headers=headers)
-            seq = trial.mark_last("rehearsal_exec", {"op": op}, "probe")
-            print(f"probe op={json.dumps(op)} http={r.status_code} seq={seq}")
+    for r in await run_probes(layer, trial):
+        print(f"probe op={json.dumps(r['op'])} seq={r['seq']} allowed={r['allowed']} rule={r['rule']} origin={r['origin']}")
 
 
 async def rehearse(a: argparse.Namespace) -> int:
@@ -188,8 +166,7 @@ async def rehearse(a: argparse.Namespace) -> int:
         trial = new_trial(req, settings, f"cli-{uuid.uuid4().hex}", digest)
         app.state.store.add(trial)
         started = dt.datetime.now(dt.UTC)
-        probe = (asyncio.create_task(_probe(trial, str(settings.tool_layer_url), settings.token_key or b""))
-                 if a.probe_bucket_delete else None)
+        probe = asyncio.create_task(_probe(trial, app.state.layer)) if a.probe_bucket_delete else None
         await app.state.orchestrator.run(trial)
         if probe is not None:
             probe.cancel()
@@ -213,6 +190,8 @@ async def rehearse(a: argparse.Namespace) -> int:
     for ev in trial.tool_events:
         print(f"tool_call seq={ev['seq']} tool={ev['tool']} allowed={ev['allowed']} rule={ev['rule']} "
               f"result={ev['result']} origin={ev.get('origin', 'agent')}")
+    print("tool_summary=" + json.dumps(trial.tool_summary(), sort_keys=True))
+    print("timings=" + json.dumps(trial.timings(), sort_keys=True))
     for ns, iso in trial.isolation.items():
         for chk in iso["checks"]:
             print(f"isolation ns={ns} pod={iso['pod']} " + json.dumps(chk, sort_keys=True))

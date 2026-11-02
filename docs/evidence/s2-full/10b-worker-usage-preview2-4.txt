@@ -1,0 +1,20 @@
+# rehearsal-preview-s2full2
+t-5c1e0dd4f9834413a058f18aaa1ccd5f 
+t-5c1e0dd4f9834413a058f18aaa1ccd5f stderr_rate_limit_lines=0
+t-638e0e1e7bab43528dde068509cc63ce agent_result:{"digest": "sha256:3cea28b2c168064b4b55c87f1179b75c5229ca71e9896e84d7326b75b4aaa600", "model": "claude-opus-5-5", "num_turns": 18, "provider": "claude_subscription", "tokens": {"api_price_equivalent_usd": 0.5974302, "cache_creation_input_tokens": 24778, "cache_read_input_tokens": 161951, "cost_basis": "subscription (flat plan; USD not billed)", "input_tokens": 24, "output_tokens": 18336, "tools": {"calls": 17, "errored": ["StructuredOutput"], "outside_grant": []}}, "total_cost_usd": null}
+t-638e0e1e7bab43528dde068509cc63ce stderr_rate_limit_lines=0
+t-f693b12d3f13465ba18574f81ea4aa78 agent_result:{"digest": "sha256:9df7ba81c9f5d45f0472d6be21c52051c36bcf9c6e67333ba183a127b5e6a88e", "model": "claude-opus-5-5", "num_turns": 20, "provider": "claude_subscription", "tokens": {"api_price_equivalent_usd": 0.9238061999999999, "cache_creation_input_tokens": 64302, "cache_read_input_tokens": 300251, "cost_basis": "subscription (flat plan; USD not billed)", "input_tokens": 20, "output_tokens": 17463, "tools": {"calls": 19, "errored": [], "outside_grant": []}}, "total_cost_usd": null}
+t-f693b12d3f13465ba18574f81ea4aa78 stderr_rate_limit_lines=0
+command terminated with exit code 1
+# rehearsal-preview-s2full3
+t-b6a800a0f43f49efa91cf60787d6ae04 agent_result:{"digest": "sha256:d90cb9b1a0696836ca5cdf3f1ccfbfa84db1dbd727a78913ad1450fd34c848b4", "model": "claude-opus-5-5", "num_turns": 15, "provider": "claude_subscription", "tokens": {"api_price_equivalent_usd": 0.42985799999999996, "cache_creation_input_tokens": 18250, "cache_read_input_tokens": 139510, "cost_basis": "subscription (flat plan; USD not billed)", "input_tokens": 24, "output_tokens": 12793, "tools": {"calls": 14, "errored": [], "outside_grant": []}}, "total_cost_usd": null}
+t-b6a800a0f43f49efa91cf60787d6ae04 stderr_rate_limit_lines=0
+t-f58b9ecc8a494333b5a4c0f277fcaaee agent_result:{"digest": "sha256:8e0e719fcedc7d92366200f2ed0de8f01c4fc029eec4c1c2f1152986bc2e7460", "model": "claude-opus-5-5", "num_turns": 22, "provider": "claude_subscription", "tokens": {"api_price_equivalent_usd": 0.93456, "cache_creation_input_tokens": 65037, "cache_read_input_tokens": 257380, "cost_basis": "subscription (flat plan; USD not billed)", "input_tokens": 22, "output_tokens": 18135, "tools": {"calls": 21, "errored": ["mcp__platform__rehearsal_exec", "mcp__platform__repo_read"], "outside_grant": []}}, "total_cost_usd": null}
+t-f58b9ecc8a494333b5a4c0f277fcaaee stderr_rate_limit_lines=0
+command terminated with exit code 1
+# rehearsal-preview-s2full4
+t-4ed22a647a0c4809814da95a1be580b5 agent_result:{"digest": "sha256:b2fd17e4063ac590cc5eb9d63bc49bed064345299717db9b854eb13a601d5ff1", "model": "claude-opus-5-5", "num_turns": 18, "provider": "claude_subscription", "tokens": {"api_price_equivalent_usd": 0.8189056, "cache_creation_input_tokens": 62611, "cache_read_input_tokens": 280888, "cost_basis": "subscription (flat plan; USD not billed)", "input_tokens": 20, "output_tokens": 13088, "tools": {"calls": 17, "errored": [], "outside_grant": []}}, "total_cost_usd": null}
+t-4ed22a647a0c4809814da95a1be580b5 stderr_rate_limit_lines=0
+t-b21bdd68d0824607b9a94a8cbf8ac124 agent_result:{"digest": "sha256:c764c07e645e22c908dc85d79591954cd83e2174c197fcb32ddef1a3279058e0", "model": "claude-opus-5-5", "num_turns": 10, "provider": "claude_subscription", "tokens": {"api_price_equivalent_usd": 0.2853922, "cache_creation_input_tokens": 12594, "cache_read_input_tokens": 57921, "cost_basis": "subscription (flat plan; USD not billed)", "input_tokens": 14, "output_tokens": 8650, "tools": {"calls": 9, "errored": ["mcp__platform__controls_describe"], "outside_grant": []}}, "total_cost_usd": null}
+t-b21bdd68d0824607b9a94a8cbf8ac124 stderr_rate_limit_lines=0
+command terminated with exit code 1

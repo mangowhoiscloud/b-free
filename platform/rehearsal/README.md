@@ -9,8 +9,8 @@ SoftBank Hackathon 2026 본선 Team Bravo의 "에이전트 · 리허설" 영역�
 1. 상태 머신이 리허설을 요청하면, task 생성기가 task 템플릿과 고객 저장소 스냅숏(올라와 있을 때만)으로 Harbor task 폴더를 만듭니다.
 2. Harbor Trial이 목적지 K3s의 리허설 네임스페이스를 환경으로 띄웁니다.
 3. 에이전트 워커(`bravo_agents`)가 플랫폼에서 돌며 MCP 도구 계층으로만 환경을 다룹니다.
-4. 분리 검증기가 검증 네임스페이스에서 고정된 제안서 JSON을 비공개 정적 규칙(`tests/verify.py`: 스키마, Trial 결속, 정책 규칙)으로 판정합니다. 제안서에 RGW 버킷 정책(`rgw_bucket_policy`)이 있으면 플랫폼이 별도 검증 Job(`behavioral.py`, `verify_job_s3.py`)을 돌립니다. Job은 `verify-<plan>-<n>-job` 네임스페이스에서 그 정책을 RGW 시험 버킷(`bravo-rehearsal-verify`)에 적용하고, 서명 없는 GET이 `AccessDenied`로 거부되는지, 버킷 소유자 키로 서명한 GET이 200인지 봅니다. 그 전에 대조 단계로 열린 정책에서는 서명 없는 GET이 200임을 확인합니다. 이 Job이 실제로 돌았을 때만 판정 기록이 `verifier_kind: behavioral+static_rules`이고, 버킷 정책이 없는 제안서는 `static_rules`입니다.
-5. 판정은 PASS, FAIL, INFRA_ERROR 가운데 하나이고, 증거와 함께 TSV에 한 줄로 남습니다. PASS의 뜻은 `verifier_kind`가 정합니다. `static_rules`는 "정적 규칙 통과"까지, `behavioral+static_rules`는 "정적 규칙 통과 + RGW 시험 버킷에서 익명 GET 거부 · 앱 GET 허용 실측"입니다. 버킷 정책이 있는데 Job이 돌지 못하면(키 없음, 대조 실패, 이미지 결속 실패) PASS가 아니라 INFRA_ERROR입니다.
+4. 분리 검증기가 검증 네임스페이스에서 고정된 제안서 JSON을 비공개 정적 규칙(`tests/verify.py`: 스키마, Trial 결속, 정책 규칙, 목적지 프로필 밖 비밀 경로 거부)으로 판정합니다. 그 뒤 플랫폼이 제안서 종류에 맞는 별도 검증 Job을 목적지 클러스터에서 돌립니다. 버킷 정책(`rgw_bucket_policy`): `behavioral.py` + `verify_job_gate.py`가 **게이트 이미지에서 게이트의 OBJ-01–06 코드**(`bravo_gate.probes.objstore`)를 RGW 시험 버킷에 그대로 돌립니다(익명 읽기 · 목록 · 쓰기 거부, 앱 읽기 · 쓰기, 다른 자격 거부, 평문 HTTP 거부). 대조 단계는 열린 정책에서 게이트 OBJ-01이 FAIL이어야 합니다. 코드 수정(`app_migration`): `behavioral_app.py` + `verify_job_app.py`가 diff를 스냅숏에 그대로 적용하고(-p1, 맞지 않으면 FAIL), 고친 앱을 목적지 앱 이미지로 띄워 ESO가 플랫폼 OpenBao에서 넣은 비밀번호 파일만으로 DB에 붙어 채팅 쓰기를 처리하는지 봅니다. 대조: 고치기 전 코드는 같은 조건에서 뜨면 안 됩니다. Job이 실제로 돌았을 때만 `verifier_kind`가 `behavioral:gate_obj01_06+static_rules` 또는 `behavioral:app_eso_write+static_rules`이고, 필요한 Job이 못 돌면 PASS가 아니라 INFRA_ERROR입니다.
+5. 판정은 PASS, FAIL, INFRA_ERROR 가운데 하나입니다. PASS의 뜻은 `verifier_kind`가 정합니다. Trial 기록(`GET /v1/trials/{id}`)에는 단계 이력(`phase_history`), 단계별 시간(`timings`), 호출 주체별 도구 호출 수(`tool_summary`, `origin`: `agent` · `probe`), 판정 뒤 플랫폼 Prometheus에서 읽은 Hubble 드롭 수(`network_drops`)가 있습니다.
 
 에이전트는 어느 단계에서도 운영 자격 증명이나 실행 권한을 받지 않습니다. 승격은 사람이 승인합니다.
 
@@ -38,7 +38,7 @@ make oracle TASK=tasks/templates/fix-secret-injection
 | `BaseEnvironment` | `harbor_env.py` | 에이전트 역할: `rehearsal-<plan>-<n>` + 기본선(PSA restricted, 기본 거부 + 같은 네임스페이스 + kube-dns, Quota, LimitRange, 토큰 없는 SA) + 샌드박스 Pod + 격리 시험. 검증 역할: `verify-<plan>-<n>` + 검증 Pod + 고정 산출물. 생성 · 삭제는 프로비저너, exec와 파일 전송(exec 위 tar 스트림)은 네임스페이스별 exec 계정 |
 | `BaseAgent` | `harbor_agent.py` | 워커 프로세스(`bravo_agents.run_agent`)를 띄우고 기다림. 워커는 Trial 토큰, 상태 봉투(`StateEnvelope`), 모델 경로 설정만 받음(모델 키 · kubeconfig 없음). 전제가 없으면 이유로 실패하고 결과를 꾸며내지 않음. 궤적(ATIF)을 `agent/trajectory.json`에 씀 |
 | 분리 검증기 · 판정 | `harbor_run.py` | Harbor의 `environment_mode="separate"` 검증 결과를 받음. 검증 Pod UID · 이미지 digest · 산출물 digest가 맞을 때만 PASS/FAIL, 아니면 INFRA_ERROR. 에이전트가 미리 써 둔 reward는 무시(Harbor issue #2551). 판정에 `verifier_kind`(`static_rules`, 버킷 정책 Job이 돌았으면 `behavioral+static_rules`)를 함께 기록 |
-| 동작 검증 Job(B7) | `behavioral.py`, `verify_job_s3.py` | 제안서의 `rgw_bucket_policy`마다: 버킷 이름을 시험 버킷으로, 목적지 앱 주체(첨부 버킷 소유자)를 시험 버킷 소유자로 바꿔 적용. Job Pod는 RGW Pod 443만 나갈 수 있음(NetworkPolicy), 인터넷 · 메타데이터 차단을 스스로 기록. 시험 버킷 키는 OpenBao `secret/envs/<target_env>/rehearsal-s3`에서 Trial마다 읽어 그 네임스페이스의 Secret으로만 넘기고, Job이 끝나면 지움. 시험 버킷 준비는 `deploy/landing-zone/scripts/rgw-rehearsal-bucket.sh` |
+| 검증 Job(B7, B05, B11) | `behavioral.py` · `verify_job_gate.py`, `behavioral_app.py` · `verify_job_app.py` | 버킷 정책: 버킷 이름을 시험 버킷으로, 목적지 앱 주체를 시험 버킷 소유자로 바꿔 적용한 뒤 게이트 이미지(`BRAVO_REHEARSAL_GATE_PROBE_IMAGE`, 게이트 고정 digest와 같게)에서 OBJ-01–06. Job Pod는 RGW Pod 443 · 8080만 나감. 키는 OpenBao `secret/envs/<target_env>/rehearsal-s3`(소유자 + 권한 없는 `other`)에서 Trial마다 읽어 그 네임스페이스의 Secret으로만 넘기고 Job 뒤 지움. 시험 버킷은 목적지와 같은 SSE-KMS 기본 암호화(`rgw-rehearsal-bucket.sh`). 코드 수정: `verify-<plan>-<role>-<n>-app`에 namespaced SecretStore(AppRole `rehearsal-eso-<env>` secret_id, 120초 · 4회) + ExternalSecret → `secret/envs/<env>/rehearsal-app-db`, Pod 하나에 합성 DB(목적지 PostgreSQL 이미지, 스냅숏 스키마) · 고친 앱 · 원래 앱 · probe. 다른 SA의 Secret 읽기는 LocalSubjectAccessReview |
 
 **`bravo_agents` 연결(2026-11-02).** `platform/agent`의 패키지를 경로 의존성으로 씁니다(`uv.lock`).
 
@@ -49,6 +49,8 @@ make oracle TASK=tasks/templates/fix-secret-injection
 | 제안서 | `proposal.check` | `bravo_agents.schemas.OUTPUT_MODELS[role]`로 검증 → Trial 결속(plan_id, trial_id, attempt, 봉투의 증거 ID) → 린트(비밀 모양 값, 익명 · 와일드카드 허용, 클러스터 범위 RBAC, 예약 이름, 위험 SQL) |
 | 상태 봉투 | `service.build_envelope` | `StateEnvelope` 형식. 승인 범위는 역할 허용 목록 그대로. plan_id는 `p-` + 소문자 UUID. 요청의 `state`가 역할의 상태 목록에 없으면 `state_not_allowed_for_role` |
 | 증거 수신 | `POST /v1/evidence` | 워커 hook 사건(Trial 토큰 인증, seq 중복은 409). 권위 없는 기록이고 도구 입력은 해시만 남김 |
+| 데모 probe | `POST /v1/trials/{id}/probes` | API 토큰(Trial 토큰 아님)으로만. 실행 중인 Trial에 버킷 삭제 두 건(`aws s3 rb …`, `kubectl delete objectbucketclaim …`)을 같은 도구 계층 결정으로 보내고 기록에 `origin: probe`를 붙임. 에이전트는 자기 호출에 이 표시를 붙일 수 없음(B10/P13) |
+| 목적지 프로필 | `BRAVO_REHEARSAL_PROFILES`(`deploy/platform/control/config/destination-profiles.json`) | 봉투 `inputs.destination_profile`과 검증기 `expected.secret_path_prefix`(없으면 `envs/<target_env>/`). OpenBao 경로 · ExternalSecret 키가 그 밖이면 `secret_path_outside_profile`(B11) |
 
 **서버 쪽 도구(D-26).** 자격은 호출 때 플랫폼 OpenBao(KV v2)에서 읽고 이 프로세스 밖으로 내보내지 않습니다. 결과의 모든 문자열은 비밀 모양 값을 가립니다. 설정이 없으면 이유(`gate_unconfigured`, `openbao_unconfigured`, `secret_missing` 등)로 거부합니다. OpenBao 변수 이름은 Executor와 같습니다(`BRAVO_BAO_ADDR`, `BRAVO_BAO_CACERT`, `BRAVO_BAO_ROLE_ID`, `BRAVO_BAO_SECRET_ID`). 파일럿은 AppRole `rehearsal`(정책 `deploy/pilot/bao/policies/platform-rehearsal.hcl`, 주기 토큰 1시간, secret_id 60초 · 1회)이고, 서비스는 시작 때 로그인한 뒤 secret_id를 버리고 토큰을 갱신합니다.
 

@@ -1,0 +1,61 @@
+{
+  "mode": "cli",
+  "phase": "prepare",
+  "change_id": "7f08c324-1cf1-458f-bf2a-a40988c79d69",
+  "target": "target-onprem",
+  "provenance": "T31 prepare (CLI, no DB) of the PASS rehearsal artifact sha256:8e0e719fcedc7d92366200f2ed0de8f01c4fc029eec4c1c2f1152986bc2e7460 of Trial t-f58b9ecc8a494333b5a4c0f277fcaaee (plan 778b074a, platform rehearsal service preview Pod, 2026-11-03). Stops before any approval: the image digest below is what a change approval would bind.",
+  "started_at": "2026-11-02T18:45:42.653524+00:00",
+  "ended_at": "2026-11-02T18:45:54.402619+00:00",
+  "status": "prepared",
+  "reason": null,
+  "stages": [
+    {
+      "seq": 1,
+      "name": "tools.verify",
+      "result": "OK",
+      "ms": 252
+    },
+    {
+      "seq": 2,
+      "name": "bound.verify",
+      "result": "OK",
+      "ms": 0
+    },
+    {
+      "seq": 3,
+      "name": "source.materialize",
+      "result": "OK",
+      "ms": 97
+    },
+    {
+      "seq": 4,
+      "name": "diff.apply",
+      "result": "OK",
+      "ms": 29
+    },
+    {
+      "seq": 5,
+      "name": "image.build",
+      "result": "OK",
+      "ms": 9431
+    },
+    {
+      "seq": 6,
+      "name": "sbom.syft",
+      "result": "OK",
+      "ms": 1200
+    },
+    {
+      "seq": 7,
+      "name": "scan.trivy",
+      "result": "OK",
+      "ms": 736
+    }
+  ],
+  "result": {
+    "image_repository": "bravo.local/bravo-demo",
+    "image_digest": "sha256:e24db97bdf160aceb398e7d2a9155dc7c665358408b45e90f77780727e94d6c1",
+    "sbom_digest": "sha256:4968cf9e67ec0069cd9d5b7aa601479151a1066c5e80d9eeda33a4e110b658dd"
+  }
+}
+exit=0

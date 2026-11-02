@@ -1,19 +1,21 @@
-"""Behavioural verification Job for proposed RGW bucket policies (B7; spec FR-5, 8.4 "별도 검증 Job").
+"""Behavioural verification Job for proposed RGW bucket policies (B7, B11/P14; spec FR-5, 8.4 "별도 검증 Job").
 
 Harbor's separate verifier grades the frozen proposal JSON with static rules. For every ``rgw_bucket_policy``
-translation in that proposal the platform also asks RGW itself, in a separate Job on the destination cluster:
-the policy is applied to the rehearsal test bucket, an unsigned GET must be refused with AccessDenied and a
-signed GET with the test bucket owner's key must work. Before that, a control step shows that an open policy is
-visible on that bucket. The test is ``verify_job_s3.py`` (platform-held, never shown to the agent).
+translation in that proposal the platform also asks RGW itself, in a separate Job on the destination cluster, the
+GATE's own questions: the policy is applied to the rehearsal test bucket and ``bravo_gate.probes.objstore`` OBJ-01..06
+run against it (unsigned GET / LIST / PUT refused, the app's stand-in can read and write, another credential is
+refused, plain HTTP is refused), so a verifier PASS predicts the gate's PASS on the destination (B11/P14). Before that,
+a control step shows that the gate's OBJ-01 FAILs under a known-open policy on that bucket. The test is
+``verify_job_gate.py`` (platform-held, never shown to the agent), run on the digest-pinned gate image.
 
-Where it runs: namespace ``verify-<plan>-<n>-job`` (the provisioner may write only in ``verify-*``) with the
+Where it runs: namespace ``verify-<plan>-<role>-<n>-job`` (the provisioner may write only in ``verify-*``) with the
 rehearsal baseline (Pod Security restricted, default deny, same namespace + kube-dns, quota, limits, token-less
-service account) plus one NetworkPolicy: the Job's Pod may reach the RGW Pods on 443 and nothing else. The image is
-the pinned verifier image. The namespace is deleted at the end; what is left is recorded.
+service account) plus one NetworkPolicy: the Job's Pod may reach the RGW Pods on 443 (TLS) and 8080 (RGW's plain
+listener, for OBJ-06) and nothing else. The namespace is deleted at the end; what is left is recorded.
 
-Credentials (D-26): the test bucket owner's key is read per Trial from the platform OpenBao
-``secret/envs/<target_env>/rehearsal-s3`` by the service and handed to the Job as a Secret in that namespace (deleted
-right after the Job ends, and with the namespace). The record returned here holds no key.
+Credentials (D-26): the test bucket owner's key and the no-grant "other" user's key are read per Trial from the platform
+OpenBao ``secret/envs/<target_env>/rehearsal-s3`` by the service and handed to the Job as a Secret in that namespace
+(deleted right after the Job ends, and with the namespace). The record returned here holds no key.
 
 Rendering (``render``, pure): the proposal is written for the destination attachment bucket. For the test, the bucket
 in every ``arn:aws:s3:::<bucket>[/...]`` becomes the test bucket, and the destination app principal (the attachment
@@ -37,13 +39,15 @@ from kubernetes.client.rest import ApiException
 from .cluster import EGRESS_CANARIES, ROLE_LABEL, TRIAL_LABEL, Names, _pod_security, baseline
 
 POLICY_TYPES = ("rgw_bucket_policy",)
-KIND = "behavioral+static_rules"
+KIND = "behavioral:gate_obj01_06+static_rules"
 SECRET_PATH = "envs/{env}/rehearsal-s3"
 SECRET_FIELDS = ("access_key_id", "secret_access_key", "endpoint", "bucket", "ca_pem", "owner_arn")
+OTHER_FIELDS = ("other_access_key_id", "other_secret_access_key")  # RGW user with no grant (OBJ-05)
 JOB_ROLE = "verify-job"
 CONTAINER = "verify"
-RGW_NAMESPACE, RGW_POD_LABELS, RGW_PORT = "rook-ceph", {"app": "rook-ceph-rgw"}, 443
-SCRIPT = Path(__file__).with_name("verify_job_s3.py")
+RGW_NAMESPACE, RGW_POD_LABELS = "rook-ceph", {"app": "rook-ceph-rgw"}
+RGW_PORTS = (443, 8080)  # TLS listener; plain listener behind Service port 80 (OBJ-06)
+SCRIPT = Path(__file__).with_name("verify_job_gate.py")
 S3_ARN = "arn:aws:s3:::"
 
 
@@ -87,10 +91,19 @@ def control_policy(bucket: str, key: str) -> dict[str, Any]:
         "Resource": f"{S3_ARN}{bucket}/{key}"}]}
 
 
+def plain_endpoint(record: dict[str, str]) -> str:
+    """RGW's plain-HTTP listener for OBJ-06: the record's ``plain_endpoint``, else the TLS endpoint's host on :80."""
+    if record.get("plain_endpoint"):
+        return record["plain_endpoint"]
+    host = record["endpoint"].split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    return f"http://{host}:80"
+
+
 def params(trial_id: str, record: dict[str, str], docs: list[dict[str, Any]]) -> dict[str, Any]:
     bucket, key = record["bucket"], f"_verify/{trial_id}"
     pmap = {record["target_app_arn"]: record["owner_arn"]} if record.get("target_app_arn") else {}
-    return {"run": trial_id, "endpoint": record["endpoint"], "bucket": bucket, "canary_key": key,
+    return {"run": trial_id, "endpoint": record["endpoint"], "plain_endpoint": plain_endpoint(record),
+            "bucket": bucket, "canary_key": key,
             "egress_canaries": [list(x) for x in EGRESS_CANARIES],
             "control_policy": control_policy(bucket, key),
             "policies": [{"index": i, "policy": render(d, test_bucket=bucket, principal_map=pmap)}
@@ -102,22 +115,24 @@ def namespace_of(names: Names) -> str:
 
 
 def job_objects(ns: str, trial_id: str, image: str, prm: dict[str, Any], ca_pem: str, access_key: str,
-                secret_key: str, deadline_s: int) -> list[tuple[str, dict[str, Any]]]:
+                secret_key: str, deadline_s: int, other: tuple[str, str] | None = None) -> list[tuple[str, dict[str, Any]]]:
     labels = {TRIAL_LABEL: trial_id, ROLE_LABEL: JOB_ROLE}
     egress = {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
               "metadata": {"name": "allow-rgw-egress", "labels": labels},
               "spec": {"podSelector": {"matchLabels": {ROLE_LABEL: JOB_ROLE}}, "policyTypes": ["Egress"],
                        "egress": [{"to": [{"namespaceSelector": {"matchLabels": {
                            "kubernetes.io/metadata.name": RGW_NAMESPACE}}, "podSelector": {"matchLabels": RGW_POD_LABELS}}],
-                           "ports": [{"protocol": "TCP", "port": RGW_PORT}]}]}}
+                           "ports": [{"protocol": "TCP", "port": p} for p in RGW_PORTS]}]}}
     cm = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "verify-job", "labels": labels},
           "data": {"job.py": SCRIPT.read_text(encoding="utf-8"), "params.json": json.dumps(prm, sort_keys=True),
                    "ca.crt": ca_pem}}
+    data = {"access_key_id": access_key, "secret_access_key": secret_key}
+    if other is not None:
+        data.update(other_access_key_id=other[0], other_secret_access_key=other[1])
     secret = {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
-              "metadata": {"name": "verify-job-s3", "labels": labels},
-              "stringData": {"access_key_id": access_key, "secret_access_key": secret_key}}
-    env = [{"name": f"S3_{k.upper()}", "valueFrom": {"secretKeyRef": {"name": "verify-job-s3", "key": k}}}
-           for k in ("access_key_id", "secret_access_key")]
+              "metadata": {"name": "verify-job-s3", "labels": labels}, "stringData": data}
+    env = [{"name": ("" if k.startswith("other_") else "S3_") + k.upper(),
+            "valueFrom": {"secretKeyRef": {"name": "verify-job-s3", "key": k}}} for k in sorted(data)]
     job = {"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": f"verify-job-{trial_id[:12]}", "labels": labels},
            "spec": {"backoffLimit": 0, "activeDeadlineSeconds": deadline_s, "template": {
                "metadata": {"labels": labels},
@@ -125,13 +140,16 @@ def job_objects(ns: str, trial_id: str, image: str, prm: dict[str, Any], ca_pem:
                         "enableServiceLinks": False, "restartPolicy": "Never", "securityContext": _pod_security(),
                         "containers": [{
                             "name": CONTAINER, "image": image, "imagePullPolicy": "IfNotPresent",
-                            "command": ["python3", "-I", "-B", "/cfg/job.py"], "env": env,
+                            # The gate image's venv python (bravo_gate, boto3); -I keeps PYTHON* and cwd out.
+                            "command": ["python", "-I", "-B", "/cfg/job.py"], "env": env,
                             "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]},
                                                 "readOnlyRootFilesystem": True, "runAsNonRoot": True},
-                            "resources": {"requests": {"cpu": "50m", "memory": "64Mi"},
-                                          "limits": {"cpu": "500m", "memory": "128Mi"}},
-                            "volumeMounts": [{"name": "cfg", "mountPath": "/cfg", "readOnly": True}]}],
-                        "volumes": [{"name": "cfg", "configMap": {"name": "verify-job"}}]}}}}
+                            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"},
+                                          "limits": {"cpu": "500m", "memory": "256Mi"}},
+                            "volumeMounts": [{"name": "cfg", "mountPath": "/cfg", "readOnly": True},
+                                             {"name": "tmp", "mountPath": "/tmp"}]}],
+                        "volumes": [{"name": "cfg", "configMap": {"name": "verify-job"}},
+                                    {"name": "tmp", "emptyDir": {"sizeLimit": "16Mi"}}]}}}}
     return [("np", egress), ("configmap", cm), ("secret", secret), ("job", job)]
 
 
@@ -220,6 +238,9 @@ class JobRun:
         ns = namespace_of(names)
         prm = params(trial_id, record, docs)
         out: dict[str, Any] = {"ran": False, "reason": None, "namespace": ns, "test_bucket": record["bucket"],
+                               "kind": KIND, "pinned_image": image,
+                               "pinned_image_digest": image.rsplit("@", 1)[-1] if "@" in image else None,
+                               "questions": "bravo_gate.probes.objstore OBJ-01..06 (gate image)",
                                "endpoint": record["endpoint"], "policies": len(docs),
                                "rendered": [p["policy"] for p in prm["policies"]],
                                "started_at": datetime.now(UTC).isoformat()}
@@ -233,8 +254,11 @@ class JobRun:
             return out
         try:
             out["baseline_notes"] = self._baseline(ns, trial_id)
+            other = ((record["other_access_key_id"], record["other_secret_access_key"])
+                     if all(record.get(k) for k in OTHER_FIELDS) else None)
+            out["other_credential"] = other is not None  # without it OBJ-05 is UNKNOWN, so the check fails
             objs = job_objects(ns, trial_id, image, prm, record["ca_pem"], record["access_key_id"],
-                               record["secret_access_key"], deadline_s)
+                               record["secret_access_key"], deadline_s, other)
             for kind, body in objs:
                 self._create(ns, kind, body)
             job = objs[-1][1]["metadata"]["name"]

@@ -40,7 +40,7 @@ def test_task_validates_against_harbor_model(role):
 
 
 def _verify(tmp_path, proposal, preseed=None):
-    (tmp_path / "out").mkdir()
+    (tmp_path / "out").mkdir(parents=True)
     (tmp_path / "logs").mkdir()
     prop = tmp_path / "out" / "proposal.json"
     if proposal is not None:
@@ -83,3 +83,50 @@ def test_binding_and_refs(tmp_path, mut, err):
     mut(p)
     reward, details = _verify(tmp_path, p)
     assert reward == "0" and err in details["errors"]
+
+
+def test_secret_paths_must_come_from_the_destination_profile(tmp_path):
+    """B11: an OpenBao policy or ExternalSecret key outside expected.secret_path_prefix (the destination profile, e.g.
+    envs/target-onprem/) is refused; the guess envs/onprem/... from the 11/2 proposal no longer passes."""
+    def prop(path, key):
+        return {**GOOD, "translations": [
+            {"source": {"type": "aws_secretsmanager_secret", "id": "s"}, "target": {"type": "openbao_policy", "name": "a"},
+             "control_ids": ["SEC-01"], "document": {"path": {path: {"capabilities": ["read"]}}}},
+            {"source": {"type": "aws_secretsmanager_secret", "id": "s"}, "target": {"type": "external_secret", "name": "a"},
+             "control_ids": ["SEC-01"], "document": {"kind": "ExternalSecret", "metadata": {"name": "a-db"}, "spec": {
+                 "data": [{"secretKey": "password", "remoteRef": {"key": key, "property": "app_writer"}}]}}}]}
+    global EXPECTED
+    saved = EXPECTED
+    EXPECTED = {**saved, "secret_path_prefix": "envs/target-onprem/"}
+    try:
+        good = _verify(tmp_path / "a", prop("secret/data/envs/target-onprem/chat-db", "envs/target-onprem/chat-db"))
+        bad = _verify(tmp_path / "b", prop("secret/data/envs/onprem/chat-db", "envs/onprem/chat-db"))
+    finally:
+        EXPECTED = saved
+    assert good[0] == "1"
+    assert bad[0] == "0" and bad[1]["errors"] == ["secret_path_outside_profile"]
+
+
+
+def test_hcl_openbao_policy_and_t31_names_are_checked_like_t31(tmp_path):
+    """A PASS predicts that T31 applies it: HCL text is read (not skipped), and Kubernetes names follow T31's rule."""
+    def prop(policy_text, es_name):
+        return {**GOOD, "translations": [
+            {"source": {"type": "aws_secretsmanager_secret", "id": "s"}, "target": {"type": "openbao_policy", "name": "a"},
+             "control_ids": ["SEC-01"], "document": {"name": "a", "policy": policy_text}},
+            {"source": {"type": "aws_secretsmanager_secret", "id": "s"}, "target": {"type": "external_secret", "name": "a"},
+             "control_ids": ["SEC-01"], "document": {"kind": "ExternalSecret", "metadata": {"name": es_name}, "spec": {
+                 "data": [{"secretKey": "p", "remoteRef": {"key": "envs/target-onprem/chat-db"}}]}}}]}
+    global EXPECTED
+    saved = EXPECTED
+    EXPECTED = {**saved, "secret_path_prefix": "envs/target-onprem/", "app_namespace": "chat"}
+    try:
+        ok = _verify(tmp_path / "a", prop('path "secret/data/envs/target-onprem/chat-db" {\n capabilities = ["read"]\n}\n', "a"))
+        guessed = _verify(tmp_path / "b", prop('path "secret/data/envs/onprem/chat-db" { capabilities = ["read"] }', "a"))
+        named = _verify(tmp_path / "c", prop('path "secret/data/envs/target-onprem/chat-db" { capabilities = ["read"] }',
+                                             "bravo-demo-db"))
+    finally:
+        EXPECTED = saved
+    assert ok[0] == "1"
+    assert guessed[1]["errors"] == ["secret_path_outside_profile"]
+    assert named[1]["errors"] == ["k8s_name_out_of_scope"]

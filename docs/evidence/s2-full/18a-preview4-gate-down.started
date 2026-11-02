@@ -1,0 +1,2 @@
+2026-11-03T03:48:00+0900
+rehearsal@sha256:5c554f5b5b02339ebe30dd072fe8c31e94edb67fe61739bebbf47fa51de8f8d0 (preview Pod rehearsal-preview-s2full4 10.42.0.211). Verifier now reads HCL OpenBao paths and checks T31's name / namespace / bucket rules (14 PASS was refused by T31 scope, 17). New plan, both tasks at 0:00, probes on, gate report on if the gate answers.

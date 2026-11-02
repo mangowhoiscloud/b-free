@@ -1,0 +1,46 @@
+{
+  "comment": "Destination profiles for the rehearsal service (S2, B11/P14). Names and paths only, no secret values. The agent sees the target's profile in its envelope (inputs.destination_profile) so secret paths come from the real destination, not from a guess; the private verifier refuses OpenBao paths and ExternalSecret keys outside secret_store.path_prefix. Values measured on bravo-onprem 2026-11-03 02:4x KST (Deployment chat/chat-bravo-demo, Secret bravo-demo-db, ObjectBucket obc-chat-bravo-demo-attachments, keys.sh env-fields).",
+  "profiles": {
+    "target-onprem": {
+      "secret_store": {
+        "engine": "openbao",
+        "kv_mount": "secret",
+        "kv_version": 2,
+        "path_prefix": "envs/target-onprem/",
+        "eso_store": {
+          "kind": "ClusterSecretStore",
+          "name": "bravo-platform-openbao"
+        },
+        "eso_approle": "eso-target-onprem",
+        "openbao_policy_prefix": "app-target-onprem-"
+      },
+      "app": {
+        "namespace": "chat",
+        "deployment": "chat-bravo-demo",
+        "container": "app",
+        "service_account": "chat-bravo-demo",
+        "db_password": {
+          "openbao_key": "envs/target-onprem/chat-db",
+          "property": "app_writer",
+          "k8s_secret": "bravo-demo-db",
+          "k8s_key": "password",
+          "env": "DB_PASSWORD_FILE",
+          "mount_path": "/var/run/bravo/db/password"
+        }
+      },
+      "object_store": {
+        "engine": "rgw",
+        "bucket": "bravo-demo-attachments",
+        "app_principal": "arn:aws:iam:::user/obc-chat-bravo-demo-attachments-b292e551-66ce-442d-b51b-e5865a628e1b",
+        "default_encryption": {
+          "algorithm": "aws:kms",
+          "kms_key": "rgw-target-onprem"
+        },
+        "engine_facts": [
+          "Ceph RGW sets the condition key aws:SecureTransport only on TLS requests; on a plain-HTTP request the key is absent. A Deny meant for plain HTTP must therefore use BoolIfExists {aws:SecureTransport: false}: with Bool it never matches (measured 2026-11-03 03:0x KST, docs/evidence/s2-full 03-05). The destination's existing statement DenyInsecureTransport uses BoolIfExists.",
+          "With SSE-KMS default encryption a plain-HTTP GET that no policy refuses is answered 400 InvalidRequest, which the gate's OBJ-06 counts as UNKNOWN (not a refusal)."
+        ]
+      }
+    }
+  }
+}

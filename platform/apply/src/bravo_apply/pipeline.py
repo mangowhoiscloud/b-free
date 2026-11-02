@@ -171,7 +171,7 @@ def apply(cfg: Config, ch: Change, rec: Recorder, out: Path, approvals: Approval
         run_stage(rec, A, "destination.connect", _raise(Stop("failed", "destination_unknown", Result.FAIL, {"target": ch.target_env})))
     lock = tools.load_lock(cfg.lock_path)
     drv = run_stage(rec, A, "destination.connect", lambda: _connect(dest, lock)).value
-    objs = run_stage(rec, A, "policies.scope", lambda: _scope(ch, approval, dest)).value  # type: ignore[arg-type]
+    plan = run_stage(rec, A, "policies.scope", lambda: _scope(ch, approval, dest)).value  # type: ignore[arg-type]
 
     signature, deployed = None, None
     if tar is not None and approved_image:
@@ -199,7 +199,8 @@ def apply(cfg: Config, ch: Change, rec: Recorder, out: Path, approvals: Approval
         for name in ("staging.push", "image.sign", "signature.verify", "destination.import", "deploy.precheck",
                      "deploy.rollout", "deploy.verify"):
             run_stage(rec, A, name, lambda: Step(Result.SKIPPED, {"reason": "no_image_change"}))
-    applied = run_stage(rec, A, "policies.apply", lambda: policies.apply(drv.k, objs, dest["namespace"]))  # type: ignore[index]
+    applied = run_stage(rec, A, "policies.apply", lambda: policies.apply_plan(  # type: ignore[index]
+        drv.k, plan, dest, lock["kubectl"].path, drv.ctx))
     gate_step = run_stage(rec, A, "gate.recheck", lambda: gate.recheck(cfg.gate_url, dest.get("gate")))  # type: ignore[union-attr]
     result = {"signature": signature, "deployed_digest": deployed,
               "policies_applied": applied.detail if applied.result is Result.OK else {"status": "skipped", **applied.detail},
@@ -214,10 +215,12 @@ def _connect(dest: dict[str, Any], lock: dict[str, tools.Pin]) -> Step:
 
 
 def _scope(ch: Change, approval: dict[str, Any], dest: dict[str, Any]) -> Step:
-    objs = policies.check_scope(digests.translations(ch.artifact), approval.get("policy_diff_digest"), dest)
-    if not objs:
-        return Step(Result.SKIPPED, {"reason": "no_policy_diff"}, [])
-    return Step(detail={"objects": [f"{o['kind']}/{o['metadata']['name']}" for o in objs]}, value=objs)
+    plan = policies.scoped(digests.translations(ch.artifact), approval.get("policy_diff_digest"), dest)
+    if not any(plan.values()):
+        return Step(Result.SKIPPED, {"reason": "no_policy_diff"}, plan)
+    return Step(detail={"objects": [f"{o['kind']}/{o['metadata']['name']}" for o in plan["k8s"]],
+                        "rgw_bucket_policy": [n for n, _ in plan["rgw_bucket_policy"]],
+                        "openbao_policy": [n for n, _ in plan["openbao_policy"]]}, value=plan)
 
 
 def _with_value(value: dict[str, Any], keys: tuple[str, ...] | None = None) -> Step:

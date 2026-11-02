@@ -34,6 +34,8 @@ sandbox:
       cwd: /app
       timeout_s: 60
     make_diff:
-      argv: [diff, -ruN, /src, /app]
-      cwd: /work
+      # Relative headers (src/... app/...) so the same diff applies with -p1 in the platform's verification Job and in
+      # T31 (git apply -p1 on the customer repository).
+      argv: [diff, -ruN, src, app]
+      cwd: /
       timeout_s: 20

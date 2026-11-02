@@ -84,17 +84,24 @@ def _reason_code(reason: str | None) -> str:
     return code or "no_reason_recorded"
 
 
+def _failed_checks(verifier: Any) -> str:
+    """The verifier's failed checks with what was observed (e.g. ``gate_OBJ-06: UNKNOWN plain_http_inconclusive error
+    400 InvalidRequest``): what the next attempt has to fix (spec S2 4: analyse the cause and retry). Names and observed
+    answers only; the private tests themselves are never sent."""
+    checks = verifier.get("checks") if isinstance(verifier, dict) else None
+    failed = [c for c in checks or [] if isinstance(c, dict) and not c.get("ok")]
+    return "; ".join(f"{str(c.get('name'))[:60]}: {str(c.get('detail') or '')[:120]}" for c in failed[:4])
+
+
 def prior_failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """FAIL verdicts of the current attempt budget, oldest first, as ``bravo_agents.PriorFailure``."""
-    return [
-        {
-            "attempt": r["attempt"],
-            "verdict": "FAIL",
-            "reason": _reason_code(r["reason"]),
-            "summary": f"attempt {r['attempt']}: verifier verdict FAIL ({r['reason'] or 'no reason recorded'})"[:500],
-        }
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        detail = _failed_checks(r.get("verifier"))
+        summary = f"attempt {r['attempt']}: verifier verdict FAIL ({r['reason'] or 'no reason recorded'})"
+        out.append({"attempt": r["attempt"], "verdict": "FAIL", "reason": _reason_code(r["reason"]),
+                    "summary": (summary + (f"; failed checks: {detail}" if detail else ""))[:500]})
+    return out
 
 
 def evidence_from(inventory: dict[str, Any], gate: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -268,7 +275,7 @@ class RehearsalService:
             failures = int(plan["rehearsal_failures"])
             attempt = failures + 1
             cur = await conn.execute(
-                "SELECT attempt, reason FROM rehearsals WHERE plan_id = %s AND status = 'FAIL' "
+                "SELECT attempt, reason, verifier FROM rehearsals WHERE plan_id = %s AND status = 'FAIL' "
                 "ORDER BY created_at DESC LIMIT %s",
                 (plan_id, failures),
             )
@@ -490,8 +497,42 @@ async def settle(conn: Conn, settings: Settings, row: dict[str, Any], body: dict
     )
 
 
+PHASES = ("provisioning", "agent_running", "proposed", "verifying", "done")
+
+
 class RehearsalWatcher:
     """Polls in-flight Trials (any channel started them) and applies their progress."""
+
+    async def _progress(self, conn: Conn, row: dict[str, Any], body: dict[str, Any]) -> None:
+        """One ``trial.progress`` per Trial phase, under the plan lock; the events table itself is the dedupe record
+        (two API replicas poll the same Trial)."""
+        phase = body.get("phase")
+        if phase not in PHASES:
+            return
+        cur = await conn.execute(
+            "SELECT 1 FROM events WHERE plan_id = %s AND kind = %s AND data->>'rehearsal_id' = %s "
+            "AND data->>'phase' = %s LIMIT 1",
+            (row["plan_id"], EventKind.TRIAL_PROGRESS.value, str(row["rehearsal_id"]), phase),
+        )
+        if await cur.fetchone() is not None:
+            return
+        timings = body.get("timings") if isinstance(body.get("timings"), dict) else {}
+        await emit(
+            conn,
+            plan_id=row["plan_id"],
+            kind=EventKind.TRIAL_PROGRESS,
+            mode=EventMode.LIVE,
+            actor=SYSTEM,
+            data={
+                "rehearsal_id": str(row["rehearsal_id"]),
+                "trial_id": row["trial_id"],
+                "role": row["role"],
+                "phase": phase,
+                "elapsed_s": timings.get("elapsed_s"),
+                "phase_s": timings.get("phase_s"),
+                "tool_summary": body.get("tool_summary") if isinstance(body.get("tool_summary"), dict) else None,
+            },
+        )
 
     def __init__(self, db: Database, client: RehearsalClient | None, settings: Settings) -> None:
         self._db = db
@@ -564,11 +605,15 @@ class RehearsalWatcher:
                         "seq": ev["seq"],
                         "tool": ev.get("tool"),
                         "rule": ev.get("rule"),
+                        # Who called (B10/P13): "agent" (the worker through /mcp) or "probe" (an operator demo
+                        # probe through the rehearsal service). A probe's denial is never the agent's behaviour.
+                        "origin": ev.get("origin") if ev.get("origin") in ("agent", "probe") else "agent",
                         "at": ev.get("at"),
                     },
                 )
         if last != row["tool_seq"]:
             await conn.execute("UPDATE rehearsals SET tool_seq = %s WHERE rehearsal_id = %s", (last, row["rehearsal_id"]))
+        await self._progress(conn, row, body)
         verdict = body.get("verdict")
         if verdict in ("PASS", "FAIL", "INFRA_ERROR"):
             problem = None if verdict == "INFRA_ERROR" and "trial_id" not in body else bound_problem(body, row)

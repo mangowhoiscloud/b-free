@@ -1,0 +1,63 @@
+{
+ "what": "T31 bound values and policies.scope (pure, nothing applied) on the run-18 PASS proposals, platform/apply/config.json",
+ "governance": {
+  "trial_id": "t-b21bdd68d0824607b9a94a8cbf8ac124",
+  "verdict": "PASS",
+  "artifact_digest": "sha256:c764c07e645e22c908dc85d79591954cd83e2174c197fcb32ddef1a3279058e0",
+  "bound": {
+   "diff_digest": null,
+   "policy_diff_digest": "sha256:9c64532988243ea33b15c960a06f2d2a05968177b36914fa31fe8ed1c2cab362",
+   "policy_targets": [
+    {
+     "type": "external_secret",
+     "name": "chat-bravo-demo-db"
+    },
+    {
+     "type": "k8s_rbac",
+     "name": "chat-bravo-demo"
+    },
+    {
+     "type": "openbao_policy",
+     "name": "app-target-onprem-chat-db"
+    },
+    {
+     "type": "rgw_bucket_policy",
+     "name": "chat-bravo-demo-attachments"
+    }
+   ],
+   "artifact_digest": "sha256:c764c07e645e22c908dc85d79591954cd83e2174c197fcb32ddef1a3279058e0"
+  },
+  "scope": {
+   "result": "ok",
+   "k8s": [
+    "ExternalSecret/chat-bravo-demo-db",
+    "ServiceAccount/chat-bravo-demo",
+    "Role/chat-bravo-demo-db-secret",
+    "RoleBinding/chat-bravo-demo-db-secret"
+   ],
+   "rgw_bucket_policy": [
+    "chat-bravo-demo-attachments"
+   ],
+   "openbao_policy": [
+    "app-target-onprem-chat-db"
+   ]
+  }
+ },
+ "app_migration": {
+  "trial_id": "t-4ed22a647a0c4809814da95a1be580b5",
+  "verdict": "PASS",
+  "artifact_digest": "sha256:b2fd17e4063ac590cc5eb9d63bc49bed064345299717db9b854eb13a601d5ff1",
+  "bound": {
+   "diff_digest": "sha256:06a8043c0333a0c5cb4c8088c96bf0b57ea2e85d81d3d6bef29871c543aa813e",
+   "policy_diff_digest": null,
+   "policy_targets": [],
+   "artifact_digest": "sha256:b2fd17e4063ac590cc5eb9d63bc49bed064345299717db9b854eb13a601d5ff1"
+  },
+  "scope": {
+   "result": "ok",
+   "k8s": [],
+   "rgw_bucket_policy": [],
+   "openbao_policy": []
+  }
+ }
+}

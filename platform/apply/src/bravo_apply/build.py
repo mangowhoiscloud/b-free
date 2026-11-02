@@ -46,7 +46,16 @@ def tree_digest(root: Path) -> str:
     return "sha256:" + h.hexdigest()
 
 
+def without_timestamps(diff: str) -> str:
+    """Drop the tab and timestamp after ``---`` / ``+++`` file names. The rehearsal snapshot's files carry mtime 0, and
+    ``git apply`` reads an old side dated 1970-01-01 as "file did not exist" ("new file ... depends on old contents",
+    measured 2026-11-03 03:46 KST). Only the header changes; the bound ``diff_digest`` is still over the original text."""
+    return "\n".join(ln.split("\t", 1)[0] if ln.startswith(("--- ", "+++ ")) else ln
+                     for ln in diff.split("\n"))
+
+
 def diff_paths(app_dir: Path, diff: str) -> list[str]:
+    diff = without_timestamps(diff)
     out = run(["git", "apply", "--numstat", "-p1", "-"], env=clean_env(), input_bytes=diff.encode(), cwd=app_dir).stdout
     paths = []
     for line in out.decode().splitlines():
@@ -64,6 +73,7 @@ def apply_diff(app_dir: Path, diff: str, files: list[str] | None) -> Step:
     if files is not None and sorted(set(files)) != sorted(set(paths)):
         raise Stop("prepare_failed", "diff_files_mismatch", Result.REFUSED,
                    {"diff_paths": sorted(set(paths)), "artifact_files": sorted(set(files))})
+    diff = without_timestamps(diff)
     run(["git", "apply", "--check", "-p1", "-"], env=clean_env(), input_bytes=diff.encode(), cwd=app_dir)
     run(["git", "apply", "-p1", "-"], env=clean_env(), input_bytes=diff.encode(), cwd=app_dir)
     return Step(detail={"files": sorted(set(paths)), "source_digest_after": tree_digest(app_dir)})

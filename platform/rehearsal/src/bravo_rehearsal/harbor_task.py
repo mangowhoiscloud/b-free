@@ -103,6 +103,7 @@ with open(f"{verifier_dir}/binding.json", "w", encoding="utf-8") as f:
 # They do not redeploy the proposal or probe a live endpoint; that is recorded as the verifier kind.
 STATIC_RULES = "static_rules"
 META_FILE = "bravo_task.json"
+WORKING_COPY_ROLES = frozenset({"app_migration"})  # their allowlist writes /app and diffs it against /src
 
 
 class TaskInvalid(ValueError):
@@ -185,6 +186,12 @@ def materialize(template: Path, dest: Path, expected: dict[str, Any] | None = No
     shutil.rmtree(dest / "environment" / "source", ignore_errors=True)
     if source_snapshot is not None:
         shutil.copytree(source_snapshot, dest / "environment" / "source", symlinks=False)
+    # Roles that edit code get a working copy: /app starts as the same snapshot (spec S2: writes only to the working
+    # copy in the rehearsal namespace), so `diff -ruN src app` from / shows only the agent's change.
+    if agent_template and template.name in WORKING_COPY_ROLES:
+        shutil.rmtree(dest / "environment" / "app", ignore_errors=True)
+        if source_snapshot is not None:
+            shutil.copytree(source_snapshot, dest / "environment" / "app", symlinks=False)
     # What the verifier actually does, recorded with the Trial so no verdict claims more than what ran.
     (dest / META_FILE).write_text(json.dumps({
         "template": str(template.name), "template_source": "platform/agent/harbor" if agent_template else "tasks",

@@ -1,0 +1,72 @@
+{
+ "queried_at": "2026-11-02T18:56:12Z",
+ "how": "the service's own drops.collect, run from the operator laptop through a port-forward (preview Pods are not in prometheus-ingress; the Deployment is after this commit)",
+ "governance": {
+  "source": "prometheus hubble_drop_total",
+  "query": "sum by (source, reason, protocol) (hubble_drop_total{bravo_env=\"target-onprem\",source=~\"rehearsal-a0189c2b-gov-1|verify-a0189c2b-gov-1|verify-a0189c2b-gov-1-job|verify-a0189c2b-gov-1-app\"})",
+  "env": "target-onprem",
+  "window": [
+   "2026-11-02T18:48:39.696779+00:00",
+   "2026-11-02T18:54:26.550451+00:00"
+  ],
+  "rows": [
+   {
+    "namespace": "rehearsal-a0189c2b-gov-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-a0189c2b-gov-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-a0189c2b-gov-1-job",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   }
+  ],
+  "total": 36,
+  "policy_denied": 36
+ },
+ "app_migration": {
+  "source": "prometheus hubble_drop_total",
+  "query": "sum by (source, reason, protocol) (hubble_drop_total{bravo_env=\"target-onprem\",source=~\"rehearsal-a0189c2b-app-1|verify-a0189c2b-app-1|verify-a0189c2b-app-1-job|verify-a0189c2b-app-1-app\"})",
+  "env": "target-onprem",
+  "window": [
+   "2026-11-02T18:48:40.028738+00:00",
+   "2026-11-02T18:55:54.240414+00:00"
+  ],
+  "rows": [
+   {
+    "namespace": "rehearsal-a0189c2b-app-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-a0189c2b-app-1",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   },
+   {
+    "namespace": "verify-a0189c2b-app-1-app",
+    "reason": "POLICY_DENIED",
+    "protocol": "TCP",
+    "drops": 12,
+    "counter_end": 12
+   }
+  ],
+  "total": 36,
+  "policy_denied": 36
+ }
+}

@@ -1,0 +1,2 @@
+2026-11-03T03:20:05+0900
+governance attempt 3 of plan 778b074a (attempts 1-2 FAIL gate_OBJ-06, Bool aws:SecureTransport); driver resumed with --prior-trials after the API Pod rollout killed it; --skip-gate (gate Pod restarting)

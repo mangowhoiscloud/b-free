@@ -34,6 +34,7 @@ APP_SA = "rehearsal-app"
 TRIAL_LABEL = "bravo.dev/trial-id"
 ROLE_LABEL = "bravo.dev/role"
 EGRESS_CANARIES = (("1.1.1.1", 443), ("169.254.169.254", 80))  # internet, cloud metadata
+ROLE_TAGS = {"governance": "gov", "app_migration": "app", "discovery": "disc", "db": "db", "ci": "ci", "report": "rep"}
 
 
 class ClusterError(Exception):
@@ -49,10 +50,14 @@ class Names:
     sandbox_pod: str
 
     @classmethod
-    def of(cls, plan_id: str, attempt: int, trial_id: str) -> Names:
+    def of(cls, plan_id: str, attempt: int, trial_id: str, role: str | None = None) -> Names:
         short = plan_id.replace("-", "")[:8]
+        # One plan runs its tasks side by side (S2: code fix and bucket policy from 0:00), so the role is part of the
+        # namespace name: rehearsal-<plan>-<role>-<n>. Without a role the old form stays (single-task callers).
+        tag = f"{ROLE_TAGS.get(role, role.replace('_', '')[:8])}-" if role else ""
         # Sandbox Pod names carry the Trial ID and attempt and are never reused (05 3, V3).
-        return cls(f"rehearsal-{short}-{attempt}", f"verify-{short}-{attempt}", f"rehearsal-sandbox-{trial_id[:12]}")
+        return cls(f"rehearsal-{short}-{tag}{attempt}", f"verify-{short}-{tag}{attempt}",
+                   f"rehearsal-sandbox-{trial_id[:12]}")
 
 
 @dataclass
@@ -159,6 +164,9 @@ class Cluster:
         cfg.host = base.host
         cfg.ssl_ca_cert = base.ssl_ca_cert
         cfg.verify_ssl = base.verify_ssl
+        # The platform reaches the destination API through a link Service whose name is not in the API server
+        # certificate; the kubeconfig names the certificate's host (tls-server-name). Keep it for this identity too.
+        cfg.tls_server_name = base.tls_server_name
         cfg.api_key = {"authorization": f"Bearer {req.status.token}"}
         box.exec_api = k8s.ApiClient(cfg)
         box.exec_token_exp = time.time() + 600

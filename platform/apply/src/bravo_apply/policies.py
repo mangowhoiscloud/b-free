@@ -5,8 +5,11 @@ Scope rules, all checked before anything is applied:
 2. every target type is one this destination can apply (``policy_types``); others are NOT_CONNECTED and the
    change fails with ``policy_target_not_connected:<type>`` (nothing applied);
 3. Kubernetes documents: namespaced kinds only, the destination namespace only, names equal to the target name
-   or prefixed by it, no reserved names, no wildcard verbs or resources.
-Then a server-side dry run of every document, then the real server-side apply (field manager ``bravo-apply``).
+   or prefixed by it, no reserved names, no wildcard verbs or resources;
+4. ``rgw_bucket_policy`` and ``openbao_policy``: ``targets.rgw_scope`` / ``targets.openbao_scope`` (the destination's
+   bucket only, no anonymous or wildcard Allow; OpenBao paths under the destination's prefix, read/list only).
+Then a server-side dry run of every Kubernetes document and the real server-side apply (field manager ``bravo-apply``),
+then the bucket policy (PutBucketPolicy + read back) and the OpenBao policies (PUT + read back), ``targets.py``.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from . import targets
 from .digests import canonical, sha256_bytes
 from .runtime import CommandError, Result, Step, Stop
 
@@ -21,6 +25,7 @@ KINDS = {
     "k8s_rbac": {"Role", "RoleBinding", "ServiceAccount"},
     "external_secret": {"ExternalSecret"},
 }
+EXTERNAL = ("rgw_bucket_policy", "openbao_policy")
 RESERVED_PREFIXES = ("bravo-", "rehearsal-", "verify-", "system:")
 
 
@@ -32,8 +37,15 @@ def objects(document: Any) -> list[dict[str, Any]]:
 
 def check_scope(items: list[dict[str, Any]] | None, approved_digest: str | None, dest: dict[str, Any]) -> list[dict[str, Any]]:
     """Return the Kubernetes objects to apply, or raise ``Stop``. ``items`` are the artifact translations."""
+    return scoped(items, approved_digest, dest)["k8s"]
+
+
+def scoped(items: list[dict[str, Any]] | None, approved_digest: str | None, dest: dict[str, Any]) -> dict[str, list[Any]]:
+    """Everything an approved change applies, by kind, or ``Stop`` before anything is applied:
+    ``k8s`` (objects), ``rgw_bucket_policy`` and ``openbao_policy`` ((target name, document) pairs)."""
+    plan: dict[str, list[Any]] = {"k8s": [], "rgw_bucket_policy": [], "openbao_policy": []}
     if not items and not approved_digest:
-        return []
+        return plan
     got = sha256_bytes(canonical(items)) if items else None
     if got != approved_digest:
         raise Stop("refused", "policy_diff_mismatch", Result.REFUSED, {"approved": approved_digest, "recomputed": got})
@@ -42,9 +54,17 @@ def check_scope(items: list[dict[str, Any]] | None, approved_digest: str | None,
     if off:
         raise Stop("failed", f"policy_target_not_connected:{off[0]}", Result.NOT_CONNECTED,
                    {"types": off, "destination_types": sorted(allowed_types)})
-    ns, out, problems = dest["namespace"], [], []
+    ns, out, problems = dest["namespace"], plan["k8s"], []
     for t in items:  # type: ignore[union-attr]
         ttype, tname = t["target"]["type"], t["target"]["name"]
+        if ttype == "rgw_bucket_policy":
+            problems += targets.rgw_scope(tname, t.get("document"), dest.get("object_store") or {})
+            plan[ttype].append((tname, t.get("document")))
+            continue
+        if ttype == "openbao_policy":
+            problems += targets.openbao_scope(tname, t.get("document"), dest.get("secret_store") or {})
+            plan[ttype].append((tname, targets.normalize_openbao(t.get("document"))))
+            continue
         for obj in objects(t.get("document")):
             if not isinstance(obj, dict):
                 problems.append(f"{tname}:not_an_object")
@@ -63,7 +83,7 @@ def check_scope(items: list[dict[str, Any]] | None, approved_digest: str | None,
             out.append({**obj, "metadata": {**meta, "namespace": ns}})
     if problems:
         raise Stop("refused", "policy_out_of_scope", Result.REFUSED, {"problems": problems[:30]})
-    return out
+    return plan
 
 
 def apply(k, objs: list[dict[str, Any]], namespace: str) -> Step:
@@ -78,3 +98,12 @@ def apply(k, objs: list[dict[str, Any]], namespace: str) -> Step:
     except CommandError as exc:
         raise Stop("failed", "policy_apply_failed", Result.FAIL, {"error": exc.stderr}) from exc
     return Step(detail={"applied": applied, "namespace": namespace})
+
+
+def apply_plan(k, plan: dict[str, list[Any]], dest: dict[str, Any], kubectl: str, context: str) -> Step:
+    """Kubernetes objects first (dry run, then apply), then the bucket and OpenBao policies (write, read back)."""
+    k8s_step = apply(k, plan["k8s"], dest["namespace"])
+    ext = targets.apply_all(plan["rgw_bucket_policy"], plan["openbao_policy"], dest, kubectl, context)
+    if k8s_step.result is Result.SKIPPED and ext.result is Result.SKIPPED:
+        return Step(Result.SKIPPED, {"reason": "no_policy_diff"})
+    return Step(detail={"kubernetes": k8s_step.detail, "external": ext.detail})

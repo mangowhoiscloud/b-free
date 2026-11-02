@@ -1,0 +1,2 @@
+2026-11-03T03:26:49+0900
+plan 778b074a governance: attempts 1-3 FAIL gate_OBJ-06 (08) -> NEEDS_HUMAN (spec 4a). Platform fix: destination profile object_store.engine_facts (measured RGW SecureTransport semantics, 03-05). Human reset -> attempt 1. Preview 2 (rehearsal@sha256:76957307...), --skip-gate (gate Pod restarting)

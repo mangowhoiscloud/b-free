@@ -1,0 +1,39 @@
+{
+  "mode": "cli",
+  "phase": "prepare",
+  "change_id": "7f08c324-1cf1-458f-bf2a-a40988c79d69",
+  "target": "target-onprem",
+  "provenance": "T31 prepare (CLI, no DB) of the PASS rehearsal artifact sha256:8e0e719fcedc7d92366200f2ed0de8f01c4fc029eec4c1c2f1152986bc2e7460 of Trial t-f58b9ecc8a494333b5a4c0f277fcaaee (plan 778b074a, platform rehearsal service preview Pod, 2026-11-03). Stops before any approval: the image digest below is what a change approval would bind.",
+  "started_at": "2026-11-02T18:45:10.609527+00:00",
+  "ended_at": "2026-11-02T18:45:11.098690+00:00",
+  "status": "prepare_failed",
+  "reason": "diff.apply_error",
+  "stages": [
+    {
+      "seq": 1,
+      "name": "tools.verify",
+      "result": "OK",
+      "ms": 348
+    },
+    {
+      "seq": 2,
+      "name": "bound.verify",
+      "result": "OK",
+      "ms": 0
+    },
+    {
+      "seq": 3,
+      "name": "source.materialize",
+      "result": "OK",
+      "ms": 129
+    },
+    {
+      "seq": 4,
+      "name": "diff.apply",
+      "result": "FAIL",
+      "ms": 10
+    }
+  ],
+  "result": null
+}
+exit=1

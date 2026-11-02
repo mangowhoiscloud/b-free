@@ -1,0 +1,2 @@
+{"kind": "inventory", "at": "2026-11-02T18:15:47.602598+00:00", "plan_id": "778b074a-a07a-4362-8987-0481e4aa4e67", "input_digest": "f6083abb11f8a0545bab469c5ea178174bc21f899efe279e760f18cfe23834ff", "files": 40, "findings": 6, "snapshot_bytes": 60628, "s": 0.4}
+{"kind": "blocked", "at": "2026-11-02T18:16:02.624912+00:00", "reason": "gate_controls_response_lost", "status": null, "body": null}

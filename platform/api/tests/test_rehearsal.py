@@ -615,3 +615,15 @@ def test_rehearsal_start_uploads_the_snapshot_then_requests_the_trial(
         os.environ.pop("BRAVO_REHEARSAL_API_TOKEN", None)
     manifest = json.loads((snapshot_dir / "t1" / pid / "manifest.json").read_text())
     assert manifest["input_digest"] == _tree_digest(customer_repo) and manifest["files"] == len(REPO_FILES)
+
+
+def test_prior_failure_names_the_failed_checks_and_what_was_observed() -> None:
+    """S2 4: the next attempt sees which verifier check failed and what the store answered, not just a reason code."""
+    verifier = {"checks": [{"name": "behavioral:gate_OBJ-01", "ok": True, "detail": "PASS"},
+                           {"name": "behavioral:gate_OBJ-06", "ok": False,
+                            "detail": "UNKNOWN plain_http_inconclusive error 400 InvalidRequest"}]}
+    [p] = prior_failures([{"attempt": 1, "reason": "verifier:behavioral:gate_OBJ-06", "verifier": verifier}])
+    assert p["reason"] == "verifier_behavioral_gate_obj_06"
+    assert p["summary"].endswith("failed checks: behavioral:gate_OBJ-06: UNKNOWN plain_http_inconclusive error "
+                                 "400 InvalidRequest")
+    assert len(p["summary"]) <= 500

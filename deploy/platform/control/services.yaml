@@ -366,6 +366,16 @@ spec:
             # Digest-pinned images present on the on-prem RKE2 nodes (rehearsal lane, platform/rehearsal/docs/evidence/rke2-2026-11-02).
             - {name: BRAVO_REHEARSAL_SANDBOX_IMAGE, value: "python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159"}
             - {name: BRAVO_REHEARSAL_VERIFIER_IMAGE, value: "python:3.12-slim-bookworm@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753"}
+            # Verification Jobs on the destination (S2, B05/P11, B11/P14). Bucket policies: the gate's own OBJ-01..06 on
+            # the GATE image (keep equal to the bravo/gate pin; put it on the on-prem nodes with
+            # deploy/landing-zone/scripts/import-platform-image.sh). Code fix: the destination's current app image and
+            # the PostgreSQL image chat-db runs (both on the nodes).
+            - {name: BRAVO_REHEARSAL_GATE_PROBE_IMAGE, value: "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate@sha256:c841a75e376ae70f4d0bd95526d024941dc2826ec014bcab4d880962e3043d78"}
+            - {name: BRAVO_REHEARSAL_APP_IMAGE, value: "bravo.local/bravo-demo@sha256:76e8f595d90267b3d740fdf9012cdf5c93d6337faf63e3601a1da3b2a65c262d"}
+            - {name: BRAVO_REHEARSAL_DB_IMAGE, value: "ghcr.io/cloudnative-pg/postgresql:16.15-system-bookworm@sha256:639ef58e1ecca2ecb91ba6aa52f55a25fc59dd1792df99f2e99d81d85043a8d6"}
+            - {name: BRAVO_REHEARSAL_PROFILES, value: /etc/bravo/profiles/destination-profiles.json}
+            # Hubble drop counters of the Trial namespaces (hubble_drop_total; the agents' ring buffer keeps ~33 s).
+            - {name: BRAVO_REHEARSAL_PROMETHEUS_URL, value: "http://prometheus.bravo-observe.svc:9090"}
             - {name: BRAVO_LLM_PROVIDER, value: claude_subscription}
             - {name: BRAVO_MODEL_OPUS, value: claude-opus-5-5}
             - {name: BRAVO_MODEL_HAIKU, value: claude-haiku-5-5}
@@ -383,16 +393,19 @@ spec:
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 30}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          resources: {requests: {cpu: 30m, memory: 256Mi}, limits: {memory: 768Mi}}
+          # Two Trials side by side (code fix + bucket policy from 0:00), each with its agent worker process.
+          resources: {requests: {cpu: 50m, memory: 384Mi}, limits: {memory: 1536Mi}}
           volumeMounts:
             - {name: runs, mountPath: /var/lib/bravo}
             - {name: tmp, mountPath: /tmp}
             - {name: kube, mountPath: /etc/bravo/rehearsal, readOnly: true}
             - {name: bao-ca, mountPath: /etc/bravo/openbao, readOnly: true}
             - {name: bao-jwt, mountPath: /var/run/secrets/openbao, readOnly: true}
+            - {name: profiles, mountPath: /etc/bravo/profiles, readOnly: true}
       volumes:
         - {name: runs, emptyDir: {sizeLimit: 512Mi}}
-        - {name: tmp, emptyDir: {sizeLimit: 128Mi}}
+        - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
+        - {name: profiles, configMap: {name: destination-profiles}}
         - {name: kube, secret: {secretName: rehearsal-kubeconfig, optional: true, defaultMode: 0440}}
         - {name: bao-ca, configMap: {name: openbao-ca}}
         - name: bao-jwt
