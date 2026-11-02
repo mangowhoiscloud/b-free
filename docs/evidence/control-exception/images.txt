@@ -7,3 +7,6 @@ sha256:71428216456e779286ef8d09313def20d0a305b08ec2969ed8fb5b31f8d49f1b	applicat
 # local smoke 23:39 KST: api image runs python -m bravo_api.migrate as a NOSUPERUSER NOBYPASSRLS owner on a throwaway postgres:16.13
 applied 0001..0008 (8 applied now); control_exceptions relrowsecurity=t relforcerowsecurity=t
 # gate image: build_rows OBJ-06 src PASS / dst FAIL (plain_http_accepted) -> OBJ-06 PASS FAIL sha256:7b670cfd13f9c2f14287e8e108d74b4987b6d3f49216d3f8db42018147ac8997
+# 2026-11-02 23:45 KST: api rebuilt for the two-source merge rule, context = git archive 1293507 platform/api, linux/arm64, pushed
+digest sha256:dda00a9ec3c0cac242e3dd4a4c04651f0b31108e505710b191ca4b810bdd86ad <- 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api, tag merge-20261102T144519Z (OCI index, pushed 23:45:29 KST)
+# image smoke: rule gate-rules/2026-11-02.3; DB-ANON-READ executor PASS/PASS + gate UNKNOWN/UNKNOWN -> PASS/PASS missing_sources [gate]; DB-AUTH executor PASS/PASS + gate PASS/FAIL -> PASS/UNKNOWN sources_disagree, verdict BLOCK
