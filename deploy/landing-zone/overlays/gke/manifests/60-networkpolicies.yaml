@@ -55,6 +55,40 @@ spec:
       ports: [{port: 5432, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: src-db-link}}}]
       ports: [{port: 5432, protocol: TCP}]
+---
+# DR-01: barman-cloud in chat-db (WAL archive, base backup) and in the recovery check cluster chat-db-restore
+# (restore job and instance) reaches Cloud Storage with Workload Identity. Two holes only:
+# - GKE metadata server (token for the KSA). Dataplane V2 hands 169.254.169.254:80 to gke-metadata-server on
+#   169.254.169.252:988, so both are allowed (GKE docs, Workload Identity Federation with network policy).
+# - storage.googleapis.com on 443. NetworkPolicy has no FQDN match and FQDN policies are off on this cluster,
+#   so it is "public addresses on 443", never the private ranges.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: chat-db-backup, namespace: chat}
+spec:
+  podSelector:
+    matchExpressions: [{key: cnpg.io/cluster, operator: In, values: [chat-db, chat-db-restore]}]
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{ipBlock: {cidr: 169.254.169.254/32}}, {ipBlock: {cidr: 169.254.169.252/32}}]
+      ports: [{port: 80, protocol: TCP}, {port: 988, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]}}]
+      ports: [{port: 443, protocol: TCP}]
+---
+# Recovery check cluster chat-db-restore (DR-RESTORE): only the CNPG operator comes in (status 8000, 5432);
+# out: the Kubernetes API (instance manager) and, by the policy above, object storage. No app, no link.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: chat-db-restore, namespace: chat}
+spec:
+  podSelector: {matchLabels: {cnpg.io/cluster: chat-db-restore}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}}]
+      ports: [{port: 8000, protocol: TCP}, {port: 5432, protocol: TCP}]
+  egress:
+    - to: [{ipBlock: {cidr: ${API_SERVER_CIDR}}}]
+      ports: [{port: 443, protocol: TCP}]
 # --- cf-edge -----------------------------------------------------------------------------------------
 ---
 apiVersion: networking.k8s.io/v1

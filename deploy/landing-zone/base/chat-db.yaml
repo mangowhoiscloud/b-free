@@ -25,6 +25,20 @@ spec:
   storage:
     storageClass: bravo-db
     size: 5Gi
+  # DR-01 backup (gate DR-ARCHIVE, DR-RESTORE): WAL archive + base backups by barman-cloud to the on-prem RGW
+  # bucket bravo-chat-db-backup (owner chat-db-backup, scripts/rgw-backup-bucket.sh; keys from the platform
+  # OpenBao, D-26). Only the rke2 overlay uses this file; eks and gke have their own chat-db with S3 / GCS.
+  backup:
+    retentionPolicy: "7d"
+    barmanObjectStore:
+      destinationPath: s3://bravo-chat-db-backup/
+      endpointURL: https://rook-ceph-rgw-bravo.rook-ceph.svc:443
+      endpointCA: {name: chat-db-backup-ca, key: ca.crt}
+      s3Credentials:
+        accessKeyId: {name: chat-db-backup-s3, key: ACCESS_KEY_ID}
+        secretAccessKey: {name: chat-db-backup-s3, key: ACCESS_SECRET_KEY}
+      wal: {compression: gzip}
+      data: {compression: gzip}
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {memory: 1Gi}

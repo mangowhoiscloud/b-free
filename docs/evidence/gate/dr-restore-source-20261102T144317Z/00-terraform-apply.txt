@@ -1,0 +1,12 @@
+aws_s3_bucket.db_backup: Creation complete after 1s [id=bravo-source-db-backup-f93be8419730a1fbb0cff7d65a]
+aws_s3_bucket_public_access_block.db_backup: Creation complete after 0s [id=bravo-source-db-backup-f93be8419730a1fbb0cff7d65a]
+aws_s3_bucket_ownership_controls.db_backup: Creation complete after 0s [id=bravo-source-db-backup-f93be8419730a1fbb0cff7d65a]
+aws_iam_role.chat_db_backup: Creation complete after 1s [id=bravo-source-chat-db-backup-5a69021197bd79ced3a828e963]
+aws_s3_bucket_server_side_encryption_configuration.db_backup: Creation complete after 0s [id=bravo-source-db-backup-f93be8419730a1fbb0cff7d65a]
+aws_s3_bucket_policy.db_backup: Creation complete after 0s [id=bravo-source-db-backup-f93be8419730a1fbb0cff7d65a]
+aws_iam_role.chat_db_restore: Creation complete after 1s [id=bravo-source-chat-db-restore-ec4cfcd111fed2d66af2c6af98]
+aws_iam_role_policy.chat_db_backup: Creation complete after 1s [id=bravo-source-chat-db-backup-5a69021197bd79ced3a828e963:chat-db-backup]
+aws_iam_role_policy.chat_db_restore: Creation complete after 1s [id=bravo-source-chat-db-restore-ec4cfcd111fed2d66af2c6af98:chat-db-restore]
+aws_eks_pod_identity_association.chat_db_backup: Creation complete after 1s [id=a-ekkxynlsbh83jctaq]
+aws_eks_pod_identity_association.chat_db_restore: Creation complete after 1s [id=a-cpxksk8szw8yaydeq]
+Apply complete! Resources: 11 added, 0 changed, 0 destroyed.

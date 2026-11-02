@@ -1,0 +1,35 @@
+# 2026-11-02 23:45:04 KST kubectl --context bravo-onprem -n chat patch cluster chat-db --type merge -p <patch below>
+{
+  "spec": {
+    "imageName": "ghcr.io/cloudnative-pg/postgresql:16.15-system-bookworm@sha256:639ef58e1ecca2ecb91ba6aa52f55a25fc59dd1792df99f2e99d81d85043a8d6",
+    "backup": {
+      "barmanObjectStore": {
+        "data": {
+          "compression": "gzip"
+        },
+        "destinationPath": "s3://bravo-chat-db-backup/",
+        "endpointCA": {
+          "key": "ca.crt",
+          "name": "chat-db-backup-ca"
+        },
+        "endpointURL": "https://rook-ceph-rgw-bravo.rook-ceph.svc:443",
+        "s3Credentials": {
+          "accessKeyId": {
+            "key": "ACCESS_KEY_ID",
+            "name": "chat-db-backup-s3"
+          },
+          "secretAccessKey": {
+            "key": "ACCESS_SECRET_KEY",
+            "name": "chat-db-backup-s3"
+          }
+        },
+        "wal": {
+          "compression": "gzip"
+        }
+      },
+      "retentionPolicy": "7d"
+    }
+  }
+}
+Warning: Native support for Barman Cloud backups and recovery is deprecated and will be completely removed in CloudNativePG 1.31.0. Found usage in: spec.backup.barmanObjectStore. Please migrate existing clusters to the new Barman Cloud Plugin to ensure a smooth transition.
+cluster.postgresql.cnpg.io/chat-db patched

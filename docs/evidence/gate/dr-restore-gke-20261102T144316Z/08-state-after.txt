@@ -1,0 +1,45 @@
+## 2026-11-03 00:10:04 KST state of gke
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count |     last_failed_wal      |       last_failed_time       
+----------------+--------------------------+-------------------------------+--------------+--------------------------+------------------------------
+             17 | 00000001000000000000000F | 2026-11-02 15:08:23.768676+00 |            1 | 000000010000000000000008 | 2026-11-02 14:56:15.28044+00
+(1 row)
+
+ subname | worker_running | received_lsn | latest_end_lsn | last_msg_receipt_time 
+---------+----------------+--------------+----------------+-----------------------
+(0 rows)
+
+   slot_name   | slot_type | active | confirmed_flush_lsn | wal_status 
+---------------+-----------+--------+---------------------+------------
+ bravo_rev_sub | logical   | f      | 0/409E488           | reserved
+(1 row)
+
+ pg_current_wal_lsn |              now              
+--------------------+-------------------------------
+ 0/10000060         | 2026-11-02 15:10:05.365766+00
+(1 row)
+
+chat-bravo-demo-844784c98c-p7frd 1/1 Running 0 148m
+chat-bravo-demo-844784c98c-rqpwd 1/1 Running 0 148m
+chat-db-1 1/1 Running 0 13m
+chat-db-restore-1 1/1 Running 0 54s
+chat-pgbouncer-5f96b4bc65-mpzk2 1/1 Running 0 3h9m
+src-db-link-86dcb4875c-dn4qw 1/1 Running 0 131m
+src-db-link-86dcb4875c-spzcg 1/1 Running 0 131m
+## restore cluster, backups, restore pod SA
+NAME              AGE    INSTANCES   READY   STATUS                     PRIMARY
+chat-db           161m   1           1       Cluster in healthy state   chat-db-1
+chat-db-restore   98s    1           1       Cluster in healthy state   chat-db-restore-1
+NAME                       AGE    CLUSTER   METHOD              PHASE       ERROR
+chat-db-20261102t145706z   12m    chat-db   barmanObjectStore   completed   
+chat-db-20261102t150809z   116s   chat-db   barmanObjectStore   completed   
+NAME                STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+chat-db-restore-1   Bound    pvc-cfccec00-7ffc-4104-a1ab-4881ada2e1cd   4Gi        RWO            bravo-db       <unset>                 99s
+NAME              POD-SELECTOR                                                        AGE
+allow-dns         <none>                                                              3h14m
+chat-bravo-demo   app.kubernetes.io/instance=chat,app.kubernetes.io/name=bravo-demo   3h9m
+chat-db           cnpg.io/cluster=chat-db                                             3h14m
+chat-db-backup    cnpg.io/cluster in (chat-db,chat-db-restore)                        27m
+chat-db-restore   cnpg.io/cluster=chat-db-restore                                     27m
+chat-pgbouncer    app.kubernetes.io/name=chat-pgbouncer                               3h14m
+default-deny      <none>                                                              3h14m
+src-db-link       app.kubernetes.io/name=src-db-link                                  3h14m

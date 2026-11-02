@@ -1,0 +1,61 @@
+## 2026-11-02 23:56:06 KST state of src
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count | last_failed_wal | last_failed_time 
+----------------+--------------------------+-------------------------------+--------------+-----------------+------------------
+             25 | 000000010000000000000018 | 2026-11-02 14:54:56.291127+00 |            0 |                 | 
+(1 row)
+
+    subname    | worker_running | received_lsn | latest_end_lsn | last_msg_receipt_time 
+---------------+----------------+--------------+----------------+-----------------------
+ bravo_rev_sub | f              |              |                | 
+(1 row)
+
+   slot_name   | slot_type | active | confirmed_flush_lsn | wal_status 
+---------------+-----------+--------+---------------------+------------
+ bravo_fwd_sub | logical   | t      | 0/19000060          | reserved
+(1 row)
+
+ pg_current_wal_lsn |              now              
+--------------------+-------------------------------
+ 0/19000060         | 2026-11-02 14:56:07.543426+00
+(1 row)
+
+chat-bravo-demo-d5d5499fd-8w4dw 1/1 Running 0 63m
+chat-bravo-demo-d5d5499fd-xjc6w 1/1 Running 0 64m
+chat-db-1 1/1 Running 0 2m52s
+chat-db-restore-1 1/1 Running 0 33s
+chat-pgbouncer-6595f74f77-47ndr 1/1 Running 0 177m
+dst-db-link-745c696bf8-nnq97 1/1 Running 0 120m
+## 2026-11-02 23:56:08 KST state of onprem
+ archived_count |    last_archived_wal     |      last_archived_time      | failed_count |     last_failed_wal      |       last_failed_time        
+----------------+--------------------------+------------------------------+--------------+--------------------------+-------------------------------
+             22 | 000000010000000000000014 | 2026-11-02 14:53:57.87396+00 |            1 | 00000001000000000000000C | 2026-11-02 14:45:05.350648+00
+(1 row)
+
+    subname    | worker_running | received_lsn | latest_end_lsn |     last_msg_receipt_time     
+---------------+----------------+--------------+----------------+-------------------------------
+ bravo_fwd_sub | t              | 0/19000060   | 0/19000060     | 2026-11-02 14:56:07.815906+00
+(1 row)
+
+   slot_name   | slot_type | active | confirmed_flush_lsn | wal_status 
+---------------+-----------+--------+---------------------+------------
+ bravo_rev_sub | logical   | f      | 0/40C8F88           | reserved
+(1 row)
+
+ pg_current_wal_lsn |              now              
+--------------------+-------------------------------
+ 0/15000000         | 2026-11-02 14:56:08.104528+00
+(1 row)
+
+chat-bravo-demo-585b9b6b56-8s6dw 1/1 Running 0 61m
+chat-bravo-demo-585b9b6b56-9pdbr 1/1 Running 0 61m
+chat-db-1 1/1 Running 0 10m
+chat-db-restore-1 1/1 Running 0 6m43s
+chat-pgbouncer-6479889f94-vk2hb 1/1 Running 0 96m
+src-db-link-5959585c6-vqszt 1/1 Running 0 120m
+## restore cluster
+NAME              AGE    INSTANCES   READY   STATUS                     PRIMARY
+chat-db           3h2m   1           1       Cluster in healthy state   chat-db-1
+chat-db-restore   69s    1           1       Cluster in healthy state   chat-db-restore-1
+NAME                       AGE   CLUSTER   METHOD              PHASE       ERROR
+chat-db-20261102t145421z   92s   chat-db   barmanObjectStore   completed   
+restore pod SA: chat-db-restore; pod identity env: AWS_CONTAINER_CREDENTIALS_FULL_URI,AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE

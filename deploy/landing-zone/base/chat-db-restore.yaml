@@ -1,0 +1,44 @@
+# Recovery check cluster chat-db-restore (DR-01, gate DR-RESTORE reads it: spec.bootstrap.recovery set,
+# readyInstances >= 1, phase "Cluster in healthy state"). Same namespace and object store as chat-db.
+# scripts/dr-restore.sh fills it and applies it; do not apply by hand:
+#   ${PG_IMAGE}      the live chat-db image (same PostgreSQL build as the backup)
+#   ${BACKUP_NAME}   the Backup object (method barmanObjectStore) taken just before
+#   ${RESTORE_POINT} the restore point made right after it, with the app tables locked (SHARE) while counted
+#   ${BACKUP_ID}     that Backup's status.backupId (CNPG requires recoveryTarget.backupID with targetName)
+#   ${RESTORE_STORAGE_SIZE} 1Gi (chat is ~8 MB); 4Gi on GKE, where bravo-db is Hyperdisk Balanced (4 GiB minimum,
+#                    CreateVolume InvalidArgument with 1Gi, measured 2026-11-03)
+# postgresql.parameters = the live chat-db parameters (the same hot-standby limits, pgaudit on EKS) plus
+# max_logical_replication_workers = 0: the restored catalog keeps chat-db's subscriptions (on-prem subscribes to
+# the source with slot bravo_fwd_sub), and this copy must never start an apply worker or take that slot.
+# No spec.backup: this copy archives nothing (it must not write into chat-db's backup path).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: chat-db-restore
+  namespace: chat
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+    bravo.dev/dr-check: "true"
+  annotations:
+    bravo.dev/source-backup: ${BACKUP_NAME}
+    bravo.dev/restore-point: ${RESTORE_POINT}
+spec:
+  instances: 1
+  imageName: ${PG_IMAGE}
+  enableSuperuserAccess: false
+  bootstrap:
+    recovery:
+      backup:
+        name: ${BACKUP_NAME}
+      recoveryTarget:
+        backupID: ${BACKUP_ID}
+        targetName: ${RESTORE_POINT}
+  postgresql:
+    parameters:
+      max_logical_replication_workers: "0"
+  storage:
+    storageClass: bravo-db
+    size: ${RESTORE_STORAGE_SIZE}
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}

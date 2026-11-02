@@ -1,0 +1,100 @@
+# 2026-11-02 23:48:03 KST deploy/landing-zone/scripts/dr-restore.sh onprem
+
+== 2026-11-02 23:48:04 KST dr-restore[onprem] Backup chat-db-20261102t144804z (cluster chat-db, method barmanObjectStore)
+destinationPath: s3://bravo-chat-db-backup/
+backup.postgresql.cnpg.io/chat-db-20261102t144804z created
+{
+  "name": "chat-db-20261102t144804z",
+  "phase": "completed",
+  "method": "barmanObjectStore",
+  "backupId": "20261102T144804",
+  "destinationPath": "s3://bravo-chat-db-backup/",
+  "serverName": "chat-db",
+  "beginWal": "00000001000000000000000F",
+  "endWal": "00000001000000000000000F",
+  "beginLSN": "0/F000028",
+  "endLSN": "0/F000138",
+  "startedAt": "2026-11-02T14:48:04Z",
+  "stoppedAt": "2026-11-02T14:48:07Z",
+  "error": null
+}
+completed (KST): 2026-11-02 14:48:07 KST
+
+== 2026-11-02 23:48:14 KST dr-restore[onprem] restore point dr-20261102t144804z on chat-db primary chat-db-1 (tables locked IN SHARE MODE while counted)
+SET
+BEGIN
+public.attachment_store|1
+public.attachments|3
+public.bravo_barrier|0
+public.bravo_fence|1
+public.message_attachments|3
+public.messages|1021
+public.write_block|0
+restore_point|0/10003838|0/10000090|2026-11-02 14:48:14.66248+00
+switch_wal|0/10003850
+restore point lsn 0/10003838, WAL segment 000000010000000000000010; waiting until it is archived
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count |     last_failed_wal      |       last_failed_time        
+----------------+--------------------------+-------------------------------+--------------+--------------------------+-------------------------------
+             17 | 000000010000000000000010 | 2026-11-02 14:48:14.929637+00 |            1 | 00000001000000000000000C | 2026-11-02 14:45:05.350648+00
+(1 row)
+
+
+== 2026-11-02 23:48:20 KST dr-restore[onprem] Cluster chat-db-restore <- Backup chat-db-20261102t144804z, recoveryTarget.targetName dr-20261102t144804z
+{
+  "metadata": {
+    "name": "chat-db-restore",
+    "annotations": {
+      "bravo.dev/restore-point": "dr-20261102t144804z",
+      "bravo.dev/source-backup": "chat-db-20261102t144804z",
+      "bravo.dev/source-counts": "{\"public.attachment_store\":1,\"public.attachments\":3,\"public.bravo_barrier\":0,\"public.bravo_fence\":1,\"public.message_attachments\":3,\"public.messages\":1021,\"public.write_block\":0}"
+    }
+  },
+  "spec": {
+    "imageName": "ghcr.io/cloudnative-pg/postgresql:16.15-system-bookworm@sha256:639ef58e1ecca2ecb91ba6aa52f55a25fc59dd1792df99f2e99d81d85043a8d6",
+    "bootstrap": {
+      "recovery": {
+        "backup": {
+          "name": "chat-db-20261102t144804z"
+        },
+        "recoveryTarget": {
+          "targetName": "dr-20261102t144804z"
+        }
+      }
+    },
+    "storage": {
+      "size": "1Gi",
+      "storageClass": "bravo-db"
+    },
+    "parameters": {
+      "archive_mode": "on",
+      "archive_timeout": "5min",
+      "dynamic_shared_memory_type": "posix",
+      "full_page_writes": "on",
+      "log_destination": "csvlog",
+      "log_directory": "/controller/log",
+      "log_filename": "postgres",
+      "log_rotation_age": "0",
+      "log_rotation_size": "0",
+      "log_truncate_on_rotation": "false",
+      "logging_collector": "on",
+      "max_parallel_workers": "32",
+      "max_replication_slots": "10",
+      "max_slot_wal_keep_size": "2GB",
+      "max_wal_senders": "10",
+      "max_worker_processes": "32",
+      "password_encryption": "scram-sha-256",
+      "shared_memory_type": "mmap",
+      "shared_preload_libraries": "",
+      "ssl_max_protocol_version": "TLSv1.3",
+      "ssl_min_protocol_version": "TLSv1.3",
+      "wal_keep_size": "512MB",
+      "wal_level": "logical",
+      "wal_log_hints": "on",
+      "wal_receiver_timeout": "5s",
+      "wal_sender_timeout": "5s",
+      "max_logical_replication_workers": "0"
+    }
+  }
+}
+The Cluster "chat-db-restore" is invalid: spec.bootstrap.recovery.recoveryTarget: Required value: BackupID is missing
+exit=1

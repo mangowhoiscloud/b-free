@@ -1,0 +1,173 @@
+# 2026-11-03 00:08:09 KST deploy/landing-zone/scripts/dr-restore.sh gke
+
+== 2026-11-03 00:08:09 KST dr-restore[gke] Backup chat-db-20261102t150809z (cluster chat-db, method barmanObjectStore)
+destinationPath: gs://bravo-target-gcp-db-backup-3f4e9e/
+backup.postgresql.cnpg.io/chat-db-20261102t150809z created
+{
+  "name": "chat-db-20261102t150809z",
+  "phase": "completed",
+  "method": "barmanObjectStore",
+  "backupId": "20261102T150811",
+  "destinationPath": "gs://bravo-target-gcp-db-backup-3f4e9e/",
+  "serverName": "chat-db",
+  "beginWal": "00000001000000000000000E",
+  "endWal": "00000001000000000000000E",
+  "beginLSN": "0/E000028",
+  "endLSN": "0/E000100",
+  "startedAt": "2026-11-02T15:08:11Z",
+  "stoppedAt": "2026-11-02T15:08:14Z",
+  "error": null
+}
+completed: 2026-11-02T15:08:14Z = 2026-11-03 00:08:14 KST
+
+== 2026-11-03 00:08:22 KST dr-restore[gke] restore point dr-20261102t150809z on chat-db primary chat-db-1 (tables locked IN SHARE MODE while counted)
+table|rows   (restore_point|<restore point lsn>|<insert lsn>|<time>)
+public.attachment_store|1
+public.attachments|0
+public.bravo_barrier|0
+public.bravo_fence|1
+public.message_attachments|0
+public.messages|0
+public.write_block|0
+restore_point|0/F000130|0/F000130|2026-11-02 15:08:23.176758+00
+switch_wal|0/F000148
+restore point lsn 0/F000130, WAL segment 00000001000000000000000F; waiting until it is archived
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count |     last_failed_wal      |       last_failed_time       
+----------------+--------------------------+-------------------------------+--------------+--------------------------+------------------------------
+             17 | 00000001000000000000000F | 2026-11-02 15:08:23.768676+00 |            1 | 000000010000000000000008 | 2026-11-02 14:56:15.28044+00
+(1 row)
+
+
+== 2026-11-03 00:08:25 KST dr-restore[gke] Cluster chat-db-restore <- Backup chat-db-20261102t150809z, recoveryTarget.targetName dr-20261102t150809z
+replacing the previous chat-db-restore (chat-db-20261102t145706z)
+cluster.postgresql.cnpg.io "chat-db-restore" deleted from chat namespace
+{
+  "metadata": {
+    "name": "chat-db-restore",
+    "annotations": {
+      "bravo.dev/restore-point": "dr-20261102t150809z",
+      "bravo.dev/source-backup": "chat-db-20261102t150809z",
+      "bravo.dev/source-counts": "{\"public.attachment_store\":1,\"public.attachments\":0,\"public.bravo_barrier\":0,\"public.bravo_fence\":1,\"public.message_attachments\":0,\"public.messages\":0,\"public.write_block\":0}"
+    }
+  },
+  "spec": {
+    "imageName": "ghcr.io/cloudnative-pg/postgresql:16.15-system-bookworm@sha256:639ef58e1ecca2ecb91ba6aa52f55a25fc59dd1792df99f2e99d81d85043a8d6",
+    "bootstrap": {
+      "recovery": {
+        "backup": {
+          "name": "chat-db-20261102t150809z"
+        },
+        "recoveryTarget": {
+          "backupID": "20261102T150811",
+          "targetName": "dr-20261102t150809z"
+        }
+      }
+    },
+    "storage": {
+      "size": "4Gi",
+      "storageClass": "bravo-db"
+    },
+    "parameters": {
+      "archive_mode": "on",
+      "archive_timeout": "5min",
+      "dynamic_shared_memory_type": "posix",
+      "full_page_writes": "on",
+      "log_destination": "csvlog",
+      "log_directory": "/controller/log",
+      "log_filename": "postgres",
+      "log_rotation_age": "0",
+      "log_rotation_size": "0",
+      "log_truncate_on_rotation": "false",
+      "logging_collector": "on",
+      "max_parallel_workers": "32",
+      "max_replication_slots": "10",
+      "max_slot_wal_keep_size": "2GB",
+      "max_wal_senders": "10",
+      "max_worker_processes": "32",
+      "password_encryption": "scram-sha-256",
+      "shared_memory_type": "mmap",
+      "shared_preload_libraries": "",
+      "ssl_max_protocol_version": "TLSv1.3",
+      "ssl_min_protocol_version": "TLSv1.3",
+      "wal_keep_size": "512MB",
+      "wal_level": "logical",
+      "wal_log_hints": "on",
+      "wal_receiver_timeout": "5s",
+      "wal_sender_timeout": "5s",
+      "max_logical_replication_workers": "0"
+    }
+  }
+}
+cluster.postgresql.cnpg.io/chat-db-restore created
+{
+  "name": "chat-db-restore",
+  "phase": "Cluster in healthy state",
+  "readyInstances": 1,
+  "currentPrimary": "chat-db-restore-1",
+  "timeline": 2,
+  "bootstrap_recovery": {
+    "backup": {
+      "name": "chat-db-20261102t150809z"
+    },
+    "database": "app",
+    "owner": "app",
+    "recoveryTarget": {
+      "backupID": "20261102T150811",
+      "targetName": "dr-20261102t150809z"
+    }
+  },
+  "conditions": [
+    {
+      "type": "Initialized",
+      "status": "True",
+      "reason": "BootstrapCompleted"
+    },
+    {
+      "type": "ConsistentSystemID",
+      "status": "True",
+      "reason": "Unique"
+    },
+    {
+      "type": "Ready",
+      "status": "True",
+      "reason": "ClusterIsReady"
+    },
+    {
+      "type": "ContinuousArchiving",
+      "status": "True",
+      "reason": "ContinuousArchivingSuccess"
+    }
+  ]
+}
+healthy at 2026-11-03 00:09:33 KST
+
+== 2026-11-03 00:09:33 KST dr-restore[gke] row counts: chat-db at restore point dr-20261102t150809z vs chat-db-restore (chat-db-restore-1)
+ in_recovery | timeline_id 
+-------------+-------------
+ f           |           2
+(1 row)
+
+ subname | subenabled 
+---------+------------
+(0 rows)
+
+ apply_workers 
+---------------
+             0
+(1 row)
+
+ max_logical_replication_workers 
+---------------------------------
+ 0
+(1 row)
+
+table                       chat-db (source)  chat-db-restore  equal
+public.attachment_store     1                 1                true
+public.attachments          0                 0                true
+public.bravo_barrier        0                 0                true
+public.bravo_fence          1                 1                true
+public.message_attachments  0                 0                true
+public.messages             0                 0                true
+public.write_block          0                 0                true
+RESULT: all row counts equal
+exit=0

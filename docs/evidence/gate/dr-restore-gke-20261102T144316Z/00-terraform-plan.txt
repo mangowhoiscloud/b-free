@@ -1,0 +1,162 @@
+random_id.bucket: Refreshing state... [id=P06e]
+data.google_project.this: Reading...
+google_project_service.this["storage.googleapis.com"]: Refreshing state... [id=b-free-target-20261102/storage.googleapis.com]
+google_project_service.this["cloudkms.googleapis.com"]: Refreshing state... [id=b-free-target-20261102/cloudkms.googleapis.com]
+google_project_service.this["compute.googleapis.com"]: Refreshing state... [id=b-free-target-20261102/compute.googleapis.com]
+google_project_service.this["iam.googleapis.com"]: Refreshing state... [id=b-free-target-20261102/iam.googleapis.com]
+google_project_service.this["container.googleapis.com"]: Refreshing state... [id=b-free-target-20261102/container.googleapis.com]
+google_project_service.this["artifactregistry.googleapis.com"]: Refreshing state... [id=b-free-target-20261102/artifactregistry.googleapis.com]
+data.google_project.this: Read complete after 2s [id=projects/b-free-target-20261102]
+data.google_storage_project_service_account.gcs: Reading...
+google_kms_key_ring.storage: Refreshing state... [id=projects/b-free-target-20261102/locations/asia-northeast1/keyRings/bravo-target-gcp-storage-3f4e9e]
+data.google_storage_project_service_account.gcs: Read complete after 1s [id=service-510055025217@gs-project-accounts.iam.gserviceaccount.com]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # google_kms_crypto_key.db_backup will be created
+  + resource "google_kms_crypto_key" "db_backup" {
+      + crypto_key_backend         = (known after apply)
+      + deletion_policy            = "DELETE"
+      + destroy_scheduled_duration = (known after apply)
+      + effective_labels           = {
+          + "component"                  = "target"
+          + "env"                        = "target-gcp"
+          + "goog-terraform-provisioned" = "true"
+          + "managed-by"                 = "terraform"
+          + "owner"                      = "team-bravo"
+        }
+      + id                         = (known after apply)
+      + import_only                = (known after apply)
+      + key_ring                   = "projects/b-free-target-20261102/locations/asia-northeast1/keyRings/bravo-target-gcp-storage-3f4e9e"
+      + name                       = "db-backup"
+      + primary                    = (known after apply)
+      + purpose                    = "ENCRYPT_DECRYPT"
+      + rotation_period            = "7776000s"
+      + terraform_labels           = {
+          + "component"                  = "target"
+          + "env"                        = "target-gcp"
+          + "goog-terraform-provisioned" = "true"
+          + "managed-by"                 = "terraform"
+          + "owner"                      = "team-bravo"
+        }
+
+      + version_template (known after apply)
+    }
+
+  # google_kms_crypto_key_iam_member.db_backup_gcs will be created
+  + resource "google_kms_crypto_key_iam_member" "db_backup_gcs" {
+      + crypto_key_id = (known after apply)
+      + etag          = (known after apply)
+      + id            = (known after apply)
+      + member        = "serviceAccount:service-510055025217@gs-project-accounts.iam.gserviceaccount.com"
+      + role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+    }
+
+  # google_storage_bucket.db_backup will be created
+  + resource "google_storage_bucket" "db_backup" {
+      + deletion_policy             = "DELETE"
+      + effective_labels            = {
+          + "component"                  = "target"
+          + "env"                        = "target-gcp"
+          + "goog-terraform-provisioned" = "true"
+          + "managed-by"                 = "terraform"
+          + "owner"                      = "team-bravo"
+        }
+      + force_destroy               = true
+      + id                          = (known after apply)
+      + location                    = "ASIA-NORTHEAST1"
+      + name                        = "bravo-target-gcp-db-backup-3f4e9e"
+      + project                     = "b-free-target-20261102"
+      + project_number              = (known after apply)
+      + public_access_prevention    = "enforced"
+      + rpo                         = (known after apply)
+      + self_link                   = (known after apply)
+      + storage_class               = "STANDARD"
+      + terraform_labels            = {
+          + "component"                  = "target"
+          + "env"                        = "target-gcp"
+          + "goog-terraform-provisioned" = "true"
+          + "managed-by"                 = "terraform"
+          + "owner"                      = "team-bravo"
+        }
+      + time_created                = (known after apply)
+      + uniform_bucket_level_access = true
+      + updated                     = (known after apply)
+      + url                         = (known after apply)
+
+      + encryption {
+          + default_kms_key_name = (known after apply)
+        }
+
+      + soft_delete_policy {
+          + effective_time             = (known after apply)
+          + retention_duration_seconds = 0
+        }
+
+      + versioning (known after apply)
+
+      + website (known after apply)
+    }
+
+  # google_storage_bucket_iam_member.chat_db_bucket will be created
+  + resource "google_storage_bucket_iam_member" "chat_db_bucket" {
+      + bucket = "bravo-target-gcp-db-backup-3f4e9e"
+      + etag   = (known after apply)
+      + id     = (known after apply)
+      + member = "principal://iam.googleapis.com/projects/510055025217/locations/global/workloadIdentityPools/b-free-target-20261102.svc.id.goog/subject/ns/chat/sa/chat-db"
+      + role   = "roles/storage.legacyBucketReader"
+    }
+
+  # google_storage_bucket_iam_member.chat_db_objects will be created
+  + resource "google_storage_bucket_iam_member" "chat_db_objects" {
+      + bucket = "bravo-target-gcp-db-backup-3f4e9e"
+      + etag   = (known after apply)
+      + id     = (known after apply)
+      + member = "principal://iam.googleapis.com/projects/510055025217/locations/global/workloadIdentityPools/b-free-target-20261102.svc.id.goog/subject/ns/chat/sa/chat-db"
+      + role   = "roles/storage.objectUser"
+    }
+
+  # google_storage_bucket_iam_member.chat_db_restore_bucket will be created
+  + resource "google_storage_bucket_iam_member" "chat_db_restore_bucket" {
+      + bucket = "bravo-target-gcp-db-backup-3f4e9e"
+      + etag   = (known after apply)
+      + id     = (known after apply)
+      + member = "principal://iam.googleapis.com/projects/510055025217/locations/global/workloadIdentityPools/b-free-target-20261102.svc.id.goog/subject/ns/chat/sa/chat-db-restore"
+      + role   = "roles/storage.legacyBucketReader"
+    }
+
+  # google_storage_bucket_iam_member.chat_db_restore_objects will be created
+  + resource "google_storage_bucket_iam_member" "chat_db_restore_objects" {
+      + bucket = "bravo-target-gcp-db-backup-3f4e9e"
+      + etag   = (known after apply)
+      + id     = (known after apply)
+      + member = "principal://iam.googleapis.com/projects/510055025217/locations/global/workloadIdentityPools/b-free-target-20261102.svc.id.goog/subject/ns/chat/sa/chat-db-restore"
+      + role   = "roles/storage.objectViewer"
+    }
+
+Plan: 7 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + db_backup_bucket   = "bravo-target-gcp-db-backup-3f4e9e"
+
+Warning: Resource targeting is in effect
+
+You are creating a plan with the -target option, which means that the result
+of this plan may not represent all of the changes requested by the current
+configuration.
+
+The -target option is not for routine use, and is provided only for
+exceptional situations such as recovering from errors or mistakes, or when
+Terraform specifically suggests to use it as part of an error message.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Saved the plan to:
+/private/tmp/claude-501/-Users-mango-workspace-softbank2026-hackathon-research/6ebc6ce1-a78f-436a-95c4-aa3710f4c715/scratchpad/gcp-dbbackup.tfplan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "/private/tmp/claude-501/-Users-mango-workspace-softbank2026-hackathon-research/6ebc6ce1-a78f-436a-95c4-aa3710f4c715/scratchpad/gcp-dbbackup.tfplan"

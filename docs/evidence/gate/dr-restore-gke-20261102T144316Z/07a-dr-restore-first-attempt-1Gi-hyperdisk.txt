@@ -1,0 +1,104 @@
+# 2026-11-02 23:57:06 KST deploy/landing-zone/scripts/dr-restore.sh gke
+
+== 2026-11-02 23:57:06 KST dr-restore[gke] Backup chat-db-20261102t145706z (cluster chat-db, method barmanObjectStore)
+destinationPath: gs://bravo-target-gcp-db-backup-3f4e9e/
+backup.postgresql.cnpg.io/chat-db-20261102t145706z created
+{
+  "name": "chat-db-20261102t145706z",
+  "phase": "completed",
+  "method": "barmanObjectStore",
+  "backupId": "20261102T145708",
+  "destinationPath": "gs://bravo-target-gcp-db-backup-3f4e9e/",
+  "serverName": "chat-db",
+  "beginWal": "00000001000000000000000B",
+  "endWal": "00000001000000000000000B",
+  "beginLSN": "0/B000028",
+  "endLSN": "0/B000100",
+  "startedAt": "2026-11-02T14:57:08Z",
+  "stoppedAt": "2026-11-02T14:57:12Z",
+  "error": null
+}
+completed: 2026-11-02T14:57:12Z = 2026-11-02 23:57:12 KST
+
+== 2026-11-02 23:57:19 KST dr-restore[gke] restore point dr-20261102t145706z on chat-db primary chat-db-1 (tables locked IN SHARE MODE while counted)
+table|rows   (restore_point|<restore point lsn>|<insert lsn>|<time>)
+public.attachment_store|1
+public.attachments|0
+public.bravo_barrier|0
+public.bravo_fence|1
+public.message_attachments|0
+public.messages|0
+public.write_block|0
+restore_point|0/C0001A0|0/C0001A0|2026-11-02 14:57:20.228201+00
+switch_wal|0/C0001B8
+restore point lsn 0/C0001A0, WAL segment 00000001000000000000000C; waiting until it is archived
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count |     last_failed_wal      |       last_failed_time       
+----------------+--------------------------+-------------------------------+--------------+--------------------------+------------------------------
+             13 | 00000001000000000000000C | 2026-11-02 14:57:20.778367+00 |            1 | 000000010000000000000008 | 2026-11-02 14:56:15.28044+00
+(1 row)
+
+
+== 2026-11-02 23:57:22 KST dr-restore[gke] Cluster chat-db-restore <- Backup chat-db-20261102t145706z, recoveryTarget.targetName dr-20261102t145706z
+{
+  "metadata": {
+    "name": "chat-db-restore",
+    "annotations": {
+      "bravo.dev/restore-point": "dr-20261102t145706z",
+      "bravo.dev/source-backup": "chat-db-20261102t145706z",
+      "bravo.dev/source-counts": "{\"public.attachment_store\":1,\"public.attachments\":0,\"public.bravo_barrier\":0,\"public.bravo_fence\":1,\"public.message_attachments\":0,\"public.messages\":0,\"public.write_block\":0}"
+    }
+  },
+  "spec": {
+    "imageName": "ghcr.io/cloudnative-pg/postgresql:16.15-system-bookworm@sha256:639ef58e1ecca2ecb91ba6aa52f55a25fc59dd1792df99f2e99d81d85043a8d6",
+    "bootstrap": {
+      "recovery": {
+        "backup": {
+          "name": "chat-db-20261102t145706z"
+        },
+        "recoveryTarget": {
+          "backupID": "20261102T145708",
+          "targetName": "dr-20261102t145706z"
+        }
+      }
+    },
+    "storage": {
+      "size": "1Gi",
+      "storageClass": "bravo-db"
+    },
+    "parameters": {
+      "archive_mode": "on",
+      "archive_timeout": "5min",
+      "dynamic_shared_memory_type": "posix",
+      "full_page_writes": "on",
+      "log_destination": "csvlog",
+      "log_directory": "/controller/log",
+      "log_filename": "postgres",
+      "log_rotation_age": "0",
+      "log_rotation_size": "0",
+      "log_truncate_on_rotation": "false",
+      "logging_collector": "on",
+      "max_parallel_workers": "32",
+      "max_replication_slots": "10",
+      "max_slot_wal_keep_size": "2GB",
+      "max_wal_senders": "10",
+      "max_worker_processes": "32",
+      "password_encryption": "scram-sha-256",
+      "shared_memory_type": "mmap",
+      "shared_preload_libraries": "",
+      "ssl_max_protocol_version": "TLSv1.3",
+      "ssl_min_protocol_version": "TLSv1.3",
+      "wal_keep_size": "512MB",
+      "wal_level": "logical",
+      "wal_log_hints": "on",
+      "wal_receiver_timeout": "5s",
+      "wal_sender_timeout": "5s",
+      "max_logical_replication_workers": "0"
+    }
+  }
+}
+cluster.postgresql.cnpg.io/chat-db-restore created
+# 2026-11-03 00:08:01 KST stopped by hand: PVC chat-db-restore-1 (1Gi, hyperdisk-balanced) never bound
+2026-11-02T14:57:24Z PersistentVolumeClaim/chat-db-restore-1 WaitForFirstConsumer: waiting for first consumer to be created before binding
+2026-11-02T15:05:56Z PersistentVolumeClaim/chat-db-restore-1 Provisioning: External provisioner is provisioning volume for claim "chat/chat-db-restore-1"
+2026-11-02T15:05:57Z PersistentVolumeClaim/chat-db-restore-1 ProvisioningFailed: Volume provisioning failed with infeasible error. Retries will be delayed. rpc error: code = InvalidArgument desc = CreateVolume failed: rpc error: code = InvalidArgument desc = CreateVolume failed to create single zonal disk pvc-b13665e2-10a3-461e-a6c2-28d0868a3830: failed to insert zonal disk: unknown Insert disk error: googleapi: Error 400: Disk size cannot be smaller than 4 GB for disk type hyperdisk-balanced., badRequest
+2026-11-02T15:07:39Z PersistentVolumeClaim/chat-db-restore-1 ExternalProvisioning: Waiting for a volume to be created either by the external provisioner 'pd.csi.storage.gke.io' or manually by the system administrator. If volume creation is delayed, please verify that the provisioner is running and correctly registered.

@@ -1,0 +1,53 @@
+## 2026-11-02 23:53:56 KST state of src
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count | last_failed_wal | last_failed_time 
+----------------+--------------------------+-------------------------------+--------------+-----------------+------------------
+             21 | 000000010000000000000015 | 2026-11-02 14:53:56.326526+00 |            0 |                 | 
+(1 row)
+
+    subname    | worker_running | received_lsn | latest_end_lsn | last_msg_receipt_time 
+---------------+----------------+--------------+----------------+-----------------------
+ bravo_rev_sub | f              |              |                | 
+(1 row)
+
+   slot_name   | slot_type | active | confirmed_flush_lsn | wal_status 
+---------------+-----------+--------+---------------------+------------
+ bravo_fwd_sub | logical   | t      | 0/16000060          | reserved
+(1 row)
+
+ pg_current_wal_lsn |             now              
+--------------------+------------------------------
+ 0/16000060         | 2026-11-02 14:53:57.28646+00
+(1 row)
+
+chat-bravo-demo-d5d5499fd-8w4dw 1/1 Running 0 61m
+chat-bravo-demo-d5d5499fd-xjc6w 1/1 Running 0 61m
+chat-db-1 1/1 Running 0 42s
+chat-pgbouncer-6595f74f77-47ndr 1/1 Running 0 175m
+dst-db-link-745c696bf8-nnq97 1/1 Running 0 118m
+## 2026-11-02 23:53:57 KST state of onprem
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count |     last_failed_wal      |       last_failed_time        
+----------------+--------------------------+-------------------------------+--------------+--------------------------+-------------------------------
+             21 | 000000010000000000000013 | 2026-11-02 14:48:57.224744+00 |            1 | 00000001000000000000000C | 2026-11-02 14:45:05.350648+00
+(1 row)
+
+    subname    | worker_running | received_lsn | latest_end_lsn |     last_msg_receipt_time     
+---------------+----------------+--------------+----------------+-------------------------------
+ bravo_fwd_sub | t              | 0/16000060   | 0/16000060     | 2026-11-02 14:53:56.013437+00
+(1 row)
+
+   slot_name   | slot_type | active | confirmed_flush_lsn | wal_status 
+---------------+-----------+--------+---------------------+------------
+ bravo_rev_sub | logical   | f      | 0/40C8F88           | reserved
+(1 row)
+
+ pg_current_wal_lsn |              now              
+--------------------+-------------------------------
+ 0/15000000         | 2026-11-02 14:53:57.725322+00
+(1 row)
+
+chat-bravo-demo-585b9b6b56-8s6dw 1/1 Running 0 59m
+chat-bravo-demo-585b9b6b56-9pdbr 1/1 Running 0 59m
+chat-db-1 1/1 Running 0 8m46s
+chat-db-restore-1 1/1 Running 0 4m32s
+chat-pgbouncer-6479889f94-vk2hb 1/1 Running 0 94m
+src-db-link-5959585c6-vqszt 1/1 Running 0 118m

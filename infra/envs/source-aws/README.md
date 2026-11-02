@@ -11,6 +11,7 @@
 - 첨부 S3 버킷. 공개 접근 차단 넷을 모두 켭니다. SSE-KMS와 버킷 키, 버전 관리, `BucketOwnerEnforced`를 겁니다.
 - Secrets Manager 비밀 `<name>/chat/db-app`. 그릇만 만듭니다.
 - EKS Pod Identity 역할 둘: `chat/chat-app`, `external-secrets/external-secrets`.
+- DB 백업 S3 버킷과 Pod Identity 역할 둘(`db_backup.tf`, DR-01): CNPG chat-db의 WAL과 base backup(barman-cloud). 공개 접근 차단 넷, SSE-KMS(앱 키), TLS 아닌 요청 거부. `chat/chat-db`는 읽기 · 쓰기, `chat/chat-db-restore`(복구 확인 클러스터)는 읽기만.
 - ECR 저장소 둘(`ecr.tf`): `<name>/bravo-demo`, `<name>/bravo-pgbouncer`. 태그 변경 불가, 푸시 때 스캔, 전용 KMS CMK. 배포는 digest로만 합니다.
 - landing zone 묶음의 Argo CD Application 파일(`gitops/`). 클러스터에 적용하지 않습니다.
 
@@ -42,6 +43,8 @@ Terraform은 비밀 값을 만들지 않습니다. 값이 상태 파일에 남�
 |---|---|
 | `chat/chat-app` | 첨부 버킷 `ListBucket`, 객체 `GetObject` · `PutObject`, 비밀 하나 `GetSecretValue`, 앱 키 `Decrypt` · `GenerateDataKey`(S3와 Secrets Manager 경유만) |
 | `external-secrets/external-secrets` | `<name>/` 아래 비밀 읽기, DB 비밀 하나에 `PutSecretValue`, 앱 키(Secrets Manager 경유만) |
+| `chat/chat-db` | DB 백업 버킷 `ListBucket` · `GetBucketLocation`, 객체 `GetObject` · `PutObject` · `DeleteObject`, 앱 키 `Decrypt` · `GenerateDataKey`(S3 경유만) |
+| `chat/chat-db-restore` | DB 백업 버킷 목록 · `GetObject`, 앱 키 `Decrypt`(S3 경유만) |
 | `kube-system/ebs-csi-controller-sa` | `modules/cluster/eks`가 만듦 |
 
 ## 입력

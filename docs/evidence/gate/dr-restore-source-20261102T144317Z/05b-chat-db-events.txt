@@ -1,0 +1,11 @@
+2026-11-02T14:50:09Z Pod/chat-db-1 Killing: Stopping container postgres
+2026-11-02T14:50:09Z Cluster/chat-db UpgradingInstance: Upgrading instance chat-db-1
+2026-11-02T14:53:13Z Pod/chat-db-1 Unhealthy: Readiness probe failed: HTTP probe failed with statuscode: 500
+2026-11-02T14:53:14Z PodDisruptionBudget/chat-db-primary NoPods: No matching pods found
+2026-11-02T14:53:15Z Pod/chat-db-1 Scheduled: Successfully assigned chat/chat-db-1 to ip-10-10-11-107.ap-northeast-2.compute.internal
+2026-11-02T14:53:20Z Pod/chat-db-1 Started: Container started
+2026-11-02T14:53:20Z Pod/chat-db-1 Created: Container created
+2026-11-02T14:53:20Z Pod/chat-db-1 Pulled: Container image "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1" already present on machine and can be accessed by the pod
+2026-11-02T14:53:21Z Pod/chat-db-1 Started: Container started
+2026-11-02T14:53:21Z Pod/chat-db-1 Created: Container created
+2026-11-02T14:53:21Z Pod/chat-db-1 Pulled: Container image "ghcr.io/cloudnative-pg/postgresql:16.15-system-bookworm@sha256:639ef58e1ecca2ecb91ba6aa52f55a25fc59dd1792df99f2e99d81d85043a8d6" already present on machine and can be accessed by the 

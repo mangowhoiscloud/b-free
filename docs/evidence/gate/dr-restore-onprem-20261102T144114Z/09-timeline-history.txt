@@ -1,0 +1,2 @@
+# 2026-11-03 00:09:57 KST kubectl exec chat-db-restore-1 -- cat $PGDATA/pg_wal/00000002.history (why the restore left timeline 1)
+1	0/13000130	at restore point "dr-20261102t144846z"

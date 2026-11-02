@@ -1,0 +1,41 @@
+# 2026-11-02 23:43:39 KST preflight pod (system image, SA chat/chat-db, EKS Pod Identity, no static key)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dr-preflight
+  namespace: chat
+  labels: {app.kubernetes.io/name: dr-preflight}
+spec:
+  restartPolicy: Never
+  serviceAccountName: chat-db
+  securityContext: {runAsNonRoot: true, runAsUser: 26, runAsGroup: 26, seccompProfile: {type: RuntimeDefault}}
+  containers:
+  - name: t
+    image: ghcr.io/cloudnative-pg/postgresql:16.15-system-bookworm@sha256:639ef58e1ecca2ecb91ba6aa52f55a25fc59dd1792df99f2e99d81d85043a8d6
+    securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+    env: [{name: HOME, value: /tmp}]
+    volumeMounts: [{name: tmp, mountPath: /tmp}]
+    command: [sh, -c]
+    args:
+    - |
+      uname -m; env | grep -E '^AWS_(REGION|CONTAINER_CREDENTIALS_FULL_URI)=' 
+      barman-cloud-check-wal-archive s3://bravo-source-db-backup-f93be8419730a1fbb0cff7d65a/ preflight && echo check-wal-archive OK
+      python3 - <<'PY'
+      import boto3
+      print("caller", boto3.client("sts").get_caller_identity()["Arn"].split("/")[1])
+      s3 = boto3.client("s3")
+      b = "bravo-source-db-backup-f93be8419730a1fbb0cff7d65a"
+      s3.put_object(Bucket=b, Key="_preflight/probe", Body=b"x"*1024)
+      h = s3.head_object(Bucket=b, Key="_preflight/probe"); print("put ok", h["ContentLength"], h.get("ServerSideEncryption"))
+      s3.delete_object(Bucket=b, Key="_preflight/probe")
+      print("delete ok; objects left:", s3.list_objects_v2(Bucket=b).get("KeyCount"))
+      PY
+  volumes: [{name: tmp, emptyDir: {}}]
+--- logs
+aarch64
+AWS_CONTAINER_CREDENTIALS_FULL_URI=http://169.254.170.23/v1/credentials
+AWS_REGION=ap-northeast-2
+check-wal-archive OK
+caller bravo-source-chat-db-backup-5a69021197bd79ced3a828e963
+put ok 1024 aws:kms
+delete ok; objects left: 0

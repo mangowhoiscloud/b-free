@@ -1,0 +1,406 @@
+data.aws_availability_zones.this: Reading...
+data.aws_iam_policy_document.pod_identity_assume: Reading...
+module.cluster.data.aws_partition.current: Reading...
+module.cluster.data.aws_iam_policy_document.cluster_assume: Reading...
+module.cluster.aws_cloudwatch_log_group.cluster: Refreshing state... [id=/aws/eks/bravo-source/cluster]
+module.network.aws_vpc.this: Refreshing state... [id=vpc-05c88f1c820c18293]
+module.cluster.aws_kms_key.secrets: Refreshing state... [id=7538cb6d-e315-4ad9-9130-ab8a1c36d113]
+aws_kms_key.app: Refreshing state... [id=6bd675bf-a934-407e-a674-3170c6d65040]
+module.cluster.data.aws_partition.current: Read complete after 0s [id=aws]
+data.aws_iam_policy_document.pod_identity_assume: Read complete after 0s [id=819195744]
+module.cluster.data.aws_iam_policy_document.cluster_assume: Read complete after 0s [id=1029077455]
+module.cluster.aws_iam_role.cluster: Refreshing state... [id=bravo-source-cluster-0c92fc4ecaad55e0fd95782bf3]
+data.aws_availability_zones.this: Read complete after 0s [id=ap-northeast-2]
+module.cluster.data.aws_iam_policy_document.cluster_secrets_kms: Reading...
+module.cluster.data.aws_iam_policy_document.cluster_secrets_kms: Read complete after 0s [id=1471450302]
+module.network.aws_subnet.private["ap-northeast-2a"]: Refreshing state... [id=subnet-021eb5e3a08bca9f4]
+module.network.aws_subnet.private["ap-northeast-2c"]: Refreshing state... [id=subnet-02bef8cbdc6521c1f]
+module.cluster.aws_iam_role_policy.cluster_secrets_kms: Refreshing state... [id=bravo-source-cluster-0c92fc4ecaad55e0fd95782bf3:secrets-kms]
+module.cluster.aws_iam_role_policy_attachment.cluster: Refreshing state... [id=bravo-source-cluster-0c92fc4ecaad55e0fd95782bf3/arn:aws:iam::aws:policy/AmazonEKSClusterPolicy]
+module.cluster.aws_eks_cluster.this: Refreshing state... [id=bravo-source]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+ <= read (data resources)
+
+Terraform will perform the following actions:
+
+  # data.aws_iam_policy_document.chat_db_backup will be read during apply
+  # (config refers to values not yet known)
+ <= data "aws_iam_policy_document" "chat_db_backup" {
+      + id            = (known after apply)
+      + json          = (known after apply)
+      + minified_json = (known after apply)
+
+      + statement {
+          + actions   = [
+              + "s3:GetBucketLocation",
+              + "s3:ListBucket",
+            ]
+          + resources = [
+              + (known after apply),
+            ]
+          + sid       = "ListBackupBucket"
+        }
+      + statement {
+          + actions   = [
+              + "s3:DeleteObject",
+              + "s3:GetObject",
+              + "s3:PutObject",
+            ]
+          + resources = [
+              + (known after apply),
+            ]
+          + sid       = "ReadWriteBackupObjects"
+        }
+      + statement {
+          + actions   = [
+              + "kms:Decrypt",
+              + "kms:GenerateDataKey",
+            ]
+          + resources = [
+              + "arn:aws:kms:ap-northeast-2:721622471953:key/6bd675bf-a934-407e-a674-3170c6d65040",
+            ]
+          + sid       = "UseAppKeyViaS3"
+
+          + condition {
+              + test     = "StringEquals"
+              + values   = [
+                  + "s3.ap-northeast-2.amazonaws.com",
+                ]
+              + variable = "kms:ViaService"
+            }
+        }
+    }
+
+  # data.aws_iam_policy_document.chat_db_restore will be read during apply
+  # (config refers to values not yet known)
+ <= data "aws_iam_policy_document" "chat_db_restore" {
+      + id            = (known after apply)
+      + json          = (known after apply)
+      + minified_json = (known after apply)
+
+      + statement {
+          + actions   = [
+              + "s3:GetBucketLocation",
+              + "s3:ListBucket",
+            ]
+          + resources = [
+              + (known after apply),
+            ]
+          + sid       = "ListBackupBucket"
+        }
+      + statement {
+          + actions   = [
+              + "s3:GetObject",
+            ]
+          + resources = [
+              + (known after apply),
+            ]
+          + sid       = "ReadBackupObjects"
+        }
+      + statement {
+          + actions   = [
+              + "kms:Decrypt",
+            ]
+          + resources = [
+              + "arn:aws:kms:ap-northeast-2:721622471953:key/6bd675bf-a934-407e-a674-3170c6d65040",
+            ]
+          + sid       = "DecryptAppKeyViaS3"
+
+          + condition {
+              + test     = "StringEquals"
+              + values   = [
+                  + "s3.ap-northeast-2.amazonaws.com",
+                ]
+              + variable = "kms:ViaService"
+            }
+        }
+    }
+
+  # data.aws_iam_policy_document.db_backup_bucket will be read during apply
+  # (config refers to values not yet known)
+ <= data "aws_iam_policy_document" "db_backup_bucket" {
+      + id            = (known after apply)
+      + json          = (known after apply)
+      + minified_json = (known after apply)
+
+      + statement {
+          + actions   = [
+              + "s3:*",
+            ]
+          + effect    = "Deny"
+          + resources = [
+              + (known after apply),
+              + (known after apply),
+            ]
+          + sid       = "DenyInsecureTransport"
+
+          + condition {
+              + test     = "Bool"
+              + values   = [
+                  + "false",
+                ]
+              + variable = "aws:SecureTransport"
+            }
+
+          + principals {
+              + identifiers = [
+                  + "*",
+                ]
+              + type        = "*"
+            }
+        }
+    }
+
+  # aws_eks_pod_identity_association.chat_db_backup will be created
+  + resource "aws_eks_pod_identity_association" "chat_db_backup" {
+      + association_arn      = (known after apply)
+      + association_id       = (known after apply)
+      + cluster_name         = "bravo-source"
+      + disable_session_tags = false
+      + external_id          = (known after apply)
+      + id                   = (known after apply)
+      + namespace            = "chat"
+      + region               = "ap-northeast-2"
+      + role_arn             = (known after apply)
+      + service_account      = "chat-db"
+      + tags_all             = {
+          + "component"  = "source"
+          + "env"        = "source-aws"
+          + "managed-by" = "terraform"
+        }
+    }
+
+  # aws_eks_pod_identity_association.chat_db_restore will be created
+  + resource "aws_eks_pod_identity_association" "chat_db_restore" {
+      + association_arn      = (known after apply)
+      + association_id       = (known after apply)
+      + cluster_name         = "bravo-source"
+      + disable_session_tags = false
+      + external_id          = (known after apply)
+      + id                   = (known after apply)
+      + namespace            = "chat"
+      + region               = "ap-northeast-2"
+      + role_arn             = (known after apply)
+      + service_account      = "chat-db-restore"
+      + tags_all             = {
+          + "component"  = "source"
+          + "env"        = "source-aws"
+          + "managed-by" = "terraform"
+        }
+    }
+
+  # aws_iam_role.chat_db_backup will be created
+  + resource "aws_iam_role" "chat_db_backup" {
+      + arn                   = (known after apply)
+      + assume_role_policy    = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action    = [
+                          + "sts:TagSession",
+                          + "sts:AssumeRole",
+                        ]
+                      + Effect    = "Allow"
+                      + Principal = {
+                          + Service = "pods.eks.amazonaws.com"
+                        }
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + create_date           = (known after apply)
+      + force_detach_policies = false
+      + id                    = (known after apply)
+      + managed_policy_arns   = (known after apply)
+      + max_session_duration  = 3600
+      + name                  = (known after apply)
+      + name_prefix           = "bravo-source-chat-db-backup-"
+      + path                  = "/"
+      + tags_all              = {
+          + "component"  = "source"
+          + "env"        = "source-aws"
+          + "managed-by" = "terraform"
+        }
+      + unique_id             = (known after apply)
+
+      + inline_policy (known after apply)
+    }
+
+  # aws_iam_role.chat_db_restore will be created
+  + resource "aws_iam_role" "chat_db_restore" {
+      + arn                   = (known after apply)
+      + assume_role_policy    = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action    = [
+                          + "sts:TagSession",
+                          + "sts:AssumeRole",
+                        ]
+                      + Effect    = "Allow"
+                      + Principal = {
+                          + Service = "pods.eks.amazonaws.com"
+                        }
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + create_date           = (known after apply)
+      + force_detach_policies = false
+      + id                    = (known after apply)
+      + managed_policy_arns   = (known after apply)
+      + max_session_duration  = 3600
+      + name                  = (known after apply)
+      + name_prefix           = "bravo-source-chat-db-restore-"
+      + path                  = "/"
+      + tags_all              = {
+          + "component"  = "source"
+          + "env"        = "source-aws"
+          + "managed-by" = "terraform"
+        }
+      + unique_id             = (known after apply)
+
+      + inline_policy (known after apply)
+    }
+
+  # aws_iam_role_policy.chat_db_backup will be created
+  + resource "aws_iam_role_policy" "chat_db_backup" {
+      + id          = (known after apply)
+      + name        = "chat-db-backup"
+      + name_prefix = (known after apply)
+      + policy      = (known after apply)
+      + role        = (known after apply)
+    }
+
+  # aws_iam_role_policy.chat_db_restore will be created
+  + resource "aws_iam_role_policy" "chat_db_restore" {
+      + id          = (known after apply)
+      + name        = "chat-db-restore"
+      + name_prefix = (known after apply)
+      + policy      = (known after apply)
+      + role        = (known after apply)
+    }
+
+  # aws_s3_bucket.db_backup will be created
+  + resource "aws_s3_bucket" "db_backup" {
+      + acceleration_status         = (known after apply)
+      + acl                         = (known after apply)
+      + arn                         = (known after apply)
+      + bucket                      = (known after apply)
+      + bucket_domain_name          = (known after apply)
+      + bucket_namespace            = (known after apply)
+      + bucket_prefix               = "bravo-source-db-backup-"
+      + bucket_region               = (known after apply)
+      + bucket_regional_domain_name = (known after apply)
+      + force_destroy               = true
+      + hosted_zone_id              = (known after apply)
+      + id                          = (known after apply)
+      + object_lock_enabled         = (known after apply)
+      + policy                      = (known after apply)
+      + region                      = "ap-northeast-2"
+      + request_payer               = (known after apply)
+      + tags_all                    = {
+          + "component"  = "source"
+          + "env"        = "source-aws"
+          + "managed-by" = "terraform"
+        }
+      + website_domain              = (known after apply)
+      + website_endpoint            = (known after apply)
+
+      + cors_rule (known after apply)
+
+      + grant (known after apply)
+
+      + lifecycle_rule (known after apply)
+
+      + logging (known after apply)
+
+      + object_lock_configuration (known after apply)
+
+      + replication_configuration (known after apply)
+
+      + server_side_encryption_configuration (known after apply)
+
+      + versioning (known after apply)
+
+      + website (known after apply)
+    }
+
+  # aws_s3_bucket_ownership_controls.db_backup will be created
+  + resource "aws_s3_bucket_ownership_controls" "db_backup" {
+      + bucket = (known after apply)
+      + id     = (known after apply)
+      + region = "ap-northeast-2"
+
+      + rule {
+          + object_ownership = "BucketOwnerEnforced"
+        }
+    }
+
+  # aws_s3_bucket_policy.db_backup will be created
+  + resource "aws_s3_bucket_policy" "db_backup" {
+      + bucket = (known after apply)
+      + id     = (known after apply)
+      + policy = (known after apply)
+      + region = "ap-northeast-2"
+    }
+
+  # aws_s3_bucket_public_access_block.db_backup will be created
+  + resource "aws_s3_bucket_public_access_block" "db_backup" {
+      + block_public_acls       = true
+      + block_public_policy     = true
+      + bucket                  = (known after apply)
+      + id                      = (known after apply)
+      + ignore_public_acls      = true
+      + region                  = "ap-northeast-2"
+      + restrict_public_buckets = true
+    }
+
+  # aws_s3_bucket_server_side_encryption_configuration.db_backup will be created
+  + resource "aws_s3_bucket_server_side_encryption_configuration" "db_backup" {
+      + bucket = (known after apply)
+      + id     = (known after apply)
+      + region = "ap-northeast-2"
+
+      + rule {
+          + blocked_encryption_types = (known after apply)
+          + bucket_key_enabled       = true
+
+          + apply_server_side_encryption_by_default {
+              + kms_master_key_id = "arn:aws:kms:ap-northeast-2:721622471953:key/6bd675bf-a934-407e-a674-3170c6d65040"
+              + sse_algorithm     = "aws:kms"
+            }
+        }
+    }
+
+Plan: 11 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + db_backup_bucket    = (known after apply)
+  + db_backup_role_arns = {
+      + "chat/chat-db"         = (known after apply)
+      + "chat/chat-db-restore" = (known after apply)
+    }
+
+Warning: Resource targeting is in effect
+
+You are creating a plan with the -target option, which means that the result
+of this plan may not represent all of the changes requested by the current
+configuration.
+
+The -target option is not for routine use, and is provided only for
+exceptional situations such as recovering from errors or mistakes, or when
+Terraform specifically suggests to use it as part of an error message.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Saved the plan to:
+/private/tmp/claude-501/-Users-mango-workspace-softbank2026-hackathon-research/6ebc6ce1-a78f-436a-95c4-aa3710f4c715/scratchpad/src-dbbackup.tfplan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "/private/tmp/claude-501/-Users-mango-workspace-softbank2026-hackathon-research/6ebc6ce1-a78f-436a-95c4-aa3710f4c715/scratchpad/src-dbbackup.tfplan"

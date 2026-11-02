@@ -36,6 +36,17 @@ spec:
   walStorage:
     storageClass: bravo-db
     size: 10Gi
+  # DR-01 backup (gate DR-ARCHIVE, DR-RESTORE): WAL archive + base backups by barman-cloud to the S3 bucket
+  # db_backup_bucket (infra/envs/source-aws/db_backup.tf, SSE-KMS, TLS only). No key: EKS Pod Identity gives the
+  # CNPG service account chat/chat-db its role (inheritFromIAMRole uses the injected container credentials).
+  backup:
+    retentionPolicy: "7d"
+    barmanObjectStore:
+      destinationPath: s3://${DB_BACKUP_BUCKET}/
+      s3Credentials:
+        inheritFromIAMRole: true
+      wal: {compression: gzip}
+      data: {compression: gzip}
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {memory: 1Gi}

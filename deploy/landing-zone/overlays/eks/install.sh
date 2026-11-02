@@ -45,6 +45,7 @@ load_outputs() {
   export DB_SECRET_ARN; DB_SECRET_ARN="$(tf_out db_secret_arn)"
   export DB_SECRET_NAME; DB_SECRET_NAME="$(aws secretsmanager describe-secret --region "$AWS_REGION" --secret-id "$DB_SECRET_ARN" --query Name --output text)"
   export ATTACH_BUCKET; ATTACH_BUCKET="$(tf_out attachments_bucket)"
+  export DB_BACKUP_BUCKET; DB_BACKUP_BUCKET="$(tf_out db_backup_bucket)"   # CNPG chat-db barman-cloud (db_backup.tf)
   export DEMO_IMAGE_REPO; DEMO_IMAGE_REPO="$(jq -r '."bravo-demo"' <<<"$ecr")"
   export PGBOUNCER_IMAGE_REPO_ECR; PGBOUNCER_IMAGE_REPO_ECR="$(jq -r '."bravo-pgbouncer"' <<<"$ecr")"
   export API_HOST; API_HOST="$(tf_out api_endpoint | sed 's#^https://##')"
@@ -55,7 +56,7 @@ load_outputs() {
 }
 render() {
   envsubst '${PG_IMAGE} ${CLOUDFLARED_IMAGE} ${PGBOUNCER_IMAGE} ${IMAGE_PULL_POLICY} ${EBS_KMS_KEY_ARN}
-    ${AWS_REGION} ${DB_SECRET_NAME} ${ATTACH_BUCKET} ${DEMO_IMAGE_REPO} ${DEMO_IMAGE_DIGEST}'
+    ${AWS_REGION} ${DB_SECRET_NAME} ${ATTACH_BUCKET} ${DB_BACKUP_BUCKET} ${DEMO_IMAGE_REPO} ${DEMO_IMAGE_DIGEST}'
 }
 
 # Fails unless the ECR tag resolves to the expected digest (images are pushed by scripts outside this file).

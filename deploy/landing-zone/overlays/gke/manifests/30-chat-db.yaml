@@ -29,6 +29,17 @@ spec:
       owner: chat_dbo
       secret:
         name: chat-db-owner
+  # DR-01 backup (gate DR-ARCHIVE, DR-RESTORE): WAL archive + base backups by barman-cloud to the GCS bucket
+  # db_backup_bucket (infra/envs/target-gcp/db_backup.tf, CMEK). No key: Workload Identity gives the KSA
+  # chat/chat-db (made by CNPG) its bucket roles directly. Egress: NetworkPolicy chat-db-backup (60-*.yaml).
+  backup:
+    retentionPolicy: "7d"
+    barmanObjectStore:
+      destinationPath: gs://${DB_BACKUP_BUCKET}/
+      googleCredentials:
+        gkeEnvironment: true
+      wal: {compression: gzip}
+      data: {compression: gzip}
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {memory: 1Gi}

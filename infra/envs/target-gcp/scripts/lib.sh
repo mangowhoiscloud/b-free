@@ -56,12 +56,13 @@ load_outputs() {
   PROXY_ONLY_CIDR="$(tf_out proxy_only_cidr)"
   PD_KMS_KEY="$(tf_out pd_kms_key_id)"
   ATTACH_BUCKET="$(tf_out attachments_bucket)"
+  DB_BACKUP_BUCKET="$(tf_out db_backup_bucket)"   # CNPG chat-db barman-cloud (db_backup.tf)
   CHAT_APP_SA="$(tf_out chat_app_service_account)"
   GATE_OTHER_SA="$(tf_out gate_other_service_account)"
   CLUSTER_NAME="$CLUSTER"
   PUBLIC_HOSTNAME="${PUBLIC_HOSTNAME:-b-free-chat-gke.mangowhois.ai}"
   export PROJECT REGION CLUSTER LOCATION IMAGE_REGISTRY GATEWAY_ADDRESS_NAME GATEWAY_IP PROXY_ONLY_CIDR \
-    PD_KMS_KEY ATTACH_BUCKET CLUSTER_NAME PUBLIC_HOSTNAME
+    PD_KMS_KEY ATTACH_BUCKET DB_BACKUP_BUCKET CLUSTER_NAME PUBLIC_HOSTNAME
   # shellcheck disable=SC1091
   set -a; . "$REPO_ROOT/deploy/landing-zone/versions.env"; . "$OVERLAY_DIR/versions.env"; set +a
 }

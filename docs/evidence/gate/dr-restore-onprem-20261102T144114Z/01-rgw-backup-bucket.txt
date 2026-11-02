@@ -1,0 +1,12 @@
+# 2026-11-02 23:41:14 KST deploy/landing-zone/scripts/rgw-backup-bucket.sh bravo-onprem target-onprem
+keys.sh: generated secret/envs/target-onprem/chat-db-backup field access_key_id (10 random bytes, hex; value not shown)
+keys.sh: generated secret/envs/target-onprem/chat-db-backup field secret_access_key (20 random bytes, hex; value not shown)
+secret rook-ceph/chat-db-backup-keys <- OpenBao secret/envs/target-onprem/chat-db-backup (values not shown)
+secret chat/chat-db-backup-s3 <- OpenBao secret/envs/target-onprem/chat-db-backup (values not shown)
+secret chat/chat-db-backup-ca <- ConfigMap rook-ceph/bravo-rgw-ca (public CA)
+rgw-backup-bucket: bravo-chat-db-backup created (owner chat-db-backup)
+rgw-backup-bucket: public access block:
+{"PublicAccessBlockConfiguration":{"BlockPublicAcls":true,"IgnorePublicAcls":true,"BlockPublicPolicy":true,"RestrictPublicBuckets":true}}
+rgw-backup-bucket: bucket policy:
+{"Version":"2012-10-17","Statement":[{"Sid":"DenyInsecureTransport","Effect":"Deny","Principal":"*","Action":"s3:*","Resource":["arn:aws:s3:::bravo-chat-db-backup","arn:aws:s3:::bravo-chat-db-backup/*"],"Condition":{"BoolIfExists":{"aws:SecureTransport":"false"}}}]}
+./deploy/landing-zone/scripts/rgw-backup-bucket.sh: line 70: 14256 Terminated: 15          k -n rook-ceph port-forward svc/rook-ceph-rgw-bravo "$port:443" > "$work/pf.log" 2>&1

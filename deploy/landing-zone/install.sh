@@ -272,6 +272,13 @@ step_rgw() {
   "$here/scripts/rgw-rehearsal-bucket.sh" "$ctx" "$ENV_ID"
 }
 
+# DR-01: RGW user + bucket for the chat-db backup (keys from the platform OpenBao, D-26). Cluster chat-db
+# (base/chat-db.yaml, step cnpg) archives WAL there; until this step has run, archiving retries.
+step_db_backup() {
+  log "RGW user chat-db-backup, bucket bravo-chat-db-backup, Secrets chat/chat-db-backup-{s3,ca}"
+  "$here/scripts/rgw-backup-bucket.sh" "$ctx" "$ENV_ID"
+}
+
 step_kyverno() {
   log "Kyverno chart $KYVERNO_CHART_VERSION + GeneratingPolicy bravo-default-deny"
   h upgrade --install kyverno kyverno/kyverno --version "$KYVERNO_CHART_VERSION" -n kyverno \
@@ -302,7 +309,7 @@ step_gateway() {
   k -n bravo-edge get svc cilium-gateway-bravo-gateway
 }
 
-all_steps=(cilium base images rook rbd storage cnpg secrets kyverno eso otel rgw_tls rgw app gateway)
+all_steps=(cilium base images rook rbd storage cnpg secrets kyverno eso otel rgw_tls rgw db_backup app gateway)
 steps=("$@"); ((${#steps[@]})) || steps=("${all_steps[@]}")
 helm_repos
 for s in "${steps[@]}"; do "step_$s"; done

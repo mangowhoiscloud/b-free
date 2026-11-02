@@ -1,0 +1,4 @@
+2026-11-02 23:56:12 KST 1793631372 db=up app_ready_endpoints=2
+2026-11-02 23:56:16 KST 1793631376 db=down app_ready_endpoints=2
+2026-11-02 23:56:29 KST 1793631389 db=up app_ready_endpoints=2
+2026-11-02 23:56:59 KST monitor end (seen_down=1)

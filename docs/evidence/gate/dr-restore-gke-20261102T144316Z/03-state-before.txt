@@ -1,0 +1,26 @@
+## 2026-11-02 23:56:09 KST state of gke
+ archived_count |    last_archived_wal     |      last_archived_time       | failed_count | last_failed_wal | last_failed_time 
+----------------+--------------------------+-------------------------------+--------------+-----------------+------------------
+              7 | 000000010000000000000007 | 2026-11-02 14:44:39.178315+00 |            0 |                 | 
+(1 row)
+
+ subname | worker_running | received_lsn | latest_end_lsn | last_msg_receipt_time 
+---------+----------------+--------------+----------------+-----------------------
+(0 rows)
+
+   slot_name   | slot_type | active | confirmed_flush_lsn | wal_status 
+---------------+-----------+--------+---------------------+------------
+ bravo_rev_sub | logical   | f      | 0/409E488           | reserved
+(1 row)
+
+ pg_current_wal_lsn |              now              
+--------------------+-------------------------------
+ 0/8000000          | 2026-11-02 14:56:10.067524+00
+(1 row)
+
+chat-bravo-demo-844784c98c-p7frd 1/1 Running 0 134m
+chat-bravo-demo-844784c98c-rqpwd 1/1 Running 0 134m
+chat-db-1 1/1 Running 0 146m
+chat-pgbouncer-5f96b4bc65-mpzk2 1/1 Running 0 175m
+src-db-link-86dcb4875c-dn4qw 1/1 Running 0 117m
+src-db-link-86dcb4875c-spzcg 1/1 Running 0 117m

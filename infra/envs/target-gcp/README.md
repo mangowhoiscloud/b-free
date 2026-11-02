@@ -22,6 +22,7 @@ infra/envs/target-gcp/scripts/down.sh     # Gateway · DB 디스크 정리 → H
 | 노드 풀 `core` | `c4a-standard-4`(Arm) 1–2대, `hyperdisk-balanced` 50 GiB + CMEK, Arm taint 끔 |
 | 이미지 저장소 | Artifact Registry `bravo`(불변 태그). 출발지와 같은 digest만 둠 |
 | 첨부 버킷 | 공개 접근 방지 `enforced`, 균일 접근, 버전 관리, CMEK, 시험 객체 `_gate/canary` |
+| DB 백업 버킷(`db_backup.tf`) | CNPG chat-db의 WAL과 base backup(barman-cloud, DR-01). 공개 접근 방지 `enforced`, 균일 접근, CMEK 키 `db-backup`. 키 없이 Workload Identity 주체에 바로 권한: KSA `chat/chat-db` 읽기 · 쓰기, `chat/chat-db-restore` 읽기 |
 | 서비스 계정 | `chat-app`(버킷 `objectUser`, HMAC 주인), `gate-other`(권한 없음, OBJ-05), 노드 SA(최소 권한 + 저장소 읽기) |
 | Gateway 주소 | 고정 내부 주소 `bravo-target-gcp-gateway` |
 | 라벨 | 모든 자원 `component=target`, `env=target-gcp`, `managed-by=terraform`, `owner=team-bravo` |
