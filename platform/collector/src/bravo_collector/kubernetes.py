@@ -54,6 +54,11 @@ READ_ONLY_RULES: tuple[tuple[str, str, str], ...] = (
 
 
 def load_api_client(section: KubernetesSection) -> ApiClient:
+    # provider=eks: the same EKS token + link path as GET /v1/clusters (clusters.py), not a kubeconfig.
+    from .clusters import eks_api_client_for, is_eks
+
+    if is_eks(section):
+        return eks_api_client_for(section)
     path = os.environ.get(section.kubeconfig_env) if section.kubeconfig_env else None
     if section.kubeconfig_env and not path:
         raise RuntimeError(f"environment variable {section.kubeconfig_env} is not set")

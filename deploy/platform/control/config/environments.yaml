@@ -1,12 +1,13 @@
-# Environment registry for the collector and the gate on the platform EKS (FR-1, FR-12).
+# Environment registry for the collector and the gate on the platform (EC2 + RKE2) (FR-1, FR-12).
 # References only, never secret values (platform/collector/src/bravo_collector/environments.py).
-# source-aws: EKS endpoint + token from the collector's EKS Pod Identity role (infra/envs/platform-aws
-#   pod_identity.tf); K8s read rights from the access entry group bravo-collector (links.tf) bound to the
-#   read-only ClusterRole in deploy/platform/link/source-rbac. Path: platform NAT -> source EKS public
-#   endpoint allowlist = 임시 링크(D-16 전).
-# target-onprem: K3s API through the platform relay onprem-k8s.bravo-link.svc (bravo-link reverse, dialled
-#   out from the laptop that hosts the Lima VMs). Kubeconfig comes from Secret onprem-kubeconfig when the
-#   on-prem lane delivers a read-only credential; until then the collector answers "not configured".
+# source-aws: EKS CA + endpoint host (eks:DescribeCluster) and bearer token from the collector's web identity role
+#   (infra/envs/platform-aws); K8s read rights from the access entry group bravo-collector bound to the read-only
+#   ClusterRole in deploy/platform/link/source-rbac. Path: D-16 link t1-src-k8s (Service src-k8s in bravo-link,
+#   cloudflared access tcp + Access service token cf-link-src-k8s -> source mgmt Tunnel -> kubernetes.default.svc).
+#   TLS checks the EKS CA and the real endpoint host (tls_server_name defaults to the DescribeCluster host).
+#   The source EKS public endpoint allowlist no longer has the platform NAT IP (infra/envs/source-aws).
+# target-onprem: RKE2 API through the D-16 link t1-dst-k8s (Service dst-k8s in bravo-link). Kubeconfig comes from
+#   Secret onprem-kubeconfig (OpenBao, read-only SA token, tls-server-name kubernetes.default.svc).
 environments:
   source-aws:
     display_name: "출발지 · Amazon EKS (bravo-source)"
@@ -14,6 +15,7 @@ environments:
       provider: eks
       eks_cluster_name: bravo-source
       aws_region: ap-northeast-2
+      api_server: https://src-k8s.bravo-link.svc.cluster.local:443
   target-onprem:
     display_name: "목적지 · 온프렘 K3s (Lima)"
     kubernetes:

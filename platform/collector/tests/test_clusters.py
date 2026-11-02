@@ -196,6 +196,31 @@ def test_eks_token_format_offline():
     assert "x-k8s-aws-id" in q["X-Amz-SignedHeaders"][0].split(";")
 
 
+def test_eks_over_link_keeps_tls_name_and_ca(monkeypatch, tmp_path):
+    """D-16: api_server changes only where we dial; TLS still checks the EKS CA and the real endpoint host."""
+    ca = tmp_path / "eks.crt"
+    ca.write_text("ca")
+    ep = cl._EksEndpoint(host="https://ABC123.gr7.ap-northeast-2.eks.amazonaws.com", ca_file=str(ca), at=0.0)
+    monkeypatch.setattr(cl, "_eks_endpoint", lambda *a: ep)
+    session = boto3.Session(aws_access_key_id="AKIDEXAMPLE", aws_secret_access_key="example-secret",  # noqa: S106
+                            region_name="ap-northeast-2")
+    section = KubernetesSection(provider="eks", eks_cluster_name="bravo-source", aws_region="ap-northeast-2",
+                                api_server="https://src-k8s.bravo-link.svc.cluster.local:443/")
+    monkeypatch.setattr(cl.boto3, "Session", lambda: session)
+    cfg = cl.default_api_factory(section).configuration
+    assert cfg.host == "https://src-k8s.bravo-link.svc.cluster.local:443"
+    assert cfg.tls_server_name == "abc123.gr7.ap-northeast-2.eks.amazonaws.com"
+    assert cfg.verify_ssl is True and cfg.ssl_ca_cert == str(ca)
+    assert cfg.api_key["authorization"].startswith("k8s-aws-v1.")
+    # The snapshot route (kubernetes.py) takes the same path.
+    from bravo_collector.kubernetes import load_api_client
+
+    assert load_api_client(section).configuration.host == cfg.host
+    # Without api_server: the public endpoint, no override.
+    direct = cl.default_api_factory(section.model_copy(update={"api_server": None})).configuration
+    assert direct.host == ep.host and not direct.tls_server_name
+
+
 def test_short_error_redacts_tokens():
     msg = cl.short_error(RuntimeError("Bearer k8s-aws-v1.abcDEF_123 rejected"))
     assert "abcDEF" not in msg and "redacted" in msg

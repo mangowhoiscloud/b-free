@@ -5,6 +5,7 @@ The file holds references only, never secret values:
     kubernetes.kubeconfig_env  name of the environment variable that holds the kubeconfig path
                                (unset -> the standard KUBECONFIG / ~/.kube/config resolution)
     kubernetes.provider + eks_cluster_name + aws_region  EKS: endpoint and token from the AWS chain (boto3)
+    kubernetes.api_server   EKS only: link URL to dial instead of the endpoint (TLS name stays the endpoint host)
     aws                     region and resource names; credentials come from the standard AWS chain
 
 The gate reads the same file and ignores the keys it does not need (and the other way round).
@@ -48,6 +49,10 @@ class KubernetesSection(_Section):
     provider: str | None = None
     eks_cluster_name: str | None = None
     aws_region: str | None = None
+    # EKS over a link (D-16): connect to this URL instead of the DescribeCluster endpoint. TLS still checks the
+    # EKS CA and the name tls_server_name (default: the host of the DescribeCluster endpoint).
+    api_server: str | None = None
+    tls_server_name: str | None = None
     # Empty -> every namespace except kube-system, kube-public, kube-node-lease.
     namespaces: tuple[str, ...] = ()
 

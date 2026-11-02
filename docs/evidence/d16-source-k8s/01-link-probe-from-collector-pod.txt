@@ -1,0 +1,11 @@
+# 2026-11-02 23:35 KST (14:35:20Z). Before the switch: collector pod collector-5fc7684949-66nf8 (image 9dc004db), its own web identity, dials the link Service directly.
+# kubectl --context bravo-platform-rke2 -n bravo-control exec -i <collector pod> -c collector -- python - < linkprobe.py
+caller_arn arn:aws:sts::721622471953:assumed-role/bravo-platform-collector-ro-25e58db04e5bb0ea1f58d7f626/botocore-session-1793630117
+eks_endpoint_host 4085fe75e8bd75e727bd03fbb9729334.gr7.ap-northeast-2.eks.amazonaws.com
+tls_verified TLSv1.3 subject {'commonName': 'kube-apiserver'}
+san_has_eks_host True
+wrong_name_rejected Hostname mismatch, certificate is not valid for 'wrong.example.com'.
+server_version v1.36.5-eks-577a51e ms 619
+nodes ['ip-10-10-11-107.ap-northeast-2.compute.internal']
+namespaces 12
+at 2026-11-02T14:35:20+00:00

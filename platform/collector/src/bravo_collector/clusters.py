@@ -6,7 +6,9 @@ reason; the other clusters still answer.
 
 EKS without the ``aws`` CLI: when the registry entry sets ``provider: eks`` + ``eks_cluster_name`` +
 ``aws_region``, the collector reads endpoint and CA with ``eks:DescribeCluster`` and builds the bearer token
-from a presigned ``sts:GetCallerIdentity`` URL (the same token ``aws eks get-token`` prints).
+from a presigned ``sts:GetCallerIdentity`` URL (the same token ``aws eks get-token`` prints). With
+``api_server`` the connection goes to that link address (D-16 ``src-k8s.bravo-link.svc``) and TLS checks the EKS
+CA and the real endpoint host name; only the network path changes.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import re
 import tempfile
 import threading
 import time
+import urllib.parse
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
@@ -121,11 +124,17 @@ def _eks_endpoint(session: boto3.Session, cluster_name: str, region: str) -> _Ek
     return ep
 
 
-def eks_api_client(cluster_name: str, region: str, session: boto3.Session | None = None) -> ApiClient:
+def eks_api_client(cluster_name: str, region: str, session: boto3.Session | None = None,
+                   api_server: str | None = None, tls_server_name: str | None = None) -> ApiClient:
+    """``api_server`` set: dial the link (D-16 ``src-k8s``) and check the certificate against the EKS CA and the
+    real endpoint host (``tls_server_name`` or the DescribeCluster endpoint host). Verification stays on."""
     session = session or boto3.Session()
     ep = _eks_endpoint(session, cluster_name, region)
     cfg = client.Configuration()
     cfg.host = ep.host
+    if api_server:
+        cfg.host = api_server.rstrip("/")
+        cfg.tls_server_name = tls_server_name or urllib.parse.urlsplit(ep.host).hostname
     cfg.ssl_ca_cert = ep.ca_file
     cfg.verify_ssl = True
     cfg.api_key = {"authorization": eks_token(session, cluster_name, region)}
@@ -133,9 +142,19 @@ def eks_api_client(cluster_name: str, region: str, session: boto3.Session | None
     return ApiClient(configuration=cfg)
 
 
+def is_eks(section: KubernetesSection) -> bool:
+    return (section.provider or "").lower() == "eks" and bool(section.eks_cluster_name and section.aws_region)
+
+
+def eks_api_client_for(section: KubernetesSection) -> ApiClient:
+    assert section.eks_cluster_name and section.aws_region
+    return eks_api_client(section.eks_cluster_name, section.aws_region, api_server=section.api_server,
+                          tls_server_name=section.tls_server_name)
+
+
 def default_api_factory(section: KubernetesSection) -> ApiClient:
-    if (section.provider or "").lower() == "eks" and section.eks_cluster_name and section.aws_region:
-        return eks_api_client(section.eks_cluster_name, section.aws_region)
+    if is_eks(section):
+        return eks_api_client_for(section)
     if section.kubeconfig_env and not os.environ.get(section.kubeconfig_env):
         raise NotConfigured(f"environment variable {section.kubeconfig_env} (kubeconfig path) is not set")
     try:
