@@ -1,0 +1,146 @@
+{
+  "job": {
+    "name": "kube-bench-eks",
+    "namespace": "bravo-gate-scan",
+    "node": "ip-10-10-11-107.ap-northeast-2.compute.internal",
+    "image": "docker.io/aquasec/kube-bench@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679",
+    "command": [
+      "kube-bench",
+      "run",
+      "--targets",
+      "node,policies,managedservices,controlplane",
+      "--benchmark",
+      "eks-1.8.0",
+      "--json"
+    ],
+    "seconds": 12.2
+  },
+  "totals": {
+    "total_pass": 15,
+    "total_fail": 12,
+    "total_warn": 23,
+    "total_info": 0
+  },
+  "topics": {
+    "apiserver-tls": {
+      "control_id": "ENC-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    },
+    "audit-log": {
+      "control_id": "AUD-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": [
+        {
+          "id": "2.1.1",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        },
+        {
+          "id": "2.1.2",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        }
+      ]
+    },
+    "control-plane-endpoint": {
+      "control_id": "NET-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": [
+        {
+          "id": "5.4.1",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        },
+        {
+          "id": "5.4.2",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        },
+        {
+          "id": "5.4.3",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        }
+      ]
+    },
+    "network-policy": {
+      "control_id": "NET-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": [
+        {
+          "id": "5.4.4",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        }
+      ]
+    },
+    "rbac-least-privilege": {
+      "control_id": "IAM-01",
+      "verdict": "FAIL",
+      "status": "보완 필요",
+      "items": [
+        {
+          "id": "4.1.1",
+          "kube_bench": "FAIL",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "4.1.3",
+          "kube_bench": "FAIL",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "4.1.6",
+          "kube_bench": "FAIL",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "4.1.12",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        }
+      ]
+    },
+    "secrets-access": {
+      "control_id": "SEC-01",
+      "verdict": "FAIL",
+      "status": "보완 필요",
+      "items": [
+        {
+          "id": "4.1.2",
+          "kube_bench": "FAIL",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "4.4.1",
+          "kube_bench": "FAIL",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "4.4.2",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        }
+      ]
+    },
+    "secrets-encryption-at-rest": {
+      "control_id": "SEC-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": [
+        {
+          "id": "5.3.1",
+          "kube_bench": "WARN",
+          "verdict": "UNKNOWN"
+        }
+      ]
+    }
+  },
+  "label": "근사(approximate)",
+  "benchmark": "eks-1.8.0"
+}

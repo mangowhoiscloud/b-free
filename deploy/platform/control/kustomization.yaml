@@ -41,6 +41,10 @@ configMapGenerator:
   - name: gate-aws-config
     files:
       - config=config/gate-aws-config
+  # kube-bench summaries (docs/evidence/kube-bench/cis-summary.py), attached to gate reports, not judged
+  - name: gate-cis-evidence
+    files:
+      - gate-cis-evidence.json=config/gate-cis-evidence.json
   - name: executor-topology
     files:
       - topology.json=../../cloud/in-cluster/topology.json
@@ -60,7 +64,7 @@ images:
     digest: sha256:91678860257abd4a5e97418368e17715491b23047f697e2cb59c4c6511cb7426 # r16 (console lane: gate run elapsed timer, gate proxy 90 s for live measurement)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
-    digest: sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959 # neutral-20261102T164936Z (gate lane: provider-neutral SEC/AUD questions, POST run with write probes, OBJ-04 IAM simulation, NET-PATHS probe Pod, GKE over link gke-k8s, parallel sections; tree at 50399a7)
+    digest: sha256:c841a75e376ae70f4d0bd95526d024941dc2826ec014bcab4d880962e3043d78 # l3-20261102T174547Z (gate lane L3: method per row, SEC-GIT-PLAINTEXT gitleaks 8.30.1, OBJ-PLAIN-EGRESS, NET-EXTERNAL-SCAN, OBJ-ENC object level, CIS evidence; rule gate-controls/2026-11-03.2)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
     digest: sha256:af3c66c17932423a23a4121f184b149fdf83f526f4b3d9e8dcd97645fdab5a79 # neutral-20261102T163611Z (gate lane: provider gke over link gke-k8s with its WIF identity bravo-cost-reader; over d16link-20261102T143435Z; tree at 50218ea)

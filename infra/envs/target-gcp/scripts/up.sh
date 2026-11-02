@@ -7,7 +7,7 @@
 #   PGB_INITIAL_TARGET=target-dst .../up.sh        PgBouncer starts on the local DB instead of the
 #                                                  contract default target-src (source DB over the link)
 #
-# Needs: terraform 1.17, gcloud (account with access to the project), kubectl, helm, jq, envsubst, openssl,
+# Needs: terraform 1.17, gcloud (account with access to the project), kubectl, helm, jq, envsubst, openssl, skopeo,
 # AWS credentials for the S3 state backend, the platform OpenBao unsealed (deploy/pilot/scripts/keys.sh).
 source "$(dirname "$0")/lib.sh"
 
@@ -18,7 +18,7 @@ RENDER_DIR="$STATE_DIR/rendered"
 CNPG_REPO=https://cloudnative-pg.github.io/charts
 ESO_REPO=https://charts.external-secrets.io
 
-for b in terraform gcloud kubectl helm jq envsubst openssl curl; do command -v "$b" >/dev/null || die "needs $b"; done
+for b in terraform gcloud kubectl helm jq envsubst openssl curl skopeo; do command -v "$b" >/dev/null || die "needs $b"; done
 need_bao
 
 # ---- 1. infrastructure ---------------------------------------------------------------------------------------
@@ -43,11 +43,8 @@ fi
 k wait --for=condition=Ready nodes --all --timeout=600s >/dev/null
 
 # ---- 2. images: the destination registry must hold the same digests --------------------------------------------
-for spec in "$DEMO_IMAGE_NAME@$DEMO_DIGEST" "$PGB_IMAGE_NAME@$PGB_DIGEST"; do
-  gcloud artifacts docker images describe "$IMAGE_REGISTRY/$spec" --project "$PROJECT" >/dev/null 2>&1 \
-    || die "image $IMAGE_REGISTRY/$spec missing (push it first, see README 'Images')"
-  log "image present: $IMAGE_REGISTRY/$spec"
-done
+# Copied by digest from the source registry (skopeo --preserve-digests), never built for GKE (spec §8.8).
+"$TG_SCRIPTS/images.sh"
 
 # ---- 3. secrets in the platform OpenBao ------------------------------------------------------------------------
 "$TG_SCRIPTS/secrets.sh" seed

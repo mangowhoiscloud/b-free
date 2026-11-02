@@ -1,0 +1,11 @@
+## 2026-11-03 02:45:21 KST before: chat/chat-bravo-demo egress (bravo-onprem)
+[{"ports":[{"port":6432,"protocol":"TCP"}],"to":[{"podSelector":{"matchLabels":{"app.kubernetes.io/name":"chat-pgbouncer"}}}]},{"ports":[{"port":8080,"protocol":"TCP"},{"port":8443,"protocol":"TCP"},{"port":80,"protocol":"TCP"},{"port":443,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"rook-ceph"}}}]},{"ports":[{"port":4317,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"bravo-observability"}}}]},{"ports":[{"port":53,"protocol":"UDP"},{"port":53,"protocol":"TCP"}],"to":[{"namespaceSelector":{},"podSelector":{"matchLabels":{"k8s-app":"kube-dns"}}}]}]
+## connect from app pod chat-bravo-demo-668bb8bc75-ljcwz (before)
+443 connected
+80 connected
+## patch: egress rule to ns rook-ceph -> ports [443] only (same as deploy/landing-zone/overlays/rke2/chat-values.yaml)
+networkpolicy.networking.k8s.io/chat-bravo-demo patched
+[{"ports":[{"port":6432,"protocol":"TCP"}],"to":[{"podSelector":{"matchLabels":{"app.kubernetes.io/name":"chat-pgbouncer"}}}]},{"ports":[{"port":443,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"rook-ceph"}}}]},{"ports":[{"port":4317,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"bravo-observability"}}}]},{"ports":[{"port":53,"protocol":"UDP"},{"port":53,"protocol":"TCP"}],"to":[{"namespaceSelector":{},"podSelector":{"matchLabels":{"k8s-app":"kube-dns"}}}]}]
+## connect from app pod chat-bravo-demo-668bb8bc75-ljcwz (after)
+443 connected
+80 TimeoutError

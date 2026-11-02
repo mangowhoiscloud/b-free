@@ -1,0 +1,70 @@
+{
+  "job": {
+    "name": "kube-bench-gke",
+    "namespace": "bravo-gate-scan",
+    "node": "gke-bravo-target-gcp-core-bad4fac4-rv18",
+    "image": "docker.io/aquasec/kube-bench@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679",
+    "command": [
+      "kube-bench",
+      "run",
+      "--targets",
+      "node,policies,managedservices,controlplane",
+      "--benchmark",
+      "gke-1.9.0",
+      "--json"
+    ],
+    "seconds": 13.4
+  },
+  "totals": {
+    "total_pass": 8,
+    "total_fail": 10,
+    "total_warn": 39,
+    "total_info": 0
+  },
+  "topics": {
+    "apiserver-tls": {
+      "control_id": "ENC-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    },
+    "audit-log": {
+      "control_id": "AUD-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    },
+    "control-plane-endpoint": {
+      "control_id": "NET-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    },
+    "network-policy": {
+      "control_id": "NET-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    },
+    "rbac-least-privilege": {
+      "control_id": "IAM-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    },
+    "secrets-access": {
+      "control_id": "SEC-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    },
+    "secrets-encryption-at-rest": {
+      "control_id": "SEC-01",
+      "verdict": "UNKNOWN",
+      "status": "미검증",
+      "items": []
+    }
+  },
+  "label": "근사(approximate)",
+  "benchmark": "gke-1.9.0"
+}

@@ -12,8 +12,10 @@ networkPolicy:
   egress:
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: chat-pgbouncer}}}]
       ports: [{port: 6432, protocol: TCP}]
+    # RGW over TLS only (S3_ENDPOINT_URL https://rook-ceph-rgw-bravo.rook-ceph.svc, pod port 443). The plain listener
+    # (Service 80 -> pod 8080) is not reachable from the app: gate OBJ-PLAIN-EGRESS (ENC-01), 2026-11-03.
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: rook-ceph}}}]
-      ports: [{port: 8080, protocol: TCP}, {port: 8443, protocol: TCP}, {port: 80, protocol: TCP}, {port: 443, protocol: TCP}]
+      ports: [{port: 443, protocol: TCP}]
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-observability}}}]
       ports: [{port: 4317, protocol: TCP}]
     - to: [{namespaceSelector: {}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]

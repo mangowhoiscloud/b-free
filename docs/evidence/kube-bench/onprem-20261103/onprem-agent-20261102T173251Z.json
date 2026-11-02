@@ -1,0 +1,492 @@
+{
+  "report": {
+    "Controls": [
+      {
+        "id": "4",
+        "version": "rke2-cis-1.9",
+        "detected_version": "none",
+        "text": "Worker Node Security Configuration",
+        "node_type": "node",
+        "tests": [
+          {
+            "section": "4.1",
+            "type": "",
+            "pass": 6,
+            "fail": 0,
+            "warn": 0,
+            "info": 4,
+            "desc": "Worker Node Configuration Files",
+            "results": [
+              {
+                "test_number": "4.1.1",
+                "test_desc": "Ensure that the kubelet service file permissions are set to 600 or more restrictive (Automated)",
+                "audit": "/bin/sh -c 'if test -e /etc/systemd/system/kubelet.service.d/10-kubeadm.conf; then stat -c permissions=%a /etc/systemd/system/kubelet.service.d/10-kubeadm.conf; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "skip",
+                "remediation": "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet service file, all configuration is passed in as arguments at runtime.\n",
+                "test_info": [
+                  "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet service file, all configuration is passed in as arguments at runtime.\n"
+                ],
+                "status": "INFO",
+                "actual_value": "",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as skip"
+              },
+              {
+                "test_number": "4.1.2",
+                "test_desc": "Ensure that the kubelet service file ownership is set to root:root (Automated)",
+                "audit": "/bin/sh -c \"if test -e /etc/systemd/system/kubelet.service.d/10-kubeadm.conf; then stat -c %U:%G /etc/systemd/system/kubelet.service.d/10-kubeadm.conf; else echo \\\"File not found\\\"; fi\"",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "skip",
+                "remediation": "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet service file, all configuration is passed in as arguments at runtime.\n",
+                "test_info": [
+                  "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet service file, all configuration is passed in as arguments at runtime.\n"
+                ],
+                "status": "INFO",
+                "actual_value": "",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as skip"
+              },
+              {
+                "test_number": "4.1.3",
+                "test_desc": "If proxy kubeconfig file exists ensure permissions are set to 600 or more restrictive (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig; then stat -c permissions=%a /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 600 /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig\n",
+                "test_info": [
+                  "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 600 /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig\n"
+                ],
+                "status": "PASS",
+                "actual_value": "permissions=600",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "permissions has permissions 600, expected 600 or more restrictive"
+              },
+              {
+                "test_number": "4.1.4",
+                "test_desc": "If proxy kubeconfig file exists ensure ownership is set to root:root (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig; then stat -c %U:%G /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the below command (based on the file location on your system) on the each worker node.\nFor example, chown root:root /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig\n",
+                "test_info": [
+                  "Run the below command (based on the file location on your system) on the each worker node.\nFor example, chown root:root /var/lib/rancher/rke2/agent/kubeproxy.kubeconfig\n"
+                ],
+                "status": "PASS",
+                "actual_value": "root:root",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'root:root' is present"
+              },
+              {
+                "test_number": "4.1.5",
+                "test_desc": "Ensure that the --kubeconfig kubelet.conf file permissions are set to 600 or more restrictive (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/kubelet.kubeconfig; then stat -c permissions=%a /var/lib/rancher/rke2/agent/kubelet.kubeconfig; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 600 /var/lib/rancher/rke2/agent/kubelet.kubeconfig\n",
+                "test_info": [
+                  "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 600 /var/lib/rancher/rke2/agent/kubelet.kubeconfig\n"
+                ],
+                "status": "PASS",
+                "actual_value": "permissions=600",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "permissions has permissions 600, expected 600 or more restrictive"
+              },
+              {
+                "test_number": "4.1.6",
+                "test_desc": "Ensure that the --kubeconfig kubelet.conf file ownership is set to root:root (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/kubelet.kubeconfig; then stat -c %U:%G /var/lib/rancher/rke2/agent/kubelet.kubeconfig; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchown root:root /var/lib/rancher/rke2/agent/kubelet.kubeconfig\n",
+                "test_info": [
+                  "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchown root:root /var/lib/rancher/rke2/agent/kubelet.kubeconfig\n"
+                ],
+                "status": "PASS",
+                "actual_value": "root:root",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'root:root' is equal to 'root:root'"
+              },
+              {
+                "test_number": "4.1.7",
+                "test_desc": "Ensure that the certificate authorities file permissions are set to 600 or more restrictive (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/client-ca.crt; then stat -c permissions=%a /var/lib/rancher/rke2/agent/client-ca.crt; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 600 /var/lib/rancher/rke2/agent/client-ca.crt\n",
+                "test_info": [
+                  "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 600 /var/lib/rancher/rke2/agent/client-ca.crt\n"
+                ],
+                "status": "PASS",
+                "actual_value": "permissions=600",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "permissions has permissions 600, expected 600 or more restrictive"
+              },
+              {
+                "test_number": "4.1.8",
+                "test_desc": "Ensure that the client certificate authorities file ownership is set to root:root (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/client-ca.crt; then stat -c %U:%G /var/lib/rancher/rke2/agent/client-ca.crt; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the following command to modify the ownership of the --client-ca-file.\nchown root:root /var/lib/rancher/rke2/agent/client-ca.crt\n",
+                "test_info": [
+                  "Run the following command to modify the ownership of the --client-ca-file.\nchown root:root /var/lib/rancher/rke2/agent/client-ca.crt\n"
+                ],
+                "status": "PASS",
+                "actual_value": "root:root",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'root:root' is equal to 'root:root'"
+              },
+              {
+                "test_number": "4.1.9",
+                "test_desc": "If the kubelet config.yaml configuration file is being used validate permissions set to 600 or more restrictive (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf; then stat -c permissions=%a /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "skip",
+                "remediation": "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet config file, all configuration is passed in as arguments at runtime.\n",
+                "test_info": [
+                  "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet config file, all configuration is passed in as arguments at runtime.\n"
+                ],
+                "status": "INFO",
+                "actual_value": "",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as skip"
+              },
+              {
+                "test_number": "4.1.10",
+                "test_desc": "If the kubelet config.yaml configuration file is being used validate file ownership is set to root:root (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf; then stat -c %U:%G /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "skip",
+                "remediation": "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet config file, all configuration is passed in as arguments at runtime.\n",
+                "test_info": [
+                  "Not Applicable.\nThe kubelet is managed by the RKE2 process. There is no kubelet config file, all configuration is passed in as arguments at runtime.\n"
+                ],
+                "status": "INFO",
+                "actual_value": "",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as skip"
+              }
+            ]
+          },
+          {
+            "section": "4.2",
+            "type": "",
+            "pass": 10,
+            "fail": 0,
+            "warn": 2,
+            "info": 1,
+            "desc": "Kubelet",
+            "results": [
+              {
+                "test_number": "4.2.1",
+                "test_desc": "Ensure that the --anonymous-auth argument is set to false (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "By default, RKE2 sets the --anonymous-auth to false.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any lines similar to below.\nkubelet-arg:\n  - \"anonymous-auth=true\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "By default, RKE2 sets the --anonymous-auth to false.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any lines similar to below.\nkubelet-arg:\n  - \"anonymous-auth=true\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.authentication.anonymous.enabled}' is equal to 'false'"
+              },
+              {
+                "test_number": "4.2.2",
+                "test_desc": "Ensure that the --authorization-mode argument is not set to AlwaysAllow (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "By default, RKE2 does not set the --authorization-mode to AlwaysAllow.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any lines similar to below.\nkubelet-arg:\n  - \"authorization-mode=AlwaysAllow\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "By default, RKE2 does not set the --authorization-mode to AlwaysAllow.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any lines similar to below.\nkubelet-arg:\n  - \"authorization-mode=AlwaysAllow\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.authorization.mode}' does not have 'AlwaysAllow'"
+              },
+              {
+                "test_number": "4.2.3",
+                "test_desc": "Ensure that the --client-ca-file argument is set as appropriate (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "By default, RKE2 automatically provides the client ca certificate for the Kubelet.\nIt is generated and located at /var/lib/rancher/rke2/agent/client-ca.crt\n",
+                "test_info": [
+                  "By default, RKE2 automatically provides the client ca certificate for the Kubelet.\nIt is generated and located at /var/lib/rancher/rke2/agent/client-ca.crt\n"
+                ],
+                "status": "PASS",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.authentication.x509.clientCAFile}' is present"
+              },
+              {
+                "test_number": "4.2.4",
+                "test_desc": "Verify that the --read-only-port argument is set to 0 (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "By default, RKE2 sets the --read-only-port to 0. If you have set this to a different value, you\nshould set it back to 0. Edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any lines similar to below.\nkubelet-arg:\n  - \"read-only-port=XXXX\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "By default, RKE2 sets the --read-only-port to 0. If you have set this to a different value, you\nshould set it back to 0. Edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any lines similar to below.\nkubelet-arg:\n  - \"read-only-port=XXXX\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "UID          PID    PPID  C STIME TTY          TIME CMD\nroot        1837    1796  1 12:22 ?        00:05:20 kubelet --volume-plugin-dir=/var/lib/kubelet/volumeplugins --file-check-frequency=5s --sync-frequency=30s --cloud-provider=external --config-dir=/var/lib/rancher/rke2/agent/etc/kubelet.conf.d --containerd=/run/k3s/containerd/containerd.sock --event-qps=0 --hostname-override=bravo-onprem-agent --kubeconfig=/var/lib/rancher/rke2/agent/kubelet.kubeconfig --node-ip=192.168.104.1 --node-labels= --read-only-port=0 --streaming-connection-idle-timeout=5m",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'--read-only-port' is equal to '0' OR '--read-only-port' is not present"
+              },
+              {
+                "test_number": "4.2.5",
+                "test_desc": "Ensure that the --streaming-connection-idle-timeout argument is not set to 0 (Manual)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter to an appropriate value.\nkubelet-arg:\n  - \"streaming-connection-idle-timeout=5m\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter to an appropriate value.\nkubelet-arg:\n  - \"streaming-connection-idle-timeout=5m\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "UID          PID    PPID  C STIME TTY          TIME CMD\nroot        1837    1796  1 12:22 ?        00:05:20 kubelet --volume-plugin-dir=/var/lib/kubelet/volumeplugins --file-check-frequency=5s --sync-frequency=30s --cloud-provider=external --config-dir=/var/lib/rancher/rke2/agent/etc/kubelet.conf.d --containerd=/run/k3s/containerd/containerd.sock --event-qps=0 --hostname-override=bravo-onprem-agent --kubeconfig=/var/lib/rancher/rke2/agent/kubelet.kubeconfig --node-ip=192.168.104.1 --node-labels= --read-only-port=0 --streaming-connection-idle-timeout=5m",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "'--streaming-connection-idle-timeout' is not equal to '0' OR '--streaming-connection-idle-timeout' is not present"
+              },
+              {
+                "test_number": "4.2.6",
+                "test_desc": "Ensure that the --make-iptables-util-chains argument is set to true (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter.\nkubelet-arg:\n  - \"make-iptables-util-chains=true\"\nOr, remove the --make-iptables-util-chains argument to let RKE2 use the default value.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter.\nkubelet-arg:\n  - \"make-iptables-util-chains=true\"\nOr, remove the --make-iptables-util-chains argument to let RKE2 use the default value.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.makeIPTablesUtilChains}' is present OR '{.makeIPTablesUtilChains}' is not present"
+              },
+              {
+                "test_number": "4.2.7",
+                "test_desc": "Ensure that the --hostname-override argument is not set (Automated)",
+                "audit": "/bin/ps -fC kubelet ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "skip",
+                "remediation": "Not Applicable.\nBy default, RKE2 does set the --hostname-override argument. Per CIS guidelines, this is to comply\nwith cloud providers that require this flag to ensure that hostname matches node names.\n",
+                "test_info": [
+                  "Not Applicable.\nBy default, RKE2 does set the --hostname-override argument. Per CIS guidelines, this is to comply\nwith cloud providers that require this flag to ensure that hostname matches node names.\n"
+                ],
+                "status": "INFO",
+                "actual_value": "",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as skip"
+              },
+              {
+                "test_number": "4.2.8",
+                "test_desc": "Ensure that the eventRecordQPS argument is set to a level which ensures appropriate event capture (Manual)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter to an appropriate value.\nkubelet-arg:\n  - \"event-qps=<value>\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter to an appropriate value.\nkubelet-arg:\n  - \"event-qps=<value>\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "UID          PID    PPID  C STIME TTY          TIME CMD\nroot        1837    1796  1 12:22 ?        00:05:20 kubelet --volume-plugin-dir=/var/lib/kubelet/volumeplugins --file-check-frequency=5s --sync-frequency=30s --cloud-provider=external --config-dir=/var/lib/rancher/rke2/agent/etc/kubelet.conf.d --containerd=/run/k3s/containerd/containerd.sock --event-qps=0 --hostname-override=bravo-onprem-agent --kubeconfig=/var/lib/rancher/rke2/agent/kubelet.kubeconfig --node-ip=192.168.104.1 --node-labels= --read-only-port=0 --streaming-connection-idle-timeout=5m",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "'--event-qps' is greater or equal to 0 OR '--event-qps' is not present"
+              },
+              {
+                "test_number": "4.2.9",
+                "test_desc": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "By default, RKE2 automatically provides the TLS certificate and private key for the Kubelet.\nThey are generated and located at /var/lib/rancher/rke2/agent/serving-kubelet.crt and /var/lib/rancher/rke2/agent/serving-kubelet.key\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml and remove any lines similar to below.\nkubelet-arg:\n  - \"tls-cert-file=<path/to/tls-cert-file>\"\n  - \"tls-private-key-file=<path/to/tls-private-key-file>\"\n",
+                "test_info": [
+                  "By default, RKE2 automatically provides the TLS certificate and private key for the Kubelet.\nThey are generated and located at /var/lib/rancher/rke2/agent/serving-kubelet.crt and /var/lib/rancher/rke2/agent/serving-kubelet.key\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml and remove any lines similar to below.\nkubelet-arg:\n  - \"tls-cert-file=<path/to/tls-cert-file>\"\n  - \"tls-private-key-file=<path/to/tls-private-key-file>\"\n"
+                ],
+                "status": "PASS",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.tlsCertFile}' is present AND '{.tlsPrivateKeyFile}' is present"
+              },
+              {
+                "test_number": "4.2.10",
+                "test_desc": "Ensure that the --rotate-certificates argument is not set to false (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "By default, RKE2 does not set the --rotate-certificates argument.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any rotate-certificates parameter.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "By default, RKE2 does not set the --rotate-certificates argument.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any rotate-certificates parameter.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.rotateCertificates}' is present OR '{.rotateCertificates}' is not present"
+              },
+              {
+                "test_number": "4.2.11",
+                "test_desc": "Verify that the RotateKubeletServerCertificate argument is set to true (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "By default, RKE2 does not set the RotateKubeletServerCertificate feature gate.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any RotateKubeletServerCertificate parameter.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "By default, RKE2 does not set the RotateKubeletServerCertificate feature gate.\nIf this check fails, edit the RKE2 config file /etc/rancher/rke2/config.yaml, remove any RotateKubeletServerCertificate parameter.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.featureGates.RotateKubeletServerCertificate}' is present OR '{.featureGates.RotateKubeletServerCertificate}' is not present"
+              },
+              {
+                "test_number": "4.2.12",
+                "test_desc": "Ensure that the Kubelet only makes use of Strong Cryptographic Ciphers (Manual)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "Edit the RKE2 config file /etc/rancher/rke2/config.yaml,\nkubelet-arg:\n  - \"tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\"\nor to a subset of these values.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "Edit the RKE2 config file /etc/rancher/rke2/config.yaml,\nkubelet-arg:\n  - \"tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\"\nor to a subset of these values.\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "WARN",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "'{range .tlsCipherSuites[:]}{}{','}{end}' is present"
+              },
+              {
+                "test_number": "4.2.13",
+                "test_desc": "Ensure that a limit is set on pod PIDs (Manual)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/00-rke2-defaults.conf",
+                "type": "",
+                "remediation": "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter to an appropriate value.\nkubelet-arg:\n  - \"pod-max-pids=<value>\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n",
+                "test_info": [
+                  "Edit the RKE2 config file /etc/rancher/rke2/config.yaml, set the following parameter to an appropriate value.\nkubelet-arg:\n  - \"pod-max-pids=<value>\"\nBased on your system, restart the RKE2 service. For example,\nsystemctl restart rke2-server.service\n"
+                ],
+                "status": "WARN",
+                "actual_value": "address: 0.0.0.0\nallowedUnsafeSysctls:\n- net.ipv4.ip_forward\n- net.ipv6.conf.all.forwarding\napiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 2m0s\n    enabled: true\n  x509:\n    clientCAFile: /var/lib/rancher/rke2/agent/client-ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 5m0s\n    cacheUnauthorizedTTL: 30s\ncgroupDriver: systemd\nclusterDNS:\n- 10.43.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run/k3s/containerd/containerd.sock\ncpuManagerReconcilePeriod: 10s\ncrashLoopBackOff: {}\nevictionHard:\n  imagefs.available: 5%\n  nodefs.available: 5%\nevictionMinimumReclaim:\n  imagefs.available: 10%\n  nodefs.available: 10%\nevictionPressureTransitionPeriod: 5m0s\nfailSwapOn: false\nfileCheckFrequency: 20s\nhealthzBindAddress: 127.0.0.1\nhttpCheckFrequency: 20s\nimageMaximumGCAge: 0s\nimageMinimumGCAge: 2m0s\nkind: KubeletConfiguration\nlogging:\n  flushFrequency: 5s\n  format: text\n  options:\n    json:\n      infoBufferSize: \"0\"\n    text:\n      infoBufferSize: \"0\"\n  verbosity: 0\nmemorySwap: {}\nnodeStatusReportFrequency: 5m0s\nnodeStatusUpdateFrequency: 10s\nprotectKernelDefaults: true\nresolvConf: /run/systemd/resolve/resolv.conf\nruntimeRequestTimeout: 2m0s\nserializeImagePulls: false\nshutdownGracePeriod: 0s\nshutdownGracePeriodCriticalPods: 0s\nstaticPodPath: /var/lib/rancher/rke2/agent/pod-manifests\nstreamingConnectionIdleTimeout: 4h0m0s\nsyncFrequency: 1m0s\ntlsCertFile: /var/lib/rancher/rke2/agent/serving-kubelet.crt\ntlsPrivateKeyFile: /var/lib/rancher/rke2/agent/serving-kubelet.key\nvolumeStatsAggPeriod: 1m0s",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "'{.podPidsLimit}' is present"
+              }
+            ]
+          },
+          {
+            "section": "4.3",
+            "type": "",
+            "pass": 0,
+            "fail": 1,
+            "warn": 0,
+            "info": 0,
+            "desc": "kube-proxy",
+            "results": [
+              {
+                "test_number": "4.3.1",
+                "test_desc": "Ensure that the kube-proxy metrics service is bound to localhost (Automated)",
+                "audit": "/bin/ps -fC proxy",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/sh -c 'if test -e /etc/kubernetes/addons/kube-proxy-daemonset.yaml; then cat /etc/kubernetes/addons/kube-proxy-daemonset.yaml; fi'",
+                "type": "",
+                "remediation": "Modify or remove any values which bind the metrics service to a non-localhost address.\nThe default value is 127.0.0.1:10249.\n",
+                "test_info": [
+                  "Modify or remove any values which bind the metrics service to a non-localhost address.\nThe default value is 127.0.0.1:10249.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "failed to run: \"/bin/ps -fC proxy\", output: \"UID          PID    PPID  C STIME TTY          TIME CMD\\n\", error: exit status 1"
+              }
+            ]
+          }
+        ],
+        "total_pass": 16,
+        "total_fail": 1,
+        "total_warn": 2,
+        "total_info": 5
+      }
+    ],
+    "Totals": {
+      "total_pass": 16,
+      "total_fail": 1,
+      "total_warn": 2,
+      "total_info": 5
+    }
+  },
+  "job": {
+    "name": "kube-bench-rke2",
+    "namespace": "bravo-gate-scan",
+    "node": "bravo-onprem-agent",
+    "image": "docker.io/aquasec/kube-bench@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679",
+    "command": [
+      "kube-bench",
+      "run",
+      "--targets",
+      "node",
+      "--benchmark",
+      "rke2-cis-1.9",
+      "--json"
+    ],
+    "seconds": 15.0
+  },
+  "context": "bravo-onprem",
+  "platform": "rke2",
+  "node_requested": "bravo-onprem-agent",
+  "targets": "node"
+}

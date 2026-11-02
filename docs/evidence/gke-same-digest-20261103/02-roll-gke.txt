@@ -1,0 +1,23 @@
+## 2026-11-03 02:52:44 KST before
+bravo-source: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+bravo-onprem: bravo.local/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+bravo-target-gcp: asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57
+https://b-free-chat-gke.mangowhois.ai/ -> 200
+
+## helm upgrade chat --reuse-values image.digest=sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6 (dry-run diff: only the image line changes)
+Release "chat" has been upgraded. Happy Helming!
+NAME: chat
+LAST DEPLOYED: Tue Nov  3 02:52:47 2026
+deployment "chat-bravo-demo" successfully rolled out
+## 2026-11-03 02:53:06 KST after
+(eval):1: no matches found: custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,IMAGE_ID:.status.containerStatuses[0].imageID
+bravo-source: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+bravo-onprem: bravo.local/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+bravo-target-gcp: asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+https://b-free-chat-gke.mangowhois.ai/ -> 200
+https://b-free-chat-gke.mangowhois.ai/ -> 200
+https://b-free-chat-gke.mangowhois.ai/ -> 200
+{"status":"ready","db_age_s":0.4,"attachments":"ok"} (readyz 200)
+NAME                              READY   RESTARTS   IMAGE_ID
+chat-bravo-demo-9b885b46d-skms5   true    0          asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+chat-bravo-demo-9b885b46d-tttjb   true    0          asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6

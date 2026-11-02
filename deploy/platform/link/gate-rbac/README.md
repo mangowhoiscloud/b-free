@@ -21,6 +21,9 @@
   - 신원 조건: 출발지 그룹 `bravo-gate`, 온프렘 SA `kube-system/bravo-gate`, GKE `bravo-gate-ro@…`. 다른 신원의 요청에는 걸리지 않습니다.
   - 시험: `docs/evidence/gate/netprobe-admission-20261102T165631Z/`(게이트 신원으로 다른 이미지 · 토큰 마운트 · 긴 기한 · 라벨 없음은 거부, 규칙대로는 허용, 실제 NET-PATHS 동작).
 
+- OBJ-PLAIN-EGRESS(2026-11-03): 새 권한 없음. NET-PATHS와 같은 시험 Pod 한 개가 두 질문의 경로를 함께 잇고(같은 라벨 · 같은 정책), 이미 있는 Deployment `get`으로 앱 컨테이너의 `S3_ENDPOINT_URL` 하나만 증거에 적습니다.
+- GKE 고정 이미지: 2026-11-03 02:53 KST부터 출발지 · 온프렘과 같은 `bravo-demo@sha256:b5c0e764…`(Artifact Registry로 digest째 복사, `infra/envs/target-gcp/scripts/images.sh`). 증거 `docs/evidence/gke-same-digest-20261103/`.
+
 **앱 이미지가 바뀌면.** 정책이 시험 Pod를 거부하고 NET-PATHS는 UNKNOWN(`probe_pod_failed`)이 됩니다(닫힌 쪽으로 실패). 해당 `<env>.yaml` 정책의 이미지 두 곳(주석, 첫 검증식)을 새 digest로 바꾸고 `deploy/platform/scripts/gate-credentials.sh rbac`로 적용합니다. 이 단계는 고정값과 실제 `chat-bravo-demo` 이미지가 다르면 경고합니다.
 
 플랫폼 쪽 OpenBao(온프렘 · GKE 앱 비밀의 원본): 게이트 SA `bravo-control/gate`의 Kubernetes 인증 역할 두 개(`keys.sh gate-bao-setup`). `gate-meta`는 앱 비밀 경로의 KV 메타데이터만 읽고(있는지), `gate-other`는 권한이 없습니다(값 읽기는 403이어야 함). TokenReview용 `system:auth-delegator` 바인딩 `bravo-gate-tokenreview`가 플랫폼에 있습니다.

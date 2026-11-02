@@ -6,6 +6,8 @@ SEC-ENC-CMK       app secrets are encrypted with a customer-managed key (Secrets
 AUD-PLATFORM      control-plane audit is on: CloudTrail logging (+ EKS audit log type)                    (AUD-01)
 NET-DEFAULT-DENY  the app namespace has default-deny ingress and egress NetworkPolicies               (NET-01)
 NET-PATHS         control paths connect, denied paths do not                                          (NET-01)
+OBJ-PLAIN-EGRESS  from the app Pod the store's TLS port connects, its plain port does not; app endpoint https (ENC-01)
+NET-EXTERNAL-SCAN outside TCP connect scan of the public addresses shows only allowed ports (exposure.py)  (NET-01)
 DR-RESTORE        a CNPG Cluster bootstrapped by recovery is healthy                                   (DR-01)
 """
 
@@ -340,33 +342,130 @@ def _tcp(path: str, timeout_s: float) -> str:
 
 
 def network_paths(section: NetworkSection, kube: KubernetesProbe | None = None) -> Obs:
-    if not section.control_paths:
-        return unknown("control_path_not_configured")
-    if section.probe_from == "pod":
-        return _paths_from_pod(section, kube)
-    control = {p: _tcp(p, section.timeout_s) for p in sorted(section.control_paths)}
-    denied = {p: _tcp(p, section.timeout_s) for p in sorted(section.denied_paths)}
-    return judge_paths(control, denied, {"probe_from": "gate"})
+    return NetworkProbe(section, kube).paths()
 
 
-def _paths_from_pod(section: NetworkSection, kube: KubernetesProbe | None) -> Obs:
-    """The connects run in a short-lived Pod in the app namespace with the app's labels and image (netpod.py)."""
-    from .netpod import run_in_pod
+class NetworkProbe:
+    """The ``network`` questions of one environment. NET-PATHS and OBJ-PLAIN-EGRESS share one probe Pod run
+    (``probe_from: pod``): every path of both questions is connected from the same app-labelled Pod, once per gate run,
+    so the admission policy and the Pod budget stay as they were (one Pod per environment and run)."""
 
-    if kube is None or not kube.s.app_namespace or not section.app_deployment:
-        return unknown("probe_pod_not_configured", detail="needs kubernetes.app_namespace and network.app_deployment")
-    api = kube.api_client()
-    if api is None:
-        return unknown("cluster_unreachable", error=kube._error)
-    paths = sorted(section.control_paths) + sorted(section.denied_paths)
-    try:
-        res, facts = run_in_pod(api, kube.s.app_namespace, section.app_deployment, paths, section.timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        return unknown("probe_pod_failed", error=error_text(exc))
-    control = {p: res.get(p, "missing") for p in sorted(section.control_paths)}
-    denied = {p: res.get(p, "missing") for p in sorted(section.denied_paths)}
-    facts.pop("pod_phase", None)
-    return judge_paths(control, denied, {"probe_from": "pod", **facts})
+    def __init__(self, section: NetworkSection, kube: KubernetesProbe | None = None) -> None:
+        self.s = section
+        self.kube = kube
+        self._pod: tuple[dict[str, str], dict[str, Any]] | Obs | None = None
+
+    def _object_paths(self) -> list[str]:
+        return [p for p in (self.s.object_store_tls_path, self.s.object_store_plain_path) if p]
+
+    def _pod_run(self) -> tuple[dict[str, str], dict[str, Any]] | Obs:
+        """Connect results for every path (pod), or the UNKNOWN that explains why there are none."""
+        if self._pod is not None:
+            return self._pod
+        from .netpod import run_in_pod
+
+        kube = self.kube
+        if kube is None or not kube.s.app_namespace or not self.s.app_deployment:
+            self._pod = unknown("probe_pod_not_configured",
+                                detail="needs kubernetes.app_namespace and network.app_deployment")
+            return self._pod
+        api = kube.api_client()
+        if api is None:
+            self._pod = unknown("cluster_unreachable", error=kube._error)
+            return self._pod
+        paths = sorted(set(self.s.control_paths) | set(self.s.denied_paths) | set(self._object_paths()))
+        try:
+            res, facts = run_in_pod(api, kube.s.app_namespace, self.s.app_deployment, paths, self.s.timeout_s)
+        except Exception as exc:  # noqa: BLE001
+            self._pod = unknown("probe_pod_failed", error=error_text(exc))
+            return self._pod
+        facts.pop("pod_phase", None)
+        self._pod = (res, facts)
+        return self._pod
+
+    # NET-PATHS
+    def paths(self) -> Obs:
+        if not self.s.control_paths:
+            return unknown("control_path_not_configured")
+        if self.s.probe_from != "pod":
+            control = {p: _tcp(p, self.s.timeout_s) for p in sorted(self.s.control_paths)}
+            denied = {p: _tcp(p, self.s.timeout_s) for p in sorted(self.s.denied_paths)}
+            return judge_paths(control, denied, {"probe_from": "gate"})
+        run = self._pod_run()
+        if isinstance(run, Obs):
+            return run
+        res, facts = run
+        control = {p: res.get(p, "missing") for p in sorted(self.s.control_paths)}
+        denied = {p: res.get(p, "missing") for p in sorted(self.s.denied_paths)}
+        return judge_paths(control, denied, {"probe_from": "pod", **facts})
+
+    # OBJ-PLAIN-EGRESS
+    def plain_egress(self) -> Obs:
+        tls, plain = self.s.object_store_tls_path, self.s.object_store_plain_path
+        if not tls or not plain:
+            return unknown("object_store_paths_not_configured")
+        if self.s.probe_from != "pod":
+            return unknown("probe_pod_not_configured", detail="the question is about the app Pod's network position")
+        run = self._pod_run()
+        if isinstance(run, Obs):
+            return run
+        res, facts = run
+        endpoint = self._app_endpoint()
+        return judge_plain_egress(res.get(tls, "missing"), res.get(plain, "missing"), endpoint,
+                                  {"tls_path": tls, "plain_path": plain, "probe_from": "pod", **facts})
+
+    def _app_endpoint(self) -> dict[str, Any]:
+        """The app container's store endpoint setting, read from the Deployment (the gate already reads it for the
+        probe Pod). Only this one variable is recorded."""
+        kube = self.kube
+        api = kube.api_client() if kube is not None else None
+        if api is None or not kube or not kube.s.app_namespace or not self.s.app_deployment:
+            return {"state": "unreadable", "error": "no cluster client"}
+        from kubernetes import client
+
+        try:
+            dep = client.AppsV1Api(api).read_namespaced_deployment(self.s.app_deployment, kube.s.app_namespace)
+        except Exception as exc:  # noqa: BLE001
+            return {"state": "unreadable", "error": error_text(exc)}
+        ctrs = [c for c in dep.spec.template.spec.containers if c.name == self.s.app_container]
+        if not ctrs:
+            return {"state": "unreadable", "error": f"no container {self.s.app_container}"}
+        env = {e.name: e for e in ctrs[0].env or []}
+        ev = {"deployment": f"{kube.s.app_namespace}/{self.s.app_deployment}", "container": self.s.app_container,
+              "env": self.s.app_endpoint_env}
+        e = env.get(self.s.app_endpoint_env)
+        if e is None:
+            return {**ev, "state": "unset_sdk_default_https"}
+        if e.value_from is not None:
+            return {**ev, "state": "from_reference"}
+        return {**ev, "state": "set", "value": e.value}
+
+    # NET-EXTERNAL-SCAN
+    def external_scan(self) -> Obs:
+        from .exposure import scan
+
+        return scan(self.s)
+
+
+def judge_plain_egress(tls: str, plain: str, endpoint: dict[str, Any], extra: dict[str, Any]) -> Obs:
+    """OBJ-PLAIN-EGRESS: the TLS port answers (the Pod reaches the store), the plain port does not, and the app is
+    configured for https. Pure, for tests."""
+    ev = {"tls": tls, "plain": plain, "app_endpoint": endpoint, **extra}
+    if tls != "connected":
+        return unknown("tls_control_path_failed", **ev)
+    if plain == "connected":
+        return failed("plain_http_port_reachable", **ev)
+    if plain not in ("refused", "timeout"):
+        return unknown("plain_path_inconclusive", **ev)
+    state = endpoint.get("state")
+    if state == "set":
+        if str(endpoint.get("value", "")).lower().startswith("http://"):
+            return failed("app_endpoint_plain_http", **ev)
+        if not str(endpoint.get("value", "")).lower().startswith("https://"):
+            return unknown("app_endpoint_unrecognised", **ev)
+    elif state != "unset_sdk_default_https":
+        return unknown("app_endpoint_unreadable", **ev)
+    return passed("plain_http_blocked_app_https", **ev)
 
 
 def judge_paths(control: dict[str, str], denied: dict[str, str], extra: dict[str, Any]) -> Obs:

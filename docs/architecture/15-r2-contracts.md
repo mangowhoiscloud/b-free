@@ -70,17 +70,18 @@ S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` P
 
 | 필드 | 뜻 |
 |---|---|
-| `rule_version` | `gate-controls/2026-11-02.1` |
+| `rule_version` | `gate-controls/2026-11-03.2`(질문 22개) |
 | `source`, `target` | 환경 ID |
 | `gate_verdict`, `blocked_controls[]` | PASS · BLOCK, BLOCK인 통제 ID |
-| `questions[]` | 질문마다: `control_id`(질문 ID), `parent_control`, `question`, `src`, `dst`, `src_status`, `dst_status`(충족 · 보완 필요 · 미검증), `verdict`, `reason`(`regression` · `fail_both` · `unknown` · `not_equivalent`), `src_evidence`, `dst_evidence`, `src_evidence_digest`, `dst_evidence_digest`(9.5) |
+| `questions[]` | 질문마다: `control_id`(질문 ID), `parent_control`, `question`, `src`, `dst`, `src_status`, `dst_status`(충족 · 보완 필요 · 미검증), `verdict`, `reason`(`regression` · `fail_both` · `unknown` · `not_equivalent`), `src_evidence`, `dst_evidence`, `src_evidence_digest`, `dst_evidence_digest`(9.5). 2026-11-03.2부터 시험 방법: `method`(`behavioural` · `config` · `simulation`, 두 방법이면 `behavioural+config`, 양쪽이 다르면 `mixed`), `src_method`, `dst_method`, `src_tool`, `dst_tool`, `spec_test`(답하는 스펙 §8.5 시험). 대응표는 [16-gate-test-map.md](16-gate-test-map.md) |
 | `controls[]` | 통제마다(SEC-01, ENC-01, AUD-01, NET-01, IAM-01, DR-01): `control_id`, `aliases`, `name_ko`, `question`, `src`, `dst`, `src_status`, `dst_status`, `verdict`, `reason`, `questions[]` |
 | `input_digest` | 관찰 결과(시각 제외)의 sha256. 같은 입력 → 같은 값 |
 | `test_version`, `collected_at`, `expires_at` | 시험기 판, 수집 시각, 만료 시각(`BRAVO_EVIDENCE_TTL_S`, 기본 3600초). 만료된 증거로는 승인하지 않음 |
+| `cis_benchmark` | kube-bench 요약, **판정에 넣지 않음**: `{judged: false, label: "근사(approximate)", src, dst}`. 쪽마다 `status`(`current` · `expired` · `not_run`), `benchmark`, `collected_at`, `expires_at`(7일), `totals`, `fails[]`(`id`, `desc`, `judgement`: `fixed` · `exception` · `not_applicable` · `unjudged`, `reason`, `compensating`, `nodes`), `runs[]`(원본 경로). 출처는 ConfigMap `gate-cis-evidence`(`docs/evidence/kube-bench/cis-summary.py`) |
 
 증거 객체(`src_evidence`, `dst_evidence`): `{"verdict": "PASS|FAIL|UNKNOWN", "reason": "<코드>", "evidence": {...}}`. `evidence`에는 비밀이 없습니다(오류 문자열도 가림, 감사 38). 여러 하위 관찰은 `{"parts": [...]}`. 절이 없는 쪽은 `UNKNOWN` · `not_configured`로 남고 게이트를 막습니다(감사 B16).
 
-**플랫폼에서 무엇으로 재나(2026-11-03, 규칙 `gate-controls/2026-11-03.1`).** 플랫폼 게이트(`gate.bravo-control.svc:8084`)는 레지스트리 `deploy/platform/control/config/environments.yaml`의 `source-aws`, `target-onprem`, `target-gcp`를 씁니다. 환경마다 수집기와 다른 자기 읽기 신원입니다(`deploy/platform/link/gate-rbac/README.md`).
+**플랫폼에서 무엇으로 재나(2026-11-03, 규칙 `gate-controls/2026-11-03.2`).** 플랫폼 게이트(`gate.bravo-control.svc:8084`)는 레지스트리 `deploy/platform/control/config/environments.yaml`의 `source-aws`, `target-onprem`, `target-gcp`를 씁니다. 환경마다 수집기와 다른 자기 읽기 신원입니다(`deploy/platform/link/gate-rbac/README.md`).
 
 | 환경 | K8s | DB(역할 `gate_ro`) | 첨부 저장소 | 비밀 · 감사(`platform`) |
 |---|---|---|---|---|
@@ -92,6 +93,8 @@ S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` P
 - **실행 두 가지.** `GET /v1/controls/report`는 읽기만 합니다. `POST /v1/controls/report` `{"source", "target"}`는 계획 평가 실행이고 OBJ-03 · OBJ-04 쓰기 시험을 게이트의 `_gate/` 키에만 하고 지웁니다. 플랫폼 API(`GateControlsClient`)는 POST를 씁니다.
 - **OBJ-04(AWS).** 게이트에 앱 자격(IRSA 역할)을 주지 않습니다. `iam:SimulatePrincipalPolicy`로 앱 역할이 canary `s3:GetObject`, 시험 키 `s3:PutObject`(버킷 정책 포함), 버킷 KMS 키 `kms:GenerateDataKey` · `kms:Decrypt`(키 정책 포함, `kms:ViaService`=S3)를 할 수 있는지 봅니다. RGW · GCS는 게이트가 가진 앱 키로 실제 PUT · 삭제입니다.
 - **NET-PATHS.** 앱 네임스페이스에 앱 Deployment의 라벨 · 이미지로 짧은 시험 Pod를 띄워 잽니다(SA 토큰 없음, 늘 준비 안 됨, 90초, 지움). 대조 `chat-pgbouncer.chat.svc:6432`는 연결, 거부 `169.254.169.254:80` · `1.1.1.1:80`은 거부 · 시간 초과여야 PASS.
+- **새 질문 셋(2026-11-03.2, 리뷰 B12 · P10 · P16).** `SEC-GIT-PLAINTEXT`(SEC-01): 게이트 초기화 컨테이너가 수집기와 같은 고정 커밋 · 읽기 전용 배포 키로 받은 고객 저장소를 gitleaks 8.30.1로 검사(발견은 규칙 · 파일 · 줄만). `OBJ-PLAIN-EGRESS`(ENC-01): NET-PATHS와 같은 시험 Pod에서 저장소 TLS 포트는 연결, 평문 포트는 거부 · 시간 초과, 앱 Deployment의 `S3_ENDPOINT_URL`이 https(미설정은 SDK 기본 https). GKE OBJ-06 예외의 대체 통제이고, 예외 요청의 `compensating_control`에 이 ID를 적습니다. `NET-EXTERNAL-SCAN`(NET-01): 플랫폼에서 레지스트리 `network.public_endpoints`의 주소마다 TCP connect 스캔(포트 32개), 열린 포트가 `allow` 안에 있고 허용 포트가 하나 이상 답해야 PASS. 레지스트리 키는 `network.object_store_tls_path` · `object_store_plain_path` · `app_endpoint_env` · `public_endpoints` · `scan_ports`, 새 절 `repository.root`.
+- **OBJ-ENC 객체 수준.** 게이트가 앱 키를 가진 저장소(RGW, GCS)는 객체를 모두 나열하고 HEAD로 SSE 헤더(`x-amz-server-side-encryption: aws:kms`, GCS `x-goog-encryption-kms-key-name`)를 봅니다. 하나라도 없으면 FAIL `plaintext_objects_present`. 출발지 S3는 목록 권한이 없어 버킷 수준만(`object_level.state: not_checked_no_list_right`).
 - K8s 권한은 질문이 부르는 것뿐입니다. SubjectAccessReview 만들기, 네임스페이스 읽기, `/metrics`, ns `chat`의 NetworkPolicy 목록 · CNPG Cluster 읽기 · Deployment 읽기 · 시험 Pod 만들기/지우기/로그. Secret `get`은 없습니다(SEC-SECRET-READ-K8S 증거 `secret_existence: not_checked_no_get_right`).
 - 레지스트리 키(`platform/gate/README.md`): `kubernetes.provider`(`eks` · `gke`), `api_server`, `gke_cluster`, `postgres.dial_host`, `object_store.ca_file` · `plain_http_endpoint_url` · `app_principal_arn` · `write_probes`, `network.probe_from: pod` · `app_deployment`, `platform.kind` · `gke_cluster` · `apiserver_pod` · `secret_store`.
 

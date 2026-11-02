@@ -12,14 +12,15 @@ from .controls import QUESTIONS, SideResults, build_rows
 from .environments import Environment
 from .probes.neutral import PlatformProbe
 from .probes.objstore import ObjectStoreProbe
-from .probes.platform import AwsProbe, KubernetesProbe, network_paths
+from .probes.platform import AwsProbe, KubernetesProbe, NetworkProbe
 from .probes.postgres import PostgresProbe
 from .result import Obs, error_text, unknown
 
 TTL_ENV = "BRAVO_EVIDENCE_TTL_S"
 
 
-SECTIONS = ("object_store", "postgres", "kubernetes", "platform", "network")
+SECTIONS = ("object_store", "postgres", "kubernetes", "platform", "network", "repository")
+CIS_EVIDENCE_ENV = "BRAVO_GATE_CIS_EVIDENCE_FILE"
 
 
 def _probe_for(env: Environment, section: str, allow_writes: bool = False,
@@ -33,13 +34,17 @@ def _probe_for(env: Environment, section: str, allow_writes: bool = False,
     if section == "platform" and env.platform:
         return PlatformProbe(env, kube=kube, aws=AwsProbe(env.aws) if env.aws else None)
     if section == "network" and env.network:
-        net = env.network
+        return NetworkProbe(env.network, kube)
+    if section == "repository" and env.repository:
+        repo = env.repository
 
-        class _Net:
-            def paths(self) -> Obs:
-                return network_paths(net, kube)
+        class _Repo:
+            def git_plaintext(self) -> Obs:
+                from .probes.repo import git_plaintext
 
-        return _Net()
+                return git_plaintext(repo)
+
+        return _Repo()
     return None
 
 
@@ -88,11 +93,45 @@ def compare(source: Environment, target: Environment, *, allow_writes: bool = Fa
         fs = pool.submit(observe, source, sections, allow_writes=allow_writes)
         ft = pool.submit(observe, target, sections, allow_writes=allow_writes)
         src_obs, dst_obs = fs.result(), ft.result()
-    report = build_rows(SideResults(source.environment_id, src_obs), SideResults(target.environment_id, dst_obs))
+    report = build_rows(SideResults(source.environment_id, src_obs, _kind(source)),
+                        SideResults(target.environment_id, dst_obs, _kind(target)))
     ttl = int(os.environ.get(TTL_ENV, "3600"))
     report.update({
         "test_version": os.environ.get("BRAVO_GATE_TEST_VERSION", f"bravo-gate/{__version__}"),
         "collected_at": started.isoformat(),
         "expires_at": (started + timedelta(seconds=ttl)).isoformat(),
+        "cis_benchmark": cis_evidence(source.environment_id, target.environment_id),
     })
     return report
+
+
+def _kind(env: Environment) -> str | None:
+    return env.platform.kind if env.platform else None
+
+
+def cis_evidence(source: str, target: str, path: str | None = None) -> dict[str, Any]:
+    """kube-bench summary per side, attached as evidence and NOT judged (approximate benchmarks, WARN items need a
+    person; docs/architecture/16-gate-test-map.md). Read from the file an operator run left
+    (``$BRAVO_GATE_CIS_EVIDENCE_FILE``, ConfigMap gate-cis-evidence); its own ``collected_at`` / ``expires_at``."""
+    import json
+    from pathlib import Path
+
+    raw = path or os.environ.get(CIS_EVIDENCE_ENV)
+    doc: dict[str, Any] = {}
+    if raw and Path(raw).is_file():
+        try:
+            doc = json.loads(Path(raw).read_text(encoding="utf-8"))
+        except ValueError:
+            doc = {}
+    envs = doc.get("environments") or {}
+    now = datetime.now(UTC).isoformat()
+
+    def side(env_id: str) -> dict[str, Any]:
+        e = envs.get(env_id)
+        if not e:
+            return {"status": "not_run"}
+        exp = e.get("expires_at")
+        return {**e, "status": "expired" if exp and exp < now else "current"}
+
+    return {"judged": False, "label": doc.get("label", "근사(approximate)"),
+            "src": side(source), "dst": side(target)}

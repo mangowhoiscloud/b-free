@@ -4,7 +4,8 @@ Objects created, all labelled ``app.kubernetes.io/managed-by=bravo-gate`` and de
 ``keep`` is set:
     Namespace        bravo-gate-scan (Pod Security ``privileged``: kube-bench needs hostPID and host paths,
                      read-only. This is the scanner's own namespace, recorded as an exception, not the app's)
-    ServiceAccount   kube-bench
+    ServiceAccount   kube-bench (token mounted: the "policies" checks 5.1.x run kubectl in the Pod; without a token they
+                     fail on "localhost:8080 connection refused", which is a tool error, not a finding)
     ClusterRole      bravo-gate-kube-bench-read (get/list only, for the "policies" target)
     ClusterRoleBinding
     Job              kube-bench-<platform>
@@ -32,16 +33,20 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "paths": ["/var/lib/rancher", "/etc/rancher", "/var/lib/kubelet", "/etc/systemd", "/lib/systemd",
                       "/etc/kubernetes"],
             "control_plane": True},
+    # /etc/passwd and /etc/group: file-owner checks (etcd:etcd, 1.1.x) print names, not uids. /var/log: audit log.
     "rke2": {"targets": "master,node,controlplane,etcd,policies",
              "paths": ["/var/lib/rancher", "/etc/rancher", "/var/lib/kubelet", "/etc/systemd", "/lib/systemd",
-                       "/etc/kubernetes"],
+                       "/etc/kubernetes", "/etc/passwd", "/etc/group", "/var/log"],
              "control_plane": True},
     "gke": {"targets": "node,policies,managedservices,controlplane",
             "paths": ["/var/lib/kubelet", "/etc/systemd", "/etc/kubernetes", "/home/kubernetes"]},
 }
 
 
-def job_manifest(platform: str, mapping: dict[str, Any] | None = None) -> dict[str, Any]:
+def job_manifest(platform: str, mapping: dict[str, Any] | None = None, *, node: str | None = None,
+                 targets: str | None = None) -> dict[str, Any]:
+    """``node`` pins the Job to one node (e.g. an agent node, with ``targets="node"``); default: a control-plane node
+    for distributions with one, any node otherwise."""
     m = mapping or load_mapping()
     if platform not in PLATFORMS or platform not in m["benchmarks"]:
         raise ValueError(f"unknown platform {platform!r}")
@@ -51,19 +56,22 @@ def job_manifest(platform: str, mapping: dict[str, Any] | None = None) -> dict[s
     spec: dict[str, Any] = {
         "hostPID": True,
         "serviceAccountName": "kube-bench",
+        "automountServiceAccountToken": True,  # kubectl for the "policies" checks (read-only ClusterRole)
         "restartPolicy": "Never",
         "containers": [{
             "name": "kube-bench",
             "image": m["kube_bench"]["image"],
-            "command": ["kube-bench", "run", "--targets", p["targets"], "--benchmark", m["benchmarks"][platform],
-                       "--json"],
+            "command": ["kube-bench", "run", "--targets", targets or p["targets"],
+                        "--benchmark", m["benchmarks"][platform], "--json"],
             "volumeMounts": mounts,
             "resources": {"requests": {"cpu": "50m", "memory": "64Mi"}, "limits": {"memory": "256Mi"}},
         }],
         "volumes": vols,
         "tolerations": [{"operator": "Exists"}],
     }
-    if p.get("control_plane"):
+    if node:
+        spec["nodeSelector"] = {"kubernetes.io/hostname": node}
+    elif p.get("control_plane"):
         spec["nodeSelector"] = {"node-role.kubernetes.io/control-plane": "true"}
     return {
         "apiVersion": "batch/v1", "kind": "Job",
@@ -93,19 +101,26 @@ def _ignore_missing(fn, *a, **kw) -> None:
             raise
 
 
-def run_job(api: Any, platform: str, *, timeout_s: int = 420, keep: bool = False) -> dict[str, Any]:
+def run_job(api: Any, platform: str, *, timeout_s: int = 420, keep: bool = False, node: str | None = None,
+            targets: str | None = None) -> dict[str, Any]:
     """Create the Job, wait, return {"report": <kube-bench JSON>, "job": {...}}. Raises on failure."""
     from kubernetes import client
 
     core, batch, rbac = client.CoreV1Api(api), client.BatchV1Api(api), client.RbacAuthorizationV1Api(api)
-    manifest = job_manifest(platform)
+    manifest = job_manifest(platform, node=node, targets=targets)
     ns_labels = {**LABELS, "pod-security.kubernetes.io/enforce": "privileged",
                  "pod-security.kubernetes.io/warn": "privileged"}
     _ignore_conflict(core.create_namespace, {"metadata": {"name": NAMESPACE, "labels": ns_labels}})
     _ignore_conflict(core.create_namespaced_service_account, NAMESPACE,
                      {"metadata": {"name": "kube-bench", "labels": LABELS}})
     _ignore_conflict(rbac.create_cluster_role, {"metadata": {"name": ROLE, "labels": LABELS}, "rules": [
-        {"apiGroups": [""], "resources": ["pods", "serviceaccounts", "namespaces", "nodes"], "verbs": ["get", "list"]},
+        {"apiGroups": [""], "resources": ["pods", "serviceaccounts", "namespaces", "nodes", "services",
+                                          "replicationcontrollers"], "verbs": ["get", "list"]},
+        # 5.7.4 "kubectl get all -n default" lists these too.
+        {"apiGroups": ["apps"], "resources": ["deployments", "replicasets", "statefulsets", "daemonsets"],
+         "verbs": ["get", "list"]},
+        {"apiGroups": ["batch"], "resources": ["jobs", "cronjobs"], "verbs": ["get", "list"]},
+        {"apiGroups": ["autoscaling"], "resources": ["horizontalpodautoscalers"], "verbs": ["get", "list"]},
         {"apiGroups": ["rbac.authorization.k8s.io"],
          "resources": ["roles", "rolebindings", "clusterroles", "clusterrolebindings"], "verbs": ["get", "list"]},
         {"apiGroups": ["networking.k8s.io"], "resources": ["networkpolicies"], "verbs": ["get", "list"]},

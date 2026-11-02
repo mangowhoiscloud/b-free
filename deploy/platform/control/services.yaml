@@ -167,6 +167,40 @@ spec:
       nodeSelector: {bravo.io/pool: core}
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       initContainers:
+        # SEC-GIT-PLAINTEXT (spec §8.5 "Git 평문 비밀 0건", gitleaks): sparse checkout of the customer app at the pinned
+        # commit, same ConfigMap customer-app-source and read-only deploy key (Secret git-customer-repo, OpenBao
+        # secret/envs/platform/git-customer-repo) as the collector's init container. The gate scans every file there,
+        # including the ones the collector withholds from its snapshot. On failure the reason is in
+        # /srv/repo/.checkout-error and the question answers UNKNOWN; the gate still starts.
+        - name: checkout
+          image: docker.io/alpine/git:v2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -u
+              umask 022
+              [ -s /etc/bravo/git-key/ssh-privatekey ] || { echo "no deploy key" > /srv/repo/.checkout-error; exit 0; }
+              { cat /etc/bravo/git-key/ssh-privatekey; echo; } > /tmp/key && chmod 0600 /tmp/key
+              export GIT_SSH_COMMAND="ssh -i /tmp/key -o IdentitiesOnly=yes -o UserKnownHostsFile=/etc/bravo/git/known_hosts -o StrictHostKeyChecking=yes"
+              export HOME=/tmp
+              r=/srv/repo
+              git config --global --add safe.directory "$r"
+              if git -C "$r" init -q && git -C "$r" remote add origin "$GIT_REPO" && git -C "$r" sparse-checkout set --no-cone "/$GIT_PATH/" \
+                 && git -C "$r" fetch -q --depth 1 origin "$GIT_COMMIT" 2>/tmp/git.err && git -C "$r" -c advice.detachedHead=false checkout -q FETCH_HEAD; then
+                rm -rf "$r/.git"; echo "checkout: $GIT_REPO $GIT_COMMIT $GIT_PATH ($(find "$r/$GIT_PATH" -type f | wc -l) files)"
+              else
+                rm -rf "$r/.git" "$r/$GIT_PATH"; { echo "git checkout of $GIT_COMMIT failed:"; tail -n 3 /tmp/git.err 2>/dev/null; } > "$r/.checkout-error"; cat "$r/.checkout-error"
+              fi
+              rm -f /tmp/key
+          envFrom:
+            - configMapRef: {name: customer-app-source}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}, runAsUser: 65534, runAsGroup: 65534}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 256Mi}}
+          volumeMounts:
+            - {name: repo, mountPath: /srv/repo}
+            - {name: tmp, mountPath: /tmp}
+            - {name: git-key, mountPath: /etc/bravo/git-key, readOnly: true}
+            - {name: git-known-hosts, mountPath: /etc/bravo/git, readOnly: true}
         # Native sidecar: local TCP ends of the D-16 RGW links (same forwarder as the executor's s3-local).
         - name: s3-local
           image: bravo/gate
@@ -216,8 +250,11 @@ spec:
             - {name: SRC_PG_CA, value: /etc/bravo/gate-ca/source-aws-chat-db.crt}
             - {name: ONPREM_PG_CA, value: /etc/bravo/gate-ca/target-onprem-chat-db.crt}
             - {name: GCP_PG_CA, value: /etc/bravo/gate-ca/target-gcp-chat-db.crt}
+            # kube-bench summaries attached to every report as cis_benchmark (not judged; docs/evidence/kube-bench/)
+            - {name: BRAVO_GATE_CIS_EVIDENCE_FILE, value: /etc/bravo/cis/gate-cis-evidence.json}
           envFrom:
             - secretRef: {name: gate-credentials, optional: true}
+            - configMapRef: {name: customer-app-source}   # GIT_REPO / GIT_COMMIT for the SEC-GIT-PLAINTEXT evidence
           ports: [{name: http, containerPort: 8084}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
@@ -234,9 +271,15 @@ spec:
             - {name: gate-ca, mountPath: /etc/bravo/gate-ca, readOnly: true}
             - {name: bao-ca, mountPath: /etc/bravo/openbao, readOnly: true}
             - {name: bao-jwt, mountPath: /var/run/secrets/openbao, readOnly: true}
+            - {name: repo, mountPath: /srv/repo, readOnly: true}
+            - {name: cis-evidence, mountPath: /etc/bravo/cis, readOnly: true}
       volumes:
         - {name: registry, configMap: {name: environments}}
         - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+        - {name: repo, emptyDir: {sizeLimit: 64Mi}}
+        - {name: git-key, secret: {secretName: git-customer-repo, optional: true, defaultMode: 0440}}
+        - {name: git-known-hosts, configMap: {name: github-known-hosts}}
+        - {name: cis-evidence, configMap: {name: gate-cis-evidence}}
         - name: aws-token
           projected:
             sources:

@@ -10,7 +10,7 @@ infra/envs/target-gcp/scripts/verify.sh   # PASS/FAIL/UNKNOWN과 증거(runs/ver
 infra/envs/target-gcp/scripts/down.sh     # Gateway · DB 디스크 정리 → HMAC 키 · AppRole 회수 → terraform destroy
 ```
 
-준비물: Terraform 1.17, gcloud(프로젝트 권한), kubectl, helm, jq, envsubst, openssl, AWS 자격(상태 백엔드), 열려 있는 플랫폼 OpenBao(`deploy/pilot/scripts/keys.sh status`, 위치는 custody `bao_target`). kubectl 컨텍스트는 `bravo-target-gcp`이고 kubeconfig는 `infra/envs/target-gcp/.terraform/bravo/kubeconfig`(비밀 없음, DNS 엔드포인트 + `gke-gcloud-auth-plugin`)입니다. gcloud 기본 설정은 쓰지도 바꾸지도 않습니다. 모든 호출에 `--project`를 줍니다.
+준비물: Terraform 1.17, gcloud(프로젝트 권한), kubectl, helm, jq, envsubst, openssl, skopeo, AWS 자격(상태 백엔드 · 출발지 ECR 읽기), 열려 있는 플랫폼 OpenBao(`deploy/pilot/scripts/keys.sh status`, 위치는 custody `bao_target`). kubectl 컨텍스트는 `bravo-target-gcp`이고 kubeconfig는 `infra/envs/target-gcp/.terraform/bravo/kubeconfig`(비밀 없음, DNS 엔드포인트 + `gke-gcloud-auth-plugin`)입니다. gcloud 기본 설정은 쓰지도 바꾸지도 않습니다. 모든 호출에 `--project`를 줍니다.
 
 ## 무엇을 만드나(Terraform)
 
@@ -20,7 +20,7 @@ infra/envs/target-gcp/scripts/down.sh     # Gateway · DB 디스크 정리 → H
 | Cloud NAT | 노드는 공인 IP 없음. 바깥으로는 NAT로만. 바깥 80 차단(내부 80은 허용) |
 | GKE | Standard, zonal(`asia-northeast1-b`), `ADVANCED_DATAPATH`(Dataplane V2), 1.36(REGULAR), 사설 노드 · 사설 엔드포인트 + IAM DNS 엔드포인트, Workload Identity(`GKE_METADATA`), Gateway API, Secret CMEK, 관리형 Hubble relay |
 | 노드 풀 `core` | `c4a-standard-4`(Arm) 1–2대, `hyperdisk-balanced` 50 GiB + CMEK, Arm taint 끔 |
-| 이미지 저장소 | Artifact Registry `bravo`(불변 태그). 출발지와 같은 digest만 둠 |
+| 이미지 저장소 | Artifact Registry `bravo`(불변 태그). 출발지와 같은 digest만 둠. `scripts/images.sh`(up.sh 2단계)가 출발지 ECR `bravo-source/<이름>`에서 `skopeo copy --preserve-digests --multi-arch all`로 digest째 복사합니다. GKE용으로 따로 빌드하지 않습니다(2026-11-03부터, 그전 GKE 앱은 따로 빌드한 `df08e969…`). 자격은 AWS · gcloud 체인에서 받아 파이프(`/dev/fd`)로만 넘김 |
 | 첨부 버킷 | 공개 접근 방지 `enforced`, 균일 접근, 버전 관리, CMEK, 시험 객체 `_gate/canary` |
 | DB 백업 버킷(`db_backup.tf`) | CNPG chat-db의 WAL과 base backup(barman-cloud, DR-01). 공개 접근 방지 `enforced`, 균일 접근, CMEK 키 `db-backup`. 키 없이 Workload Identity 주체에 바로 권한: KSA `chat/chat-db` 읽기 · 쓰기, `chat/chat-db-restore` 읽기 |
 | 서비스 계정 | `chat-app`(버킷 `objectUser`, HMAC 주인), `gate-other`(권한 없음, OBJ-05), 노드 SA(최소 권한 + 저장소 읽기) |
@@ -44,7 +44,7 @@ infra/envs/target-gcp/scripts/down.sh     # Gateway · DB 디스크 정리 → H
 | 리전 | 도쿄 `asia-northeast1`. 서울에는 Arm(C4A)이 없음. 데모 이미지가 arm64 하나라 같은 digest를 띄우려면 Arm이 필요 |
 | 블록 저장 | `pd-balanced`가 아니라 `hyperdisk-balanced`(C4A 제약) |
 | 진입 | Cilium Gateway가 아니라 GKE Gateway `gke-l7-rilb`(Dataplane V2에서 Cilium Gateway를 켤 수 없음) |
-| OBJ-06 | GCS XML API는 평문 HTTP를 받음. 막는 조직 정책 `storage.secureHttpTransport`는 조직 아래 프로젝트에서만 걸 수 있어(이 프로젝트는 조직 없음, 403) 걸지 못함. 보완: 노드 바깥 80 차단 방화벽, 앱 NetworkPolicy 443만 |
+| OBJ-06 | GCS XML API는 평문 HTTP를 받음. 막는 조직 정책 `storage.secureHttpTransport`는 조직 아래 프로젝트에서만 걸 수 있어(이 프로젝트는 조직 없음, 403) 걸지 못함. 보완: 노드 바깥 80 차단 방화벽, 앱 NetworkPolicy 443만. 보완 통제는 게이트 질문 OBJ-PLAIN-EGRESS로 잽니다(앱 라벨 Pod에서 `storage.googleapis.com:80` 연결 실패, 앱 엔드포인트 https). `docs/evidence/gate/obj-plain-egress-20261103/` |
 | 클러스터 위치 | zonal 제어면(비용 · 생성 시간). EKS는 3-AZ 제어면 |
 
 ## 하루 비용(도쿄 정가, 2026-11-02 Cloud Billing Catalog API 조회)

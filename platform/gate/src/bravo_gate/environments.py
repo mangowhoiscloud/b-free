@@ -108,6 +108,23 @@ class AwsSection(_Section):
     eks_clusters: tuple[str, ...] = ()
 
 
+class PublicEndpoint(_Section):
+    """One public address of the environment for NET-EXTERNAL-SCAN: a host name or IP and the ports that may answer
+    from outside. ``kind`` is a label for the evidence (edge = Cloudflare proxied name, control_plane = K8s API)."""
+
+    host: str
+    allow: tuple[int, ...] = ()
+    kind: str = "other"
+    note: str | None = None
+
+
+# NET-EXTERNAL-SCAN port list (TCP connect, same idea as ``nmap -sT -Pn -p<list>``): remote access, web, DB, cache,
+# message queues, Kubernetes API / kubelet / etcd / RKE2 supervisor, OpenBao, common admin ports.
+DEFAULT_SCAN_PORTS: tuple[int, ...] = (21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 2049, 2379, 2380, 3306, 3389, 5432,
+                                       5672, 6379, 6432, 6443, 8000, 8080, 8081, 8200, 8443, 9000, 9090, 9345,
+                                       10250, 10255, 10256, 27017)
+
+
 class NetworkSection(_Section):
     control_paths: tuple[str, ...] = ()  # "host:port" that must connect (proves the prober works)
     denied_paths: tuple[str, ...] = ()  # "host:port" that must not connect
@@ -116,6 +133,30 @@ class NetworkSection(_Section):
     # app Deployment's labels and image, so the app's NetworkPolicies apply to it. "gate": from the gate process.
     probe_from: Literal["gate", "pod"] = "gate"
     app_deployment: str | None = None
+    # OBJ-PLAIN-EGRESS (ENC-01, compensating control for OBJ-06): from the same app-labelled probe Pod, the attachment
+    # store's TLS port must connect and its plain-HTTP port must not; the app container's ``app_endpoint_env`` must be
+    # an https:// URL (unset = the AWS SDK default, https).
+    object_store_tls_path: str | None = None  # "host:443"
+    object_store_plain_path: str | None = None  # "host:80"
+    app_container: str = "app"
+    app_endpoint_env: str = "S3_ENDPOINT_URL"
+    # NET-EXTERNAL-SCAN (NET-01): TCP connect scan of these public addresses from the platform (outside the
+    # environment's network).
+    public_endpoints: tuple[PublicEndpoint, ...] = ()
+    scan_ports: tuple[int, ...] = DEFAULT_SCAN_PORTS
+    scan_timeout_s: float = 2.0
+
+
+class RepositorySection(_Section):
+    """SEC-GIT-PLAINTEXT (SEC-01, spec §8.5 "Git 평문 비밀 0건", gitleaks). ``root`` is the customer app checkout the
+    gate's own init container made at the pinned commit (same ConfigMap customer-app-source and read-only deploy key
+    as the collector). Source and target run the same commit, so both sides scan the same files."""
+
+    root: str
+    commit_env: str = "GIT_COMMIT"
+    repo_env: str = "GIT_REPO"
+    gitleaks_bin: str = "gitleaks"
+    timeout_s: float = 60.0
 
 
 class SecretStoreSection(_Section):
@@ -156,6 +197,7 @@ class Environment(_Section):
     aws: AwsSection | None = None
     network: NetworkSection | None = None
     platform: PlatformSection | None = None
+    repository: RepositorySection | None = None
 
 
 class Registry(_Section):

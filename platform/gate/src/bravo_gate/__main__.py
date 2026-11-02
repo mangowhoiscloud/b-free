@@ -28,6 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     kb.add_argument("--platform", required=True, choices=("eks", "k3s", "rke2", "gke"))
     kb.add_argument("--out", required=True, help="file for the raw kube-bench JSON + job facts")
     kb.add_argument("--keep", action="store_true", help="keep the scan namespace, Job and RBAC")
+    kb.add_argument("--node", help="run on this node (kubernetes.io/hostname), e.g. an agent node")
+    kb.add_argument("--targets", help="kube-bench --targets instead of the platform default (e.g. node)")
     kc = sub.add_parser("kube-bench-compare", help="normalise two kube-bench outputs to control IDs (근사)")
     kc.add_argument("--src", required=True)
     kc.add_argument("--dst", required=True)
@@ -40,8 +42,8 @@ def main(argv: list[str] | None = None) -> int:
 
         cfg = client.Configuration()
         config.load_kube_config(context=a.context, client_configuration=cfg)
-        res = run_job(client.ApiClient(cfg), a.platform, keep=a.keep)
-        res.update({"context": a.context, "platform": a.platform})
+        res = run_job(client.ApiClient(cfg), a.platform, keep=a.keep, node=a.node, targets=a.targets)
+        res.update({"context": a.context, "platform": a.platform, "node_requested": a.node, "targets": a.targets})
         with open(a.out, "w", encoding="utf-8") as fh:
             json.dump(res, fh, ensure_ascii=False, indent=2)
         norm = normalize(res["report"], a.platform)

@@ -6,7 +6,7 @@
 
 ## 질문과 통제
 
-질문 하나는 환경 설정의 한 절(`needs`)을 씁니다. 게이트는 다섯 절(`object_store`, `postgres`, `kubernetes`, `platform`, `network`)의 질문 19개를 늘 모두 던집니다. 규칙 판 `gate-controls/2026-11-03.1`부터 모든 질문이 공급자 중립입니다. 같은 질문을 EKS, RKE2, GKE에 던지고 뒤의 시험만 `platform.kind`에 따라 다릅니다(`probes/neutral.py`). AWS 전용 ID는 바뀌었습니다: `SEC-SECRET-READ-AWS` → `SEC-SECRET-STORE-READ`, `SEC-ENC-CMK` → `SEC-SECRET-AT-REST`, `AUD-PLATFORM` → `AUD-CONTROL-PLANE`. 절이 없는 쪽은 `UNKNOWN`(`not_configured`)이고, 게이트를 막습니다. 설정하지 않은 질문이 표에서 빠져 일부만 보고 통과하는 일은 없습니다(감사 B16).
+질문 하나는 환경 설정의 한 절(`needs`)을 씁니다. 게이트는 여섯 절(`object_store`, `postgres`, `kubernetes`, `platform`, `network`, `repository`)의 질문 22개를 늘 모두 던집니다(규칙 `gate-controls/2026-11-03.2`). 행마다 시험 방법 `method`(`behavioural` · `config` · `simulation`)와 도구, 답하는 스펙 시험이 붙습니다. 스펙 §8.5 시험과의 대응, 게이트 밖 시험은 `docs/architecture/16-gate-test-map.md`와 DEVIATIONS D-29입니다. 규칙 판 `gate-controls/2026-11-03.1`부터 모든 질문이 공급자 중립입니다. 같은 질문을 EKS, RKE2, GKE에 던지고 뒤의 시험만 `platform.kind`에 따라 다릅니다(`probes/neutral.py`). AWS 전용 ID는 바뀌었습니다: `SEC-SECRET-READ-AWS` → `SEC-SECRET-STORE-READ`, `SEC-ENC-CMK` → `SEC-SECRET-AT-REST`, `AUD-PLATFORM` → `AUD-CONTROL-PLANE`. 절이 없는 쪽은 `UNKNOWN`(`not_configured`)이고, 게이트를 막습니다. 설정하지 않은 질문이 표에서 빠져 일부만 보고 통과하는 일은 없습니다(감사 B16).
 
 | 통제 | 질문 ID | 시험(행동 시험이 우선) | 절 |
 |---|---|---|---|
@@ -19,14 +19,17 @@
 | | DB-AUTH | 앱 역할로 비밀번호 없이 실제 로그인 → 거부, `password_encryption=scram-sha-256`, 그리고 `pg_hba` 규칙 판정: 앱 역할 · DB에 닿는 네트워크 규칙(`host`, `hostssl`, `hostnossl`, `hostgssenc`, `hostnogssenc`)의 trust · ident · peer는 FAIL, `trust`는 `local`을 포함해 어디서나 FAIL. `local`의 peer · ident(CNPG 기본 `local all all peer map=local`, 파드 안 Unix 소켓)는 네트워크 경로가 아니라 판정하지 않음. 증거에 모든 규칙과 판정 이유를 남김. 앱 역할이 DB에 없으면 UNKNOWN(`app_role_missing`) | `postgres` |
 | SEC-01 · ENC-02 | SEC-SECRET-READ-K8S | 다른 서비스 계정의 Secret `get` · `list`를 SubjectAccessReview로 시험 → 거부면 PASS. `evaluationError`가 있으면 UNKNOWN. 앱 네임스페이스나 Secret이 없으면 UNKNOWN(메타데이터만 읽음) | `kubernetes` |
 | | SEC-SECRET-STORE-READ | 앱 비밀의 원본 저장소를 다른 신원이 읽을 수 있나. EKS: 다른 IAM 주체의 `secretsmanager:GetSecretValue`를 `iam:SimulatePrincipalPolicy`(자원 정책 포함)로. RKE2 · GKE: 플랫폼 OpenBao에서 게이트의 `gate-meta` 역할로 앱 비밀 경로가 있는지(KV 메타데이터) 확인하고, 권한 없는 `gate-other` 역할의 값 읽기가 모두 403이면 PASS | `platform` |
-| | OBJ-ENC | 첨부 버킷 기본 암호화가 고객 관리 키(`aws:kms`, AWS면 DescribeKey로 `KeyManager=CUSTOMER` 확인). `AES256`이나 설정 없음은 FAIL | `object_store` |
+| | OBJ-ENC | 첨부 버킷 기본 암호화가 고객 관리 키(`aws:kms`, AWS면 DescribeKey로 `KeyManager=CUSTOMER` 확인). `AES256`이나 설정 없음은 FAIL. 앱 키가 있는 저장소는 객체마다 HEAD로 SSE 헤더를 보고, 고객 키가 아닌 객체가 하나라도 있으면 FAIL `plaintext_objects_present`(객체 5000개 넘으면 UNKNOWN) | `object_store` |
+| | SEC-GIT-PLAINTEXT | 고객 저장소(배포 커밋, `repository.root`)를 gitleaks `dir --redact`로 검사. 발견 0이면 PASS. 발견은 규칙 · 파일 · 줄만 증거에. 체크아웃이 없거나 gitleaks가 실패하면 UNKNOWN. 이력은 보지 않음 | `repository` |
 | | SEC-SECRET-AT-REST | 앱 비밀이 저장소와 클러스터 양쪽에서 고객 쪽이 쥔 키로 암호화되나. EKS: Secrets Manager `KmsKeyId`가 `KeyManager=CUSTOMER` + EKS `encryptionConfig`(secrets) 키도 CUSTOMER. RKE2: OpenBao가 원본(봉인 해제, Shamir, 경로 있음) + kube-apiserver `/metrics`의 Secret 저장 변환자가 `k8s:enc:<공급자>`(identity 아님), `--encryption-provider-config` 플래그. GKE: OpenBao가 원본 + `databaseEncryption` ENCRYPTED(Cloud KMS 키) | `platform` |
 | ENC-01 | OBJ-06 | 앱 자격으로 `http://` GET → 연결 거부 · 403이면 PASS. 엔드포인트 자체가 `http://`이면 FAIL | `object_store` |
+| | OBJ-PLAIN-EGRESS | NET-PATHS와 같은 시험 Pod에서 `object_store_tls_path` 연결 성공(대조), `object_store_plain_path` 거부 · 시간 초과, 앱 컨테이너의 `app_endpoint_env`가 `https://`(미설정은 SDK 기본 https). 평문 포트 연결 → FAIL. GKE OBJ-06 예외의 대체 통제 | `network` |
 | | DB-TLS | `sslmode=disable` 접속이 거부, `ssl=on`, 최소 TLS 1.2, CA로 `verify-full` 성공 | `postgres` |
 | AUD-01 | DB-AUDIT | `pgaudit` 적재, `pgaudit.log`에 ddl · role(또는 all), `log_connections=on` | `postgres` |
 | | AUD-CONTROL-PLANE | 제어면 감사가 켜져 있고 지금 기록하나. EKS: 다중 리전 CloudTrail이 관리 이벤트 쓰기를 기록 + EKS `audit` 로그 켬. RKE2: `--audit-policy-file` · `--audit-log-path` 플래그, 시험 중 `apiserver_audit_event_total`이 늘고 `apiserver_audit_error_total`은 늘지 않음. GKE: Cloud Audit Logs 관리 활동(`cloudaudit.googleapis.com/activity`, `k8s_cluster`)에 최근 1시간 항목이 있음 | `platform` |
 | NET-01 | NET-DEFAULT-DENY | 앱 네임스페이스에 전체 Pod 대상 기본 거부(ingress, egress) NetworkPolicy. 네임스페이스가 없으면 UNKNOWN | `kubernetes` |
 | | NET-PATHS | 앱 네임스페이스에서 대조 경로는 TCP 연결 성공, 허용하지 않은 경로는 거부 · 시간 초과. `probe_from: pod`면 앱 Deployment의 라벨 · 이미지로 짧은 시험 Pod를 띄워 잼(`probes/netpod.py`: SA 토큰 없음, 늘 준비 안 됨, 90초, 끝나면 지움). 플랫폼 레지스트리: 대조 `chat-pgbouncer.chat.svc:6432`, 거부 `169.254.169.254:80`(인스턴스 메타데이터) · `1.1.1.1:80`(바깥, 앱이 안 쓰는 포트). 대조 경로가 실패하거나, 허용하지 않은 경로가 DNS 오류 같은 다른 오류면 UNKNOWN | `network` |
+| | NET-EXTERNAL-SCAN | 플랫폼(고객 망 밖)에서 `public_endpoints` 주소마다 TCP connect 스캔(`scan_ports`, 기본 32개, `nmap -sT -Pn`과 같은 방식, `probes/exposure.py`). 열린 포트가 그 주소의 `allow` 밖이면 FAIL. 허용 포트가 하나도 답하지 않으면 UNKNOWN(스캐너가 바깥에 닿는지 증명 안 됨) | `network` |
 | DR-01 | DR-ARCHIVE | `archive_mode` 켬, 한 번 이상 보관, 마지막 실패가 마지막 성공보다 이전 | `postgres` |
 | | DR-RESTORE | `bootstrap.recovery`로 만든 CNPG Cluster가 healthy | `kubernetes` |
 
@@ -63,6 +66,10 @@
 
 같은 입력이면 같은 출력입니다. 판정은 관찰 결과의 순수 함수이고, 관찰 결과로 `input_digest`(sha256)를 만듭니다. 시각 값(`collected_at`, `expires_at`)은 digest에 넣지 않습니다.
 
+## 시험 방법 표시
+
+보고서의 질문 행마다 `method`, `src_method`, `dst_method`, `src_tool`, `dst_tool`, `spec_test`가 있습니다(`controls.py` `Question.method` · `by_kind`). `behavioural`은 실제 요청 · 연결, `config`는 설정 · 상태 · 파일 읽기, `simulation`은 정책 엔진에 묻기(IAM 시뮬레이터, SubjectAccessReview, `has_table_privilege`)입니다. 방법은 `platform.kind`로 갈립니다: EKS의 OBJ-04 · SEC-SECRET-STORE-READ는 `simulation`, 온프렘 · GKE는 `behavioural`. 양쪽이 다르면 `method`는 `mixed`입니다.
+
 ## kube-bench(근사)
 
 `src/bravo_gate/kube_bench/mapping.yaml`이 kube-bench 항목을 통제 ID로 옮깁니다.
@@ -75,7 +82,7 @@
 
 `bravo_gate.kube_bench.normalize(report_json, platform)`과 `compare(src, dst)`가 이 표를 씁니다.
 
-실제 클러스터에서는 `python -m bravo_gate kube-bench --context <ctx> --platform eks|k3s|gke --out <file>`이 Job으로 돌립니다(`kube_bench/runner.py`). 만드는 것은 스캐너 전용 네임스페이스 `bravo-gate-scan`(Pod Security `privileged`, hostPID와 읽기 전용 host 경로가 필요해서. 앱 네임스페이스가 아니므로 예외로 기록), ServiceAccount, get/list만 하는 ClusterRole과 바인딩, Job입니다. 끝나면 모두 지웁니다(`--keep`이면 남김). 두 결과는 `python -m bravo_gate kube-bench-compare --src <file> --dst <file>`로 통제 ID별로 비교합니다.
+실제 클러스터에서는 `python -m bravo_gate kube-bench --context <ctx> --platform eks|k3s|rke2|gke --out <file> [--node <이름> --targets node]`이 Job으로 돌립니다(`kube_bench/runner.py`). Job에는 읽기 전용 ClusterRole의 SA 토큰을 붙입니다. 토큰이 없으면 정책 점검 5.1.x의 `kubectl`이 `localhost:8080` 연결 거부로 실패하고, 그것이 FAIL로 셉니다(도구 오류지 발견이 아님, 2026-11-03 확인). RKE2는 `/etc/passwd` · `/etc/group` · `/var/log`도 읽기 전용으로 붙입니다(소유자 이름 점검, 감사 로그). 결과 요약은 보고서의 `cis_benchmark`로 붙고 판정에는 넣지 않습니다(`docs/evidence/kube-bench/cis-summary.py` → ConfigMap `gate-cis-evidence`, `$BRAVO_GATE_CIS_EVIDENCE_FILE`). 만드는 것은 스캐너 전용 네임스페이스 `bravo-gate-scan`(Pod Security `privileged`, hostPID와 읽기 전용 host 경로가 필요해서. 앱 네임스페이스가 아니므로 예외로 기록), ServiceAccount, get/list만 하는 ClusterRole과 바인딩, Job입니다. 끝나면 모두 지웁니다(`--keep`이면 남김). 두 결과는 `python -m bravo_gate kube-bench-compare --src <file> --dst <file>`로 통제 ID별로 비교합니다.
 
 ## 환경 설정 파일
 
@@ -125,6 +132,10 @@ environments:
 | `postgres.dial_host` | libpq `hostaddr`로 링크에 붙음. `verify-full`은 DSN `host`(DB 이름)로 확인 |
 | `object_store.ca_file` | 사설 CA 파일(온프렘 RGW) |
 | `object_store.plain_http_endpoint_url` | OBJ-06 평문 요청을 보낼 곳(링크 너머 저장소의 평문 수신) |
+| `network.object_store_tls_path`, `object_store_plain_path` | OBJ-PLAIN-EGRESS가 시험 Pod에서 잇는 저장소 TLS · 평문 `host:port` |
+| `network.app_container`, `app_endpoint_env` | 앱 엔드포인트를 읽을 컨테이너(`app`)와 변수(`S3_ENDPOINT_URL`) |
+| `network.public_endpoints[]` (`host`, `allow`, `kind`, `note`), `scan_ports`, `scan_timeout_s` | NET-EXTERNAL-SCAN 대상과 허용 포트 |
+| `repository.root` | SEC-GIT-PLAINTEXT가 검사할 체크아웃(플랫폼: 게이트 초기화 컨테이너 `checkout`이 `/srv/repo`에 받음, ConfigMap `customer-app-source`, Secret `git-customer-repo`) |
 
 - 앱 Secret `get` 권한을 주지 않습니다. SEC-SECRET-READ-K8S는 403이면 Secret이 있는지 확인하지 않고 증거에 `secret_existence: not_checked_no_get_right`를 남깁니다. 404면 그대로 UNKNOWN(`app_secret_missing`)입니다.
 - OBJ-06은 앱 자격이 없으면 읽기 자격(`read_credential`)으로 잽니다. 질문이 전송 방식에 관한 것이라서입니다.
@@ -170,6 +181,7 @@ uv run --frozen pytest -q -rs
 |---|---|---|
 | `tests/test_rules.py` | 판정표, 모으기, 같은 입력 같은 출력, 계약 형식, 네 상태 문구, LLM import 금지 | 없음 |
 | `tests/test_verdict_rules.py` | 거부로 세는 S3 오류(A5), 시간 초과 · 연결 거부 구분, CloudTrail 관리 이벤트 선택자, DNS 오류를 차단으로 세지 않음(실제 소켓) | 없음 |
+| `tests/test_new_questions.py` | 행마다 방법 표시(EKS OBJ-04 `simulation`), OBJ-PLAIN-EGRESS 판정표, NET-EXTERNAL-SCAN 판정(가짜 연결), gitleaks 실제 실행(값이 증거에 없음) | gitleaks가 없으면 gitleaks 시험 |
 | `tests/test_kube_bench.py` | 고정 판 · 명시 벤치마크, EKS 대 K3s 정규화, 한쪽에만 있는 주제 | 없음 |
 | `tests/test_engines.py` | 실제 postgres:16 두 대(평문, TLS 강제 + CA), HTTP API, 실제 AWS S3 읽기 전용, 운영자가 지정한 실제 객체 저장소(Rook-Ceph RGW 또는 S3)의 OBJ 행동 시험 | docker가 없으면 DB 시험, AWS 자격이 없으면 AWS 시험, `BRAVO_TEST_S3_ENDPOINT` · `BRAVO_TEST_S3_BUCKET`이 없으면 객체 저장소 시험 |
 

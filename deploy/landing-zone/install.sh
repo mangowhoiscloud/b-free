@@ -302,6 +302,26 @@ step_kyverno() {
   k wait --for=jsonpath='{.status.conditionStatus.ready}'=true generatingpolicy/bravo-default-deny --timeout=2m
 }
 
+# CIS 5.1.5 / 5.1.6 (kube-bench rke2-cis-1.9, docs/evidence/kube-bench/onprem-20261103/): no API token on the
+# "default" ServiceAccount anywhere but kube-system. MutatingPolicy for namespaces made later, patch for the ones
+# that exist now. The OTel agent's own SA too (its Pod already sets false; the chart leaves the SA unset).
+step_sa_automount() {
+  log "default ServiceAccounts: automountServiceAccountToken false (MutatingPolicy + existing namespaces)"
+  k apply -f "$here/base/sa-automount.yaml"
+  k wait --for=jsonpath='{.status.conditionStatus.ready}'=true mutatingpolicy/bravo-default-sa-no-automount --timeout=2m
+  local ns
+  for ns in $(k get ns -o jsonpath='{.items[*].metadata.name}'); do
+    [[ $ns == kube-system ]] && continue
+    k -n "$ns" get sa default >/dev/null 2>&1 || continue
+    k -n "$ns" patch sa default --type merge -p '{"automountServiceAccountToken":false}' >/dev/null
+  done
+  if k -n bravo-observability get sa otel-agent >/dev/null 2>&1; then
+    k -n bravo-observability patch sa otel-agent --type merge -p '{"automountServiceAccountToken":false}' >/dev/null
+  fi
+  k get sa -A --field-selector metadata.name=default \
+    -o custom-columns=NS:.metadata.namespace,AUTOMOUNT:.automountServiceAccountToken --no-headers
+}
+
 step_eso() {
   log "External Secrets chart $ESO_CHART_VERSION + ClusterSecretStore (pending link)"
   h upgrade --install external-secrets external-secrets/external-secrets --version "$ESO_CHART_VERSION" \
@@ -324,7 +344,8 @@ step_gateway() {
   k -n bravo-edge get svc cilium-gateway-bravo-gateway
 }
 
-all_steps=(cilium base images rook rbd storage cnpg db_ca secrets kyverno eso otel rgw_tls rgw db_backup app gateway)
+all_steps=(cilium base images rook rbd storage cnpg db_ca secrets kyverno eso otel rgw_tls rgw db_backup app gateway
+           sa_automount)
 steps=("$@"); ((${#steps[@]})) || steps=("${all_steps[@]}")
 helm_repos
 for s in "${steps[@]}"; do "step_$s"; done

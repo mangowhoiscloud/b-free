@@ -71,7 +71,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: bravo-gate-netprobe
   labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
-  annotations: {bravo.io/app-image: "asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57"}
+  annotations: {bravo.io/app-image: "asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6"}
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -86,7 +86,7 @@ spec:
     - name: gate-identity
       expression: "request.userInfo.username == 'bravo-gate-ro@b-free-target-20261102.iam.gserviceaccount.com'"
   validations:
-    - expression: "object.spec.containers.all(c, c.image == 'asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57')"
+    - expression: "object.spec.containers.all(c, c.image == 'asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6')"
       message: "gate probe Pod: only the app Deployment's image (pinned digest) is allowed"
     - expression: "!has(object.spec.initContainers) || size(object.spec.initContainers) == 0"
       message: "gate probe Pod: no init containers"

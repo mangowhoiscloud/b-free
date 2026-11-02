@@ -68,9 +68,20 @@ def test_gcs_obj_enc_reads_the_json_api_default_kms_key(monkeypatch: pytest.Monk
 
     from bravo_gate.probes import objstore
 
+    objects = {"_gate/canary": {"x-goog-encryption-kms-key-name": "k/cryptoKeyVersions/1"}}
+
     class FakeS3:
         def get_bucket_encryption(self, Bucket: str) -> dict:  # noqa: N803
             raise ClientError({"Error": {"Code": "NotImplemented"}}, "GetBucketEncryption")
+
+        def get_paginator(self, name: str):  # noqa: ANN201
+            class P:
+                def paginate(self, **kw):  # noqa: ANN201, ANN003
+                    return [{"Contents": [{"Key": k} for k in sorted(objects)]}]
+            return P()
+
+        def head_object(self, Bucket: str, Key: str) -> dict:  # noqa: N803
+            return {"ResponseMetadata": {"HTTPHeaders": objects[Key]}}
 
     monkeypatch.setenv("GCS_AK", "x")
     monkeypatch.setenv("GCS_SK", "y")
@@ -81,6 +92,12 @@ def test_gcs_obj_enc_reads_the_json_api_default_kms_key(monkeypatch: pytest.Monk
     monkeypatch.setattr(objstore, "gcs_bucket_encryption", lambda b: {"defaultKmsKeyName": key})
     obs = objstore.ObjectStoreProbe(s).obj_enc()
     assert (obs.verdict, obs.reason) == ("PASS", "customer_managed_key")
+    assert obs.evidence["object_level"]["state"] == "checked" and obs.evidence["object_level"]["objects"] == 1
+    # B13: an object written before the bucket default (no CMEK header) fails the question
+    objects["att/old"] = {}
+    obs = objstore.ObjectStoreProbe(s).obj_enc()
+    assert (obs.verdict, obs.reason) == ("FAIL", "plaintext_objects_present")
+    assert obs.evidence["object_level"]["not_customer_key_sample"] == ["att/old"]
     monkeypatch.setattr(objstore, "gcs_bucket_encryption", lambda b: None)
     obs = objstore.ObjectStoreProbe(s).obj_enc()
     assert (obs.verdict, obs.reason) == ("FAIL", "not_customer_key")

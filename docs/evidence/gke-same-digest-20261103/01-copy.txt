@@ -1,0 +1,10 @@
+## 2026-11-03 02:51:31 KST infra/envs/target-gcp/scripts/images.sh
+17:51:37Z images.sh: copy 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6 -> asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo (preserve digests, all platforms)
+time="2026-11-03T02:51:37+09:00" level=fatal msg="initializing source docker://721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6: getting username and password: reading JSON file \"/dev/fd/63\": unmarshaling JSON at \"/dev/fd/63\": unexpected end of JSON input"
+exit=1
+
+## 2026-11-03 02:51:45 KST retry: one auth pipe per side (the first run failed before copying: a shared pipe is read twice)
+17:51:50Z images.sh: copy 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6 -> asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo (preserve digests, all platforms)
+17:52:01Z images.sh: copied: asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6 (manifest sha256 matches)
+17:52:04Z images.sh: present: asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-pgbouncer@sha256:68c4a15e2c33f01cd5733e11208d5518a1a4a23aec9ecc4daf49a220792db23c
+exit=0

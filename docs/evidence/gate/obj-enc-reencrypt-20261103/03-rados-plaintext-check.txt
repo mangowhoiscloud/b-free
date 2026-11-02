@@ -1,0 +1,2 @@
+canary sha256: 5d0ed896ce53694526a186db9bdfa92bbb6adb909dcd0090c2ee70b27bdb5957 bytes: 39 marker: first 24 bytes of the body (not printed)
+rados_head: {"rados_objects": [{"oid": "9367adb1-7e05-44f5-b621-f0f96f1285f1.5453.1___gate/canary", "bytes": 39, "plaintext_marker_found": false}]}

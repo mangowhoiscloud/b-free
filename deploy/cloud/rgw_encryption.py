@@ -4,6 +4,8 @@
   uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --apply    # set default
   uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --proof    # one object
   uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --outage   # link down
+  uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --inventory  # every object
+  uv run --project platform/gate python deploy/cloud/rgw_encryption.py --context bravo-onprem --reencrypt  # plaintext ones
 
 --apply: PutBucketEncryption aws:kms with KMSMasterKeyID rgw-<env>, the transit key that keys.sh rgw-kms-init <env>
   created in the platform OpenBao. RGW needs CephObjectStore security.kms (overlays/rke2/rook/objectstore.yaml) and the
@@ -13,8 +15,14 @@
   contain the plaintext, GET and compare bytes, DELETE.
 --outage: PUT object A, scale the link client plat-bao-link to 0, try PUT B and GET A (expected to fail: RGW cannot
   reach OpenBao), scale back, GET A again, DELETE A. The link is down for a few seconds (5 s on 2026-11-03).
-Only the encryption configuration and the test objects are touched: never the bucket policy, Block Public Access or the
-canary _gate/canary. The bucket owner's keys come from OpenBao secret/envs/<env>/object-store (as rgw_regression.py)
+--inventory: every object in the bucket: HEAD (SSE headers), radosgw-admin object stat (user.rgw.crypt.mode, key id).
+--reencrypt (B13, 2026-11-03): objects stored before the default (no crypt mode) are copied in place with SSE-KMS
+  (CopyObject onto the same key, MetadataDirective REPLACE with the object's own content headers and user metadata,
+  x-amz-server-side-encryption aws:kms + key rgw-<env>; RGW refuses COPY onto itself). Before and
+  after: sha256 of the body over GET, content type, user metadata; after: crypt mode SSE-KMS and a GET that reads.
+  The canary _gate/canary is one of them; its body and key stay the same.
+Only the encryption configuration, the test objects and (--reencrypt) the storage encryption of existing objects are
+touched: never the bucket policy or Block Public Access (the S1 planted regression stays). The bucket owner's keys come from OpenBao secret/envs/<env>/object-store (as rgw_regression.py)
 and stay in this process. RGW is reached through a private kubectl port-forward (the RGW certificate names localhost).
 """
 
@@ -179,6 +187,72 @@ def proof(b: Bucket) -> int:
     return 0
 
 
+def object_rows(b: Bucket) -> list[dict]:
+    """Every object: key, size, SSE headers from HEAD, crypt attributes from radosgw-admin."""
+    rows = []
+    for page in b.s3.get_paginator("list_objects_v2").paginate(Bucket=b.name):
+        for o in page.get("Contents") or []:
+            head = b.s3.head_object(Bucket=b.name, Key=o["Key"])
+            hh = head["ResponseMetadata"]["HTTPHeaders"]
+            crypt = b.object_stat(o["Key"])
+            rows.append({"object": o["Key"], "size": o["Size"], "content_type": head.get("ContentType"),
+                         "head": sse(hh), "crypt_mode": crypt.get("user.rgw.crypt.mode"),
+                         "crypt_keyid": crypt.get("user.rgw.crypt.keyid")})
+    return rows
+
+
+def inventory(b: Bucket) -> int:
+    rows = object_rows(b)
+    for r in rows:
+        print("object:", json.dumps(r, ensure_ascii=False))
+    plain = [r["object"] for r in rows if r["crypt_mode"] != "SSE-KMS"]
+    print("summary:", json.dumps({"objects": len(rows), "sse_kms": len(rows) - len(plain), "not_sse_kms": plain}))
+    return 0
+
+
+def body_digest(b: Bucket, key: str) -> tuple[dict, str, int]:
+    got, data = b.get(key)
+    return got, hashlib.sha256(data).hexdigest(), len(data)
+
+
+def reencrypt(b: Bucket, env: str) -> int:
+    key_id = f"rgw-{env}"
+    rows = object_rows(b)
+    todo = [r for r in rows if r["crypt_mode"] != "SSE-KMS"]
+    log(f"{len(rows)} objects, {len(todo)} without SSE-KMS: {[r['object'] for r in todo]}")
+    failed = 0
+    for r in todo:
+        key = r["object"]
+        before_head = b.s3.head_object(Bucket=b.name, Key=key)
+        _, before_sha, before_len = body_digest(b, key)
+        # RGW refuses a copy onto itself with MetadataDirective COPY even when only the SSE headers change
+        # ("InvalidRequest ... without changing the object's metadata ... or encryption attributes", measured
+        # 2026-11-03 02:35 KST). REPLACE with the object's own headers and user metadata, read from HEAD.
+        keep = {k: before_head[k] for k in ("ContentType", "ContentDisposition", "ContentEncoding", "ContentLanguage",
+                                            "CacheControl", "Expires") if before_head.get(k)}
+        resp = b.s3.copy_object(Bucket=b.name, Key=key, CopySource={"Bucket": b.name, "Key": key},
+                                MetadataDirective="REPLACE", Metadata=before_head.get("Metadata") or {}, **keep,
+                                ServerSideEncryption="aws:kms", SSEKMSKeyId=key_id)
+        after_head = b.s3.head_object(Bucket=b.name, Key=key)
+        got, after_sha, after_len = body_digest(b, key)
+        crypt = b.object_stat(key)
+        same = (before_sha == after_sha and before_len == after_len
+                and before_head.get("ContentType") == after_head.get("ContentType")
+                and before_head.get("Metadata") == after_head.get("Metadata"))
+        ok = same and crypt.get("user.rgw.crypt.mode") == "SSE-KMS" and got["status"] == 200
+        failed += 0 if ok else 1
+        print("reencrypt:", json.dumps({
+            "object": key, "copy_status": resp["ResponseMetadata"]["HTTPStatusCode"],
+            "copy_sse": sse(resp["ResponseMetadata"]["HTTPHeaders"]),
+            "before": {"bytes": before_len, "sha256": before_sha, "content_type": before_head.get("ContentType"),
+                       "user_metadata_keys": sorted(before_head.get("Metadata") or {})},
+            "after": {"bytes": after_len, "sha256": after_sha, "content_type": after_head.get("ContentType"),
+                      "user_metadata_keys": sorted(after_head.get("Metadata") or {}), "get": got,
+                      "crypt_mode": crypt.get("user.rgw.crypt.mode"), "crypt_keyid": crypt.get("user.rgw.crypt.keyid")},
+            "body_and_metadata_same": same, "ok": ok}, ensure_ascii=False))
+    return inventory(b) or (1 if failed else 0)
+
+
 def link_replicas(ctx: str, n: int) -> None:
     kubectl(ctx, "-n", "rook-ceph", "scale", "deploy/plat-bao-link", f"--replicas={n}")
     if n == 0:
@@ -229,6 +303,8 @@ def main() -> int:
     mode.add_argument("--apply", action="store_true", help="PutBucketEncryption aws:kms with key rgw-<env>")
     mode.add_argument("--proof", action="store_true", help="one test object end to end, then delete it")
     mode.add_argument("--outage", action="store_true", help="measure PUT/GET with the OpenBao link scaled to 0")
+    mode.add_argument("--inventory", action="store_true", help="crypt mode of every object")
+    mode.add_argument("--reencrypt", action="store_true", help="copy objects without SSE-KMS in place with SSE-KMS")
     a = ap.parse_args()
     b = Bucket(a.context, a.env)
     log(f"bucket {b.name} at {b.endpoint} (port-forward to {a.context} rook-ceph-rgw-bravo:443)")
@@ -243,6 +319,10 @@ def main() -> int:
         return proof(b)
     if a.outage:
         return outage(b)
+    if a.inventory:
+        return inventory(b)
+    if a.reencrypt:
+        return reencrypt(b, a.env)
     return 0
 
 

@@ -30,8 +30,9 @@ from botocore.config import Config
 from botocore.exceptions import ClientError, ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError
 
 from ..environments import Credential, ObjectStoreSection
-from ..result import Obs, error_text, failed, passed, unknown
+from ..result import PASS, Obs, error_text, failed, passed, unknown
 
+MAX_OBJECTS_CHECKED = 5000  # OBJ-ENC object level: more objects than this -> UNKNOWN (the demo buckets hold a few)
 ANON_PUT_KEY = "_gate/anon-put-probe"
 APP_PUT_KEY = "_gate/app-put-probe"
 APP_PUT_BODY = b"bravo gate app write probe\n"
@@ -382,7 +383,46 @@ class ObjectStoreProbe:
                 return unknown("kms_unreadable", error=error_text(exc), **ev)
             if managers != ["CUSTOMER"]:
                 return failed("aws_managed_key", key_managers=managers, **ev)
-        return passed("customer_managed_key", **ev)
+        return self._objects_enc(passed("customer_managed_key", **ev))
+
+    def _objects_enc(self, bucket_obs: Obs) -> Obs:
+        """Object level (B13, 2026-11-03): a bucket default covers only objects written after it was set. With the
+        app credential the gate lists the bucket and HEADs every object: S3 / RGW ``x-amz-server-side-encryption``
+        aws:kms, GCS ``x-goog-encryption-kms-key-name``. Any object without it -> FAIL ``plaintext_objects_present``.
+        Without the app credential (AWS source: read role with canary and encryption facts only) the object level is
+        not checked and the evidence says so."""
+        ev = dict(bucket_obs.evidence)
+        if self.s.app_credential is None:
+            ev["object_level"] = {"state": "not_checked_no_list_right"}
+            return Obs(bucket_obs.verdict, bucket_obs.reason, ev)
+        app = _client(self.s, self.s.app_credential)
+        if app is None:
+            return unknown("app_credential_unavailable", **ev)
+        gcs = _is_gcs(self.s)
+        keys: list[str] = []
+        try:
+            for page in app.get_paginator("list_objects_v2").paginate(Bucket=self.s.bucket,
+                                                                       PaginationConfig={"PageSize": 1000}):
+                keys += [o["Key"] for o in page.get("Contents") or []]
+                if len(keys) > MAX_OBJECTS_CHECKED:
+                    ev["object_level"] = {"state": "too_many_objects", "limit": MAX_OBJECTS_CHECKED}
+                    return unknown("object_level_too_many", **ev)
+            plain: list[str] = []
+            for key in keys:
+                h = app.head_object(Bucket=self.s.bucket, Key=key)["ResponseMetadata"]["HTTPHeaders"]
+                kms = (h.get("x-goog-encryption-kms-key-name") if gcs
+                       else str(h.get("x-amz-server-side-encryption", "")).startswith("aws:kms"))
+                if not kms:
+                    plain.append(key)
+        except Exception as exc:  # noqa: BLE001
+            ev["object_level"] = {"state": "unreadable", "error": error_text(exc)}
+            return unknown("object_level_unreadable", **ev)
+        ev["object_level"] = {"state": "checked", "objects": len(keys), "customer_key": len(keys) - len(plain),
+                              "not_customer_key": len(plain), "not_customer_key_sample": sorted(plain)[:5],
+                              "header": "x-goog-encryption-kms-key-name" if gcs else "x-amz-server-side-encryption"}
+        if bucket_obs.verdict == PASS and plain:
+            return failed("plaintext_objects_present", **ev)
+        return Obs(bucket_obs.verdict, bucket_obs.reason, ev)
 
     def _gcs_enc(self, **extra: Any) -> Obs:
         """GCS has no S3 GetBucketEncryption (XML API answers NotImplemented). Read the bucket's default key with the
@@ -395,7 +435,7 @@ class ObjectStoreProbe:
             return unknown("encryption_unreadable", error=error_text(exc), **ev)
         key = (enc or {}).get("defaultKmsKeyName")
         ev["rules"] = [{"algorithm": "cloud-kms" if key else "google-managed", "kms_key": key}]
-        return passed("customer_managed_key", **ev) if key else failed("not_customer_key", **ev)
+        return self._objects_enc(passed("customer_managed_key", **ev)) if key else failed("not_customer_key", **ev)
 
     # OBJ-06 plain HTTP must be refused: connection refused, or AccessDenied over http:// while the same
     # credential reads the canary over https:// (so the refusal is about the transport, not the identity).

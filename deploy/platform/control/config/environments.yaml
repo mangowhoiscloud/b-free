@@ -53,6 +53,16 @@ environments:
       control_paths: ["chat-pgbouncer.chat.svc:6432"]          # the app's own DB path must connect
       denied_paths: ["169.254.169.254:80", "1.1.1.1:80"]       # instance metadata, an outside host on a non-app port
       timeout_s: 3
+      # OBJ-PLAIN-EGRESS: from the same probe Pod; the app sets no S3_ENDPOINT_URL (SDK default https, regional).
+      object_store_tls_path: "s3.ap-northeast-2.amazonaws.com:443"
+      object_store_plain_path: "s3.ap-northeast-2.amazonaws.com:80"
+      # NET-EXTERNAL-SCAN from the platform. Edge: Cloudflare proxied name (Cloudflare answers 80/443/8080/8443 itself;
+      # the origin has no inbound port, the tunnel dials out). EKS API: public endpoint limited to the operator CIDR.
+      public_endpoints:
+        - {host: b-free-chat-src.mangowhois.ai, kind: edge, allow: [80, 443, 8080, 8443]}
+        - {host: 4085FE75E8BD75E727BD03FBB9729334.gr7.ap-northeast-2.eks.amazonaws.com, kind: control_plane, allow: [443],
+           note: "EKS public endpoint, publicAccessCidrs = operator /32"}
+    repository: {root: /srv/repo/apps/demo}   # SEC-GIT-PLAINTEXT: gate init container checkout (customer-app-source)
   target-onprem:
     display_name: "목적지 · 온프렘 RKE2 CIS (Lima VM 2대)"
     kubernetes:
@@ -90,6 +100,13 @@ environments:
       control_paths: ["chat-pgbouncer.chat.svc:6432"]          # the app's own DB path must connect
       denied_paths: ["169.254.169.254:80", "1.1.1.1:80"]       # instance metadata, an outside host on a non-app port
       timeout_s: 3
+      # OBJ-PLAIN-EGRESS: RGW TLS port vs its plain listener (Service 80 -> pod 8080); app S3_ENDPOINT_URL https.
+      object_store_tls_path: "rook-ceph-rgw-bravo.rook-ceph.svc:443"
+      object_store_plain_path: "rook-ceph-rgw-bravo.rook-ceph.svc:80"
+      # NET-EXTERNAL-SCAN: the Lima VMs have no public address (laptop NAT); the only public name is the Cloudflare edge.
+      public_endpoints:
+        - {host: b-free-chat-dst.mangowhois.ai, kind: edge, allow: [80, 443, 8080, 8443]}
+    repository: {root: /srv/repo/apps/demo}
   target-gcp:
     display_name: "목적지 · GKE (b-free-target-20261102)"
     kubernetes:
@@ -128,3 +145,15 @@ environments:
       control_paths: ["chat-pgbouncer.chat.svc:6432"]          # the app's own DB path must connect
       denied_paths: ["169.254.169.254:80", "1.1.1.1:80"]       # instance metadata, an outside host on a non-app port
       timeout_s: 3
+      # OBJ-PLAIN-EGRESS (compensating control for OBJ-06 FAIL: GCS accepts plain HTTP, no organization for
+      # storage.secureHttpTransport): chat egress allows 443 only, app S3_ENDPOINT_URL https://storage.googleapis.com.
+      object_store_tls_path: "storage.googleapis.com:443"
+      object_store_plain_path: "storage.googleapis.com:80"
+      # NET-EXTERNAL-SCAN: Cloudflare edge; GKE DNS endpoint (Google front end: 443 API with IAM, 80 answers 400);
+      # the public IP endpoint is disabled (enablePublicEndpoint false), nothing may answer there.
+      public_endpoints:
+        - {host: b-free-chat-gke.mangowhois.ai, kind: edge, allow: [80, 443, 8080, 8443]}
+        - {host: gke-f06891ae4d0346d08ef7adcd75fdbd1d1aa3-510055025217.asia-northeast1-b.gke.goog, kind: control_plane,
+           allow: [80, 443], note: "GKE DNS endpoint on the Google front end"}
+        - {host: 34.146.178.86, kind: control_plane, allow: [], note: "GKE public IP endpoint, disabled"}
+    repository: {root: /srv/repo/apps/demo}

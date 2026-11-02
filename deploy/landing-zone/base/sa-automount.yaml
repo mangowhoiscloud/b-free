@@ -1,0 +1,25 @@
+# CIS 5.1.5 / 5.1.6 (kube-bench rke2-cis-1.9): the "default" ServiceAccount of every namespace does not mount an API
+# token (automountServiceAccountToken: false). RKE2's CIS profile does this only for default, kube-public and
+# kube-node-lease; this policy covers every namespace created after the landing zone (rehearsal-*, verify-*, a
+# scanner's own namespace). Namespaces that already exist are patched by install.sh step sa_automount.
+# A Pod that needs the API runs under its own ServiceAccount; a Pod spec that says true still wins over the SA.
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: bravo-default-sa-no-automount
+spec:
+  evaluation:
+    admission: {enabled: true}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [serviceaccounts]
+  matchConditions:
+    - name: default-sa-outside-kube-system
+      expression: "object.metadata.name == 'default' && object.metadata.namespace != 'kube-system'"
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: "Object{automountServiceAccountToken: false}"

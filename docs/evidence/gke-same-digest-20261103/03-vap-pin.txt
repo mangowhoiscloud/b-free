@@ -1,0 +1,3 @@
+## 2026-11-03 02:53:20 KST gate-credentials.sh rbac (VAP pin in gate-rbac/gke.yaml -> b5c0e764)
+gate-credentials: RBAC bravo-gate-read + ValidatingAdmissionPolicy bravo-gate-netprobe on source, on-prem, GKE
+asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6

@@ -20,7 +20,7 @@
 | 블록 저장 | StorageClass `bravo-db`, `bravo-general` | 같은 클래스 이름 |
 | 비밀 | External Secrets만. 값은 플랫폼 OpenBao 한 곳에만 있고, 링크를 거쳐 그 환경 경로만 당겨 옴(D-26). 고객 클러스터에 금고를 두지 않음 | 쿠버네티스 Secret |
 | 네트워크 | Cilium + Hubble(흐름 기록), Gateway API(Envoy, Cilium 구현)가 환경 안 진입점 | 같은 정책 · 같은 진입 이름 |
-| 정책 | Kyverno(기본 차단 생성, digest 강제), OPA(정책 검사), Pod Security `restricted` | 같은 거부 규칙 |
+| 정책 | Kyverno(기본 차단 생성, digest 강제, 기본 ServiceAccount 토큰 자동 마운트 끔 `bravo-default-sa-no-automount`, CIS 5.1.5 · 2026-11-03), OPA(정책 검사), Pod Security `restricted` | 같은 거부 규칙 |
 | 배포 | Argo CD(배포 저장소를 당겨 옴, 배포 거부 창) | 같은 배포 방식 |
 | 연결 | `cf-edge`(Cloudflare Tunnel), `bravo-link`(상대 환경 서비스를 로컬 이름으로) | 같은 서비스 이름 |
 | 관측 | OTel Collector 에이전트 → 플랫폼 Collector | 같은 지표 · 트레이스 이름 |

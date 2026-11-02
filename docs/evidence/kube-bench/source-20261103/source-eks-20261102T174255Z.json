@@ -1,0 +1,1100 @@
+{
+  "report": {
+    "Controls": [
+      {
+        "id": "2",
+        "version": "eks-1.8.0",
+        "detected_version": "none",
+        "text": "Control Plane Configuration",
+        "node_type": "controlplane",
+        "tests": [
+          {
+            "section": "2.1",
+            "type": "",
+            "pass": 0,
+            "fail": 0,
+            "warn": 2,
+            "info": 0,
+            "desc": "Logging",
+            "results": [
+              {
+                "test_number": "2.1.1",
+                "test_desc": "Enable audit Logs (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "From Console:\n1.  For each EKS Cluster in each region;\n2.  Go to 'Amazon EKS' > 'Clusters' > '' > 'Configuration' > 'Logging'.\n3.  Click 'Manage logging'.\n4.  Ensure that all options are toggled to 'Enabled'.\n      API server: Enabled\n      Audit: Enabled\n      Authenticator: Enabled\n      Controller manager: Enabled\n      Scheduler: Enabled\n5.  Click 'Save Changes'.\n\nFrom CLI:\n# For each EKS Cluster in each region;\naws eks update-cluster-config \\\n  --region '${REGION_CODE}' \\\n  --name '${CLUSTER_NAME}' \\\n  --logging '{\"clusterLogging\":[{\"types\":[\"api\",\"audit\",\"authenticator\",\"controllerManager\",\"scheduler\"],\"enabled\":true}]}'\n",
+                "test_info": [
+                  "From Console:\n1.  For each EKS Cluster in each region;\n2.  Go to 'Amazon EKS' > 'Clusters' > '' > 'Configuration' > 'Logging'.\n3.  Click 'Manage logging'.\n4.  Ensure that all options are toggled to 'Enabled'.\n      API server: Enabled\n      Audit: Enabled\n      Authenticator: Enabled\n      Controller manager: Enabled\n      Scheduler: Enabled\n5.  Click 'Save Changes'.\n\nFrom CLI:\n# For each EKS Cluster in each region;\naws eks update-cluster-config \\\n  --region '${REGION_CODE}' \\\n  --name '${CLUSTER_NAME}' \\\n  --logging '{\"clusterLogging\":[{\"types\":[\"api\",\"audit\",\"authenticator\",\"controllerManager\",\"scheduler\"],\"enabled\":true}]}'\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "2.1.2",
+                "test_desc": "Ensure audit logs are collected and managed (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Create or update the audit-policy.yaml to specify the audit logging configuration:\napiVersion: audit.k8s.io/v1\nkind: Policy\nrules:\n  - level: Metadata\n    resources:\n      - group: \"\"\n        resources: [\"pods\"]\nApply the audit policy configuration to the cluster:\n  kubectl apply -f <path-to-audit-policy>.yaml\nEnsure audit logs are forwarded to a centralized logging system like CloudWatch, Elasticsearch, or another log management solution:\n  kubectl create configmap cluster-audit-policy --from-file=audit-policy.yaml -n kube-system\n  kubectl apply -f - <<EOF\napiVersion: v1\nkind: Pod\nmetadata:\n  name: audit-logging\n  namespace: kube-system\nspec:\n  containers:\n    - name: audit-log-forwarder\n      image: my-log-forwarder-image\n      volumeMounts:\n        - mountPath: /etc/kubernetes/audit\n          name: audit-config\n  volumes:\n    - name: audit-config\n      configMap:\n        name: cluster-audit-policy\n  EOF\n",
+                "test_info": [
+                  "Create or update the audit-policy.yaml to specify the audit logging configuration:\napiVersion: audit.k8s.io/v1\nkind: Policy\nrules:\n  - level: Metadata\n    resources:\n      - group: \"\"\n        resources: [\"pods\"]\nApply the audit policy configuration to the cluster:\n  kubectl apply -f <path-to-audit-policy>.yaml\nEnsure audit logs are forwarded to a centralized logging system like CloudWatch, Elasticsearch, or another log management solution:\n  kubectl create configmap cluster-audit-policy --from-file=audit-policy.yaml -n kube-system\n  kubectl apply -f - <<EOF\napiVersion: v1\nkind: Pod\nmetadata:\n  name: audit-logging\n  namespace: kube-system\nspec:\n  containers:\n    - name: audit-log-forwarder\n      image: my-log-forwarder-image\n      volumeMounts:\n        - mountPath: /etc/kubernetes/audit\n          name: audit-config\n  volumes:\n    - name: audit-config\n      configMap:\n        name: cluster-audit-policy\n  EOF\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          }
+        ],
+        "total_pass": 0,
+        "total_fail": 0,
+        "total_warn": 2,
+        "total_info": 0
+      },
+      {
+        "id": "3",
+        "version": "eks-1.8.0",
+        "detected_version": "none",
+        "text": "Worker Nodes",
+        "node_type": "node",
+        "tests": [
+          {
+            "section": "3.1",
+            "type": "",
+            "pass": 4,
+            "fail": 0,
+            "warn": 0,
+            "info": 0,
+            "desc": "Worker Node Configuration Files",
+            "results": [
+              {
+                "test_number": "3.1.1",
+                "test_desc": "Ensure that the kubeconfig file permissions are set to 644 or more restrictive (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/kubelet/kubeconfig; then stat -c permissions=%a /var/lib/kubelet/kubeconfig; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 644 /var/lib/kubelet/kubeconfig\n",
+                "test_info": [
+                  "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchmod 644 /var/lib/kubelet/kubeconfig\n"
+                ],
+                "status": "PASS",
+                "actual_value": "permissions=644",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "permissions has permissions 644, expected 644 or more restrictive"
+              },
+              {
+                "test_number": "3.1.2",
+                "test_desc": "Ensure that the kubelet kubeconfig file ownership is set to root:root (Automated)",
+                "audit": "/bin/sh -c 'if test -e /var/lib/kubelet/kubeconfig; then stat -c %U:%G /var/lib/kubelet/kubeconfig; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchown root:root /var/lib/kubelet/kubeconfig\n",
+                "test_info": [
+                  "Run the below command (based on the file location on your system) on the each worker node.\nFor example,\nchown root:root /var/lib/kubelet/kubeconfig\n"
+                ],
+                "status": "PASS",
+                "actual_value": "root:root",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'root:root' is present"
+              },
+              {
+                "test_number": "3.1.3",
+                "test_desc": "Ensure that the kubelet configuration file has permissions set to 644 or more restrictive (Automated)",
+                "audit": "/bin/sh -c 'if test -e /etc/kubernetes/kubelet/config.json; then stat -c permissions=%a /etc/kubernetes/kubelet/config.json; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the following command (using the config file location identified in the Audit step)\nchmod 644 /etc/kubernetes/kubelet/config.json\n",
+                "test_info": [
+                  "Run the following command (using the config file location identified in the Audit step)\nchmod 644 /etc/kubernetes/kubelet/config.json\n"
+                ],
+                "status": "PASS",
+                "actual_value": "permissions=644",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "permissions has permissions 644, expected 644 or more restrictive"
+              },
+              {
+                "test_number": "3.1.4",
+                "test_desc": "Ensure that the kubelet configuration file ownership is set to root:root (Automated)",
+                "audit": "/bin/sh -c 'if test -e /etc/kubernetes/kubelet/config.json; then stat -c %U:%G /etc/kubernetes/kubelet/config.json; fi' ",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Run the following command (using the config file location identified in the Audit step)\nchown root:root /etc/kubernetes/kubelet/config.json\n",
+                "test_info": [
+                  "Run the following command (using the config file location identified in the Audit step)\nchown root:root /etc/kubernetes/kubelet/config.json\n"
+                ],
+                "status": "PASS",
+                "actual_value": "root:root",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'root:root' is present"
+              }
+            ]
+          },
+          {
+            "section": "3.2",
+            "type": "",
+            "pass": 9,
+            "fail": 0,
+            "warn": 0,
+            "info": 0,
+            "desc": "Kubelet",
+            "results": [
+              {
+                "test_number": "3.2.1",
+                "test_desc": "Ensure that the Anonymous Auth is Not Enabled (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "Remediation Method 1:\nIf configuring via the Kubelet config file, you first need to locate the file.\nTo do this, SSH to each node and execute the following command to find the kubelet\nprocess:\nps -ef | grep kubelet\nThe output of the above command provides details of the active kubelet process, from\nwhich we can see the location of the configuration file provided to the kubelet service\nwith the --config argument. The file can be viewed with a command such as more or\nless, like so:\nsudo less /path/to/kubelet-config.json\nDisable Anonymous Authentication by setting the following parameter:\n\"authentication\": { \"anonymous\": { \"enabled\": false } }\n\nRemediation Method 2.\nIf using executable arguments, edit the kubelet service file on each worker node and\nensure the below parameters are part of the KUBELET_ARGS variable string.\nFor systems using systemd, such as the Amazon EKS Optimised Amazon Linux or\nBottlerocket AMIs, then this file can be found at\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf. Otherwise,\nyou may need to look up documentation for your chosen operating system to determine\nwhich service manager is configured:\n--anonymous-auth=false\n\nFor Both Remediation Steps:\nBased on your system, restart the kubelet service and check the service status.\nThe following example is for operating systems using systemd, such as the Amazon\nEKS Optimised Amazon Linux or Bottlerocket AMIs, and invokes the systemctl\ncommand. If systemctl is not available then you will need to look up documentation for\nyour chosen operating system to determine which service manager is configured:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n",
+                "test_info": [
+                  "Remediation Method 1:\nIf configuring via the Kubelet config file, you first need to locate the file.\nTo do this, SSH to each node and execute the following command to find the kubelet\nprocess:\nps -ef | grep kubelet\nThe output of the above command provides details of the active kubelet process, from\nwhich we can see the location of the configuration file provided to the kubelet service\nwith the --config argument. The file can be viewed with a command such as more or\nless, like so:\nsudo less /path/to/kubelet-config.json\nDisable Anonymous Authentication by setting the following parameter:\n\"authentication\": { \"anonymous\": { \"enabled\": false } }\n\nRemediation Method 2.\nIf using executable arguments, edit the kubelet service file on each worker node and\nensure the below parameters are part of the KUBELET_ARGS variable string.\nFor systems using systemd, such as the Amazon EKS Optimised Amazon Linux or\nBottlerocket AMIs, then this file can be found at\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf. Otherwise,\nyou may need to look up documentation for your chosen operating system to determine\nwhich service manager is configured:\n--anonymous-auth=false\n\nFor Both Remediation Steps:\nBased on your system, restart the kubelet service and check the service status.\nThe following example is for operating systems using systemd, such as the Amazon\nEKS Optimised Amazon Linux or Bottlerocket AMIs, and invokes the systemctl\ncommand. If systemctl is not available then you will need to look up documentation for\nyour chosen operating system to determine which service manager is configured:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.authentication.anonymous.enabled}' is equal to 'false'"
+              },
+              {
+                "test_number": "3.2.2",
+                "test_desc": "Ensure that the --authorization-mode argument is not set to AlwaysAllow (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "Remediation Method 1:\nIf configuring via the Kubelet config file, you first need to locate the file.\nTo do this, SSH to each node and execute the following command to find the kubelet\nprocess:\nps -ef | grep kubelet\nThe output of the above command provides details of the active kubelet process, from\nwhich we can see the location of the configuration file provided to the kubelet service\nwith the --config argument. The file can be viewed with a command such as more or\nless, like so:\nsudo less /path/to/kubelet-config.json\nEnable Webhook Authentication by setting the following parameter:\n\"authentication\": { \"webhook\": { \"enabled\": true } }\nNext, set the Authorization Mode to Webhook by setting the following parameter:\n\"authorization\": { \"mode\": \"Webhook }\nFiner detail of the authentication and authorization fields can be found in the\nKubelet Configuration documentation.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file on each worker node and\nensure the below parameters are part of the KUBELET_ARGS variable string.\nFor systems using systemd, such as the Amazon EKS Optimised Amazon Linux or\nBottlerocket AMIs, then this file can be found at\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf. Otherwise,\nyou may need to look up documentation for your chosen operating system to determine\nwhich service manager is configured:\n--authentication-token-webhook\n--authorization-mode=Webhook\n\nFor Both Remediation Steps:\nBased on your system, restart the kubelet service and check the service status.\nThe following example is for operating systems using systemd, such as the Amazon\nEKS Optimised Amazon Linux or Bottlerocket AMIs, and invokes the systemctl\ncommand. If systemctl is not available then you will need to look up documentation for\nyour chosen operating system to determine which service manager is configured:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n",
+                "test_info": [
+                  "Remediation Method 1:\nIf configuring via the Kubelet config file, you first need to locate the file.\nTo do this, SSH to each node and execute the following command to find the kubelet\nprocess:\nps -ef | grep kubelet\nThe output of the above command provides details of the active kubelet process, from\nwhich we can see the location of the configuration file provided to the kubelet service\nwith the --config argument. The file can be viewed with a command such as more or\nless, like so:\nsudo less /path/to/kubelet-config.json\nEnable Webhook Authentication by setting the following parameter:\n\"authentication\": { \"webhook\": { \"enabled\": true } }\nNext, set the Authorization Mode to Webhook by setting the following parameter:\n\"authorization\": { \"mode\": \"Webhook }\nFiner detail of the authentication and authorization fields can be found in the\nKubelet Configuration documentation.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file on each worker node and\nensure the below parameters are part of the KUBELET_ARGS variable string.\nFor systems using systemd, such as the Amazon EKS Optimised Amazon Linux or\nBottlerocket AMIs, then this file can be found at\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf. Otherwise,\nyou may need to look up documentation for your chosen operating system to determine\nwhich service manager is configured:\n--authentication-token-webhook\n--authorization-mode=Webhook\n\nFor Both Remediation Steps:\nBased on your system, restart the kubelet service and check the service status.\nThe following example is for operating systems using systemd, such as the Amazon\nEKS Optimised Amazon Linux or Bottlerocket AMIs, and invokes the systemctl\ncommand. If systemctl is not available then you will need to look up documentation for\nyour chosen operating system to determine which service manager is configured:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.authorization.mode}' does not have 'AlwaysAllow'"
+              },
+              {
+                "test_number": "3.2.3",
+                "test_desc": "Ensure that a Client CA File is Configured (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "Remediation Method 1:\nIf configuring via the Kubelet config file, you first need to locate the file.\nTo do this, SSH to each node and execute the following command to find the kubelet\nprocess:\nps -ef | grep kubelet\nThe output of the above command provides details of the active kubelet process, from\nwhich we can see the location of the configuration file provided to the kubelet service\nwith the --config argument. The file can be viewed with a command such as more or\nless, like so:\nsudo less /path/to/kubelet-config.json\nConfigure the client certificate authority file by setting the following parameter\nappropriately:\n\"authentication\": { \"x509\": {\"clientCAFile\": <path/to/client-ca-file> } }\"\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file on each worker node and\nensure the below parameters are part of the KUBELET_ARGS variable string.\nFor systems using systemd, such as the Amazon EKS Optimised Amazon Linux or\nBottlerocket AMIs, then this file can be found at\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf. Otherwise,\nyou may need to look up documentation for your chosen operating system to determine\nwhich service manager is configured:\n--client-ca-file=<path/to/client-ca-file>\n\nFor Both Remediation Steps:\nBased on your system, restart the kubelet service and check the service status.\nThe following example is for operating systems using systemd, such as the Amazon\nEKS Optimised Amazon Linux or Bottlerocket AMIs, and invokes the systemctl\ncommand. If systemctl is not available then you will need to look up documentation for\nyour chosen operating system to determine which service manager is configured:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n",
+                "test_info": [
+                  "Remediation Method 1:\nIf configuring via the Kubelet config file, you first need to locate the file.\nTo do this, SSH to each node and execute the following command to find the kubelet\nprocess:\nps -ef | grep kubelet\nThe output of the above command provides details of the active kubelet process, from\nwhich we can see the location of the configuration file provided to the kubelet service\nwith the --config argument. The file can be viewed with a command such as more or\nless, like so:\nsudo less /path/to/kubelet-config.json\nConfigure the client certificate authority file by setting the following parameter\nappropriately:\n\"authentication\": { \"x509\": {\"clientCAFile\": <path/to/client-ca-file> } }\"\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file on each worker node and\nensure the below parameters are part of the KUBELET_ARGS variable string.\nFor systems using systemd, such as the Amazon EKS Optimised Amazon Linux or\nBottlerocket AMIs, then this file can be found at\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf. Otherwise,\nyou may need to look up documentation for your chosen operating system to determine\nwhich service manager is configured:\n--client-ca-file=<path/to/client-ca-file>\n\nFor Both Remediation Steps:\nBased on your system, restart the kubelet service and check the service status.\nThe following example is for operating systems using systemd, such as the Amazon\nEKS Optimised Amazon Linux or Bottlerocket AMIs, and invokes the systemctl\ncommand. If systemctl is not available then you will need to look up documentation for\nyour chosen operating system to determine which service manager is configured:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.authentication.x509.clientCAFile}' is present"
+              },
+              {
+                "test_number": "3.2.4",
+                "test_desc": "Ensure that the --read-only-port is disabled (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "If modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to 0\n\"readOnlyPort\": 0\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--read-only-port=0\n\nBased on your system, restart the kubelet service and check status\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n",
+                "test_info": [
+                  "If modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to 0\n\"readOnlyPort\": 0\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--read-only-port=0\n\nBased on your system, restart the kubelet service and check status\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.readOnlyPort}' is equal to '0'"
+              },
+              {
+                "test_number": "3.2.5",
+                "test_desc": "Ensure that the --streaming-connection-idle-timeout argument is not set to 0 (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to a\nnon-zero value in the format of #h#m#s\n\"streamingConnectionIdleTimeout\": \"4h0m0s\"\nYou should ensure that the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf does not\nspecify a --streaming-connection-idle-timeout argument because it would\noverride the Kubelet config file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--streaming-connection-idle-timeout=4h0m0s\n\nRemediation Method 3:\nIf using the api configz endpoint consider searching for the status of\n\"streamingConnectionIdleTimeout\": by extracting the live configuration from the\nnodes running kubelet.\n**See detailed step-by-step configmap procedures in Reconfigure a Node's Kubelet in a\nLive Cluster, and then rerun the curl statement from audit process to check for kubelet\nconfiguration changes\nkubectl proxy --port=8001 &\nexport HOSTNAME_PORT=localhost:8001 (example host and port number)\nexport NODE_NAME=ip-192.168.31.226.ec2.internal (example node name from \"kubectl get nodes\")\ncurl -sSL \"http://${HOSTNAME_PORT}/api/v1/nodes/${NODE_NAME}/proxy/configz\"\n\nFor all three remediations:\nBased on your system, restart the kubelet service and check status\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n",
+                "test_info": [
+                  "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to a\nnon-zero value in the format of #h#m#s\n\"streamingConnectionIdleTimeout\": \"4h0m0s\"\nYou should ensure that the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf does not\nspecify a --streaming-connection-idle-timeout argument because it would\noverride the Kubelet config file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--streaming-connection-idle-timeout=4h0m0s\n\nRemediation Method 3:\nIf using the api configz endpoint consider searching for the status of\n\"streamingConnectionIdleTimeout\": by extracting the live configuration from the\nnodes running kubelet.\n**See detailed step-by-step configmap procedures in Reconfigure a Node's Kubelet in a\nLive Cluster, and then rerun the curl statement from audit process to check for kubelet\nconfiguration changes\nkubectl proxy --port=8001 &\nexport HOSTNAME_PORT=localhost:8001 (example host and port number)\nexport NODE_NAME=ip-192.168.31.226.ec2.internal (example node name from \"kubectl get nodes\")\ncurl -sSL \"http://${HOSTNAME_PORT}/api/v1/nodes/${NODE_NAME}/proxy/configz\"\n\nFor all three remediations:\nBased on your system, restart the kubelet service and check status\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.streamingConnectionIdleTimeout}' is present OR '{.streamingConnectionIdleTimeout}' is not present"
+              },
+              {
+                "test_number": "3.2.6",
+                "test_desc": "Ensure that the --make-iptables-util-chains argument is set to true (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to\ntrue\n\"makeIPTablesUtilChains\": true\nEnsure that /etc/systemd/system/kubelet.service.d/10-kubelet-args.conf\ndoes not set the --make-iptables-util-chains argument because that would\noverride your Kubelet config file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--make-iptables-util-chains:true\n\nRemediation Method 3:\nIf using the api configz endpoint consider searching for the status of\n\"makeIPTablesUtilChains.: true by extracting the live configuration from the nodes\nrunning kubelet.\n**See detailed step-by-step configmap procedures in Reconfigure a Node's Kubelet in a\nLive Cluster, and then rerun the curl statement from audit process to check for kubelet\nconfiguration changes\nkubectl proxy --port=8001 &\nexport HOSTNAME_PORT=localhost:8001 (example host and port number)\nexport NODE_NAME=ip-192.168.31.226.ec2.internal (example node name from \"kubectl get nodes\")\ncurl -sSL \"http://${HOSTNAME_PORT}/api/v1/nodes/${NODE_NAME}/proxy/configz\"\n\nFor all three remediations:\nBased on your system, restart the kubelet service and check status\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n",
+                "test_info": [
+                  "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to\ntrue\n\"makeIPTablesUtilChains\": true\nEnsure that /etc/systemd/system/kubelet.service.d/10-kubelet-args.conf\ndoes not set the --make-iptables-util-chains argument because that would\noverride your Kubelet config file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--make-iptables-util-chains:true\n\nRemediation Method 3:\nIf using the api configz endpoint consider searching for the status of\n\"makeIPTablesUtilChains.: true by extracting the live configuration from the nodes\nrunning kubelet.\n**See detailed step-by-step configmap procedures in Reconfigure a Node's Kubelet in a\nLive Cluster, and then rerun the curl statement from audit process to check for kubelet\nconfiguration changes\nkubectl proxy --port=8001 &\nexport HOSTNAME_PORT=localhost:8001 (example host and port number)\nexport NODE_NAME=ip-192.168.31.226.ec2.internal (example node name from \"kubectl get nodes\")\ncurl -sSL \"http://${HOSTNAME_PORT}/api/v1/nodes/${NODE_NAME}/proxy/configz\"\n\nFor all three remediations:\nBased on your system, restart the kubelet service and check status\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.makeIPTablesUtilChains}' is present OR '{.makeIPTablesUtilChains}' is not present"
+              },
+              {
+                "test_number": "3.2.7",
+                "test_desc": "Ensure that the --eventRecordQPS argument is set to 0 or a level which ensures appropriate event capture (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "If using a Kubelet config file, edit the file to set eventRecordQPS: to an appropriate\nlevel.\nIf using command line arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubeadm.conf on each worker node\nand set the below parameter in KUBELET_SYSTEM_PODS_ARGS variable.\nBased on your system, restart the kubelet service. For example:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\n",
+                "test_info": [
+                  "If using a Kubelet config file, edit the file to set eventRecordQPS: to an appropriate\nlevel.\nIf using command line arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubeadm.conf on each worker node\nand set the below parameter in KUBELET_SYSTEM_PODS_ARGS variable.\nBased on your system, restart the kubelet service. For example:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.eventRecordQPS}' is present OR '{.eventRecordQPS}' is not present"
+              },
+              {
+                "test_number": "3.2.8",
+                "test_desc": "Ensure that the --rotate-certificates argument is not present or is set to true (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to\ntrue\n\"RotateCertificate\":true\nAdditionally, ensure that the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf does not set the --RotateCertificate\nexecutable argument to false because this would override the Kubelet\nconfig file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--rotate-certificates=true\n",
+                "test_info": [
+                  "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to\ntrue\n\"RotateCertificate\":true\nAdditionally, ensure that the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf does not set the --RotateCertificate\nexecutable argument to false because this would override the Kubelet\nconfig file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--rotate-certificates=true\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.rotateCertificates}' is present OR '{.rotateCertificates}' is not present"
+              },
+              {
+                "test_number": "3.2.9",
+                "test_desc": "Ensure that the RotateKubeletServerCertificate argument is set to true (Automated)",
+                "audit": "/bin/ps -fC kubelet",
+                "AuditEnv": "",
+                "AuditConfig": "/bin/cat /etc/kubernetes/kubelet/config.json",
+                "type": "",
+                "remediation": "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to\ntrue\n\n\"featureGates\": {\n  \"RotateKubeletServerCertificate\":true\n},\n\nAdditionally, ensure that the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf does not set\nthe --rotate-kubelet-server-certificate executable argument to false because\nthis would override the Kubelet config file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--rotate-kubelet-server-certificate=true\n\nRemediation Method 3:\nIf using the api configz endpoint consider searching for the status of\n\"RotateKubeletServerCertificate\": by extracting the live configuration from the\nnodes running kubelet.\n**See detailed step-by-step configmap procedures in Reconfigure a Node's Kubelet in a\nLive Cluster, and then rerun the curl statement from audit process to check for kubelet\nconfiguration changes\nkubectl proxy --port=8001 &\nexport HOSTNAME_PORT=localhost:8001 (example host and port number)\nexport NODE_NAME=ip-192.168.31.226.ec2.internal (example node name from \"kubectl get nodes\")\ncurl -sSL \"http://${HOSTNAME_PORT}/api/v1/nodes/${NODE_NAME}/proxy/configz\"\n\nFor all three remediation methods:\nRestart the kubelet service and check status. The example below is for when using\nsystemctl to manage services:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n",
+                "test_info": [
+                  "Remediation Method 1:\nIf modifying the Kubelet config file, edit the kubelet-config.json file\n/etc/kubernetes/kubelet/kubelet-config.json and set the below parameter to\ntrue\n\n\"featureGates\": {\n  \"RotateKubeletServerCertificate\":true\n},\n\nAdditionally, ensure that the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf does not set\nthe --rotate-kubelet-server-certificate executable argument to false because\nthis would override the Kubelet config file.\n\nRemediation Method 2:\nIf using executable arguments, edit the kubelet service file\n/etc/systemd/system/kubelet.service.d/10-kubelet-args.conf on each\nworker node and add the below parameter at the end of the KUBELET_ARGS variable\nstring.\n--rotate-kubelet-server-certificate=true\n\nRemediation Method 3:\nIf using the api configz endpoint consider searching for the status of\n\"RotateKubeletServerCertificate\": by extracting the live configuration from the\nnodes running kubelet.\n**See detailed step-by-step configmap procedures in Reconfigure a Node's Kubelet in a\nLive Cluster, and then rerun the curl statement from audit process to check for kubelet\nconfiguration changes\nkubectl proxy --port=8001 &\nexport HOSTNAME_PORT=localhost:8001 (example host and port number)\nexport NODE_NAME=ip-192.168.31.226.ec2.internal (example node name from \"kubectl get nodes\")\ncurl -sSL \"http://${HOSTNAME_PORT}/api/v1/nodes/${NODE_NAME}/proxy/configz\"\n\nFor all three remediation methods:\nRestart the kubelet service and check status. The example below is for when using\nsystemctl to manage services:\nsystemctl daemon-reload\nsystemctl restart kubelet.service\nsystemctl status kubelet -l\n"
+                ],
+                "status": "PASS",
+                "actual_value": "{\n    \"address\": \"0.0.0.0\",\n    \"authentication\": {\n        \"x509\": {\n            \"clientCAFile\": \"/etc/kubernetes/pki/ca.crt\"\n        },\n        \"webhook\": {\n            \"enabled\": true,\n            \"cacheTTL\": \"2m0s\"\n        },\n        \"anonymous\": {\n            \"enabled\": false\n        }\n    },\n    \"authorization\": {\n        \"mode\": \"Webhook\",\n        \"webhook\": {\n            \"cacheAuthorizedTTL\": \"5m0s\",\n            \"cacheUnauthorizedTTL\": \"30s\"\n        }\n    },\n    \"cgroupDriver\": \"systemd\",\n    \"cgroupRoot\": \"/\",\n    \"clusterDNS\": [\n        \"172.20.0.10\"\n    ],\n    \"clusterDomain\": \"cluster.local\",\n    \"containerRuntimeEndpoint\": \"unix:///run/containerd/containerd.sock\",\n    \"evictionHard\": {\n        \"memory.available\": \"100Mi\",\n        \"nodefs.available\": \"10%\",\n        \"nodefs.inodesFree\": \"5%\"\n    },\n    \"featureGates\": {\n        \"DynamicResourceAllocation\": true,\n        \"MutableCSINodeAllocatableCount\": true,\n        \"RotateKubeletServerCertificate\": true\n    },\n    \"hairpinMode\": \"hairpin-veth\",\n    \"kubeReserved\": {\n        \"cpu\": \"70m\",\n        \"ephemeral-storage\": \"1Gi\",\n        \"memory\": \"640Mi\"\n    },\n    \"kubeReservedCgroup\": \"/runtime\",\n    \"logging\": {\n        \"verbosity\": 2\n    },\n    \"maxPods\": 35,\n    \"protectKernelDefaults\": true,\n    \"providerID\": \"aws:///ap-northeast-2a/i-0695c4c6ec51b2a6f\",\n    \"readOnlyPort\": 0,\n    \"serializeImagePulls\": false,\n    \"serverTLSBootstrap\": true,\n    \"shutdownGracePeriod\": \"2m30s\",\n    \"shutdownGracePeriodCriticalPods\": \"30s\",\n    \"systemReservedCgroup\": \"/system\",\n    \"tlsCipherSuites\": [\n        \"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\",\n        \"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\",\n        \"TLS_RSA_WITH_AES_128_GCM_SHA256\",\n        \"TLS_RSA_WITH_AES_256_GCM_SHA384\"\n    ],\n    \"kind\": \"KubeletConfiguration\",\n    \"apiVersion\": \"kubelet.config.k8s.io/v1beta1\"\n}",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'{.featureGates.RotateKubeletServerCertificate}' is equal to 'true'"
+              }
+            ]
+          }
+        ],
+        "total_pass": 13,
+        "total_fail": 0,
+        "total_warn": 0,
+        "total_info": 0
+      },
+      {
+        "id": "4",
+        "version": "eks-1.8.0",
+        "detected_version": "none",
+        "text": "Policies",
+        "node_type": "policies",
+        "tests": [
+          {
+            "section": "4.1",
+            "type": "",
+            "pass": 0,
+            "fail": 6,
+            "warn": 6,
+            "info": 0,
+            "desc": "RBAC and Service Accounts",
+            "results": [
+              {
+                "test_number": "4.1.1",
+                "test_desc": "Ensure that the cluster-admin role is only used where required (Automated)",
+                "audit": "kubectl get clusterrolebindings -o json | jq -r '\n  .items[]\n  | select(.roleRef.name == \"cluster-admin\")\n  | .subjects[]?\n  | select(.kind != \"Group\" or (.name != \"system:masters\" and .name != \"system:nodes\"))\n  | \"FOUND_CLUSTER_ADMIN_BINDING\"\n' || echo \"NO_CLUSTER_ADMIN_BINDINGS\"\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Identify all clusterrolebindings to the cluster-admin role. Check if they are used and if\nthey need this role or if they could use a role with fewer privileges.\nWhere possible, first bind users to a lower privileged role and then remove the\nclusterrolebinding to the cluster-admin role :\nkubectl delete clusterrolebinding [name]\n",
+                "test_info": [
+                  "Identify all clusterrolebindings to the cluster-admin role. Check if they are used and if\nthey need this role or if they could use a role with fewer privileges.\nWhere possible, first bind users to a lower privileged role and then remove the\nclusterrolebinding to the cluster-admin role :\nkubectl delete clusterrolebinding [name]\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "FOUND_CLUSTER_ADMIN_BINDING",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_CLUSTER_ADMIN_BINDINGS' is present"
+              },
+              {
+                "test_number": "4.1.2",
+                "test_desc": "Minimize access to secrets (Automated)",
+                "audit": "count=$(kubectl get roles --all-namespaces -o json | jq '\n  .items[]\n  | select(.rules[]?\n    | (.resources[]? == \"secrets\")\n    and ((.verbs[]? == \"get\") or (.verbs[]? == \"list\") or (.verbs[]? == \"watch\"))\n  )' | wc -l)\n\nif [ \"$count\" -gt 0 ]; then\n  echo \"SECRETS_ACCESS_FOUND\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Where possible, remove get, list and watch access to secret objects in the cluster.\n",
+                "test_info": [
+                  "Where possible, remove get, list and watch access to secret objects in the cluster.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "SECRETS_ACCESS_FOUND",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'SECRETS_ACCESS_FOUND' is not present"
+              },
+              {
+                "test_number": "4.1.3",
+                "test_desc": "Minimize wildcard use in Roles and ClusterRoles (Automated)",
+                "audit": "wildcards=$(kubectl get roles --all-namespaces -o json | jq '\n  .items[] | select(\n    .rules[]? | (.verbs[]? == \"*\" or .resources[]? == \"*\" or .apiGroups[]? == \"*\")\n  )' | wc -l)\n\nwildcards_clusterroles=$(kubectl get clusterroles -o json | jq '\n  .items[] | select(\n    .rules[]? | (.verbs[]? == \"*\" or .resources[]? == \"*\" or .apiGroups[]? == \"*\")\n  )' | wc -l)\n\ntotal=$((wildcards + wildcards_clusterroles))\n\nif [ \"$total\" -gt 0 ]; then\n  echo \"wildcards_present\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Where possible replace any use of wildcards in clusterroles and roles with specific\nobjects or actions.\n",
+                "test_info": [
+                  "Where possible replace any use of wildcards in clusterroles and roles with specific\nobjects or actions.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "wildcards_present",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'wildcards_present' is not present"
+              },
+              {
+                "test_number": "4.1.4",
+                "test_desc": "Minimize access to create pods (Automated)",
+                "audit": "access=$(kubectl get roles,clusterroles -A -o json | jq '\n  [.items[] |\n    select(\n      .rules[]? |\n      (.resources[]? == \"pods\" and .verbs[]? == \"create\")\n    )\n  ] | length')\n\nif [ \"$access\" -gt 0 ]; then\n  echo \"pods_create_access\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Where possible, remove create access to pod objects in the cluster.\n",
+                "test_info": [
+                  "Where possible, remove create access to pod objects in the cluster.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "pods_create_access",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'pods_create_access' is not present"
+              },
+              {
+                "test_number": "4.1.5",
+                "test_desc": "Ensure that default service accounts are not actively used. (Automated)",
+                "audit": "default_sa_count=$(kubectl get serviceaccounts --all-namespaces -o json | jq '\n  [.items[] | select(.metadata.name == \"default\" and (.automountServiceAccountToken != false))] | length')\nif [ \"$default_sa_count\" -gt 0 ]; then\n  echo \"default_sa_not_auto_mounted\"\nfi\npods_using_default_sa=$(kubectl get pods --all-namespaces -o json | jq '\n  [.items[] | select(.spec.serviceAccountName == \"default\")] | length')\nif [ \"$pods_using_default_sa\" -gt 0 ]; then\n  echo \"default_sa_used_in_pods\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Create explicit service accounts wherever a Kubernetes workload requires specific\naccess to the Kubernetes API server.\nModify the configuration of each default service account to include this value\nautomountServiceAccountToken: false\nAutomatic remediation for the default account:\nkubectl patch serviceaccount default -p\n$'automountServiceAccountToken: false'\n",
+                "test_info": [
+                  "Create explicit service accounts wherever a Kubernetes workload requires specific\naccess to the Kubernetes API server.\nModify the configuration of each default service account to include this value\nautomountServiceAccountToken: false\nAutomatic remediation for the default account:\nkubectl patch serviceaccount default -p\n$'automountServiceAccountToken: false'\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "default_sa_not_auto_mounted\ndefault_sa_used_in_pods",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'default_sa_not_auto_mounted' is not present AND 'default_sa_used_in_pods' is not present"
+              },
+              {
+                "test_number": "4.1.6",
+                "test_desc": "Ensure that Service Account Tokens are only mounted where necessary (Automated)",
+                "audit": "pods_with_token_mount=$(kubectl get pods --all-namespaces -o json | jq '\n  [.items[] | select(.spec.automountServiceAccountToken != false)] | length')\n\nif [ \"$pods_with_token_mount\" -gt 0 ]; then\n  echo \"automountServiceAccountToken\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Regularly review pod and service account objects in the cluster to ensure that the automountServiceAccountToken setting is false for pods and accounts that do not explicitly require API server access.\n",
+                "test_info": [
+                  "Regularly review pod and service account objects in the cluster to ensure that the automountServiceAccountToken setting is false for pods and accounts that do not explicitly require API server access.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "automountServiceAccountToken",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'automountServiceAccountToken' is not present"
+              },
+              {
+                "test_number": "4.1.7",
+                "test_desc": "Cluster Access Manager API to streamline and enhance the management of access controls within EKS clusters (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Log in to the AWS Management Console.\n  Navigate to Amazon EKS and select your EKS cluster.\n\n  Go to the Access tab and click on \"Manage Access\" in the \"Access Configuration section\".\n  Under Cluster Authentication Mode for Cluster Access settings.\n  Click EKS API to change cluster will source authenticated IAM principals only from EKS access entry APIs.\n  Click ConfigMap to change cluster will source authenticated IAM principals only from the aws-auth ConfigMap.\nNote: EKS API and ConfigMap must be selected during Cluster creation and cannot be changed once the Cluster is provisioned.\n",
+                "test_info": [
+                  "Log in to the AWS Management Console.\n  Navigate to Amazon EKS and select your EKS cluster.\n\n  Go to the Access tab and click on \"Manage Access\" in the \"Access Configuration section\".\n  Under Cluster Authentication Mode for Cluster Access settings.\n  Click EKS API to change cluster will source authenticated IAM principals only from EKS access entry APIs.\n  Click ConfigMap to change cluster will source authenticated IAM principals only from the aws-auth ConfigMap.\nNote: EKS API and ConfigMap must be selected during Cluster creation and cannot be changed once the Cluster is provisioned.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "4.1.8",
+                "test_desc": "Limit use of the Bind, Impersonate and Escalate permissions in the Kubernetes cluster (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Where possible, remove the impersonate, bind and escalate rights from subjects.\n",
+                "test_info": [
+                  "Where possible, remove the impersonate, bind and escalate rights from subjects.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "4.1.9",
+                "test_desc": "Minimize access to create PersistentVolume objects (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Review the RBAC rules in the cluster and identify users, groups, or service accounts\nwith create permissions on PersistentVolume resources.\nWhere possible, remove or restrict create access to PersistentVolume objects to\ntrusted administrators only.\n",
+                "test_info": [
+                  "Review the RBAC rules in the cluster and identify users, groups, or service accounts\nwith create permissions on PersistentVolume resources.\nWhere possible, remove or restrict create access to PersistentVolume objects to\ntrusted administrators only.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "4.1.10",
+                "test_desc": "Minimize access to the proxy sub-resource of Node objects (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Review RBAC roles and bindings in the cluster to identify users, groups,\nor service accounts with access to the proxy sub-resource of Node objects.\nWhere possible, remove or restrict access to the node proxy sub-resource\nto trusted administrators only.\n",
+                "test_info": [
+                  "Review RBAC roles and bindings in the cluster to identify users, groups,\nor service accounts with access to the proxy sub-resource of Node objects.\nWhere possible, remove or restrict access to the node proxy sub-resource\nto trusted administrators only.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "4.1.11",
+                "test_desc": "Minimize access to webhook configuration objects (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Review RBAC roles and bindings in the cluster to identify users, groups,\nor service accounts with access to validatingwebhookconfigurations or\nmutatingwebhookconfigurations objects. Where possible, remove or restrict\naccess to these webhook configuration objects to trusted administrators only.\n",
+                "test_info": [
+                  "Review RBAC roles and bindings in the cluster to identify users, groups,\nor service accounts with access to validatingwebhookconfigurations or\nmutatingwebhookconfigurations objects. Where possible, remove or restrict\naccess to these webhook configuration objects to trusted administrators only.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "4.1.12",
+                "test_desc": "Minimize access to the service account token creation (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Review RBAC roles and bindings in the cluster to identify users, groups,\nor service accounts with access to create the token sub-resource of\nserviceaccount objects. Where possible, remove or restrict access to\ntoken creation to trusted administrators only.\n",
+                "test_info": [
+                  "Review RBAC roles and bindings in the cluster to identify users, groups,\nor service accounts with access to create the token sub-resource of\nserviceaccount objects. Where possible, remove or restrict access to\ntoken creation to trusted administrators only.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          },
+          {
+            "section": "4.2",
+            "type": "",
+            "pass": 2,
+            "fail": 3,
+            "warn": 0,
+            "info": 0,
+            "desc": "Pod Security Standards",
+            "results": [
+              {
+                "test_number": "4.2.1",
+                "test_desc": "Minimize the admission of privileged containers (Automated)",
+                "audit": "kubectl get pods --all-namespaces -o json | \\\n  jq -r 'if any(.items[]?.spec.containers[]?; .securityContext?.privileged == true) then \"PRIVILEGED_FOUND\" else \"NO_PRIVILEGED\" end'\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Add policies to each namespace in the cluster which has user workloads to restrict the admission of privileged containers.\n  To enable PSA for a namespace in your cluster, set the pod-security.kubernetes.io/enforce label with the policy value you want to enforce.\n  kubectl label --overwrite ns NAMESPACE pod-security.kubernetes.io/enforce=restricted\n  The above command enforces the restricted policy for the NAMESPACE namespace.\nYou can also enable Pod Security Admission for all your namespaces. For example:\n  kubectl label --overwrite ns --all pod-security.kubernetes.io/warn=baseline\n",
+                "test_info": [
+                  "Add policies to each namespace in the cluster which has user workloads to restrict the admission of privileged containers.\n  To enable PSA for a namespace in your cluster, set the pod-security.kubernetes.io/enforce label with the policy value you want to enforce.\n  kubectl label --overwrite ns NAMESPACE pod-security.kubernetes.io/enforce=restricted\n  The above command enforces the restricted policy for the NAMESPACE namespace.\nYou can also enable Pod Security Admission for all your namespaces. For example:\n  kubectl label --overwrite ns --all pod-security.kubernetes.io/warn=baseline\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "PRIVILEGED_FOUND",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_PRIVILEGED' is present"
+              },
+              {
+                "test_number": "4.2.2",
+                "test_desc": "Minimize the admission of containers wishing to share the host process ID namespace (Automated)",
+                "audit": "kubectl get pods --all-namespaces -o json | \\\n  jq -r 'if any(.items[]?; .spec.hostPID == true) then \"HOSTPID_FOUND\" else \"NO_HOSTPID\" end'\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of hostPID containers.\n",
+                "test_info": [
+                  "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of hostPID containers.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "HOSTPID_FOUND",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_HOSTPID' is present"
+              },
+              {
+                "test_number": "4.2.3",
+                "test_desc": "Minimize the admission of containers wishing to share the host IPC namespace (Automated)",
+                "audit": "kubectl get pods --all-namespaces -o json | jq -r 'if any(.items[]?; .spec.hostIPC == true) then \"HOSTIPC_FOUND\" else \"NO_HOSTIPC\" end'\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of hostIPC containers.\n",
+                "test_info": [
+                  "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of hostIPC containers.\n"
+                ],
+                "status": "PASS",
+                "actual_value": "NO_HOSTIPC",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_HOSTIPC' is equal to 'NO_HOSTIPC'"
+              },
+              {
+                "test_number": "4.2.4",
+                "test_desc": "Minimize the admission of containers wishing to share the host network namespace (Automated)",
+                "audit": "kubectl get pods --all-namespaces -o json | jq -r 'if any(.items[]?; .spec.hostNetwork == true) then \"HOSTNETWORK_FOUND\" else \"NO_HOSTNETWORK\" end'\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of hostNetwork containers.\n",
+                "test_info": [
+                  "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of hostNetwork containers.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "HOSTNETWORK_FOUND",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_HOSTNETWORK' is present"
+              },
+              {
+                "test_number": "4.2.5",
+                "test_desc": "Minimize the admission of containers with allowPrivilegeEscalation (Automated)",
+                "audit": "kubectl get pods --all-namespaces -o json | \\\n  jq -r 'if any(.items[]?.spec.containers[]?; .securityContext?.allowPrivilegeEscalation == true) then \"ALLOWPRIVILEGEESCALTION_FOUND\" else \"NO_ALLOWPRIVILEGEESCALATION\" end'\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of containers with .spec.allowPrivilegeEscalation set to true.\n",
+                "test_info": [
+                  "Add policies to each namespace in the cluster which has user workloads to restrict the\nadmission of containers with .spec.allowPrivilegeEscalation set to true.\n"
+                ],
+                "status": "PASS",
+                "actual_value": "NO_ALLOWPRIVILEGEESCALATION",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_ALLOWPRIVILEGEESCALATION' is equal to 'NO_ALLOWPRIVILEGEESCALATION'"
+              }
+            ]
+          },
+          {
+            "section": "4.3",
+            "type": "",
+            "pass": 0,
+            "fail": 1,
+            "warn": 1,
+            "info": 0,
+            "desc": "CNI Plugin",
+            "results": [
+              {
+                "test_number": "4.3.1",
+                "test_desc": "Ensure CNI plugin supports network policies (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "As with RBAC policies, network policies should adhere to the policy of least privileged\naccess. Start by creating a deny all policy that restricts all inbound and outbound traffic\nfrom a namespace or create a global policy using Calico.\n",
+                "test_info": [
+                  "As with RBAC policies, network policies should adhere to the policy of least privileged\naccess. Start by creating a deny all policy that restricts all inbound and outbound traffic\nfrom a namespace or create a global policy using Calico.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "4.3.2",
+                "test_desc": "Ensure that all Namespaces have Network Policies defined (Automated)",
+                "audit": "ns_without_np=$(kubectl get namespaces -o json | jq -r '.items[].metadata.name' | while read ns; do\n  count=$(kubectl get networkpolicy -n $ns --no-headers 2>/dev/null | wc -l)\n  if [ \"$count\" -eq 0 ]; then echo $ns; fi\ndone)\nif [ -z \"$ns_without_np\" ]; then\n  echo \"ALL_NAMESPACES_HAVE_NETWORK_POLICIES\"\nelse\n  echo \"NAMESPACES_WITHOUT_NETWORK_POLICIES: $ns_without_np\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Create at least one NetworkPolicy in each namespace to control and restrict traffic between pods as needed.\n",
+                "test_info": [
+                  "Create at least one NetworkPolicy in each namespace to control and restrict traffic between pods as needed.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "NAMESPACES_WITHOUT_NETWORK_POLICIES: bravo-edge\nbravo-gate-scan\ncilium-secrets\ncnpg-system\ndefault\nexternal-secrets\nkube-node-lease\nkube-public\nkube-system\nkyverno",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'ALL_NAMESPACES_HAVE_NETWORK_POLICIES' is present"
+              }
+            ]
+          },
+          {
+            "section": "4.4",
+            "type": "",
+            "pass": 0,
+            "fail": 1,
+            "warn": 1,
+            "info": 0,
+            "desc": "Secrets Management",
+            "results": [
+              {
+                "test_number": "4.4.1",
+                "test_desc": "Prefer using secrets as files over secrets as environment variables (Automated)",
+                "audit": "result=$(kubectl get all --all-namespaces -o jsonpath='{range .items[?(@..secretKeyRef)]}{.metadata.namespace} {.kind} {.metadata.name}{\"\\n\"}{end}')\nif [ -z \"$result\" ]; then\n  echo \"NO_SECRETS_AS_ENV_VARS\"\nelse\n  echo \"SECRETS_AS_ENV_VARS_FOUND: $result\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "If possible, rewrite application code to read secrets from mounted secret files, rather than\nfrom environment variables.\n",
+                "test_info": [
+                  "If possible, rewrite application code to read secrets from mounted secret files, rather than\nfrom environment variables.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "SECRETS_AS_ENV_VARS_FOUND: bravo-observability Pod platform-otel-7495cbb896-68zqz\nbravo-observability Pod platform-otel-7495cbb896-xf4h2\ncf-edge Pod cloudflared-c69f866ff-474v7\ncf-edge Pod cloudflared-c69f866ff-zkjpp\nchat Pod chat-bravo-demo-54844bc576-mzsdr\nchat Pod chat-bravo-demo-54844bc576-zkknl\nchat Pod dst-db-link-745c696bf8-nnq97\nkube-system Pod ebs-csi-controller-7f6544444c-qhbzj\nkube-system Pod ebs-csi-controller-7f6544444c-z4j4m\nbravo-observability Deployment platform-otel\ncf-edge Deployment cloudflared\nchat Deployment chat-bravo-demo\nchat Deployment dst-db-link\nkube-system Deployment ebs-csi-controller\nbravo-observability ReplicaSet platform-otel-7495cbb896\nbravo-observability ReplicaSet platform-otel-85f99456f8\ncf-edge ReplicaSet cloudflared-c69f866ff\nchat ReplicaSet chat-bravo-demo-54844bc576\nchat ReplicaSet chat-bravo-demo-69c49fd9b\nchat ReplicaSet chat-bravo-demo-b986784d8\nchat ReplicaSet chat-bravo-demo-d5d5499fd\nchat ReplicaSet dst-db-link-745c696bf8\nkube-system ReplicaSet ebs-csi-controller-7f6544444c",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_SECRETS_AS_ENV_VARS' is present"
+              },
+              {
+                "test_number": "4.4.2",
+                "test_desc": "Consider external secret storage (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Refer to the secrets management options offered by your cloud provider or a third-party\nsecrets management solution.\n",
+                "test_info": [
+                  "Refer to the secrets management options offered by your cloud provider or a third-party\nsecrets management solution.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          },
+          {
+            "section": "4.5",
+            "type": "",
+            "pass": 0,
+            "fail": 1,
+            "warn": 1,
+            "info": 0,
+            "desc": "General Policies",
+            "results": [
+              {
+                "test_number": "4.5.1",
+                "test_desc": "Create administrative boundaries between resources using namespaces (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Follow the documentation and create namespaces for objects in your deployment as you need\nthem.\n",
+                "test_info": [
+                  "Follow the documentation and create namespaces for objects in your deployment as you need\nthem.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "4.5.2",
+                "test_desc": "The default namespace should not be used (Automated)",
+                "audit": "output=$(kubectl get $(kubectl api-resources --verbs=list --namespaced=true -o name | paste -sd, -) --ignore-not-found -n default 2>/dev/null | grep -v \"^kubernetes \")\nif [ -z \"$output\" ]; then\n  echo \"NO_USER_RESOURCES_IN_DEFAULT\"\nelse\n  echo \"USER_RESOURCES_IN_DEFAULT_FOUND: $output\"\nfi\n",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "",
+                "remediation": "Create and use dedicated namespaces for resources instead of the default namespace. Move any user-defined objects out of the default namespace to improve resource segregation and RBAC control.\n",
+                "test_info": [
+                  "Create and use dedicated namespaces for resources instead of the default namespace. Move any user-defined objects out of the default namespace to improve resource segregation and RBAC control.\n"
+                ],
+                "status": "FAIL",
+                "actual_value": "USER_RESOURCES_IN_DEFAULT_FOUND: NAME                     AGE\nserviceaccount/default   7h5m\n\nNAME                 TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE\nservice/kubernetes   ClusterIP   172.20.0.1   <none>        443/TCP   7h5m",
+                "scored": true,
+                "IsMultiple": false,
+                "expected_result": "'NO_USER_RESOURCES_IN_DEFAULT' is present"
+              }
+            ]
+          }
+        ],
+        "total_pass": 2,
+        "total_fail": 12,
+        "total_warn": 9,
+        "total_info": 0
+      },
+      {
+        "id": "5",
+        "version": "eks-1.8.0",
+        "detected_version": "none",
+        "text": "Managed Services",
+        "node_type": "managedservices",
+        "tests": [
+          {
+            "section": "5.1",
+            "type": "",
+            "pass": 0,
+            "fail": 0,
+            "warn": 4,
+            "info": 0,
+            "desc": "Image Registry and Image Scanning",
+            "results": [
+              {
+                "test_number": "5.1.1",
+                "test_desc": "Ensure Image Vulnerability Scanning using Amazon ECR image scanning or a third party provider (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "To utilize AWS ECR for Image scanning please follow the steps below:\n\nTo create a repository configured for scan on push (AWS CLI):\naws ecr create-repository --repository-name $REPO_NAME --image-scanning-configuration scanOnPush=true --region $REGION_CODE\n\nTo edit the settings of an existing repository (AWS CLI):\naws ecr put-image-scanning-configuration --repository-name $REPO_NAME --image-scanning-configuration scanOnPush=true --region $REGION_CODE\n\nUse the following steps to start a manual image scan using the AWS Management Console.\n\n1.  Open the Amazon ECR console at https://console.aws.amazon.com/ecr/repositories.\n2.  From the navigation bar, choose the Region to create your repository in.\n3.  In the navigation pane, choose Repositories.\n4.  On the Repositories page, choose the repository that contains the image to scan.\n5.  On the Images page, select the image to scan and then choose Scan.\n",
+                "test_info": [
+                  "To utilize AWS ECR for Image scanning please follow the steps below:\n\nTo create a repository configured for scan on push (AWS CLI):\naws ecr create-repository --repository-name $REPO_NAME --image-scanning-configuration scanOnPush=true --region $REGION_CODE\n\nTo edit the settings of an existing repository (AWS CLI):\naws ecr put-image-scanning-configuration --repository-name $REPO_NAME --image-scanning-configuration scanOnPush=true --region $REGION_CODE\n\nUse the following steps to start a manual image scan using the AWS Management Console.\n\n1.  Open the Amazon ECR console at https://console.aws.amazon.com/ecr/repositories.\n2.  From the navigation bar, choose the Region to create your repository in.\n3.  In the navigation pane, choose Repositories.\n4.  On the Repositories page, choose the repository that contains the image to scan.\n5.  On the Images page, select the image to scan and then choose Scan.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "5.1.2",
+                "test_desc": "Minimize user access to Amazon ECR (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Before you use IAM to manage access to Amazon ECR, you should understand what IAM features\nare available to use with Amazon ECR. To get a high-level view of how Amazon ECR and other\nAWS services work with IAM, see AWS Services That Work with IAM in the IAM User Guide.\n",
+                "test_info": [
+                  "Before you use IAM to manage access to Amazon ECR, you should understand what IAM features\nare available to use with Amazon ECR. To get a high-level view of how Amazon ECR and other\nAWS services work with IAM, see AWS Services That Work with IAM in the IAM User Guide.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "5.1.3",
+                "test_desc": "Minimize cluster access to read-only for Amazon ECR (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "You can use your Amazon ECR images with Amazon EKS, but you need to satisfy the following prerequisites.\n\nThe Amazon EKS worker node IAM role (NodeInstanceRole) that you use with your worker nodes must possess\nthe following IAM policy permissions for Amazon ECR.\n\n{\n    \"Version\": \"2012-10-17\",\n    \"Statement\": [\n        {\n            \"Effect\": \"Allow\",\n            \"Action\": [\n                \"ecr:BatchCheckLayerAvailability\",\n                \"ecr:BatchGetImage\",\n                \"ecr:GetDownloadUrlForLayer\",\n                \"ecr:GetAuthorizationToken\"\n            ],\n            \"Resource\": \"*\"\n        }\n    ]\n}\n",
+                "test_info": [
+                  "You can use your Amazon ECR images with Amazon EKS, but you need to satisfy the following prerequisites.\n\nThe Amazon EKS worker node IAM role (NodeInstanceRole) that you use with your worker nodes must possess\nthe following IAM policy permissions for Amazon ECR.\n\n{\n    \"Version\": \"2012-10-17\",\n    \"Statement\": [\n        {\n            \"Effect\": \"Allow\",\n            \"Action\": [\n                \"ecr:BatchCheckLayerAvailability\",\n                \"ecr:BatchGetImage\",\n                \"ecr:GetDownloadUrlForLayer\",\n                \"ecr:GetAuthorizationToken\"\n            ],\n            \"Resource\": \"*\"\n        }\n    ]\n}\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "5.1.4",
+                "test_desc": "Minimize Container Registries to only those approved (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "To minimize AWS ECR container registries to only those approved, you can follow these steps:\n\n1.  Define your approval criteria: Determine the criteria that containers must meet to\n    be considered approved. This can include factors such as security, compliance,\n    compatibility, and other requirements.\n2.  Identify all existing ECR registries: Identify all ECR registries that are currently\n    being used in your organization.\n3.  Evaluate ECR registries against approval criteria: Evaluate each ECR registry\n    against your approval criteria to determine whether it should be approved or not.\n    This can be done by reviewing the registry settings and configuration, as well as\n    conducting security assessments and vulnerability scans.\n4.  Establish policies and procedures: Establish policies and procedures that outline\n    how ECR registries will be approved, maintained, and monitored. This should\n    include guidelines for developers to follow when selecting a registry for their\n    container images.\n5.  Implement access controls: Implement access controls to ensure that only\n    approved ECR registries are used to store and distribute container images. This\n    can be done by setting up IAM policies and roles that restrict access to\n    unapproved registries or create a whitelist of approved registries.\n6.  Monitor and review: Continuously monitor and review the use of ECR registries\n    to ensure that they continue to meet your approval criteria. This can include\n",
+                "test_info": [
+                  "To minimize AWS ECR container registries to only those approved, you can follow these steps:\n\n1.  Define your approval criteria: Determine the criteria that containers must meet to\n    be considered approved. This can include factors such as security, compliance,\n    compatibility, and other requirements.\n2.  Identify all existing ECR registries: Identify all ECR registries that are currently\n    being used in your organization.\n3.  Evaluate ECR registries against approval criteria: Evaluate each ECR registry\n    against your approval criteria to determine whether it should be approved or not.\n    This can be done by reviewing the registry settings and configuration, as well as\n    conducting security assessments and vulnerability scans.\n4.  Establish policies and procedures: Establish policies and procedures that outline\n    how ECR registries will be approved, maintained, and monitored. This should\n    include guidelines for developers to follow when selecting a registry for their\n    container images.\n5.  Implement access controls: Implement access controls to ensure that only\n    approved ECR registries are used to store and distribute container images. This\n    can be done by setting up IAM policies and roles that restrict access to\n    unapproved registries or create a whitelist of approved registries.\n6.  Monitor and review: Continuously monitor and review the use of ECR registries\n    to ensure that they continue to meet your approval criteria. This can include\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          },
+          {
+            "section": "5.2",
+            "type": "",
+            "pass": 0,
+            "fail": 0,
+            "warn": 1,
+            "info": 0,
+            "desc": "Identity and Access Management (IAM)",
+            "results": [
+              {
+                "test_number": "5.2.1",
+                "test_desc": "Prefer using dedicated Amazon EKS Service Accounts (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "With IAM roles for service accounts on Amazon EKS clusters, you can associate an\nIAM role with a Kubernetes service account. This service account can then provide\nAWS permissions to the containers in any pod that uses that service account. With this\nfeature, you no longer need to provide extended permissions to the worker node IAM\nrole so that pods on that node can call AWS APIs.\nApplications must sign their AWS API requests with AWS credentials. This feature\nprovides a strategy for managing credentials for your applications, similar to the way\nthat Amazon EC2 instance profiles provide credentials to Amazon EC2 instances.\nInstead of creating and distributing your AWS credentials to the containers or using the\nAmazon EC2 instance’s role, you can associate an IAM role with a Kubernetes service\naccount. The applications in the pod’s containers can then use an AWS SDK or the\nAWS CLI to make API requests to authorized AWS services.\n\nThe IAM roles for service accounts feature provides the following benefits:\n\n- Least privilege - By using the IAM roles for service accounts feature, you no\n  longer need to provide extended permissions to the worker node IAM role so that\n  pods on that node can call AWS APIs. You can scope IAM permissions to a\n  service account, and only pods that use that service account have access to\n  those permissions. This feature also eliminates the need for third-party solutions\n  such as kiam or kube2iam.\n- Credential isolation - A container can only retrieve credentials for the IAM role\n  that is associated with the service account to which it belongs. A container never\n  has access to credentials that are intended for another container that belongs to\n  another pod.\n- Audit-ability - Access and event logging is available through CloudTrail to help\n  ensure retrospective auditing.\n",
+                "test_info": [
+                  "With IAM roles for service accounts on Amazon EKS clusters, you can associate an\nIAM role with a Kubernetes service account. This service account can then provide\nAWS permissions to the containers in any pod that uses that service account. With this\nfeature, you no longer need to provide extended permissions to the worker node IAM\nrole so that pods on that node can call AWS APIs.\nApplications must sign their AWS API requests with AWS credentials. This feature\nprovides a strategy for managing credentials for your applications, similar to the way\nthat Amazon EC2 instance profiles provide credentials to Amazon EC2 instances.\nInstead of creating and distributing your AWS credentials to the containers or using the\nAmazon EC2 instance’s role, you can associate an IAM role with a Kubernetes service\naccount. The applications in the pod’s containers can then use an AWS SDK or the\nAWS CLI to make API requests to authorized AWS services.\n\nThe IAM roles for service accounts feature provides the following benefits:\n\n- Least privilege - By using the IAM roles for service accounts feature, you no\n  longer need to provide extended permissions to the worker node IAM role so that\n  pods on that node can call AWS APIs. You can scope IAM permissions to a\n  service account, and only pods that use that service account have access to\n  those permissions. This feature also eliminates the need for third-party solutions\n  such as kiam or kube2iam.\n- Credential isolation - A container can only retrieve credentials for the IAM role\n  that is associated with the service account to which it belongs. A container never\n  has access to credentials that are intended for another container that belongs to\n  another pod.\n- Audit-ability - Access and event logging is available through CloudTrail to help\n  ensure retrospective auditing.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          },
+          {
+            "section": "5.3",
+            "type": "",
+            "pass": 0,
+            "fail": 0,
+            "warn": 1,
+            "info": 0,
+            "desc": "AWS EKS Key Management Service",
+            "results": [
+              {
+                "test_number": "5.3.1",
+                "test_desc": "Ensure Kubernetes Secrets are encrypted using Customer Master Keys (CMKs) managed in AWS KMS (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "This process can only be performed during Cluster Creation.\n\nEnable 'Secrets Encryption' during Amazon EKS cluster creation as described\nin the links within the 'References' section.\n",
+                "test_info": [
+                  "This process can only be performed during Cluster Creation.\n\nEnable 'Secrets Encryption' during Amazon EKS cluster creation as described\nin the links within the 'References' section.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          },
+          {
+            "section": "5.4",
+            "type": "",
+            "pass": 0,
+            "fail": 0,
+            "warn": 5,
+            "info": 0,
+            "desc": "Cluster Networking",
+            "results": [
+              {
+                "test_number": "5.4.1",
+                "test_desc": "Restrict Access to the Control Plane Endpoint (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "By enabling private endpoint access to the Kubernetes API server, all communication\nbetween your nodes and the API server stays within your VPC. You can also limit the IP\naddresses that can access your API server from the internet, or completely disable\ninternet access to the API server.\nWith this in mind, you can update your cluster accordingly using the AWS CLI to ensure\nthat Private Endpoint Access is enabled.\nIf you choose to also enable Public Endpoint Access then you should also configure a\nlist of allowable CIDR blocks, resulting in restricted access from the internet. If you\nspecify no CIDR blocks, then the public API server endpoint is able to receive and\nprocess requests from all IP addresses by defaulting to ['0.0.0.0/0'].\nFor example, the following command would enable private access to the Kubernetes\nAPI as well as limited public access over the internet from a single IP address (noting\nthe /32 CIDR suffix):\naws eks update-cluster-config --region $AWS_REGION --name $CLUSTER_NAME --resources-vpc-config endpointPrivateAccess=true,publicAccessCidrs=\"203.0.113.5/32\"\n\nNote: The CIDR blocks specified cannot include reserved addresses.\nThere is a maximum number of CIDR blocks that you can specify. For more information,\nsee the EKS Service Quotas link in the references section.\nFor more detailed information, see the EKS Cluster Endpoint documentation link in the\nreferences section.\n",
+                "test_info": [
+                  "By enabling private endpoint access to the Kubernetes API server, all communication\nbetween your nodes and the API server stays within your VPC. You can also limit the IP\naddresses that can access your API server from the internet, or completely disable\ninternet access to the API server.\nWith this in mind, you can update your cluster accordingly using the AWS CLI to ensure\nthat Private Endpoint Access is enabled.\nIf you choose to also enable Public Endpoint Access then you should also configure a\nlist of allowable CIDR blocks, resulting in restricted access from the internet. If you\nspecify no CIDR blocks, then the public API server endpoint is able to receive and\nprocess requests from all IP addresses by defaulting to ['0.0.0.0/0'].\nFor example, the following command would enable private access to the Kubernetes\nAPI as well as limited public access over the internet from a single IP address (noting\nthe /32 CIDR suffix):\naws eks update-cluster-config --region $AWS_REGION --name $CLUSTER_NAME --resources-vpc-config endpointPrivateAccess=true,publicAccessCidrs=\"203.0.113.5/32\"\n\nNote: The CIDR blocks specified cannot include reserved addresses.\nThere is a maximum number of CIDR blocks that you can specify. For more information,\nsee the EKS Service Quotas link in the references section.\nFor more detailed information, see the EKS Cluster Endpoint documentation link in the\nreferences section.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "5.4.2",
+                "test_desc": "Ensure clusters are created with Private Endpoint Enabled and Public Access Disabled (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "By enabling private endpoint access to the Kubernetes API server, all communication\nbetween your nodes and the API server stays within your VPC.\nWith this in mind, you can update your cluster accordingly using the AWS CLI to ensure\nthat Private Endpoint Access is enabled.\nFor example, the following command would enable private access to the Kubernetes\nAPI and ensure that no public access is permitted:\naws eks update-cluster-config --region $AWS_REGION --name $CLUSTER_NAME --resources-vpc-config endpointPrivateAccess=true,endpointPublicAccess=false\n\nNote: For more detailed information, see the EKS Cluster Endpoint documentation link\nin the references section.\n",
+                "test_info": [
+                  "By enabling private endpoint access to the Kubernetes API server, all communication\nbetween your nodes and the API server stays within your VPC.\nWith this in mind, you can update your cluster accordingly using the AWS CLI to ensure\nthat Private Endpoint Access is enabled.\nFor example, the following command would enable private access to the Kubernetes\nAPI and ensure that no public access is permitted:\naws eks update-cluster-config --region $AWS_REGION --name $CLUSTER_NAME --resources-vpc-config endpointPrivateAccess=true,endpointPublicAccess=false\n\nNote: For more detailed information, see the EKS Cluster Endpoint documentation link\nin the references section.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "5.4.3",
+                "test_desc": "Ensure clusters are created with Private Nodes (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "aws eks update-cluster-config \\\n  --region region-code \\\n  --name my-cluster \\\n  --resources-vpc-config endpointPublicAccess=true,publicAccessCidrs=\"203.0.113.5/32\",endpointPrivateAccess=true\n",
+                "test_info": [
+                  "aws eks update-cluster-config \\\n  --region region-code \\\n  --name my-cluster \\\n  --resources-vpc-config endpointPublicAccess=true,publicAccessCidrs=\"203.0.113.5/32\",endpointPrivateAccess=true\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "5.4.4",
+                "test_desc": "Ensure Network Policy is Enabled and set as appropriate (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Utilize Calico or other network policy engine to segment and isolate your traffic.\n",
+                "test_info": [
+                  "Utilize Calico or other network policy engine to segment and isolate your traffic.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              },
+              {
+                "test_number": "5.4.5",
+                "test_desc": "Encrypt traffic to HTTPS load balancers with TLS certificates (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Your load balancer vendor can provide details on configuring HTTPS with TLS.\n",
+                "test_info": [
+                  "Your load balancer vendor can provide details on configuring HTTPS with TLS.\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          },
+          {
+            "section": "5.5",
+            "type": "",
+            "pass": 0,
+            "fail": 0,
+            "warn": 1,
+            "info": 0,
+            "desc": "Authentication and Authorization",
+            "results": [
+              {
+                "test_number": "5.5.1",
+                "test_desc": "Manage Kubernetes RBAC users with AWS IAM Authenticator for Kubernetes or Upgrade to AWS CLI v1.16.156 or greater (Manual)",
+                "audit": "",
+                "AuditEnv": "",
+                "AuditConfig": "",
+                "type": "manual",
+                "remediation": "Refer to the 'Managing users or IAM roles for your cluster' in Amazon EKS documentation.\n\nNote: If using AWS CLI version 1.16.156 or later there is no need to install the AWS\nIAM Authenticator anymore.\nThe relevant AWS CLI commands, depending on the use case, are:\naws eks update-kubeconfig\naws eks get-token\n",
+                "test_info": [
+                  "Refer to the 'Managing users or IAM roles for your cluster' in Amazon EKS documentation.\n\nNote: If using AWS CLI version 1.16.156 or later there is no need to install the AWS\nIAM Authenticator anymore.\nThe relevant AWS CLI commands, depending on the use case, are:\naws eks update-kubeconfig\naws eks get-token\n"
+                ],
+                "status": "WARN",
+                "actual_value": "",
+                "scored": false,
+                "IsMultiple": false,
+                "expected_result": "",
+                "reason": "Test marked as a manual test"
+              }
+            ]
+          }
+        ],
+        "total_pass": 0,
+        "total_fail": 0,
+        "total_warn": 12,
+        "total_info": 0
+      }
+    ],
+    "Totals": {
+      "total_pass": 15,
+      "total_fail": 12,
+      "total_warn": 23,
+      "total_info": 0
+    }
+  },
+  "job": {
+    "name": "kube-bench-eks",
+    "namespace": "bravo-gate-scan",
+    "node": "ip-10-10-11-107.ap-northeast-2.compute.internal",
+    "image": "docker.io/aquasec/kube-bench@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679",
+    "command": [
+      "kube-bench",
+      "run",
+      "--targets",
+      "node,policies,managedservices,controlplane",
+      "--benchmark",
+      "eks-1.8.0",
+      "--json"
+    ],
+    "seconds": 12.2
+  },
+  "context": "bravo-source",
+  "platform": "eks",
+  "node_requested": null,
+  "targets": null
+}
