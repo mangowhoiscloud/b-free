@@ -62,7 +62,7 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:46edd0d19dc909b4d241c2466f2ac4b22b9a9d2d05a9fcb19bcc8e3f40234775 # s2full-20261102T185954Z (S2 lane L2 over L1's be216ca9: tool.denied origin, trial.progress + migration 0010, prior failures name the failed checks; clean worktree at a59d1bb; arm64)
+    digest: sha256:5421e97b266d4ed9614766f6c6148810b6615cd7cc14d37e3944b98ad6e0626b # s2role-20261102T191024Z (S2 lane L2: one active rehearsal per role, per-role FR-5 budget, migration 0011; over 46edd0d1; clean worktree at e1b4fe0; arm64)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
     digest: sha256:a2d8c7df850fecaa5f76c6e5c54f89515e87c3debeac24eadd0b5cc73b9bf310 # r17 (console lane: SHIFT 10/50/100 + start rules, receipt scope/hash_rule, recorded replay, failback front)
