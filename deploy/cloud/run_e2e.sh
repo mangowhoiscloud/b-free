@@ -105,7 +105,7 @@ front_shift dst to-dst
 # Runs started in the console appear on executor-0; this waits for the next one of a kind.
 wait_console_run() {  # wait_console_run <kind> <after-iso> <out> -> run status on stdout
   local deadline=$(( $(date +%s) + WAIT_RUN_S )) id=""
-  log "waiting for a $1 run started in the console (up to ${WAIT_RUN_S}s)"
+  log "waiting for a $1 run started in the console (up to ${WAIT_RUN_S}s)" >&2  # stdout is the status
   while [ -z "$id" ]; do
     id="$(curl -fsS "$URL/v1/runs?kind=$1&limit=5" | jq -r --arg after "$2" '[.[] | select(.started_at > $after)] | last | .run_id // empty')"
     [ -n "$id" ] || { [ "$(date +%s)" -lt "$deadline" ] || { echo "NOT_STARTED"; return 0; }; sleep 3; }
@@ -179,6 +179,7 @@ ok=1
 jq -e '.nfr2.ok == true' "$EV/loadgen-summary.json" >/dev/null || ok=0
 [ -z "$demo_pid" ] || jq -e '.nfr2.ok == true and .unacked == 0' "$EV/demo-traffic.json" >/dev/null || ok=0
 [ "$fb_status" != "DONE" ] || jq -e '.match == true' "$EV/s4-ac1.json" >/dev/null || ok=0
+[ -f "$EV/cutover-run.json" ] || echo "{\"status\": \"$cut_status\"}" > "$EV/cutover-run.json"
 jq -n --slurpfile cut "$EV/cutover-run.json" --arg fb "$fb_status" --arg ok "$ok" \
   '{ok: ($ok == "1"), cutover: {status: $cut[0].status, write_pause_ms: $cut[0].write_pause_ms,
     verdict: $cut[0].receipt.verdict}, failback_status: $fb}' > "$EV/summary.json"

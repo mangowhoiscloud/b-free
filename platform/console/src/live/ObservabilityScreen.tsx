@@ -117,7 +117,7 @@ function Services({ w }: { w: TimeWindow }) {
               key: 'u', header: '상태 경로', weight: 3,
               render: (r) => (
                 <VStack gap={0}>
-                  <span className="mono">{r.url.replace(/^https?:\/\//, '').replace('.svc', '')}</span>
+                  <span className="mono wrap-any">{r.url.replace(/^https?:\/\//, '').replace('.svc', '')}</span>
                   {r.errs.length > 0 && <span className="meta">최근 5분 실패: {r.errs.join(' · ')}</span>}
                 </VStack>
               ),
@@ -241,13 +241,13 @@ export function ObservabilityScreen({ view, planId, events }: { view: ConsoleVie
         )}
       </Block>
 
-      <div className="grid-2">
-        <Services w={w} />
-        <Block title={`Hubble 흐름 · ${w.label}`}>
+      <Services w={w} />
+      <Block title={`Hubble 흐름 · ${w.label}`}>
           {flows.error ? (
             <NotConnected endpoint="GET /svc/prometheus (hubble_flows_processed_total)" reason={liveReason(flows.error)} lastOk={flows.dataUpdatedAt || undefined} />
           ) : (
             <>
+              <div className="grid-2">
               <DataTable
                 rows={flows.data ?? []}
                 rowKey={(r) => `${r.labels.bravo_env}-${r.labels.verdict}`}
@@ -268,6 +268,7 @@ export function ObservabilityScreen({ view, planId, events }: { view: ConsoleVie
                   { key: 'n', header: '건수', numeric: true, render: (r) => fmtCount(r.value) },
                 ]}
               />
+              </div>
               <p className="meta">
                 Hubble 지표가 없는 환경:{' '}
                 {allEnvs.filter((e) => !(flows.data ?? []).some((r) => envOf(r.labels) === e)).map((e) => (e === 'target-onprem' ? '온프렘(Hubble 지표 꺼짐)' : e === 'target-gcp' ? 'GKE(Dataplane V2 지표 꺼짐)' : e === 'platform' ? '플랫폼(Hubble 지표 꺼짐)' : e)).join(' · ') || '없음'}
@@ -275,8 +276,7 @@ export function ObservabilityScreen({ view, planId, events }: { view: ConsoleVie
               </p>
             </>
           )}
-        </Block>
-      </div>
+      </Block>
 
       <Block title="드릴다운 · 트레이스 · 로그">
         <NotConnected title="트레이스 · 로그 목록 연결 안 됨" endpoint="Tempo · Loki 질의" reason="이 콘솔은 Tempo와 Loki를 직접 읽는 출처가 없습니다. 아래 도구 링크로 엽니다" />
