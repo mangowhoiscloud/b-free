@@ -259,7 +259,7 @@ spec:
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          resources: {requests: {cpu: 30m, memory: 192Mi}, limits: {memory: 512Mi}}
+          resources: {requests: {cpu: 30m, memory: 256Mi}, limits: {memory: 1Gi}}  # parallel POST runs OOM-killed at 512Mi (11/3 04:0x)
           volumeMounts:
             - {name: registry, mountPath: /etc/bravo/environments.yaml, subPath: environments.yaml, readOnly: true}
             - {name: tmp, mountPath: /tmp}
