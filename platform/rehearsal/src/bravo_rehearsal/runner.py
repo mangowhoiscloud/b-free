@@ -9,11 +9,7 @@ route variables, validated by ``bravo_agents``).
 
     python -m bravo_rehearsal.runner --task governance [--state REHEARSE] [--source-env ID --target-env ID]
 
-``--without-cluster`` is a diagnostic for when no destination cluster exists. It runs the same
-worker against the same tool layer but there is no Harbor Trial, no sandbox and no verifier:
-``rehearsal_exec`` is refused with ``sandbox_unavailable`` and the verdict is always
-``INFRA_ERROR``. It shows the model route and the server-side tool-call log; it never produces
-a PASS and it is not reachable from the service API.
+Every run is a Harbor Trial with a real sandbox: there is no mode that runs the agent without one.
 """
 
 from __future__ import annotations
@@ -73,8 +69,6 @@ async def rehearse(a: argparse.Namespace) -> int:
     req = _request(settings, meta, a)
     app = create_app(settings)
     missing = app.state.orchestrator.preconditions(req)
-    if a.without_cluster:
-        missing = [m for m in missing if m not in ("cluster_unconfigured", "verifier_unconfigured")]
     if missing:
         print(f"verdict=BLOCKED\nreason={missing[0]}\nmissing={','.join(missing)}")
         return 2
@@ -82,7 +76,6 @@ async def rehearse(a: argparse.Namespace) -> int:
     server = uvicorn.Server(uvicorn.Config(app, host=url.hostname or "127.0.0.1", port=url.port or 80,
                                            log_level="warning", lifespan="on"))
     serving = asyncio.create_task(server.serve())
-    usage: dict[str, Any] = {}
     try:
         while not server.started:
             if serving.done():
@@ -93,18 +86,14 @@ async def rehearse(a: argparse.Namespace) -> int:
         trial = new_trial(req, settings, f"cli-{uuid.uuid4().hex}", digest)
         app.state.store.add(trial)
         started = dt.datetime.now(dt.UTC)
-        if a.without_cluster:
-            usage = await _diagnostic(app.state.orchestrator, trial, meta, settings.trials_dir)
-        else:
-            await app.state.orchestrator.run(trial)
+        await app.state.orchestrator.run(trial)
     finally:
         server.should_exit = True
         await serving
     reward = (trial.verifier or {}).get("reward")
     append_evidence({"date": started.date().isoformat(), "run_id": trial.trial_id, "task": a.task,
                      "task_sha256": meta["version"], "quadrant": "FIX",
-                     "backend": "diagnostic:no-sandbox" if a.without_cluster else "harbor:bravo-k8s-namespace",
-                     "harbor_version": "-" if a.without_cluster else "0.25.0", "verdict": trial.verdict,
+                     "backend": "harbor:bravo-k8s-namespace", "harbor_version": "0.25.0", "verdict": trial.verdict,
                      "reward": reward, "phase_seconds": int((dt.datetime.now(dt.UTC) - started).total_seconds()),
                      "run_path": trial.harbor_trial_dir or "", "note": trial.reason or ""})
     print(f"verdict={trial.verdict}\nreason={trial.reason or ''}\nreward={reward}\nrun_path={trial.harbor_trial_dir}")
@@ -113,36 +102,7 @@ async def rehearse(a: argparse.Namespace) -> int:
         print(f"tool_call seq={ev['seq']} tool={ev['tool']} allowed={ev['allowed']} rule={ev['rule']} "
               f"result={ev['result']}")
     print(f"hook_events={len(trial.hook_events)}")
-    if usage:
-        print("usage=" + json.dumps(usage, sort_keys=True))
     return 0 if trial.verdict == "PASS" else 1
-
-
-async def _diagnostic(orch: Any, trial: Any, meta: dict[str, Any], trials_dir: Path) -> dict[str, Any]:
-    """Worker + tool layer without a cluster. No sandbox and no verifier, so never a verdict but INFRA_ERROR."""
-    from . import harbor_binding
-    from .cluster import Names
-    from .harbor_agent import AgentFailure, check_preconditions, raise_for_outcome, run_worker, trajectory
-
-    trial.names = Names.of(trial.plan_id, trial.attempt, trial.trial_id)  # token claims; no namespace is created
-    out_dir = trials_dir.resolve() / f"{trial.trial_id}.diagnostic"
-    trial.harbor_trial_dir = str(out_dir)
-    binding = harbor_binding.Binding(trial=trial, worker_env=lambda d: orch._worker_env(trial, meta, d))
-    run = None
-    try:
-        check_preconditions(trial)
-        run = await run_worker(binding, out_dir / "platform")
-        raise_for_outcome(trial, run)
-        trial.finish("INFRA_ERROR", "verifier_unavailable:no_cluster")  # a frozen proposal, but nothing graded it
-    except AgentFailure as exc:
-        trial.finish("INFRA_ERROR", f"{exc.reason}:no_cluster")
-    finally:
-        trial.locked = True
-        out_dir.mkdir(parents=True, exist_ok=True)
-        doc = trajectory(trial, "diagnostic").model_dump(mode="json", exclude_none=True)
-        (out_dir / "trajectory.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2))
-        (out_dir / "trial.json").write_text(json.dumps(trial.view(), ensure_ascii=False, indent=2, default=str))
-    return run.usage if run is not None else {}
 
 
 def main() -> None:
@@ -154,7 +114,6 @@ def main() -> None:
     ap.add_argument("--source-env", default=None)
     ap.add_argument("--target-env", default=None)
     ap.add_argument("--evidence-file", default=None, help="JSON list of {id, kind, summary} for the envelope")
-    ap.add_argument("--without-cluster", action="store_true", help="diagnostic: no sandbox, verdict INFRA_ERROR")
     a = ap.parse_args()
     a.task = Path(a.task).name
     sys.exit(asyncio.run(_with_signals(a)))

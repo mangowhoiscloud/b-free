@@ -15,3 +15,7 @@ attachments:
 serviceAccount:
   name: chat-app
 otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}
+# Write-block switch: Service chat-admin:8081 (release "chat"), token from Secret chat-admin/token
+# that the platform creates from OpenBao secret/envs/<env>/chat-admin. Not routed by the tunnel.
+admin:
+  tokenSecret: {name: chat-admin, key: token}

@@ -1,4 +1,4 @@
-# Destination on-prem (K3s landing zone): password from an External Secrets Secret, S3-compatible RGW.
+# Destination on-prem (K3s landing zone, release "chat" in ns "chat"): password from a Secret, Rook-Ceph RGW.
 image: {repository: ghcr.io/example/bravo-demo, digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"}
 environment: {id: onprem, label: 온프렘, labelJa: オンプレ}
 publicUrl: https://chat.example.test
@@ -29,3 +29,7 @@ networkPolicy:
     - to: [{namespaceSelector: {}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
 otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}
+# Write-block switch: Service chat-admin:8081 (release "chat"), token from Secret chat-admin/token
+# that the platform creates from OpenBao secret/envs/<env>/chat-admin. Not routed by the tunnel.
+admin:
+  tokenSecret: {name: chat-admin, key: token}

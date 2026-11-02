@@ -420,3 +420,86 @@ def test_evidence_ingest_takes_trial_token_and_dedups(layer: Any) -> None:
 
 # Destination cluster: the namespace, baseline, isolation and exec tests run through the Harbor
 # environment in tests/test_harbor.py (test_every_environment_method_on_real_cluster).
+
+
+def test_codex_route_and_passthrough_rules() -> None:
+    env = {"BRAVO_LLM_PROVIDER": "codex_chatgpt", "BRAVO_CODEX_MODEL": "gpt-6-luna", "BRAVO_CODEX_EFFORT": "low",
+           "BRAVO_WORKER_ENV_PASSTHROUGH": "CODEX_HOME,OPENAI_API_KEY,HOME", "CODEX_HOME": "/home/op/.codex",
+           "HOME": "/home/op", "OPENAI_API_KEY": "sk-should-not-pass"}
+    out = sdk_options.llm_env("opus", env)
+    assert out == {"BRAVO_CODEX_EFFORT": "low", "BRAVO_CODEX_MODEL": "gpt-6-luna",
+                   "BRAVO_LLM_PROVIDER": "codex_chatgpt", "CODEX_HOME": "/home/op/.codex", "HOME": "/home/op"}
+    with pytest.raises(sdk_options.LLMUnconfigured):
+        sdk_options.llm_env("opus", {"BRAVO_LLM_PROVIDER": "codex_chatgpt"})  # no model
+    with pytest.raises(sdk_options.LLMUnconfigured):
+        sdk_options.llm_env("opus", {"BRAVO_LLM_PROVIDER": "codex_chatgpt", "BRAVO_CODEX_MODEL": "m",
+                                     "BRAVO_CODEX_EFFORT": "maximum"})
+
+
+def test_worker_env_keeps_trial_values_over_passthrough(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bravo_rehearsal.service import Orchestrator, TrialRequest, new_trial
+    from bravo_rehearsal.trials import TrialStore
+
+    use_allowlists(tmp_path, "governance")
+    for k, v in {"BRAVO_LLM_PROVIDER": "codex_chatgpt", "BRAVO_CODEX_MODEL": "gpt-6-luna", "CODEX_HOME": "/op/.codex",
+                 "BRAVO_WORKER_ENV_PASSTHROUGH": "CODEX_HOME,BRAVO_TRIAL_TOKEN"}.items():
+        monkeypatch.setenv(k, v)
+    s = settings(tmp_path)
+    req = TrialRequest.model_validate(trial_body(task="governance"))
+    trial = new_trial(req, s, "k", "d")
+    trial.names = Names.of(trial.plan_id, trial.attempt, trial.trial_id)
+    env = Orchestrator(s, TrialStore())._worker_env(trial, {}, str(tmp_path / "cfg"))
+    assert env["CODEX_HOME"] == "/op/.codex" and env["HOME"] == str(tmp_path / "cfg")
+    assert trial_token.verify(KEY, env["BRAVO_TRIAL_TOKEN"]).trial_id == trial.trial_id  # not overridable
+    assert env["BRAVO_EVIDENCE_URL"].endswith("/v1/evidence") and "BRAVO_REHEARSAL_TOKEN_KEY" not in env
+    assert json.loads(env["BRAVO_TRIAL_ENVELOPE"])["plan_id"] == ENV_PLAN
+
+
+async def test_bravo_agents_submit_proposal_against_the_live_tool_layer(tmp_path: Path) -> None:
+    """The worker's real submit path (bravo_agents.runner.submit_proposal, MCP 2.x) against this server:
+    accepted once, the Trial locks, and a rejected proposal surfaces as proposal_rejected (is_error)."""
+    import asyncio
+    import socket
+
+    import uvicorn
+    from bravo_agents.errors import AgentRunError
+    from bravo_agents.runner import submit_proposal
+    from bravo_agents.schemas import GovernanceProposal
+
+    use_allowlists(tmp_path, "governance")
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    app = create_app(settings(tmp_path, tool_layer_url=f"http://127.0.0.1:{port}"))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="on"))
+    serving = asyncio.create_task(server.serve())
+    try:
+        while not server.started:
+            await asyncio.sleep(0.05)
+        store = app.state.store
+        trials = {}
+        for attempt in (1, 2):
+            t = Trial(trial_id=f"t-governance-{attempt}", tenant_id="t1", plan_id=PLAN, rehearsal_id="r",
+                      attempt=attempt, max_attempts=3, task="governance", role="governance",
+                      idem_key=f"k{attempt}", request_digest="d", deadline=time.time() + 60,
+                      allowlist=allowlist.load("governance", tmp_path),
+                      envelope={"plan_id": ENV_PLAN, "evidence": [], "inputs": {}})
+            t.names = Names.of(PLAN, attempt, t.trial_id)
+            t.phase = "agent_running"
+            store.add(t)
+            trials[attempt] = (t, trial_token.issue(KEY, claims(trial_id=t.trial_id, plan_id=PLAN, attempt=attempt,
+                                                                namespace=t.names.rehearsal_ns)))
+        url = f"http://127.0.0.1:{port}/mcp"
+        t1, tok1 = trials[1]
+        await submit_proposal(url, tok1, GovernanceProposal.model_validate(good_proposal(t1.trial_id, 1)))
+        assert t1.artifact_digest == proposal.digest(t1.artifact) and t1.locked
+        t2, tok2 = trials[2]
+        bad = good_proposal(t2.trial_id, 2)
+        bad["translations"][0]["document"] = bucket_policy(principal="*")
+        with pytest.raises(AgentRunError) as exc:
+            await submit_proposal(url, tok2, GovernanceProposal.model_validate(bad))
+        assert exc.value.code == "proposal_rejected" and "anonymous_allow" in exc.value.detail
+        assert t2.artifact is None
+    finally:
+        server.should_exit = True
+        await serving

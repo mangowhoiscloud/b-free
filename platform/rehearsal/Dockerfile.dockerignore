@@ -1,0 +1,14 @@
+# BuildKit reads <Dockerfile>.dockerignore for this build (context is platform/). Send only what the image uses.
+**
+!agent/pyproject.toml
+!agent/src
+!agent/allowlists
+!agent/harbor
+!rehearsal/pyproject.toml
+!rehearsal/uv.lock
+!rehearsal/src
+!rehearsal/tasks
+!rehearsal/sql
+**/__pycache__
+**/*.pyc
+**/.venv

@@ -49,7 +49,7 @@ from .cluster import Cluster, ClusterError, Names
 from .harbor_env import DefinitionInvalid
 from .mcp_tools import ToolLayer, TrialGuard, build_server
 from .sdk_options import LLMUnconfigured, llm_env
-from .server_tools import ServerTools, ServerToolSettings
+from .server_tools import ServerTools, ServerToolSettings, ToolBlocked
 from .trials import Trial, TrialStore
 
 LOG = logging.getLogger("bravo_rehearsal.service")
@@ -293,9 +293,11 @@ class Orchestrator:
             namespace=trial.names.rehearsal_ns, ops=tuple(sorted(trial.allowlist.ops)),
             budget_usd=self.s.budget_usd, exp=int(trial.deadline)))
         return {
-            **llm_env(trial.allowlist.model_tier),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": config_dir,
+            # Route settings and passthrough names (e.g. CODEX_HOME or HOME for codex_chatgpt) may
+            # replace the two defaults above; the Trial values below are always the service's own.
+            **llm_env(trial.allowlist.model_tier),
             "BRAVO_TRIAL_TOKEN": token,
             "BRAVO_TOOL_LAYER_URL": f"{self.s.tool_layer_url}/mcp",
             "BRAVO_EVIDENCE_URL": f"{self.s.tool_layer_url}/v1/evidence",
@@ -315,14 +317,27 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
         task = load_task(settings.tasks_dir, trial.task)
         return task["repo"] if task else None
 
-    layer = ToolLayer(store, orch.cluster, repo_root, ServerTools(ServerToolSettings.from_env(settings.trials_dir)))
+    server_tools = ServerTools(ServerToolSettings.from_env(settings.trials_dir))
+    layer = ToolLayer(store, orch.cluster, repo_root, server_tools)
     manager = StreamableHTTPSessionManager(app=build_server(layer), stateless=True, json_response=True)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        async with manager.run():
-            yield
-        await orch.close()
+        # AppRole secret_ids are single-use and short-lived: log in at start, then keep the token alive.
+        keepalive: asyncio.Task[None] | None = None
+        try:
+            await server_tools.bao.login()
+            if server_tools.bao.configured:
+                keepalive = asyncio.create_task(server_tools.bao.keepalive(), name="openbao-keepalive")
+        except ToolBlocked as exc:
+            LOG.warning("openbao login failed reason=%s; server tools that need credentials are refused", exc.reason)
+        try:
+            async with manager.run():
+                yield
+        finally:
+            if keepalive is not None:
+                keepalive.cancel()
+            await orch.close()
 
     app = FastAPI(title="Bravo rehearsal service", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.router.routes.append(Route("/mcp", endpoint=TrialGuard(store, lambda: settings.token_key, manager),

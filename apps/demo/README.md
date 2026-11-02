@@ -48,6 +48,7 @@ Python 3.12, FastAPI · uvicorn(WebSocket), psycopg 3, boto3. 기반 오픈소�
 | DB 조회로 전파 | 인스턴스마다 `messages`를 `id > 마지막`으로 0.5초마다 조회. 늦게 commit된 낮은 ID는 2초 동안 "빈 구간"으로 다시 읽음. LISTEN/NOTIFY · 메모리 pub/sub 없음 | `test_unit.py`(빈 구간, 시퀀스 점프), 두 인스턴스 시험 |
 | 첨부 D-04 | `att/<sha256>` 키, `If-None-Match: *`로 덮어쓰지 않음 → 다시 읽어 SHA-256 확인 → 행 commit. 트리거가 동결(`ZB001`) · 저장소 불일치(`ZB002`)를 거부하면 HTTP 423 → 화면 "첨부 일시 중지". 같은 키로 다시 시도. presigned · multipart 없음, 5 MiB 상한(DB CHECK와 앱) | `test_schema.py` 12개(DB 강제). `test_attachment_*`는 RGW가 주어질 때만 |
 | 비밀번호 | `DB_PASSWORD_SOURCE=aws-secrets-manager`이면 시작 때 Secrets Manager SDK 직접 호출(S2 재료). `env-file`이면 마운트한 파일(고친 뒤 모드) | Secrets Manager 시험은 실제 비밀이 있어야 하므로 건너뜀(`BRAVO_TEST_AWS_SECRET_ID`) |
+| 쓰기 차단 스위치(스펙 r2 §8.10, 컷오버 2단계) | 관리 포트 8081과 ClusterIP Service `chat-admin`(앱 Service와 분리, 터널에 없음). `GET /admin/writes` → `{"blocked", "since"}`, `PUT /admin/writes {"blocked": true\|false}`. 켜면 새 업무 쓰기(HTTP 503 + `Retry-After`, WebSocket `nack` `writes_blocked` + `status: 503`)를 거절하고 읽기는 그대로. 상태는 쓰기 DB의 `write_block` 행(환경 ID마다, 발행 안 함)이라 모든 레플리카가 같은 값을 봄. 쓰기는 자기 트랜잭션에서 `FOR SHARE`로 확인하고, 스위치는 `LOCK TABLE ... IN EXCLUSIVE MODE` 뒤 바꾸므로 PUT이 돌아온 뒤에는 옛 상태로 commit되는 쓰기가 없음. Bearer 토큰은 Secret `chat-admin`의 `token`(플랫폼이 OpenBao에서 전달), 없거나 32자 미만이면 관리 API가 모두 거절(fail closed). 브라우저는 `Retry-After` 뒤 같은 멱등 키로 다시 보내고, 8초를 넘으면 재시도 안내 | `test_write_block.py` 6개(실제 앱 프로세스 · PgBouncer · PostgreSQL) |
 | QR, 접속 환경, `live` | `/join`에 QR(`APP_PUBLIC_URL` 기준), 머리에 "연결된 곳: AWS/온프렘/GCP"와 `live` 배지. 환경이 바뀌면 안내 문구. 한국어 기본, 일본어 전환 | `test_pages_and_qr` |
 
 ### 실행
@@ -72,6 +73,7 @@ cd deploy/pilot
 docker compose -p bravo-pilot --env-file .env --env-file ../../apps/demo/pilot-app.env \
   -f compose.yaml -f compose.app.yaml up -d --build app-src app-dst
 # http://localhost:8090/join (AWS), http://localhost:8091/ (온프렘)
+# 관리 포트는 127.0.0.1:18081(AWS), 127.0.0.1:18082(온프렘). 토큰은 셸의 APP_ADMIN_TOKEN(OpenBao에서 파이프로)
 ```
 
 - 출발지 앱(`app-src`)의 첨부는 실제 Amazon S3입니다. 버킷과 리전은 `infra/envs/source-aws` 출력(`attachments_bucket`, `attachments_bucket_region`)에서 받습니다. 자격은 셸에서 넘긴 짧은 수명의 `AWS_*` 값(SDK 기본 체인)이고, 버킷 정책이 그 주체를 허용해야 씁니다.
@@ -80,6 +82,19 @@ docker compose -p bravo-pilot --env-file .env --env-file ../../apps/demo/pilot-a
 - 첨부를 쓰려면 채팅 DB가 이 스키마(2026-11-02 19:10 이후)로 만들어져 있어야 합니다(`scripts/reset_data_plane.sh`). 각 DB의 `attachment_store.active_store`는 기본으로 `src`, `dst`이고, 앱의 `ATTACHMENT_STORE_ID`와 같아야 합니다. 그래서 컷오버 전에는 AWS 앱만, 뒤에는 온프렘 앱만 첨부를 받습니다.
 
 쿠버네티스(K3s · EKS · GKE)는 `chart/`를 그대로 씁니다. 다른 것은 값뿐입니다(`chart/ci/*-values.yaml`). 이미지는 digest로만 받습니다.
+
+### 쓰기 차단 스위치 쓰는 법
+
+```bash
+# 클러스터 안(Executor) 또는 임시 링크(kubectl port-forward svc/chat-admin 8081 -n chat)
+curl -sS -H "Authorization: Bearer $TOKEN" http://chat-admin.chat.svc:8081/admin/writes
+curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"blocked": true}' http://chat-admin.chat.svc:8081/admin/writes
+```
+
+- 상태는 쓰기가 닿는 DB에 있습니다. PgBouncer 대상이 바뀌면(컷오버 7단계, 되돌리기) 그 DB의 행을 따릅니다. 컷오버 2단계에서 출발지 DB에 켠 차단은 출발지 DB에 남으므로, 되돌리기 뒤 출발지 쓰기는 Executor가 끌 때까지 막혀 있습니다(안전 쪽).
+- PUT이 503 `db_unavailable`이면 상태를 모르는 것입니다. 호출자는 GET으로 다시 읽은 뒤 판단합니다(NFR-3).
+- 업무 쓰기 HTTP 경로: `POST /api/rooms/{room}/messages`(헤더 `Idempotency-Key`, 본문 `{"author", "body", "attachment_id"?}`)와 첨부 `PUT /api/rooms/{room}/attachments`. WebSocket `send`와 같은 규칙입니다.
 
 ### 환경 변수
 
@@ -96,7 +111,8 @@ docker compose -p bravo-pilot --env-file .env --env-file ../../apps/demo/pilot-a
 | `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ADDRESSING_STYLE`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY(_FILE)`, `S3_CONDITIONAL_PUT` | 모든 환경에서 같은 이름(Amazon S3, Rook-Ceph RGW, GCS XML API + HMAC). 키가 없으면 SDK 기본 체인(Pod Identity, IRSA, 셸의 `AWS_*`). `S3_BUCKET`이 비면 첨부를 끔 |
 | `ATTACHMENT_STORE_ID`, `ATTACHMENT_MAX_BYTES`(≤ 5 MiB) | 첨부 저장소 ID, 크기 상한 |
 | `AWS_REQUEST_CHECKSUM_CALCULATION`, `AWS_RESPONSE_CHECKSUM_VALIDATION` | 기본 `when_required`(S3 호환 저장소 · GCS 호환) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` | OTLP/gRPC. 지표 `chat.write.duration`, `chat.writes`, `chat.poll.duration`, `chat.ws.connections`, `chat.attachments` |
+| `ADMIN_PORT`(8081), `ADMIN_HOST`, `ADMIN_TOKEN_FILE`, `WRITE_BLOCK_RETRY_AFTER_S`(1), `WRITE_BLOCK_SWITCH_WAIT_S`(5) | 쓰기 차단 스위치. 토큰 파일은 요청마다 다시 읽어 Secret 교체가 재시작 없이 반영됨 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` | OTLP/gRPC. 지표 `chat.write.duration`, `chat.writes`, `chat.poll.duration`, `chat.ws.connections`, `chat.attachments`, `chat.write_block.changes` |
 
 ### 플랫폼 쪽에 남은 일(이 폴더 밖)
 

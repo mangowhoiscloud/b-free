@@ -1,0 +1,173 @@
+# 일본 금융 팩(D-03a, T23)
+# - 규제는 6개 통제의 근거로만 연결합니다. 통제의 시험과 합격선은 바꾸지 않습니다(04-governance.md 1절).
+# - status: confirmed = 공식 원문에서 조항 번호와 내용을 직접 봤음. unverified = 못 봤음. 이유는 note에 적음.
+# - quote: 원문 인용. 출처마다 한 번만, 15단어 이하.
+# - 법률 판단 도구가 아닙니다. 적법성 판단은 사람이 합니다.
+# - 출처 목록과 확인하지 못한 것: ../SOURCES.md
+schema: bravo.governance.pack/v1
+pack: jp/finance
+country: jp
+industry: finance
+task: T23
+reviewed_at: "2026-11-02T20:30+09:00"
+
+controls:
+  - ids: [SEC-01, ENC-02]
+    name: 비밀 저장
+    basis:
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.3. データ保護"
+        clause: "2.3.3 【基本的な対応事項】①②"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: ①은 적절한 암호화 방식과 암호 키 · 전자 증명서의 수명주기 관리를 요구합니다. ②는 분류에 따라 암호화 · 접근 제어로 보호하라고 합니다.
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.1. 認証・アクセス管理"
+        clause: "2.3.1 【基本的な対応事項】③"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: API에 넣는 인증 정보를 포함해 기기와 사용자의 ID · 인증 정보를 관리하라고 합니다. Git 평문 비밀 0건 시험의 근거입니다.
+
+  - ids: [ENC-01]
+    name: 전송 암호화
+    basis:
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.4.4. インフラストラクチャ（ネットワーク等）の技術的対策"
+        clause: "2.3.4.4 【基本的な対応事項】③⑤"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: ③은 전용선이나 암호 기술로 네트워크 보안을 확보하라고 합니다. ⑤는 중요한 시스템의 원격 접속에 암호화 접속을 쓰라고 합니다. 구간마다 CA · hostname 검증까지 요구하지는 않습니다.
+
+  - ids: [AUD-01]
+    name: 감사 로그
+    basis:
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.4.2. ログ管理"
+        clause: "2.3.4.2 【基本的な対応事項】①②"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: 로그의 기록 내용, 접근 제어, 위변조 방지, 보존 기간을 절차로 정하고 주기적으로 검토하라고 합니다.
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.1. 認証・アクセス管理"
+        clause: "2.3.1 【基本的な対応事項】④"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: 접속한 사용자를 특정하고 처리 내용을 로그에 남기라고 합니다.
+
+  - ids: [NET-01]
+    name: 네트워크 노출
+    basis:
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.4.4. インフラストラクチャ（ネットワーク等）の技術的対策"
+        clause: "2.3.4.4 【基本的な対応事項】①② / 【対応が望ましい事項】c"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: ①은 외부망과 내부망 접속부의 침입 방지, ②는 방화벽이 필요한 통신만 허용하도록 요구합니다. c(권장)는 세그먼트 세분화입니다.
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.4.5. クラウドサービス利用時の対策"
+        clause: "2.3.4.5 【基本的な対応事項】③"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: 정보 공개 설정 오류를 확인하라고 합니다. 외부 스캔 시험의 근거입니다.
+
+  - ids: [IAM-01, ISO-01]
+    name: 최소 권한
+    basis:
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.1. 認証・アクセス管理"
+        clause: "2.3.1 【基本的な対応事項】①②"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: ①은 시스템을 포함한 사용자의 접근 권한을 필요 최소한으로 제한하고 직무를 분리하라고 합니다. 특권 계정 제한도 같은 항목입니다.
+
+  - ids: [DR-01]
+    name: 백업 · 복구 / 출구전략 시험
+    basis:
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.3. データ保護"
+        clause: "2.3.3 【基本的な対応事項】⑤"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: 백업 데이터의 격리 · 보호, 정합성 검증, 복구 테스트를 규정에 넣고 구현하라고 합니다.
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.2.5. 演習・訓練"
+        clause: "2.2.5 【対応が望ましい事項】a"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: 실기 복구 훈련에서 복구 절차와 RPO · RTO의 타당성을 확인하라는 권장 사항입니다.
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.6. サードパーティリスク管理"
+        clause: "2.6 【対応が望ましい事項】d"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        quote: "出口戦略を事前に策定し、定期的に代替手段のテスト等をすること"
+        note: 스펙의 "2.6"은 맞습니다. 정확한 위치는 2.6의 "対応が望ましい事項" d입니다. 기본 대응 사항이 아니라 대형 금융기관이 참조할 권장 사항이고, 법적 의무가 아닙니다. 2025-07-04 개정은 기관명만 바꿔 번호는 같습니다.
+      - source: 金融庁 金融分野におけるサイバーセキュリティに関するガイドライン(2024-10-04 제정, 2025-07-04 개정)
+        title: "2.3.4.5. クラウドサービス利用時の対策"
+        clause: "2.3.4.5 【基本的な対応事項】⑥"
+        url: https://www.fsa.go.jp/common/law/cybersecurity_guideline.pdf
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: 클라우드 이용 종료 때 데이터 취급(논리적 폐기)을 확인하라고 합니다.
+      - source: 金融庁 ディスカッション・ペーパー「オペレーショナル・レジリエンス確保に向けた基本的な考え方」(2023-04)
+        title: "BOX7 サードパーティリスク管理②（代替手段・出口戦略の確保）"
+        clause: "III장 BOX7(본문 21–22쪽)"
+        url: https://www.fsa.go.jp/news/r4/ginkou/20230427/02.pdf
+        retrieved_at: "2026-11-02T20:15+09:00"
+        status: confirmed
+        quote: "現状では困難との声が多く聞かれている"
+        note: 멀티 클라우드는 클라우드마다 다른 사양에 대응할 인력의 육성 · 채용 비용 때문에 어렵다는 업계 의견을 소개합니다. 금융청의 요구가 아니라 의견 소개입니다. 조항이 아니므로 판정 근거로 쓰지 않고 배경으로만 씁니다.
+
+# GOV-01 표시 값(04-governance.md 4.2). placement는 환경마다 실행 시 정하는 값이라 팩에 두지 않습니다.
+# 판정 입력(사업자 종류, 데이터 종류, 제공자의 데이터 취급 여부)은 사람이 확정한 값만 씁니다.
+residency:
+  - data_kind: 개인 데이터(個人データ)
+    scope: null
+    basis:
+      - source: 일본 금융 분야의 국내 보관 의무
+        title: 확인하지 않음
+        clause: null
+        url: null
+        retrieved_at: null
+        status: unverified
+        note: 이번 확인(T23)에서 일본 금융 분야의 데이터 국내 보관 의무 조항을 찾지 않았습니다. FISC 安全対策基準의 해당 항목도 유료 책자라 보지 못했습니다. scope를 정하지 않습니다.
+
+export:
+  - data_kind: 개인 데이터(個人データ)
+    condition: 외국에 있는 제3자에게 제공하면 본인 동의 등 제28조 요건이 필요합니다. 외국 사업자가 저장된 데이터를 취급하지 않으면 "제공"이 아닙니다. 이때도 안전관리 조치는 남습니다.
+    basis:
+      - source: 個人情報の保護に関する法律(평성15년 법률 제57호, e-Gov 현행판 2026-11-02 시행)
+        title: "第二十八条（外国にある第三者への提供の制限）"
+        clause: "제28조 제1항–제3항"
+        url: https://laws.e-gov.go.jp/law/415AC0000000057
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: e-Gov 법령 API v2로 조회 시점의 현행 본문을 받았습니다.
+      - source: 個人情報保護委員会「個人情報の保護に関する法律についてのガイドライン」に関するＱ＆Ａ
+        title: "Q12-3 · Q12-4(외국 서버 저장, 외국 사업자 운영 국내 서버)"
+        clause: "Q12-3, Q12-4(관련 Q7-53, Q10-25)"
+        url: https://www.ppc.go.jp/personalinfo/faq/APPI_QA/
+        retrieved_at: "2026-11-02T20:22+09:00"
+        status: confirmed
+        note: 계약으로 데이터 비취급을 정하고 접근 제어를 하면 제28조의 제공에 해당하지 않는다고 답합니다. 해당 여부 판단은 사람이 합니다.
+
+# 원문을 보지 못해 통제에 연결하지 않은 출처
+pending:
+  - source: FISC 金融機関等コンピュータシステムの安全対策基準・解説書(第14版)
+    title: 항목 번호 미확인
+    clause: null
+    url: https://www.fisc.or.jp/publication/book/007219.php
+    retrieved_at: "2026-11-02T20:16+09:00"
+    status: unverified
+    note: 현행 제14판(PDF 2026-03 발행, 일반가 3,000엔, 회원 무료)입니다. 본문이 유료라 기준 항목 번호를 보지 못했습니다. 책을 구하기 전에는 항목 번호를 쓰지 않습니다.

@@ -1,0 +1,111 @@
+# Rehearsal service (platform/rehearsal; 05 4, 13) next to the pilot, like compose.gate.yaml: same
+# project name and network, not in compose.yaml's include list. Start it through the AppRole helper so
+# the service gets a fresh single-use secret_id (60 s) and logs in at start (D-26):
+#   deploy/pilot/scripts/rehearsal-bao.sh with-rehearsal -- \
+#     docker compose -p bravo-pilot -f deploy/pilot/compose.rehearsal.yaml up -d --build
+# One-time setup (operator): scripts/rehearsal-bao.sh setup, put-evidence-db, put-synthetic-db,
+# put-collector-ro <env>. Settings come from deploy/pilot/.env (see .env.example, REHEARSAL_* entries):
+#   REHEARSAL_API_TOKEN            the API's BRAVO_REHEARSAL_API_TOKEN (platform/api calls POST /v1/trials)
+#   REHEARSAL_TOKEN_KEY            Trial token signing key (32+ bytes); stays in this container
+#   REHEARSAL_KUBECONFIG_HOST      host path of the destination K3s kubeconfig (provisioner identity)
+#   REHEARSAL_SANDBOX_IMAGE, REHEARSAL_VERIFIER_IMAGE   digest-pinned images the K3s nodes can pull
+#   PLATFORM_DB_REHEARSAL_RO_PASSWORD, REHEARSAL_SYNTHETIC_RW_PASSWORD, REHEARSAL_SYNTHETIC_ADMIN_PASSWORD
+#   REHEARSAL_HOST_PORT            host port of the service (default 8090)
+# Without a kubeconfig or a model route every Trial is refused with its reason (cluster_unconfigured,
+# llm_unconfigured); nothing is simulated. The codex_chatgpt route needs the operator's ChatGPT login,
+# so live Codex rehearsals run through the CLI runner on the operator machine, not in this container.
+
+x-hardening: &hardening
+  read_only: true
+  user: "10001:10001"
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  restart: "no"   # a restart needs a new secret_id: start again through rehearsal-bao.sh with-rehearsal
+
+services:
+  # One-shot: the evidence_read role on the platform DB (platform/rehearsal/sql/rehearsal_evidence_ro.sql),
+  # applied as the owner after the API migrations. Password from the environment, read by psql \getenv.
+  rehearsal-evidence-role:
+    image: postgres:16.13@sha256:5d143123fdf80462d1778cd4f24b9f7ca13c87174bca19141fb194c5a1ebca59
+    entrypoint: ["psql", "-v", "ON_ERROR_STOP=1", "--no-psqlrc", "-f", "/sql/rehearsal_evidence_ro.sql"]
+    environment:
+      PGHOST: platform-db
+      PGUSER: bravo_owner
+      PGDATABASE: ${PLATFORM_DB_NAME:?set PLATFORM_DB_NAME}
+      PGPASSWORD: ${PLATFORM_DB_OWNER_PASSWORD:?set PLATFORM_DB_OWNER_PASSWORD}
+      BRAVO_REHEARSAL_RO_PASSWORD: ${PLATFORM_DB_REHEARSAL_RO_PASSWORD:?set PLATFORM_DB_REHEARSAL_RO_PASSWORD}
+    volumes:
+      - ../../platform/rehearsal/sql/rehearsal_evidence_ro.sql:/sql/rehearsal_evidence_ro.sql:ro
+    networks: [pilot]
+    restart: "no"
+
+  # Synthetic database for db_rehearse: one transaction per call, always rolled back. No host port.
+  rehearsal-synthetic-db:
+    image: postgres:16.15@sha256:5db6dac2ef5dcff512f4f00a009c3c332b9f2f28f24277175bf3e4a3d02ef83a
+    environment:
+      POSTGRES_DB: synthetic
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${REHEARSAL_SYNTHETIC_ADMIN_PASSWORD:?set REHEARSAL_SYNTHETIC_ADMIN_PASSWORD}
+      REHEARSE_RW_PASSWORD: ${REHEARSAL_SYNTHETIC_RW_PASSWORD:?set REHEARSAL_SYNTHETIC_RW_PASSWORD}
+    volumes:
+      - ../../platform/rehearsal/sql/synthetic-init.sh:/docker-entrypoint-initdb.d/10-synthetic.sh:ro
+      - rehearsal-synthetic-data:/var/lib/postgresql/data
+    networks: [pilot]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d synthetic"]
+      interval: 2s
+      retries: 30
+    restart: unless-stopped
+
+  rehearsal:
+    <<: *hardening
+    build:
+      context: ../../platform
+      dockerfile: rehearsal/Dockerfile
+    image: bravo-rehearsal:pilot
+    environment:
+      BRAVO_REHEARSAL_API_TOKEN: ${REHEARSAL_API_TOKEN:?set REHEARSAL_API_TOKEN}
+      BRAVO_REHEARSAL_TOKEN_KEY: ${REHEARSAL_TOKEN_KEY:?set REHEARSAL_TOKEN_KEY}
+      BRAVO_REHEARSAL_TOOL_LAYER_URL: http://127.0.0.1:8090   # the worker runs in this container
+      BRAVO_REHEARSAL_KUBECONFIG: ${REHEARSAL_KUBECONFIG_HOST:+/etc/bravo/kubeconfig}
+      BRAVO_REHEARSAL_KUBE_CONTEXT: ${REHEARSAL_KUBE_CONTEXT:-}
+      BRAVO_REHEARSAL_SANDBOX_IMAGE: ${REHEARSAL_SANDBOX_IMAGE:-}
+      BRAVO_REHEARSAL_VERIFIER_IMAGE: ${REHEARSAL_VERIFIER_IMAGE:-}
+      # Server-side tools (D-26): gate on the pilot network, credentials from the platform OpenBao.
+      BRAVO_GATE_URL: http://gate:8084
+      BRAVO_EVIDENCE_DIR: /var/lib/bravo/runs/evidence
+      BRAVO_BAO_ADDR: https://platform-bao:8200
+      BRAVO_BAO_CACERT: /etc/bravo/bao-ca.crt
+      BRAVO_BAO_ROLE_ID: ${BRAVO_BAO_ROLE_ID:-}       # set by rehearsal-bao.sh with-rehearsal only
+      BRAVO_BAO_SECRET_ID: ${BRAVO_BAO_SECRET_ID:-}   # single use, 60 s; dropped after login
+      BRAVO_BAO_DB_RO_PATH: envs/{env}/collector-ro
+      BRAVO_BAO_SYNTHETIC_DB_PATH: platform/rehearsal-synthetic-db
+      BRAVO_BAO_EVIDENCE_DB_PATH: platform/rehearsal-evidence-db
+      # Model route: provider and route variables only (13 6). Empty means llm_unconfigured.
+      BRAVO_LLM_PROVIDER: ${BRAVO_LLM_PROVIDER:-}
+      BRAVO_LLM_GATEWAY_URL: ${BRAVO_LLM_GATEWAY_URL:-}
+      BRAVO_MODEL_OPUS: ${BRAVO_MODEL_OPUS:-}
+      BRAVO_MODEL_HAIKU: ${BRAVO_MODEL_HAIKU:-}
+      BRAVO_BEDROCK_REGION: ${BRAVO_BEDROCK_REGION:-}
+    volumes:
+      - ./bao/tls/ca.crt:/etc/bravo/bao-ca.crt:ro
+      - ${REHEARSAL_KUBECONFIG_HOST:-/dev/null}:/etc/bravo/kubeconfig:ro
+      - rehearsal-runs:/var/lib/bravo/runs
+    ports:
+      - "127.0.0.1:${REHEARSAL_HOST_PORT:-8090}:8090"
+    networks: [pilot]
+    depends_on:
+      rehearsal-evidence-role:
+        condition: service_completed_successfully
+      rehearsal-synthetic-db:
+        condition: service_healthy
+
+networks:
+  pilot:
+    external: true
+    name: ${BRAVO_PILOT_NETWORK:-bravo-pilot_default}
+
+volumes:
+  rehearsal-synthetic-data: {}
+  rehearsal-runs: {}

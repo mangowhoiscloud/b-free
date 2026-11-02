@@ -61,6 +61,23 @@ attachments:
       accessKeyIdKey: access-key-id
       secretAccessKeyKey: secret-access-key
 
+# Write-block switch (spec r2 §8.10, CLOUD-E2E-CONTRACT §8). Separate port and ClusterIP Service,
+# never routed through the tunnel/gateway (they point at the app Service, which has no admin port).
+admin:
+  port: 8081
+  service:
+    name: ""                 # default: <release>-admin, i.e. chat-admin for release "chat"
+  # Bearer token delivered by the platform from OpenBao secret/envs/<env>/chat-admin (field token).
+  # Mounted optional: without it the pod still serves chat and the admin API refuses everything.
+  tokenSecret:
+    name: chat-admin
+    key: token
+  retryAfterSeconds: 1       # Retry-After on writes rejected while blocked
+  switchWaitSeconds: 5       # how long a switch change may wait for writes in flight
+  # Extra NetworkPolicy peers allowed to reach the admin port (when networkPolicy.enabled).
+  # kubectl port-forward (the temporary platform link, D-16) is not subject to NetworkPolicy.
+  allowedFrom: []
+
 otel:
   endpoint: ""               # e.g. http://otel-agent.bravo-observability.svc:4317
   serviceName: bravo-demo

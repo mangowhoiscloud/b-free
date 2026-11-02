@@ -24,7 +24,7 @@ make oracle TASK=tasks/templates/fix-secret-injection
 
 `make rehearse TASK=governance`는 서비스와 같은 Harbor Trial을 한 번 돌리고 `docs/evidence/rehearsals.tsv`에 한 줄을 남깁니다. 목적지 K3s 클러스터(저장소 상위의 `infra/envs/target-onprem/`), digest 고정 이미지, 모델 경로, 역할 허용 목록이 필요합니다. 하나라도 없으면 `verdict=BLOCKED`와 이유를 내고 아무것도 만들지 않습니다. 모델 공급자는 환경 변수(`BRAVO_LLM_PROVIDER`와 경로 변수)로만 고릅니다.
 
-클러스터가 없을 때는 `python -m bravo_rehearsal.runner --task governance --without-cluster`로 진단만 합니다. 같은 워커와 도구 계층을 쓰지만 Harbor Trial · 샌드박스 · 검증기가 없어서 `rehearsal_exec`는 `sandbox_unavailable`로 거부되고, 판정은 늘 `INFRA_ERROR`입니다. 서버 쪽 도구 호출 기록(허용 · 거부와 규칙)과 비용을 보는 용도이고, 서비스 API로는 닿지 않습니다.
+에이전트 실행은 언제나 실제 샌드박스가 있는 Harbor Trial 안에서만 합니다. 클러스터 없이 에이전트를 돌리는 방식은 두지 않습니다(팀장 결정 2026-11-02).
 
 ## 리허설 서비스(2026-11-02)
 

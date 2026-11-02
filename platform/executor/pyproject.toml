@@ -12,6 +12,7 @@ dependencies = [
   "opentelemetry-sdk==1.45.2",
   "opentelemetry-exporter-otlp-proto-grpc==1.45.2",
   "boto3==1.43.123",
+  "httpx==0.28.1",
 ]
 
 [project.scripts]

@@ -112,3 +112,6 @@ class Instruments:
         self.poll_ms = meter.create_histogram("chat.poll.duration", unit="ms", description="Fan-out poll latency")
         self.ws_connections = meter.create_up_down_counter("chat.ws.connections", description="Open WebSockets")
         self.attachments = meter.create_counter("chat.attachments", description="Attachment uploads by outcome")
+        self.write_block_changes = meter.create_counter(
+            "chat.write_block.changes", description="Write-block switch changes applied through the admin port"
+        )

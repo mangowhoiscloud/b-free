@@ -123,7 +123,7 @@
   }
   function resend(idemKey) {
     const p = state.pending.get(idemKey); if (!p) return;
-    p.status = "sending"; render(); transmit(p);
+    p.status = "sending"; p.firstSentAt = Date.now(); render(); transmit(p);
   }
 
   function connect() {
@@ -145,7 +145,8 @@
         // Resend anything not acknowledged before the close, with the same idempotency keys
         // (also writes that already showed the retry notice: the key prevents duplicates).
         for (const p of state.pending.values()) {
-          if (p.status === "sending" || (p.status === "failed" && p.retryable)) { p.status = "sending"; transmit(p); }
+          if (p.status === "failed" && p.retryable) { p.status = "sending"; p.firstSentAt = Date.now(); }
+          if (p.status === "sending") transmit(p);
         }
         render();
       } else if (msg.type === "messages") {
@@ -157,7 +158,18 @@
         render();
       } else if (msg.type === "nack") {
         const p = state.pending.get(msg.idem_key); if (!p) return;
-        if (msg.code === "write_timeout" || msg.code === "busy" || msg.code === "db_error") {
+        if (msg.code === "writes_blocked") {
+          // 503 + Retry-After from the write-block switch (cutover): retry with the same key until
+          // the write wait (8 s) is used up, then show the retry notice like any delayed write.
+          const waitMs = ((state.limits && state.limits.write_wait_s) || 8) * 1000;
+          const retryMs = Math.max(1, msg.retry_after_s || 1) * 1000;
+          if (Date.now() - p.firstSentAt + retryMs < waitMs) {
+            banner(t("writesPaused"));
+            setTimeout(() => { const q = state.pending.get(p.idem_key); if (q && q.status === "sending") transmit(q); }, retryMs);
+            return;
+          }
+          p.status = "failed"; p.retryable = true; banner(t("delayed"));
+        } else if (msg.code === "write_timeout" || msg.code === "busy" || msg.code === "db_error") {
           p.status = "failed"; p.retryable = true; banner(t("delayed"));
         } else if (msg.code === "attachment_missing") {
           p.status = "failed"; p.retryable = false; banner(t("attachMissing"), "err");
@@ -195,6 +207,7 @@
     if (res.ok) { a.uploaded = doc.attachment; banner(null); return a.uploaded; }
     if (res.status === 423) banner(t("attachPaused"), "err");
     else if (res.status === 413) banner(t("attachTooBig", { max: fmtBytes(doc.max_bytes || 0) }), "err");
+    else if (res.status === 503 && doc.error === "writes_blocked") banner(t("writesPaused"));
     else if (res.status === 503) banner(t("delayed"));
     else banner(t("attachFailed"), "err");
     return null; // the same idempotency key is reused on the next try
@@ -223,7 +236,8 @@
       if (!body) body = att.filename;
     }
     if (!body) return;
-    const p = { idem_key: uuid4(), author: myName(), body: body.slice(0, 2000), attachment: att, status: "sending" };
+    const p = { idem_key: uuid4(), author: myName(), body: body.slice(0, 2000), attachment: att, status: "sending",
+      firstSentAt: Date.now() };
     state.pending.set(p.idem_key, p);
     input.value = ""; setAttachment(null); render(); transmit(p);
     // No answer within the write wait (8 s) plus slack: show the retry notice.

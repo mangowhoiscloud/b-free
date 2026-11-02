@@ -17,7 +17,9 @@ service = [
   "pydantic==2.14.2",
   "pyyaml==6.0.3",
   "psycopg[binary]==3.3.6",   # db_inspect / db_rehearse (same pin as platform/collector, platform/gate)
-  "bravo-agents",             # platform/agent: allowlists and per-role proposal schemas (path source below)
+  # platform/agent: allowlists, per-role schemas, run_agent. Extra "codex": the codex_chatgpt provider
+  # (openai-codex==0.157.0, pilot/demo route on the operator machine). Path source below.
+  "bravo-agents[codex]",
 ]
 harbor = ["bravo-rehearsal[service]"]
 dev = ["pytest==8.4.2", "pytest-asyncio==1.2.0"]

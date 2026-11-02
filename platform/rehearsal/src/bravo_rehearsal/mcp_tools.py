@@ -181,7 +181,8 @@ class ToolLayer:
             if tool == "controls_describe":
                 out = await self._server.controls_describe(inputs, args)
             elif tool == "evidence_read":
-                out = await self._server.evidence_read(set(_binding(trial).evidence_ids), args)
+                out = await self._server.evidence_read(set(_binding(trial).evidence_ids), args,
+                                                       tenant_id=trial.tenant_id, plan_id=trial.plan_id.lower())
             elif tool == "db_inspect":
                 out = await self._server.db_inspect(inputs, trial.allowlist.db_queries, args)
             else:

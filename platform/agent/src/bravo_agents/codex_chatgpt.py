@@ -4,7 +4,8 @@ OpenAI Codex Python SDK(openai-codex==0.157.0)로 운영자 기기의 기존 Cha
 - 자격은 Codex 자체 저장소(운영자 기기)에 있습니다. 이 모듈은 그 파일을 열거나 읽거나 옮기지 않습니다.
   로그인 여부는 app-server의 account/read로만 확인합니다(없으면 codex_login_missing).
 - 모델의 도구는 플랫폼 MCP 도구 계층 하나뿐입니다. Codex 내장 도구(shell, apply_patch, 웹 검색, 이미지 보기,
-  플러그인 · 앱 · 스킬 · 메모리 · 하위 에이전트 등)는 설정 덮어쓰기로 끕니다(ISOLATION_OVERRIDES).
+  플러그인 · 앱 · 스킬 · 메모리 · 하위 에이전트 등)는 설정 덮어쓰기(isolation_overrides), 다른 설정 층의 MCP 서버
+  끄기(foreign_mcp_overrides), 고친 모델 카탈로그(sanitized_catalog: code mode · apply_patch · shell)로 끕니다.
 - 실행 전 격리 사전 검사(preflight)가 같은 설정으로 모델에게 갈 도구 목록을 로컬 가짜 공급자로 받아 확인합니다.
   플랫폼 MCP의 승인된 도구 말고 하나라도 있으면 codex_isolation_failed로 멈춥니다(fail-closed).
 - cwd는 실행마다 새 빈 임시 디렉터리, 샌드박스는 read_only, 승인 정책은 never(deny_all), 스레드는 ephemeral.

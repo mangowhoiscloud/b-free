@@ -45,12 +45,12 @@ export function liveReason(err: unknown): string {
   return err instanceof Error ? err.message : '알 수 없는 오류';
 }
 
-export async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
+export async function getJson(url: string, timeoutMs = 8000, accept = 'application/json'): Promise<unknown> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'omit', signal: ctrl.signal });
+    res = await fetch(url, { headers: { Accept: accept }, credentials: 'omit', signal: ctrl.signal });
   } catch (e) {
     throw new LiveError(0, ctrl.signal.aborted ? `${timeoutMs / 1000}초 안에 응답 없음` : e instanceof Error ? e.message : String(e));
   } finally {

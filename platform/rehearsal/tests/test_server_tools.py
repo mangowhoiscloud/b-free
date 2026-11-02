@@ -9,10 +9,12 @@ read-only ``collector_ro`` role and a synthetic database role. They are skipped 
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import shutil
 import subprocess
 import time
+import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -163,17 +165,52 @@ class Stack:
     tools: ServerTools
     superuser: dict[str, Any]
     passwords: tuple[str, ...]
+    bao_addr: str
+    root: str
+    ids: dict[str, str]
+
+
+REPO = Path(__file__).resolve().parents[3]
+API_MIGRATIONS = REPO / "platform" / "api" / "src" / "bravo_api" / "migrations"
+EVIDENCE_SQL = REPO / "platform" / "rehearsal" / "sql" / "rehearsal_evidence_ro.sql"
+SYNTHETIC_INIT = REPO / "platform" / "rehearsal" / "sql" / "synthetic-init.sh"
+REHEARSAL_POLICY = REPO / "deploy" / "pilot" / "bao" / "policies" / "platform-rehearsal.hcl"
+
+
+def _psql(cid: str, db: str, sql: str, env: dict[str, str] | None = None) -> None:
+    cmd = ["docker", "exec", "-i"]
+    for k, v in (env or {}).items():
+        cmd += ["-e", f"{k}={v}"]
+    subprocess.run([*cmd, cid, "psql", "-U", "postgres", "-d", db, "-v", "ON_ERROR_STOP=1", "-q", "--no-psqlrc",
+                    "-f", "-"], input=sql, capture_output=True, text=True, timeout=120, check=True)
+
+
+def _wait_pg(conninfo: dict[str, Any]) -> None:
+    import psycopg
+
+    deadline = time.monotonic() + 90
+    while True:
+        try:
+            with psycopg.connect(**conninfo, connect_timeout=2) as conn:
+                conn.execute("SELECT 1")
+            return
+        except psycopg.OperationalError:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.5)
 
 
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
+    """Real OpenBao (AppRole + the pilot policy file), postgres:16 with the platform/api migrations and the
+    evidence role SQL, and a synthetic DB built by synthetic-init.sh."""
     reason = _docker_reason()
     if reason:
         pytest.skip(reason)
     import psycopg
 
     tmp = tmp_path_factory.mktemp("stack")
-    root, su_pw, ro_pw, rw_pw = (secrets.token_urlsafe(18) for _ in range(4))
+    root, su_pw, ro_pw, rw_pw, ev_pw, syn_pw = (secrets.token_urlsafe(18) for _ in range(6))
     cids: list[str] = []
     try:
         bao_cid, bao_port = _run(BAO_IMAGE, "server", "-dev", "-dev-listen-address=0.0.0.0:8200",
@@ -181,18 +218,24 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         cids.append(bao_cid)
         pg_cid, pg_port = _run(PG_IMAGE, env={"POSTGRES_PASSWORD": su_pw, "POSTGRES_DB": "chat"})
         cids.append(pg_cid)
+        syn_cmd = ["docker", "run", "-d", "--rm", "-P", "-e", f"POSTGRES_PASSWORD={syn_pw}", "-e",
+                   "POSTGRES_DB=synthetic", "-e", f"REHEARSE_RW_PASSWORD={rw_pw}", "-v",
+                   f"{SYNTHETIC_INIT}:/docker-entrypoint-initdb.d/10-synthetic.sh:ro", PG_IMAGE]
+        syn_cid = subprocess.run(syn_cmd, capture_output=True, text=True, timeout=300, check=True).stdout.strip()
+        cids.append(syn_cid)
+        syn_port = int(subprocess.run(["docker", "port", syn_cid], capture_output=True, text=True, timeout=20,
+                                      check=True).stdout.splitlines()[0].rsplit(":", 1)[1])
         su = {"host": "127.0.0.1", "port": pg_port, "dbname": "chat", "user": "postgres", "password": su_pw}
-        deadline = time.monotonic() + 90
-        while True:
-            try:
-                with psycopg.connect(**su, connect_timeout=2) as conn:
-                    conn.execute("SELECT 1")
-                httpx.get(f"http://127.0.0.1:{bao_port}/v1/sys/health", timeout=2).raise_for_status()
-                break
-            except (psycopg.OperationalError, httpx.HTTPError):
-                if time.monotonic() > deadline:
-                    raise
-                time.sleep(0.5)
+        _wait_pg(su)
+        # The init script runs on a temporary server first; wait until rehearse_rw can log in on TCP.
+        _wait_pg({"host": "127.0.0.1", "port": syn_port, "dbname": "synthetic", "user": "rehearse_rw",
+                  "password": rw_pw})
+        bao = f"http://127.0.0.1:{bao_port}"
+        deadline = time.monotonic() + 60
+        while httpx.get(f"{bao}/v1/sys/health", timeout=2).status_code != 200:
+            if time.monotonic() > deadline:
+                raise RuntimeError("openbao not ready")
+            time.sleep(0.5)
         with psycopg.connect(**su, autocommit=True) as conn:
             conn.execute("CREATE TABLE messages (id bigserial PRIMARY KEY, body text NOT NULL)")
             conn.execute("CREATE TABLE audit_log (at timestamptz, line text)")  # no primary key
@@ -200,27 +243,68 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
             conn.execute(f"CREATE ROLE collector_ro LOGIN PASSWORD '{ro_pw}'")
             conn.execute("GRANT pg_read_all_settings, pg_read_all_stats, pg_monitor TO collector_ro")
             conn.execute("ALTER ROLE collector_ro SET default_transaction_read_only = on")
-            conn.execute("CREATE DATABASE synthetic")
-        with psycopg.connect(**{**su, "dbname": "synthetic"}, autocommit=True) as conn:
-            conn.execute(f"CREATE ROLE rehearse_rw LOGIN PASSWORD '{rw_pw}'")
-            conn.execute("CREATE SCHEMA app AUTHORIZATION rehearse_rw")
-            conn.execute("ALTER ROLE rehearse_rw SET search_path = app")
+            conn.execute("CREATE DATABASE platform")
+        # Platform DB: the real API migrations, then the shipped evidence role SQL (password via \\getenv).
+        for f in sorted(API_MIGRATIONS.glob("*.sql")):
+            _psql(pg_cid, "platform", f.read_text())
+        _psql(pg_cid, "platform", EVIDENCE_SQL.read_text(), env={"BRAVO_REHEARSAL_RO_PASSWORD": ev_pw})
+        ids = {k: str(uuid.uuid4()) for k in ("plan", "other_plan", "gate", "other_gate", "src", "dst",
+                                              "src2", "dst2")}
+        with psycopg.connect(**{**su, "dbname": "platform"}, autocommit=True) as conn:  # superuser: RLS bypassed
+            pid = conn.execute("INSERT INTO principals (iss, sub, email) VALUES ('t', 's', 'a@b') RETURNING id"
+                               ).fetchone()[0]
+            for tenant, plan, gate, src, dst in (("t1", ids["plan"], ids["gate"], ids["src"], ids["dst"]),
+                                                 ("t2", ids["other_plan"], ids["other_gate"], ids["src2"],
+                                                  ids["dst2"])):
+                conn.execute("INSERT INTO tenants (tenant_id, name) VALUES (%s, %s)", (tenant, tenant))
+                for env_id, name, role in ((src, "aws-src", "source"), (dst, "onprem-dst", "target")):
+                    conn.execute("INSERT INTO environments (environment_id, tenant_id, name, role, engine, secret_ref,"
+                                 " created_by) VALUES (%s, %s, %s, %s, 'postgres', %s, %s)",
+                                 (env_id, tenant, name, role, f"tenants/{tenant}/{name}", pid))
+                conn.execute("INSERT INTO plans (plan_id, tenant_id, workload, source_environment_id, "
+                             "target_environment_id, state, created_by, analysis) VALUES "
+                             "(%s, %s, 'chat', %s, %s, 'PROPOSE', %s, %s)",
+                             (plan, tenant, src, dst, pid, json.dumps({"gaps": ["open_bucket"],
+                                                                       "note": "password = 'not-a-real-1'"})))
+                conn.execute("INSERT INTO gate_verdicts (verdict_id, tenant_id, plan_id, plan_revision, verdict, "
+                             "reasons, controls, readiness, input_digest, rule_version, requested_by, channel) "
+                             "VALUES (%s, %s, %s, 1, 'BLOCK', ARRAY['ISO-01'], %s, '{}', 'sha256:x', 'r1', %s, "
+                             "'console')", (gate, tenant, plan, json.dumps([{"control_id": "ISO-01",
+                                                                             "dst": "FAIL"}]), pid))
+        # OpenBao: KV secrets at the pilot paths, the pilot policy file, an AppRole like rehearsal-bao.sh setup.
         headers = {"X-Vault-Token": root}
-        base = f"http://127.0.0.1:{bao_port}/v1/secret/data"
         for path, data in (
-            ("bravo/db/aws-src/collector_ro", {"host": "127.0.0.1", "port": str(pg_port), "dbname": "chat",
-                                               "user": "collector_ro", "password": ro_pw, "sslmode": "disable"}),
-            ("bravo/db/synthetic/rehearse", {"host": "127.0.0.1", "port": str(pg_port), "dbname": "synthetic",
-                                             "user": "rehearse_rw", "password": rw_pw, "sslmode": "disable"}),
+            ("envs/aws-src/collector-ro", {"host": "127.0.0.1", "port": str(pg_port), "dbname": "chat",
+                                           "user": "collector_ro", "password": ro_pw, "sslmode": "disable"}),
+            ("platform/rehearsal-synthetic-db", {"host": "127.0.0.1", "port": str(syn_port), "dbname": "synthetic",
+                                                 "user": "rehearse_rw", "password": rw_pw, "sslmode": "disable"}),
+            ("platform/rehearsal-evidence-db", {"host": "127.0.0.1", "port": str(pg_port), "dbname": "platform",
+                                                "user": "bravo_rehearsal_ro", "password": ev_pw,
+                                                "sslmode": "disable"}),
+            ("platform/cloudflare", {"api_token": "never-readable-by-rehearsal"}),
         ):
-            httpx.post(f"{base}/{path}", json={"data": data}, headers=headers, timeout=5).raise_for_status()
-        token_file = tmp / "bao-token"
-        token_file.write_text(root)
-        cfg = OpenBaoConfig(addr=f"http://127.0.0.1:{bao_port}", kv_mount="secret", token_file=token_file,
-                            k8s_role=None, k8s_mount="kubernetes", k8s_jwt_file=tmp / "jwt", ca_cert=None)
-        tools = ServerTools(settings(tmp, db_ro_path="bravo/db/{env}/collector_ro",
-                                     db_synthetic_path="bravo/db/synthetic/rehearse", openbao=cfg))
-        yield Stack(tools=tools, superuser=su, passwords=(root, su_pw, ro_pw, rw_pw))
+            httpx.post(f"{bao}/v1/secret/data/{path}", json={"data": data}, headers=headers,
+                       timeout=5).raise_for_status()
+        httpx.post(f"{bao}/v1/sys/auth/approle", json={"type": "approle"}, headers=headers,
+                   timeout=5).raise_for_status()
+        httpx.put(f"{bao}/v1/sys/policies/acl/platform-rehearsal", json={"policy": REHEARSAL_POLICY.read_text()},
+                  headers=headers, timeout=5).raise_for_status()
+        httpx.post(f"{bao}/v1/auth/approle/role/rehearsal", headers=headers, timeout=5, json={
+            "token_policies": ["platform-rehearsal"], "token_type": "service", "token_period": "1h",
+            "bind_secret_id": True, "secret_id_ttl": "60s", "secret_id_num_uses": 1}).raise_for_status()
+        role_id = httpx.get(f"{bao}/v1/auth/approle/role/rehearsal/role-id", headers=headers,
+                            timeout=5).json()["data"]["role_id"]
+        secret_id = httpx.post(f"{bao}/v1/auth/approle/role/rehearsal/secret-id", headers=headers,
+                               timeout=5).json()["data"]["secret_id"]
+        cfg = OpenBaoConfig(addr=bao, kv_mount="secret", role_id=role_id, secret_id=secret_id)
+        tools = ServerTools(settings(tmp, db_ro_path="envs/{env}/collector-ro",
+                                     db_synthetic_path="platform/rehearsal-synthetic-db",
+                                     evidence_db_path="platform/rehearsal-evidence-db", openbao=cfg))
+        import asyncio
+
+        asyncio.run(tools.bao.login())
+        yield Stack(tools=tools, superuser=su, passwords=(root, su_pw, ro_pw, rw_pw, ev_pw, syn_pw, secret_id),
+                    bao_addr=bao, root=root, ids={**ids, "role_id": role_id, "secret_id": secret_id})
     finally:
         for cid in cids:
             subprocess.run(["docker", "rm", "-f", cid], capture_output=True, timeout=60, check=False)
@@ -230,10 +314,20 @@ INPUTS = {"source_env": "aws-src", "target_env": "onprem-dst"}
 
 
 @pytest.mark.docker
-async def test_openbao_kv_read_and_missing_secret(stack: Stack) -> None:
+async def test_openbao_approle_login_is_single_use_and_policy_is_narrow(stack: Stack) -> None:
     bao: OpenBao = stack.tools.bao
-    assert (await bao.read("bravo/db/aws-src/collector_ro"))["user"] == "collector_ro"
-    assert await blocked(bao.read("bravo/db/nowhere")) == "secret_missing"
+    assert "BRAVO_BAO_SECRET_ID" not in os.environ and bao._secret_id is None  # dropped after login
+    assert (await bao.read("envs/aws-src/collector-ro"))["user"] == "collector_ro"
+    # The pilot policy (deploy/pilot/bao/policies/platform-rehearsal.hcl) covers nothing else.
+    assert await blocked(bao.read("platform/cloudflare")) == "openbao_denied"
+    assert await blocked(bao.read("envs/aws-src/chat-admin")) == "openbao_denied"
+    # The secret_id was single-use: a second login with it is refused.
+    again = OpenBao(OpenBaoConfig(addr=stack.bao_addr, kv_mount="secret", role_id=stack.ids["role_id"],
+                                  secret_id=stack.ids["secret_id"]))
+    assert await blocked(again.login()) == "openbao_denied"
+    assert await blocked(again.read("envs/aws-src/collector-ro")) == "openbao_denied"
+    await bao.renew()  # periodic token renews
+    assert bao._period > 0 and (await bao.read("platform/rehearsal-synthetic-db"))["user"] == "rehearse_rw"
 
 
 @pytest.mark.docker
@@ -259,7 +353,9 @@ async def test_db_rehearse_runs_in_one_transaction_and_always_rolls_back(stack: 
     out = await stack.tools.db_rehearse({"sql": sql})
     assert out["rolled_back"] is True
     assert [(s["status"], s.get("rowcount")) for s in out["statements"]] == [("ok", -1), ("ok", 2), ("ok", -1)]
-    with psycopg.connect(**{**stack.superuser, "dbname": "synthetic"}) as conn:
+    secret = await stack.tools.bao.read("platform/rehearsal-synthetic-db")
+    with psycopg.connect(host=secret["host"], port=int(secret["port"]), dbname=secret["dbname"], user=secret["user"],
+                         password=secret["password"]) as conn:
         assert conn.execute("SELECT to_regclass('app.orders')").fetchone() == (None,)  # nothing persisted
     out = await stack.tools.db_rehearse({"sql": "CREATE TABLE x (id int); INSERT INTO missing VALUES (1); "
                                                 "CREATE TABLE never_reached (id int)"})
@@ -267,3 +363,57 @@ async def test_db_rehearse_runs_in_one_transaction_and_always_rolls_back(stack: 
     assert out["statements"][1]["sqlstate"] == "42P01"  # undefined_table; the rest is not run
     refused = await blocked(stack.tools.db_rehearse({"sql": "DROP DATABASE chat"}))  # before connecting
     assert refused == "statement_not_allowed:drop_database"
+
+
+@pytest.mark.docker
+async def test_evidence_read_from_platform_db_is_tenant_and_plan_bound(stack: Stack) -> None:
+    import psycopg
+
+    ids, tools = stack.ids, stack.tools
+    scope = {f"gate:{ids['gate']}", f"gate:{ids['other_gate']}", f"analysis:{ids['plan']}",
+             f"analysis:{ids['other_plan']}", f"rehearsal:{uuid.uuid4()}"}
+    out = await tools.evidence_read(scope, {"id": f"gate:{ids['gate']}"}, tenant_id="t1", plan_id=ids["plan"])
+    assert out["source"] == "platform_db" and out["content"]["verdict"] == "BLOCK"
+    assert out["content"]["reasons"] == ["ISO-01"] and out["content"]["plan_id"] == ids["plan"]
+    analysis = await tools.evidence_read(scope, {"id": f"analysis:{ids['plan']}"}, tenant_id="t1", plan_id=ids["plan"])
+    assert analysis["content"]["analysis"]["gaps"] == ["open_bucket"]
+    assert "not-a-real-1" not in json.dumps(analysis)  # redacted
+    # Another tenant's verdict: RLS hides it even with the right plan id; another plan: refused.
+    assert await blocked(tools.evidence_read(scope, {"id": f"gate:{ids['other_gate']}"}, tenant_id="t1",
+                                             plan_id=ids["other_plan"])) == "evidence_missing"
+    assert await blocked(tools.evidence_read(scope, {"id": f"gate:{ids['gate']}"}, tenant_id="t2",
+                                             plan_id=ids["plan"])) == "evidence_missing"
+    assert await blocked(tools.evidence_read(scope, {"id": f"analysis:{ids['other_plan']}"}, tenant_id="t1",
+                                             plan_id=ids["plan"])) == "evidence_not_in_scope"
+    assert await blocked(tools.evidence_read({"gate:nope"}, {"id": "gate:nope"}, tenant_id="t1",
+                                             plan_id=ids["plan"])) == "bad_evidence_id"
+    # The role itself: column grants only, read-only sessions.
+    secret = await tools.bao.read("platform/rehearsal-evidence-db")
+    conn = psycopg.connect(host=secret["host"], port=int(secret["port"]), dbname=secret["dbname"],
+                           user=secret["user"], password=secret["password"])
+    with conn:
+        with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):  # session default: read-only
+            conn.execute("INSERT INTO tenants (tenant_id, name) VALUES ('x', 'x')")
+        conn.rollback()
+        conn.execute("SET default_transaction_read_only = off")  # a session can lift it; the grants still hold
+        conn.commit()
+        for sql in ("SELECT collect_snapshot FROM plans", "SELECT * FROM approvals",
+                    "INSERT INTO tenants (tenant_id, name) VALUES ('x', 'x')", "UPDATE plans SET analysis = NULL"):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                conn.execute(sql)
+            conn.rollback()
+
+
+@pytest.mark.docker
+async def test_synthetic_init_script_role_cannot_escape(stack: Stack) -> None:
+    import psycopg
+
+    secret = await stack.tools.bao.read("platform/rehearsal-synthetic-db")
+    with psycopg.connect(host=secret["host"], port=int(secret["port"]), dbname=secret["dbname"], user=secret["user"],
+                         password=secret["password"], autocommit=True) as conn:
+        assert conn.execute("SHOW search_path").fetchone() == ("app",)
+        role = conn.execute("SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = current_user"
+                            ).fetchone()
+        assert role == (False, False, False)
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("CREATE TABLE public.x (id int)")

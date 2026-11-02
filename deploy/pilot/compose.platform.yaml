@@ -68,6 +68,10 @@ services:
       BRAVO_DEV_AUTH: ${PLATFORM_DEV_AUTH}
       BRAVO_DEV_TOKENS_DIR: /etc/bravo/devtokens
       BRAVO_SSE_TICKET_SECRET: ${PLATFORM_SSE_TICKET_SECRET:?set PLATFORM_SSE_TICKET_SECRET}
+      # Rehearsal service (compose.rehearsal.yaml): http://rehearsal:8090 on the pilot network. Empty keeps
+      # rehearsals refused (rehearsal_unconfigured); the token must equal the service's REHEARSAL_API_TOKEN.
+      BRAVO_REHEARSAL_URL: ${PLATFORM_REHEARSAL_URL:-}
+      BRAVO_REHEARSAL_API_TOKEN: ${REHEARSAL_API_TOKEN:-}
     volumes:
       - ./devauth/jwks.json:/etc/bravo/jwks.json:ro
       - ./devauth/tokens:/etc/bravo/devtokens:ro

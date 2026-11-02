@@ -342,6 +342,56 @@ def create_app(settings: Settings) -> FastAPI:
             instruments.write_ms.record((time.monotonic() - t0) * 1000.0, {"kind": "attachment"})
             return JSONResponse({"attachment": att.public(), "created": created}, status_code=201 if created else 200)
 
+    @app.post("/api/rooms/{room}/messages")
+    async def post_message(room: str, request: Request) -> Response:
+        """HTTP form of the WebSocket `send` (same idempotency and write-block rules)."""
+        if not state.get("ready"):
+            return _err(503, "starting", retryable=True)
+        db: ChatDb = state["db"]
+        if not ROOM_RE.match(room):
+            return _err(400, "invalid_room")
+        idem_key = _uuid(request.headers.get("idempotency-key"))
+        if idem_key is None:
+            return _err(400, "idempotency_key_required")
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > 16_384:
+            return _err(413, "too_large")
+        try:
+            doc = await request.json()
+        except ValueError:
+            return _err(400, "invalid_json")
+        if not isinstance(doc, dict):
+            return _err(400, "invalid_json")
+        author = _clean_text(doc.get("author"), MAX_AUTHOR)
+        body = _clean_text(doc.get("body"), MAX_BODY)
+        att_raw = doc.get("attachment_id")
+        attachment_id = _uuid(att_raw) if att_raw else None
+        if author is None or body is None or (att_raw and attachment_id is None):
+            return _err(400, "invalid")
+        t0 = time.monotonic()
+        outcome = "ok"
+        try:
+            message, created = await db.send_message(
+                room=room, author=author, body=body, idem_key=idem_key, attachment_id=attachment_id
+            )
+            return JSONResponse({"message": message, "created": created}, status_code=201 if created else 200)
+        except WritesBlocked:
+            outcome = "blocked"
+            return blocked_response()
+        except WriteTimeout:
+            outcome = "timeout"
+            return JSONResponse({"error": "write_timeout", "retryable": True}, status_code=503,
+                                headers={"Retry-After": retry_after})
+        except IdempotencyConflict:
+            outcome = "conflict"
+            return _err(409, "idempotency_conflict")
+        except AttachmentNotFound:
+            outcome = "attachment_missing"
+            return _err(422, "attachment_missing")
+        finally:
+            instruments.write_ms.record((time.monotonic() - t0) * 1000.0, {"kind": "message", "outcome": outcome})
+            instruments.writes.add(1, {"kind": "message", "outcome": outcome})
+
     @app.get("/api/attachments/{attachment_id}")
     async def download(attachment_id: str) -> Response:
         store: ObjectStore | None = state.get("store")
@@ -427,7 +477,6 @@ def create_app(settings: Settings) -> FastAPI:
                     return
                 except WritesBlocked:
                     outcome = "blocked"
-                    instruments.writes.add(0, {"kind": "message", "outcome": outcome})
                     await reply({"type": "nack", "idem_key": str(idem_key), "code": "writes_blocked",
                                  "retryable": True, "status": 503, "retry_after_s": settings.admin.retry_after_s})
                     return

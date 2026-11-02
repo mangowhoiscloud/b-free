@@ -1,0 +1,41 @@
+[project]
+name = "bravo-link"
+version = "0.1.0"
+description = "Temporary link (D-16 전): laptop-initiated kubectl port-forward, forward supervisor and reverse rendezvous tunnel"
+requires-python = ">=3.12,<3.13"
+dependencies = ["psycopg[binary]==3.3.6"]
+
+[project.scripts]
+bravo-link = "bravo_link.__main__:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.8", "pyright>=1.1.390"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bravo_link"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S"]
+ignore = ["S101", "S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+# relay.py runs in the source cluster on whatever python3 the image has (>= 3.9): no 3.10+ syntax.
+"src/bravo_link/relay.py" = ["UP"]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
+include = ["src"]

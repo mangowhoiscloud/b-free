@@ -26,7 +26,7 @@ export function EdgeBlock() {
       Promise.all(
         names.map(async (name): Promise<Lookup> => {
           try {
-            const o = asRecord(await getJson(`${dohUrl}?name=${encodeURIComponent(name)}&type=A`, 6000));
+            const o = asRecord(await getJson(`${dohUrl}?name=${encodeURIComponent(name)}&type=A`, 6000, 'application/dns-json'));
             return { name, status: num(o.Status), answers: asArray(o.Answer).map((a) => ({ type: num(asRecord(a).type), data: str(asRecord(a).data) })), error: null };
           } catch (e) {
             return { name, status: null, answers: [], error: liveReason(e) };

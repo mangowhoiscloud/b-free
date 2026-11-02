@@ -1,0 +1,18 @@
+# Write-block switch (CLOUD-E2E-CONTRACT §8): ClusterIP only, separate from the app Service so the
+# tunnel/gateway, which target the app Service, can never reach it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.admin.service.name | default (printf "%s-admin" .Release.Name) }}
+  labels:
+    {{- include "bravo-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "bravo-demo.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: admin
+      port: {{ .Values.admin.port }}
+      targetPort: admin
+      protocol: TCP

@@ -75,8 +75,12 @@ async def submit_proposal(mcp_url: str, trial_token: str, out: ProposalBase) -> 
         async with streamable_http_client(mcp_url, http_client=http) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
+                # 서버는 plan_propose를 tools/list에 내놓지 않고, 받은 뒤 Trial을 잠급니다(이후 요청 403).
+                # mcp 2.x는 목록에 없는 도구의 결과를 검증하려 list_tools를 다시 부르므로 미리 "스키마 없음"으로 둡니다.
+                session._tool_output_schemas.setdefault("plan_propose", None)
                 res = await session.call_tool("plan_propose", {"proposal": out.model_dump(mode="json")})
-    if getattr(res, "isError", True):
+    # mcp 2.x는 is_error(스네이크 표기). 이전 판의 isError도 받고, 둘 다 없으면 거부로 봅니다.
+    if getattr(res, "is_error", getattr(res, "isError", True)):
         text = " ".join(getattr(c, "text", "") for c in getattr(res, "content", []) or [])[:500]
         raise AgentRunError("proposal_rejected", text)
 

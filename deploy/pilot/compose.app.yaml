@@ -20,6 +20,12 @@
 # created after 2026-11-02 19:10). attachment_store.active_store defaults to the side name, so the
 # store ids below default to src / dst.
 #
+# Write-block switch (spec r2 §8.10): admin port 8081 in the container, published on 127.0.0.1 only
+# (APP_*_ADMIN_HOST_PORT). Bearer token from the shell variable APP_ADMIN_TOKEN, exported from
+# OpenBao (secret/platform or secret/envs/<env>/chat-admin, field token) through a pipe, never
+# written to pilot-app.env. Compose refuses to start when the variable is unset; exported empty
+# (APP_ADMIN_TOKEN=) the app starts and its admin API refuses every request (fail closed).
+#
 # Locally both instances read the DB password from a mounted file (DB_PASSWORD_SOURCE=env-file).
 # On EKS the chart runs the source app with DB_PASSWORD_SOURCE=aws-secrets-manager (S2 material).
 
@@ -44,6 +50,9 @@ x-app-env: &app-env
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?set OTEL_EXPORTER_OTLP_ENDPOINT}
   OTEL_SERVICE_NAME: bravo-demo
   FORWARDED_ALLOW_IPS: ${APP_FORWARDED_ALLOW_IPS:-127.0.0.1}
+  ADMIN_PORT: "8081"
+  ADMIN_TOKEN_FILE: /run/secrets/chat_admin_token
+  WRITE_BLOCK_RETRY_AFTER_S: ${APP_WRITE_BLOCK_RETRY_AFTER_S:-1}
 
 services:
   app-src:
@@ -51,6 +60,9 @@ services:
     secrets:
       - source: app_writer_password
         target: app_writer_password
+        mode: 0o444
+      - source: chat_admin_token
+        target: chat_admin_token
         mode: 0o444
     environment:
       <<: *app-env
@@ -69,6 +81,7 @@ services:
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
       - "${APP_SRC_HOST_PORT:?set APP_SRC_HOST_PORT}:8000"
+      - "127.0.0.1:${APP_SRC_ADMIN_HOST_PORT:?set APP_SRC_ADMIN_HOST_PORT}:8081"
 
   app-dst:
     <<: *app
@@ -78,6 +91,9 @@ services:
         mode: 0o444
       - source: app_dst_s3_secret_key
         target: app_dst_s3_secret_key
+        mode: 0o444
+      - source: chat_admin_token
+        target: chat_admin_token
         mode: 0o444
     environment:
       <<: *app-env
@@ -95,9 +111,12 @@ services:
       ATTACHMENT_STORE_ID: ${APP_DST_STORE_ID:-dst}
     ports:
       - "${APP_DST_HOST_PORT:?set APP_DST_HOST_PORT}:8000"
+      - "127.0.0.1:${APP_DST_ADMIN_HOST_PORT:?set APP_DST_ADMIN_HOST_PORT}:8081"
 
 secrets:
   app_writer_password:
     environment: APP_WRITER_PASSWORD           # from .env, never written to a file in the repository
   app_dst_s3_secret_key:
     environment: APP_DST_S3_SECRET_ACCESS_KEY  # from pilot-app.env (RGW user secret); empty = no key
+  chat_admin_token:
+    environment: APP_ADMIN_TOKEN               # exported in the shell from OpenBao; empty = admin refuses all

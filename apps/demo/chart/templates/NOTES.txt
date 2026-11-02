@@ -1,2 +1,3 @@
 {{ include "bravo-demo.fullname" . }} serves "{{ .Values.environment.label }}" ({{ .Values.environment.id }}) from {{ .Values.image.repository }}@{{ .Values.image.digest }}.
 Join page with QR: <public URL>/join   Health: /healthz   Readiness: /readyz
+Write-block switch (cluster-internal): {{ .Values.admin.service.name | default (printf "%s-admin" .Release.Name) }}:{{ .Values.admin.port }} GET/PUT /admin/writes, Bearer token from Secret {{ .Values.admin.tokenSecret.name }}/{{ .Values.admin.tokenSecret.key }}.

@@ -7,9 +7,10 @@ in this process: no tool result carries a secret value, and every string in a re
 
 - ``controls_describe``: ``GET <BRAVO_GATE_URL>/v1/controls?source=&target=`` on the gate service
   (:8084). Source and target come from the Trial (state machine), not from tool input.
-- ``evidence_read``: one stored evidence document by ID from the evidence store
-  (``BRAVO_EVIDENCE_DIR``, default ``<trials dir>/evidence``). Only IDs listed in the Trial's
-  envelope are readable. The platform DB as a second store is not wired yet.
+- ``evidence_read``: one evidence document by ID, only for IDs listed in the Trial's envelope.
+  ``gate:<uuid>``, ``analysis:<plan uuid>`` and ``rehearsal:<uuid>`` come from the platform DB as
+  ``bravo_rehearsal_ro`` (column grants, tenant RLS via ``app.tenant_id``, rows of this plan only,
+  READ ONLY); any other ID is a JSON file in the evidence store (``BRAVO_EVIDENCE_DIR``).
 - ``db_inspect``: one of the role's fixed catalog queries (``db_queries`` in the allowlist) through
   the read-only ``collector_ro`` role, in a ``READ ONLY`` transaction with a statement timeout.
 - ``db_rehearse``: the proposed SQL in one transaction on the synthetic database that is always
@@ -28,7 +29,7 @@ import json
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,18 @@ MAX_STATEMENTS = 50
 STATEMENT_TIMEOUT_MS = 5_000
 LOCK_TIMEOUT_MS = 2_000
 ESCAPE_STRING = re.compile(r"(?<![A-Za-z0-9_$])[Ee]'")
+UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# evidence_read from the platform DB: "<kind>:<uuid>", always bound to the Trial's plan (and tenant via RLS).
+EVIDENCE_DB: dict[str, str] = {
+    "gate": "SELECT verdict_id::text AS verdict_id, plan_id::text AS plan_id, plan_revision, verdict, reasons, "
+            "controls, readiness, input_digest, rule_version, created_at FROM gate_verdicts "
+            "WHERE verdict_id = %s::uuid AND plan_id = %s::uuid",
+    "analysis": "SELECT plan_id::text AS plan_id, analysis, analyzed_at FROM plans "
+                "WHERE plan_id = %s::uuid AND plan_id = %s::uuid",
+    "rehearsal": "SELECT rehearsal_id::text AS rehearsal_id, plan_id::text AS plan_id, attempt, task, role, status, "
+                 "reason, artifact_digest, verifier, created_at, ended_at FROM rehearsals "
+                 "WHERE rehearsal_id = %s::uuid AND plan_id = %s::uuid",
+}
 EVIDENCE_ID = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,127}$")
 ENV_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
@@ -190,40 +203,109 @@ def rehearse_problem(stmt: str) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class OpenBaoConfig:
+    """Same variables as the Executor (``bravo_executor.vault``) plus two alternatives to AppRole."""
+
     addr: str | None
     kv_mount: str
-    token_file: Path | None
-    k8s_role: str | None
-    k8s_mount: str
-    k8s_jwt_file: Path
-    ca_cert: str | None
+    role_id: str | None = field(default=None, repr=False)  # AppRole (pilot: rehearsal-bao.sh with-rehearsal)
+    secret_id: str | None = field(default=None, repr=False)
+    token_file: Path | None = None  # e.g. an agent-rendered token file
+    k8s_role: str | None = None  # Kubernetes auth on the target platform
+    k8s_mount: str = "kubernetes"
+    k8s_jwt_file: Path = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
+    ca_cert: str | None = None
 
     @classmethod
     def from_env(cls) -> OpenBaoConfig:
         e = os.environ.get
-        token_file = (e("BRAVO_OPENBAO_TOKEN_FILE") or "").strip()
-        return cls(addr=(e("BRAVO_OPENBAO_ADDR") or "").rstrip("/") or None,
-                   kv_mount=(e("BRAVO_OPENBAO_KV_MOUNT") or "secret").strip("/"),
+        token_file = (e("BRAVO_BAO_TOKEN_FILE") or "").strip()
+        jwt_file = (e("BRAVO_BAO_K8S_JWT_FILE") or "").strip()
+        return cls(addr=(e("BRAVO_BAO_ADDR") or "").rstrip("/") or None,
+                   kv_mount=(e("BRAVO_BAO_KV_MOUNT") or "secret").strip("/"),
+                   role_id=e("BRAVO_BAO_ROLE_ID") or None, secret_id=e("BRAVO_BAO_SECRET_ID") or None,
                    token_file=Path(token_file) if token_file else None,
-                   k8s_role=e("BRAVO_OPENBAO_K8S_ROLE") or None,
-                   k8s_mount=(e("BRAVO_OPENBAO_K8S_MOUNT") or "kubernetes").strip("/"),
-                   k8s_jwt_file=Path(e("BRAVO_OPENBAO_K8S_JWT_FILE")
-                                     or "/var/run/secrets/kubernetes.io/serviceaccount/token"),
-                   ca_cert=e("BRAVO_OPENBAO_CACERT") or None)
+                   k8s_role=e("BRAVO_BAO_K8S_ROLE") or None,
+                   k8s_mount=(e("BRAVO_BAO_K8S_MOUNT") or "kubernetes").strip("/"),
+                   k8s_jwt_file=Path(jwt_file) if jwt_file else cls.k8s_jwt_file,
+                   ca_cert=e("BRAVO_BAO_CACERT") or None)
 
 
 class OpenBao:
-    """KV v2 reads with the service's own identity (token file, or Kubernetes auth login)."""
+    """KV v2 reads with the service's own identity. Errors carry a reason, never a value.
+
+    AppRole (pilot): the secret_id is single-use and short-lived, so ``login()`` runs at service
+    start, the secret_id is dropped from memory and from ``os.environ``, and ``keepalive()``
+    renews the periodic token. If the token is lost, every read is refused (``openbao_denied``)
+    until the service is restarted through ``rehearsal-bao.sh with-rehearsal``.
+    """
 
     def __init__(self, cfg: OpenBaoConfig) -> None:
         self.cfg = cfg
+        self._role_id, self._secret_id = cfg.role_id, cfg.secret_id
         self._token: str | None = None
         self._token_exp = 0.0
+        self._period = 0.0
+        self._lock = asyncio.Lock()
+
+    def __repr__(self) -> str:
+        return f"OpenBao(addr={self.cfg.addr!r}, logged_in={self._token is not None})"
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.cfg.addr and (self._role_id or self._token or self.cfg.token_file or self.cfg.k8s_role))
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=str(self.cfg.addr), timeout=10.0, verify=self.cfg.ca_cert or True)
 
-    async def _login(self, http: httpx.AsyncClient) -> str:
+    def _accept(self, auth: dict[str, Any]) -> str:
+        token = auth.get("client_token")
+        if not token:
+            raise ToolBlocked("openbao_denied")
+        lease = float(auth.get("lease_duration") or 300)
+        self._token, self._token_exp = str(token), time.time() + lease
+        self._period = lease if auth.get("renewable") else 0.0
+        return self._token
+
+    async def login(self) -> None:
+        """AppRole login now (call at service start); a no-op for the other methods."""
+        if not self.cfg.addr or not (self._role_id and self._secret_id):
+            return
+        async with self._lock, self._client() as http:
+            body = {"role_id": self._role_id, "secret_id": self._secret_id}
+            self._secret_id = None  # single use either way
+            os.environ.pop("BRAVO_BAO_SECRET_ID", None)
+            try:
+                r = await http.post("/v1/auth/approle/login", json=body)
+            except httpx.HTTPError as exc:
+                raise ToolBlocked("openbao_unreachable") from exc
+            if r.status_code != 200:
+                raise ToolBlocked("openbao_denied")
+            self._accept(r.json().get("auth") or {})
+
+    async def renew(self) -> None:
+        if not self._token or not self._period:
+            return
+        async with self._lock, self._client() as http:
+            try:
+                r = await http.post("/v1/auth/token/renew-self", headers={"X-Vault-Token": self._token})
+            except httpx.HTTPError:
+                return  # next attempt; the token is still valid until _token_exp
+            if r.status_code == 200:
+                self._accept(r.json().get("auth") or {})
+            elif r.status_code in (401, 403):
+                self._token = None  # expired or revoked: fail closed from here on
+
+    async def keepalive(self) -> None:
+        """Renew a periodic token at a third of its period, for the life of the service."""
+        while True:
+            await asyncio.sleep(max(30.0, (self._period or 900.0) / 3))
+            await self.renew()
+
+    async def _current_token(self, http: httpx.AsyncClient) -> str:
+        if self._token and self._token_exp - time.time() > 30:
+            return self._token
+        if self._role_id:  # AppRole: no re-login without a new secret_id
+            raise ToolBlocked("openbao_denied" if self._token is None else "openbao_token_expired")
         if self.cfg.token_file is not None:
             try:
                 return self.cfg.token_file.read_text(encoding="utf-8").strip()
@@ -231,8 +313,6 @@ class OpenBao:
                 raise ToolBlocked("openbao_token_unreadable") from exc
         if self.cfg.k8s_role is None:
             raise ToolBlocked("openbao_unconfigured")
-        if self._token and self._token_exp - time.time() > 60:
-            return self._token
         try:
             jwt = self.cfg.k8s_jwt_file.read_text(encoding="utf-8").strip()
         except OSError as exc:
@@ -240,18 +320,14 @@ class OpenBao:
         r = await http.post(f"/v1/auth/{self.cfg.k8s_mount}/login", json={"role": self.cfg.k8s_role, "jwt": jwt})
         if r.status_code != 200:
             raise ToolBlocked("openbao_denied")
-        auth = r.json().get("auth") or {}
-        self._token, self._token_exp = auth.get("client_token"), time.time() + float(auth.get("lease_duration", 300))
-        if not self._token:
-            raise ToolBlocked("openbao_denied")
-        return self._token
+        return self._accept(r.json().get("auth") or {})
 
     async def read(self, path: str) -> dict[str, str]:
         if not self.cfg.addr:
             raise ToolBlocked("openbao_unconfigured")
         try:
             async with self._client() as http:
-                token = await self._login(http)
+                token = await self._current_token(http)
                 r = await http.get(f"/v1/{self.cfg.kv_mount}/data/{path.strip('/')}",
                                    headers={"X-Vault-Token": token})
         except httpx.HTTPError as exc:
@@ -274,20 +350,22 @@ class ServerToolSettings:
     gate_url: str | None
     gate_secret_path: str | None
     evidence_dir: Path
-    db_ro_path: str | None  # e.g. "bravo/db/{env}/collector_ro"
-    db_synthetic_path: str | None  # e.g. "bravo/db/synthetic/rehearse"
+    db_ro_path: str | None  # e.g. "envs/{env}/collector-ro"
+    db_synthetic_path: str | None  # e.g. "platform/rehearsal-synthetic-db"
     openbao: OpenBaoConfig
+    evidence_db_path: str | None = None  # e.g. "platform/rehearsal-evidence-db" (role bravo_rehearsal_ro)
 
     @classmethod
     def from_env(cls, trials_dir: Path) -> ServerToolSettings:
         e = os.environ.get
         evidence = (e("BRAVO_EVIDENCE_DIR") or "").strip()
         return cls(gate_url=(e("BRAVO_GATE_URL") or "").rstrip("/") or None,
-                   gate_secret_path=e("BRAVO_OPENBAO_GATE_PATH") or None,
+                   gate_secret_path=e("BRAVO_BAO_GATE_PATH") or None,
                    evidence_dir=Path(evidence) if evidence else trials_dir / "evidence",
-                   db_ro_path=e("BRAVO_OPENBAO_DB_RO_PATH") or None,
-                   db_synthetic_path=e("BRAVO_OPENBAO_DB_SYNTHETIC_PATH") or None,
-                   openbao=OpenBaoConfig.from_env())
+                   db_ro_path=e("BRAVO_BAO_DB_RO_PATH") or None,
+                   db_synthetic_path=e("BRAVO_BAO_SYNTHETIC_DB_PATH") or None,
+                   openbao=OpenBaoConfig.from_env(),
+                   evidence_db_path=e("BRAVO_BAO_EVIDENCE_DB_PATH") or None)
 
 
 def _conninfo(secret: dict[str, str]) -> dict[str, Any]:
@@ -342,12 +420,16 @@ class ServerTools:
             raise ToolBlocked("gate_bad_response")
         return {"source": params["source"], "target": params["target"], "level": level, "rows": redact(rows)}
 
-    async def evidence_read(self, evidence_ids: set[str], args: dict[str, Any]) -> dict[str, Any]:
+    async def evidence_read(self, evidence_ids: set[str], args: dict[str, Any], tenant_id: str = "",
+                            plan_id: str = "") -> dict[str, Any]:
         ev = args.get("id")
         if not isinstance(ev, str) or not EVIDENCE_ID.match(ev):
             raise ToolBlocked("bad_evidence_id")
         if ev not in evidence_ids:
             raise ToolBlocked("evidence_not_in_scope")
+        kind, _, key = ev.partition(":")
+        if kind in EVIDENCE_DB:
+            return await self._evidence_db(ev, kind, key, tenant_id, plan_id)
         path = self.s.evidence_dir / f"{ev}.json"
         if path.is_symlink() or not path.is_file():
             raise ToolBlocked("evidence_missing")
@@ -358,7 +440,48 @@ class ServerTools:
             doc = json.loads(raw)
         except ValueError as exc:
             raise ToolBlocked("evidence_unreadable") from exc
-        return {"id": ev, "content": redact(doc)}
+        return {"id": ev, "source": "file_store", "content": redact(doc)}
+
+    async def _evidence_db(self, ev: str, kind: str, key: str, tenant_id: str, plan_id: str) -> dict[str, Any]:
+        """Platform DB rows as ``bravo_rehearsal_ro`` (column grants, tenant RLS, plan-bound, READ ONLY)."""
+        if not (UUID.match(key) and UUID.match(plan_id) and tenant_id):
+            raise ToolBlocked("bad_evidence_id")
+        if kind == "analysis" and key != plan_id:
+            raise ToolBlocked("evidence_not_in_scope")
+        if not self.s.evidence_db_path:
+            raise ToolBlocked("evidence_db_unconfigured")
+        conninfo = _conninfo(await self.bao.read(self.s.evidence_db_path))
+
+        def work() -> dict[str, Any] | None:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            with psycopg.connect(**conninfo, row_factory=dict_row) as conn:
+                conn.read_only = True
+                with conn.cursor() as cur:
+                    cur.execute(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}")
+                    cur.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
+                    cur.execute(EVIDENCE_DB[kind], (key, plan_id))  # type: ignore[arg-type]
+                    row = cur.fetchone()
+                conn.rollback()
+            return row
+
+        try:
+            row = await asyncio.to_thread(work)
+        except Exception as exc:
+            import psycopg
+
+            if isinstance(exc, psycopg.Error):
+                raise ToolBlocked("evidence_db_unreachable" if isinstance(exc, psycopg.OperationalError)
+                                  else f"evidence_db_error:{getattr(exc, 'sqlstate', None)}") from exc
+            raise
+        if row is None:
+            raise ToolBlocked("evidence_missing")
+        content = {k: _jsonable(v) if not isinstance(v, (dict, list)) else v for k, v in row.items()}
+        text = json.dumps(content, default=str)
+        if len(text.encode()) > MAX_EVIDENCE_BYTES:
+            raise ToolBlocked("evidence_too_large")
+        return {"id": ev, "source": "platform_db", "content": redact(json.loads(text))}
 
     async def db_inspect(self, inputs: dict[str, Any], allowed: frozenset[str], args: dict[str, Any]) -> dict[str, Any]:
         query, target = args.get("query"), args.get("target", "source")

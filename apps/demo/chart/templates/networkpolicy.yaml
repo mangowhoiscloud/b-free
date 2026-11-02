@@ -11,7 +11,16 @@ spec:
       {{- include "bravo-demo.selectorLabels" . | nindent 6 }}
   policyTypes: ["Ingress", "Egress"]
   ingress:
-    {{- toYaml (.Values.networkPolicy.ingress | default list) | nindent 4 }}
+    {{- with .Values.networkPolicy.ingress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.admin.allowedFrom }}
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - port: {{ $.Values.admin.port }}
+          protocol: TCP
+    {{- end }}
   egress:
     {{- toYaml (.Values.networkPolicy.egress | default list) | nindent 4 }}
 {{- end }}

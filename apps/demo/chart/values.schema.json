@@ -29,6 +29,16 @@
                       "properties": {"name": {"type": "string", "minLength": 1}}}
       }
     },
+    "admin": {
+      "type": "object",
+      "properties": {
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535, "not": {"const": 8000}},
+        "retryAfterSeconds": {"type": "integer", "minimum": 1, "maximum": 60},
+        "switchWaitSeconds": {"type": "number", "minimum": 0.5, "maximum": 30},
+        "tokenSecret": {"type": "object", "required": ["name", "key"],
+                        "properties": {"name": {"type": "string", "minLength": 1}, "key": {"type": "string", "minLength": 1}}}
+      }
+    },
     "attachments": {
       "type": "object",
       "properties": {

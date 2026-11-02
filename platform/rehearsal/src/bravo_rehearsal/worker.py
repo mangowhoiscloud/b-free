@@ -28,17 +28,18 @@ def main() -> int:
     try:
         from bravo_agents import load_allowlist
         from bravo_agents.errors import AgentRunError
-        from bravo_agents.llm import resolve_llm
     except ImportError:
         print("agent_runtime_unavailable", file=sys.stderr)
         return 21
+    from .sdk_options import LLMUnconfigured, check_route
+
     try:
         tier = load_allowlist(role).model_tier
     except AgentRunError:
         tier = "opus"  # the allowlist problem is reported by run_agent; the model route is checked first
     try:
-        resolve_llm(tier)  # fail closed before anything else: never run without a configured model route
-    except AgentRunError:
+        check_route(tier, os.environ)  # fail closed before anything else: never run without a model route
+    except LLMUnconfigured:
         print("llm_unconfigured", file=sys.stderr)
         return 20
     try:
@@ -60,9 +61,10 @@ def main() -> int:
     except Exception as exc:  # the Trial records the reason; details go to stderr (worker log)
         print(f"agent_error:{type(exc).__name__}", file=sys.stderr)
         return 23
-    usage = {"model": getattr(result, "model", None), "num_turns": getattr(result, "num_turns", None),
-             "total_cost_usd": getattr(result, "total_cost_usd", None), "digest": getattr(result, "digest", None)}
-    print("agent_result:" + json.dumps(usage, sort_keys=True))  # stdout: usage summary for the trajectory
+    usage = {"provider": getattr(result, "provider", None), "model": getattr(result, "model", None),
+             "num_turns": getattr(result, "num_turns", None), "total_cost_usd": getattr(result, "total_cost_usd", None),
+             "tokens": getattr(result, "usage", None), "digest": getattr(result, "digest", None)}
+    print("agent_result:" + json.dumps(usage, sort_keys=True, default=str))  # stdout: usage summary for the trajectory
     return 0
 
 

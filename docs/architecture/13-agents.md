@@ -144,10 +144,11 @@ R = 수행, A = 최종 책임, C = 의견, I = 통보. 에이전트는 어느 �
 | `bedrock_gateway` | `CLAUDE_CODE_USE_BEDROCK=1`, `ANTHROPIC_BEDROCK_BASE_URL`, `CLAUDE_CODE_SKIP_BEDROCK_AUTH=1`, `ANTHROPIC_CUSTOM_HEADERS`=Trial 토큰, `AWS_REGION` | Bedrock 도쿄 `jp.` 프로필(운영) |
 | `codex_chatgpt` | `BRAVO_CODEX_MODEL`(필수), `BRAVO_CODEX_EFFORT` · `BRAVO_CODEX_BIN`(선택). Codex Python SDK `openai-codex==0.157.0`, 운영자 기기의 ChatGPT 플랜 로그인 | **파일럿 · 데모 전용**(팀장 결정 2026-11-02). 게이트웨이 없음 |
 
-**`codex_chatgpt`의 차이와 상태(2026-11-02 20:50 기준).**
-- D-26 차이: 자격이 플랫폼 OpenBao가 아니라 운영자 기기의 Codex 자체 저장소에 있습니다. 코드는 그 파일을 열지 않고 `account/read`로 로그인 여부만 봅니다(없으면 `codex_login_missing`).
-- ChatGPT 플랜은 개인 구독입니다. 고객에게 서비스하는 데 쓰는 것은 운영 경로가 아닙니다. 운영 경로는 플랫폼이 키를 가진 LLM 게이트웨이이고, 같은 계약 뒤에 Anthropic · OpenAI API나 고객이 요구하는 클라우드 엔진을 둡니다.
-- 격리는 실행 전 검사(`isolation_preflight`)를 통과해야 진행합니다. 지금은 **통과하지 못해 실행을 막습니다**(`codex_isolation_failed`). 실측: 설정 덮어쓰기 뒤에도 모델에게 `exec`(code mode), `wait`, `apply_patch`, MCP 리소스 도구가 보이고, 플랫폼 MCP 도구는 보이지 않습니다. 컨테이너 대안도 아직 확인하지 않았습니다.
+**`codex_chatgpt`의 차이와 격리(2026-11-02 실측, `bravo_agents/codex_chatgpt.py`).**
+- **차이 1(D-26).** 자격이 플랫폼 OpenBao가 아니라 운영자 기기의 Codex 자체 저장소에 있습니다. 코드는 그 파일을 열지 않고 app-server의 `account/read`로 로그인 여부만 봅니다(없으면 `codex_login_missing`).
+- **차이 2(운영 경로 아님).** ChatGPT 플랜은 개인 구독입니다. 고객에게 서비스하는 데 쓰는 것은 운영 경로가 아닙니다. 운영 경로는 플랫폼이 키를 가진 LLM 게이트웨이이고, 같은 계약 뒤에 Anthropic · OpenAI API나 고객이 요구하는 클라우드 엔진을 둡니다.
+- **격리 3중.** ① 설정 덮어쓰기: 내장 기능 35개 끔, 웹 검색 끔, `mcp_servers`는 `platform` 하나(승인 도구만 `enabled_tools`), 다른 설정 층의 MCP 서버는 꺼진 가짜 전송으로 덮음, 샌드박스 `read-only`, 승인 `never`, 실행마다 새 빈 cwd, `ephemeral` 스레드. ② 모델 카탈로그 사본: 모델 항목이 켜는 code mode(`exec`/`wait`), `apply_patch`, shell을 설정 키로는 끌 수 없어 `tool_mode=direct`, `shell_type=disabled`, `apply_patch_tool_type=null`로 고친 사본을 `model_catalog_json`으로 넘김. ③ 실행 전 검사(`isolation_preflight`): 같은 설정으로 인증 없는 로컬 가짜 공급자에 한 턴을 보내 모델에게 갈 도구 목록을 받고, 플랫폼 MCP의 승인 도구와 Codex의 MCP 리소스 조회 도구 셋 말고 하나라도 있거나 승인 도구가 빠지면 `codex_isolation_failed`로 멈춤. 실행 뒤에는 기록 항목에 MCP 밖 도구 실행이 없는지 다시 확인합니다.
+- **남은 차이.** MCP 리소스 조회 도구 셋(`list_mcp_resources` 등)은 끄는 설정이 없어 남습니다. 켜진 MCP 서버가 `platform` 하나라 도구 계층 밖으로 나가지 않습니다. `max_turns`는 MCP 호출 수로 셉니다. 비용 한도(`max_budget_usd`)는 플랜 정액이라 적용하지 않고 토큰 사용량만 남깁니다.
 
 모델 ID(`BRAVO_MODEL_OPUS`, `BRAVO_MODEL_HAIKU`), 게이트웨이 주소, 지역(`BRAVO_BEDROCK_REGION`)은 환경 변수로만 받습니다. 하나라도 없으면 시작하지 않습니다.
 
