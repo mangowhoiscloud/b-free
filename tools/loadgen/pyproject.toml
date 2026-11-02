@@ -1,9 +1,15 @@
 [project]
 name = "bravo-loadgen"
 version = "0.1.0"
-description = "Bravo chat write load generator with idempotent retries and NFR-2 verification (T18)"
+description = "Bravo chat load generator: writes and reads through the customer app, idempotent retries, NFR-2 verification, OTLP metrics (T18)"
 requires-python = ">=3.12,<3.13"
-dependencies = ["psycopg[binary]==3.3.6"]
+dependencies = [
+  "psycopg[binary]==3.3.6",
+  "httpx==0.28.1",
+  "websockets==17.4",
+  "opentelemetry-sdk==1.45.2",
+  "opentelemetry-exporter-otlp-proto-http==1.45.2",
+]
 
 [project.scripts]
 bravo-loadgen = "bravo_loadgen.__main__:main"

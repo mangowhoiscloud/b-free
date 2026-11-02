@@ -1,0 +1,16 @@
+{
+  "note": "attempt-level events.jsonl (Mac run, superseded) replaced by counts for size; per-request outcomes stay in requests.jsonl.gz",
+  "lines": 23365,
+  "by_event_code": {
+    "attempt_failed 503": 5605,
+    "attempt_failed 503:write_timeout": 15701,
+    "attempt_failed timeout": 1507,
+    "attempt_failed transport:ConnectError": 7,
+    "attempt_failed transport:ReadError": 116,
+    "request_failed 503": 114,
+    "request_failed 503:write_timeout": 233,
+    "request_failed timeout": 82
+  },
+  "first_ts": 1793642494.562,
+  "last_ts": 1793642626.921
+}

@@ -51,7 +51,7 @@ variable "github_ref" {
 variable "platform_images" {
   description = "플랫폼 ECR 저장소를 만들 이미지 이름. 저장소 이름은 <name>/<이미지>"
   type        = list(string)
-  default     = ["api", "console", "gate", "collector", "executor", "rehearsal", "link"]
+  default     = ["api", "console", "gate", "collector", "executor", "rehearsal", "link", "loadgen"]
 }
 
 variable "source_cluster_name" {

@@ -1,0 +1,9 @@
+{
+  "label": "sustained-50w20r",
+  "app_url": "https://b-free-chat-src.mangowhois.ai",
+  "started_kst": "2026-11-03T02:56:00+09:00",
+  "git": "305945afa87f347eb4ae734c8efc00e11e9cbd09",
+  "git_dirty_paths": 100,
+  "edge_colo": "YYZ",
+  "client": "Darwin arm64, 18 cores"
+}

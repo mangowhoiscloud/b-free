@@ -1,0 +1,318 @@
+{"t": 0, "write_ok": 31, "write_err_attempts": 0, "write_p95_ms": 583.5, "read_ok": 79, "read_err": 0, "read_p95_ms": 615.3, "served_by": {"w:aws": 31, "r:aws": 79}}
+{"t": 1, "write_ok": 30, "write_err_attempts": 0, "write_p95_ms": 877.1, "read_ok": 56, "read_err": 0, "read_p95_ms": 1042.7, "served_by": {"w:aws": 30, "r:aws": 56}}
+{"t": 2, "write_ok": 24, "write_err_attempts": 0, "write_p95_ms": 1882.3, "read_ok": 48, "read_err": 0, "read_p95_ms": 1879.5, "served_by": {"w:aws": 24, "r:aws": 48}}
+{"t": 3, "write_ok": 21, "write_err_attempts": 0, "write_p95_ms": 2688.3, "read_ok": 66, "read_err": 0, "read_p95_ms": 2598.9, "served_by": {"w:aws": 21, "r:aws": 66}}
+{"t": 4, "write_ok": 20, "write_err_attempts": 0, "write_p95_ms": 2631.3, "read_ok": 48, "read_err": 0, "read_p95_ms": 2860.3, "served_by": {"w:aws": 20, "r:aws": 48}}
+{"t": 5, "write_ok": 20, "write_err_attempts": 0, "write_p95_ms": 4355.7, "read_ok": 43, "read_err": 0, "read_p95_ms": 4414.5, "served_by": {"w:aws": 20, "r:aws": 43}}
+{"t": 6, "write_ok": 25, "write_err_attempts": 0, "write_p95_ms": 4868.7, "read_ok": 45, "read_err": 0, "read_p95_ms": 5041.2, "served_by": {"w:aws": 25, "r:aws": 45}}
+{"t": 7, "write_ok": 18, "write_err_attempts": 0, "write_p95_ms": 5017.8, "read_ok": 39, "read_err": 0, "read_p95_ms": 5258.0, "served_by": {"w:aws": 18, "r:aws": 39}}
+{"t": 8, "write_ok": 10, "write_err_attempts": 0, "write_p95_ms": 5652.1, "read_ok": 53, "read_err": 0, "read_p95_ms": 6068.3, "served_by": {"w:aws": 10, "r:aws": 53}}
+{"t": 9, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 5772.6, "read_ok": 22, "read_err": 0, "read_p95_ms": 7318.4, "served_by": {"r:aws": 22, "w:aws": 5}}
+{"t": 10, "write_ok": 10, "write_err_attempts": 2, "write_p95_ms": 7450.6, "read_ok": 31, "read_err": 9, "read_p95_ms": 7665.4, "served_by": {"w:aws": 10, "r:aws": 31}}
+{"t": 11, "write_ok": 6, "write_err_attempts": 24, "write_p95_ms": 7365.7, "read_ok": 13, "read_err": 69, "read_p95_ms": 7635.0, "served_by": {"w:aws": 6, "r:aws": 13}}
+{"t": 12, "write_ok": 17, "write_err_attempts": 34, "write_p95_ms": 9232.0, "read_ok": 39, "read_err": 101, "read_p95_ms": 9440.7, "served_by": {"w:aws": 17, "r:aws": 39}}
+{"t": 13, "write_ok": 12, "write_err_attempts": 43, "write_p95_ms": 10753.3, "read_ok": 50, "read_err": 125, "read_p95_ms": 11405.4, "served_by": {"r:aws": 50, "w:aws": 12}}
+{"t": 14, "write_ok": 40, "write_err_attempts": 26, "write_p95_ms": 10622.8, "read_ok": 75, "read_err": 98, "read_p95_ms": 10718.2, "served_by": {"w:aws": 40, "r:aws": 75}}
+{"t": 15, "write_ok": 18, "write_err_attempts": 37, "write_p95_ms": 11515.1, "read_ok": 30, "read_err": 109, "read_p95_ms": 11889.0, "served_by": {"w:aws": 18, "r:aws": 30}}
+{"t": 16, "write_ok": 15, "write_err_attempts": 31, "write_p95_ms": 12091.8, "read_ok": 50, "read_err": 77, "read_p95_ms": 12151.6, "served_by": {"w:aws": 15, "r:aws": 50}}
+{"t": 17, "write_ok": 10, "write_err_attempts": 38, "write_p95_ms": 12019.1, "read_ok": 26, "read_err": 117, "read_p95_ms": 12244.4, "served_by": {"w:aws": 10, "r:aws": 26}}
+{"t": 18, "write_ok": 1, "write_err_attempts": 35, "write_p95_ms": 11745.5, "read_ok": 7, "read_err": 111, "read_p95_ms": 12126.7, "served_by": {"w:aws": 1, "r:aws": 7}}
+{"t": 19, "write_ok": 12, "write_err_attempts": 40, "write_p95_ms": 14744.2, "read_ok": 0, "read_err": 121, "read_p95_ms": null, "served_by": {"w:aws": 12}}
+{"t": 20, "write_ok": 11, "write_err_attempts": 30, "write_p95_ms": 14412.4, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {"w:aws": 11}}
+{"t": 21, "write_ok": 15, "write_err_attempts": 19, "write_p95_ms": 15728.7, "read_ok": 0, "read_err": 173, "read_p95_ms": null, "served_by": {"w:aws": 15}}
+{"t": 22, "write_ok": 3, "write_err_attempts": 23, "write_p95_ms": 14679.1, "read_ok": 0, "read_err": 182, "read_p95_ms": null, "served_by": {"w:aws": 3}}
+{"t": 23, "write_ok": 3, "write_err_attempts": 25, "write_p95_ms": 16289.2, "read_ok": 0, "read_err": 185, "read_p95_ms": null, "served_by": {"w:aws": 3}}
+{"t": 24, "write_ok": 0, "write_err_attempts": 31, "write_p95_ms": null, "read_ok": 0, "read_err": 186, "read_p95_ms": null, "served_by": {}}
+{"t": 25, "write_ok": 2, "write_err_attempts": 38, "write_p95_ms": 16657.2, "read_ok": 0, "read_err": 183, "read_p95_ms": null, "served_by": {"w:aws": 2}}
+{"t": 26, "write_ok": 1, "write_err_attempts": 57, "write_p95_ms": 16511.2, "read_ok": 0, "read_err": 171, "read_p95_ms": null, "served_by": {"w:aws": 1}}
+{"t": 27, "write_ok": 2, "write_err_attempts": 84, "write_p95_ms": 16625.3, "read_ok": 0, "read_err": 162, "read_p95_ms": null, "served_by": {"w:aws": 2}}
+{"t": 28, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 29, "write_ok": 0, "write_err_attempts": 77, "write_p95_ms": null, "read_ok": 0, "read_err": 160, "read_p95_ms": null, "served_by": {}}
+{"t": 30, "write_ok": 0, "write_err_attempts": 66, "write_p95_ms": null, "read_ok": 0, "read_err": 163, "read_p95_ms": null, "served_by": {}}
+{"t": 31, "write_ok": 0, "write_err_attempts": 70, "write_p95_ms": null, "read_ok": 0, "read_err": 166, "read_p95_ms": null, "served_by": {}}
+{"t": 32, "write_ok": 0, "write_err_attempts": 62, "write_p95_ms": null, "read_ok": 0, "read_err": 159, "read_p95_ms": null, "served_by": {}}
+{"t": 33, "write_ok": 0, "write_err_attempts": 59, "write_p95_ms": null, "read_ok": 0, "read_err": 160, "read_p95_ms": null, "served_by": {}}
+{"t": 34, "write_ok": 0, "write_err_attempts": 53, "write_p95_ms": null, "read_ok": 0, "read_err": 158, "read_p95_ms": null, "served_by": {}}
+{"t": 35, "write_ok": 0, "write_err_attempts": 52, "write_p95_ms": null, "read_ok": 0, "read_err": 161, "read_p95_ms": null, "served_by": {}}
+{"t": 36, "write_ok": 0, "write_err_attempts": 61, "write_p95_ms": null, "read_ok": 0, "read_err": 163, "read_p95_ms": null, "served_by": {}}
+{"t": 37, "write_ok": 0, "write_err_attempts": 60, "write_p95_ms": null, "read_ok": 0, "read_err": 166, "read_p95_ms": null, "served_by": {}}
+{"t": 38, "write_ok": 0, "write_err_attempts": 68, "write_p95_ms": null, "read_ok": 0, "read_err": 160, "read_p95_ms": null, "served_by": {}}
+{"t": 39, "write_ok": 0, "write_err_attempts": 75, "write_p95_ms": null, "read_ok": 0, "read_err": 165, "read_p95_ms": null, "served_by": {}}
+{"t": 40, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 160, "read_p95_ms": null, "served_by": {}}
+{"t": 41, "write_ok": 0, "write_err_attempts": 88, "write_p95_ms": null, "read_ok": 0, "read_err": 162, "read_p95_ms": null, "served_by": {}}
+{"t": 42, "write_ok": 0, "write_err_attempts": 111, "write_p95_ms": null, "read_ok": 0, "read_err": 159, "read_p95_ms": null, "served_by": {}}
+{"t": 43, "write_ok": 0, "write_err_attempts": 129, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 44, "write_ok": 0, "write_err_attempts": 114, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 45, "write_ok": 0, "write_err_attempts": 97, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 46, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 47, "write_ok": 0, "write_err_attempts": 101, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 48, "write_ok": 0, "write_err_attempts": 75, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 49, "write_ok": 0, "write_err_attempts": 66, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 50, "write_ok": 0, "write_err_attempts": 64, "write_p95_ms": null, "read_ok": 0, "read_err": 158, "read_p95_ms": null, "served_by": {}}
+{"t": 51, "write_ok": 0, "write_err_attempts": 71, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 52, "write_ok": 0, "write_err_attempts": 76, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 53, "write_ok": 0, "write_err_attempts": 74, "write_p95_ms": null, "read_ok": 0, "read_err": 160, "read_p95_ms": null, "served_by": {}}
+{"t": 54, "write_ok": 0, "write_err_attempts": 91, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 55, "write_ok": 0, "write_err_attempts": 94, "write_p95_ms": null, "read_ok": 0, "read_err": 161, "read_p95_ms": null, "served_by": {}}
+{"t": 56, "write_ok": 0, "write_err_attempts": 113, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 57, "write_ok": 0, "write_err_attempts": 147, "write_p95_ms": null, "read_ok": 0, "read_err": 159, "read_p95_ms": null, "served_by": {}}
+{"t": 58, "write_ok": 0, "write_err_attempts": 145, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 59, "write_ok": 0, "write_err_attempts": 116, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 60, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 61, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 62, "write_ok": 0, "write_err_attempts": 103, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 63, "write_ok": 0, "write_err_attempts": 83, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 64, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 65, "write_ok": 0, "write_err_attempts": 65, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 66, "write_ok": 0, "write_err_attempts": 72, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 67, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 68, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 69, "write_ok": 0, "write_err_attempts": 81, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 70, "write_ok": 0, "write_err_attempts": 100, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 71, "write_ok": 0, "write_err_attempts": 112, "write_p95_ms": null, "read_ok": 0, "read_err": 157, "read_p95_ms": null, "served_by": {}}
+{"t": 72, "write_ok": 0, "write_err_attempts": 131, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 73, "write_ok": 0, "write_err_attempts": 158, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 74, "write_ok": 0, "write_err_attempts": 161, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 75, "write_ok": 0, "write_err_attempts": 99, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 76, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 77, "write_ok": 0, "write_err_attempts": 105, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 78, "write_ok": 0, "write_err_attempts": 91, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 79, "write_ok": 0, "write_err_attempts": 91, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 80, "write_ok": 0, "write_err_attempts": 67, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 81, "write_ok": 0, "write_err_attempts": 66, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 82, "write_ok": 0, "write_err_attempts": 74, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 83, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 84, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 85, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 86, "write_ok": 0, "write_err_attempts": 107, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 87, "write_ok": 0, "write_err_attempts": 131, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 88, "write_ok": 0, "write_err_attempts": 148, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 89, "write_ok": 0, "write_err_attempts": 138, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 90, "write_ok": 0, "write_err_attempts": 161, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 91, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 92, "write_ok": 0, "write_err_attempts": 98, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 93, "write_ok": 0, "write_err_attempts": 103, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 94, "write_ok": 0, "write_err_attempts": 91, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 95, "write_ok": 0, "write_err_attempts": 83, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 96, "write_ok": 0, "write_err_attempts": 70, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 97, "write_ok": 0, "write_err_attempts": 71, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 98, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 99, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 100, "write_ok": 0, "write_err_attempts": 94, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 101, "write_ok": 0, "write_err_attempts": 105, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 102, "write_ok": 0, "write_err_attempts": 104, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 103, "write_ok": 0, "write_err_attempts": 132, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 104, "write_ok": 0, "write_err_attempts": 127, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 105, "write_ok": 0, "write_err_attempts": 125, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 106, "write_ok": 0, "write_err_attempts": 118, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 107, "write_ok": 0, "write_err_attempts": 135, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 108, "write_ok": 0, "write_err_attempts": 104, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 109, "write_ok": 0, "write_err_attempts": 106, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 110, "write_ok": 0, "write_err_attempts": 98, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 111, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 112, "write_ok": 0, "write_err_attempts": 76, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 113, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 114, "write_ok": 0, "write_err_attempts": 81, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 115, "write_ok": 0, "write_err_attempts": 88, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 116, "write_ok": 0, "write_err_attempts": 96, "write_p95_ms": null, "read_ok": 0, "read_err": 146, "read_p95_ms": null, "served_by": {}}
+{"t": 117, "write_ok": 0, "write_err_attempts": 101, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 118, "write_ok": 0, "write_err_attempts": 106, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 119, "write_ok": 0, "write_err_attempts": 105, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 120, "write_ok": 0, "write_err_attempts": 122, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 121, "write_ok": 0, "write_err_attempts": 106, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 122, "write_ok": 0, "write_err_attempts": 117, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 123, "write_ok": 0, "write_err_attempts": 110, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 124, "write_ok": 0, "write_err_attempts": 132, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 125, "write_ok": 0, "write_err_attempts": 109, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 126, "write_ok": 0, "write_err_attempts": 101, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 127, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 128, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 129, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 130, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 131, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 132, "write_ok": 0, "write_err_attempts": 96, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 133, "write_ok": 0, "write_err_attempts": 101, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 134, "write_ok": 0, "write_err_attempts": 97, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 135, "write_ok": 0, "write_err_attempts": 98, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 136, "write_ok": 0, "write_err_attempts": 147, "write_p95_ms": null, "read_ok": 0, "read_err": 172, "read_p95_ms": null, "served_by": {}}
+{"t": 137, "write_ok": 0, "write_err_attempts": 112, "write_p95_ms": null, "read_ok": 0, "read_err": 95, "read_p95_ms": null, "served_by": {}}
+{"t": 138, "write_ok": 0, "write_err_attempts": 123, "write_p95_ms": null, "read_ok": 0, "read_err": 137, "read_p95_ms": null, "served_by": {}}
+{"t": 139, "write_ok": 0, "write_err_attempts": 66, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 140, "write_ok": 0, "write_err_attempts": 65, "write_p95_ms": null, "read_ok": 0, "read_err": 144, "read_p95_ms": null, "served_by": {}}
+{"t": 141, "write_ok": 0, "write_err_attempts": 70, "write_p95_ms": null, "read_ok": 0, "read_err": 140, "read_p95_ms": null, "served_by": {}}
+{"t": 142, "write_ok": 0, "write_err_attempts": 76, "write_p95_ms": null, "read_ok": 0, "read_err": 133, "read_p95_ms": null, "served_by": {}}
+{"t": 143, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 133, "read_p95_ms": null, "served_by": {}}
+{"t": 144, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 135, "read_p95_ms": null, "served_by": {}}
+{"t": 145, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 141, "read_p95_ms": null, "served_by": {}}
+{"t": 146, "write_ok": 0, "write_err_attempts": 96, "write_p95_ms": null, "read_ok": 0, "read_err": 128, "read_p95_ms": null, "served_by": {}}
+{"t": 147, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 143, "read_p95_ms": null, "served_by": {}}
+{"t": 148, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 142, "read_p95_ms": null, "served_by": {}}
+{"t": 149, "write_ok": 0, "write_err_attempts": 88, "write_p95_ms": null, "read_ok": 0, "read_err": 143, "read_p95_ms": null, "served_by": {}}
+{"t": 150, "write_ok": 0, "write_err_attempts": 88, "write_p95_ms": null, "read_ok": 0, "read_err": 134, "read_p95_ms": null, "served_by": {}}
+{"t": 151, "write_ok": 0, "write_err_attempts": 102, "write_p95_ms": null, "read_ok": 0, "read_err": 146, "read_p95_ms": null, "served_by": {}}
+{"t": 152, "write_ok": 0, "write_err_attempts": 103, "write_p95_ms": null, "read_ok": 0, "read_err": 144, "read_p95_ms": null, "served_by": {}}
+{"t": 153, "write_ok": 0, "write_err_attempts": 99, "write_p95_ms": null, "read_ok": 0, "read_err": 131, "read_p95_ms": null, "served_by": {}}
+{"t": 154, "write_ok": 0, "write_err_attempts": 100, "write_p95_ms": null, "read_ok": 0, "read_err": 111, "read_p95_ms": null, "served_by": {}}
+{"t": 155, "write_ok": 0, "write_err_attempts": 97, "write_p95_ms": null, "read_ok": 0, "read_err": 116, "read_p95_ms": null, "served_by": {}}
+{"t": 156, "write_ok": 0, "write_err_attempts": 71, "write_p95_ms": null, "read_ok": 0, "read_err": 146, "read_p95_ms": null, "served_by": {}}
+{"t": 157, "write_ok": 0, "write_err_attempts": 67, "write_p95_ms": null, "read_ok": 0, "read_err": 160, "read_p95_ms": null, "served_by": {}}
+{"t": 158, "write_ok": 0, "write_err_attempts": 68, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 159, "write_ok": 0, "write_err_attempts": 68, "write_p95_ms": null, "read_ok": 0, "read_err": 158, "read_p95_ms": null, "served_by": {}}
+{"t": 160, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 161, "write_ok": 0, "write_err_attempts": 79, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 162, "write_ok": 0, "write_err_attempts": 75, "write_p95_ms": null, "read_ok": 0, "read_err": 143, "read_p95_ms": null, "served_by": {}}
+{"t": 163, "write_ok": 0, "write_err_attempts": 75, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 164, "write_ok": 0, "write_err_attempts": 77, "write_p95_ms": null, "read_ok": 0, "read_err": 141, "read_p95_ms": null, "served_by": {}}
+{"t": 165, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 146, "read_p95_ms": null, "served_by": {}}
+{"t": 166, "write_ok": 0, "write_err_attempts": 73, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 167, "write_ok": 0, "write_err_attempts": 76, "write_p95_ms": null, "read_ok": 0, "read_err": 165, "read_p95_ms": null, "served_by": {}}
+{"t": 168, "write_ok": 0, "write_err_attempts": 86, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 169, "write_ok": 0, "write_err_attempts": 88, "write_p95_ms": null, "read_ok": 0, "read_err": 158, "read_p95_ms": null, "served_by": {}}
+{"t": 170, "write_ok": 0, "write_err_attempts": 84, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 171, "write_ok": 0, "write_err_attempts": 75, "write_p95_ms": null, "read_ok": 0, "read_err": 140, "read_p95_ms": null, "served_by": {}}
+{"t": 172, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 173, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 174, "write_ok": 0, "write_err_attempts": 75, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 175, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 176, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 177, "write_ok": 0, "write_err_attempts": 75, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 178, "write_ok": 0, "write_err_attempts": 65, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 179, "write_ok": 0, "write_err_attempts": 70, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 180, "write_ok": 0, "write_err_attempts": 71, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 181, "write_ok": 0, "write_err_attempts": 73, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 182, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 144, "read_p95_ms": null, "served_by": {}}
+{"t": 183, "write_ok": 0, "write_err_attempts": 97, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 184, "write_ok": 0, "write_err_attempts": 107, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 185, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 158, "read_p95_ms": null, "served_by": {}}
+{"t": 186, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 187, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 157, "read_p95_ms": null, "served_by": {}}
+{"t": 188, "write_ok": 0, "write_err_attempts": 99, "write_p95_ms": null, "read_ok": 0, "read_err": 145, "read_p95_ms": null, "served_by": {}}
+{"t": 189, "write_ok": 0, "write_err_attempts": 100, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 190, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 191, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 192, "write_ok": 0, "write_err_attempts": 84, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 193, "write_ok": 0, "write_err_attempts": 72, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 194, "write_ok": 0, "write_err_attempts": 67, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 195, "write_ok": 0, "write_err_attempts": 71, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 196, "write_ok": 0, "write_err_attempts": 72, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 197, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 198, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 199, "write_ok": 0, "write_err_attempts": 110, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 200, "write_ok": 0, "write_err_attempts": 105, "write_p95_ms": null, "read_ok": 0, "read_err": 160, "read_p95_ms": null, "served_by": {}}
+{"t": 201, "write_ok": 0, "write_err_attempts": 87, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 202, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 203, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 204, "write_ok": 0, "write_err_attempts": 94, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 205, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 206, "write_ok": 0, "write_err_attempts": 100, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 207, "write_ok": 0, "write_err_attempts": 91, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 208, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 209, "write_ok": 0, "write_err_attempts": 62, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 210, "write_ok": 0, "write_err_attempts": 68, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 211, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 212, "write_ok": 0, "write_err_attempts": 84, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 213, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 214, "write_ok": 0, "write_err_attempts": 102, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 215, "write_ok": 0, "write_err_attempts": 112, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 216, "write_ok": 0, "write_err_attempts": 105, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 217, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 218, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 219, "write_ok": 0, "write_err_attempts": 91, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 220, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 221, "write_ok": 0, "write_err_attempts": 104, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 222, "write_ok": 0, "write_err_attempts": 98, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 223, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 224, "write_ok": 0, "write_err_attempts": 76, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 225, "write_ok": 0, "write_err_attempts": 71, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 226, "write_ok": 0, "write_err_attempts": 78, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 227, "write_ok": 0, "write_err_attempts": 79, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 228, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 229, "write_ok": 0, "write_err_attempts": 83, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 230, "write_ok": 0, "write_err_attempts": 98, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 231, "write_ok": 0, "write_err_attempts": 112, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 232, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 233, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 234, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 235, "write_ok": 0, "write_err_attempts": 88, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 236, "write_ok": 0, "write_err_attempts": 102, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 237, "write_ok": 0, "write_err_attempts": 113, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 238, "write_ok": 0, "write_err_attempts": 96, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 239, "write_ok": 0, "write_err_attempts": 96, "write_p95_ms": null, "read_ok": 0, "read_err": 155, "read_p95_ms": null, "served_by": {}}
+{"t": 240, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 241, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 242, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 243, "write_ok": 0, "write_err_attempts": 86, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 244, "write_ok": 0, "write_err_attempts": 99, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 245, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 246, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 247, "write_ok": 0, "write_err_attempts": 85, "write_p95_ms": null, "read_ok": 0, "read_err": 156, "read_p95_ms": null, "served_by": {}}
+{"t": 248, "write_ok": 0, "write_err_attempts": 101, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 249, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 250, "write_ok": 0, "write_err_attempts": 106, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 251, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 252, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 253, "write_ok": 0, "write_err_attempts": 101, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 254, "write_ok": 0, "write_err_attempts": 108, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 255, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 256, "write_ok": 0, "write_err_attempts": 94, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 257, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 258, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 259, "write_ok": 0, "write_err_attempts": 87, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 260, "write_ok": 0, "write_err_attempts": 97, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 261, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 262, "write_ok": 0, "write_err_attempts": 77, "write_p95_ms": null, "read_ok": 0, "read_err": 154, "read_p95_ms": null, "served_by": {}}
+{"t": 263, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 153, "read_p95_ms": null, "served_by": {}}
+{"t": 264, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 149, "read_p95_ms": null, "served_by": {}}
+{"t": 265, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 266, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 143, "read_p95_ms": null, "served_by": {}}
+{"t": 267, "write_ok": 0, "write_err_attempts": 101, "write_p95_ms": null, "read_ok": 0, "read_err": 141, "read_p95_ms": null, "served_by": {}}
+{"t": 268, "write_ok": 0, "write_err_attempts": 91, "write_p95_ms": null, "read_ok": 0, "read_err": 144, "read_p95_ms": null, "served_by": {}}
+{"t": 269, "write_ok": 0, "write_err_attempts": 97, "write_p95_ms": null, "read_ok": 0, "read_err": 146, "read_p95_ms": null, "served_by": {}}
+{"t": 270, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 136, "read_p95_ms": null, "served_by": {}}
+{"t": 271, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 142, "read_p95_ms": null, "served_by": {}}
+{"t": 272, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 143, "read_p95_ms": null, "served_by": {}}
+{"t": 273, "write_ok": 0, "write_err_attempts": 95, "write_p95_ms": null, "read_ok": 0, "read_err": 135, "read_p95_ms": null, "served_by": {}}
+{"t": 274, "write_ok": 0, "write_err_attempts": 84, "write_p95_ms": null, "read_ok": 0, "read_err": 142, "read_p95_ms": null, "served_by": {}}
+{"t": 275, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 276, "write_ok": 0, "write_err_attempts": 93, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 277, "write_ok": 0, "write_err_attempts": 87, "write_p95_ms": null, "read_ok": 0, "read_err": 151, "read_p95_ms": null, "served_by": {}}
+{"t": 278, "write_ok": 0, "write_err_attempts": 94, "write_p95_ms": null, "read_ok": 0, "read_err": 146, "read_p95_ms": null, "served_by": {}}
+{"t": 279, "write_ok": 0, "write_err_attempts": 80, "write_p95_ms": null, "read_ok": 0, "read_err": 152, "read_p95_ms": null, "served_by": {}}
+{"t": 280, "write_ok": 0, "write_err_attempts": 82, "write_p95_ms": null, "read_ok": 0, "read_err": 147, "read_p95_ms": null, "served_by": {}}
+{"t": 281, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 145, "read_p95_ms": null, "served_by": {}}
+{"t": 282, "write_ok": 0, "write_err_attempts": 87, "write_p95_ms": null, "read_ok": 0, "read_err": 144, "read_p95_ms": null, "served_by": {}}
+{"t": 283, "write_ok": 0, "write_err_attempts": 89, "write_p95_ms": null, "read_ok": 0, "read_err": 145, "read_p95_ms": null, "served_by": {}}
+{"t": 284, "write_ok": 0, "write_err_attempts": 83, "write_p95_ms": null, "read_ok": 0, "read_err": 139, "read_p95_ms": null, "served_by": {}}
+{"t": 285, "write_ok": 0, "write_err_attempts": 79, "write_p95_ms": null, "read_ok": 0, "read_err": 148, "read_p95_ms": null, "served_by": {}}
+{"t": 286, "write_ok": 0, "write_err_attempts": 90, "write_p95_ms": null, "read_ok": 0, "read_err": 145, "read_p95_ms": null, "served_by": {}}
+{"t": 287, "write_ok": 0, "write_err_attempts": 92, "write_p95_ms": null, "read_ok": 0, "read_err": 150, "read_p95_ms": null, "served_by": {}}
+{"t": 288, "write_ok": 0, "write_err_attempts": 79, "write_p95_ms": null, "read_ok": 0, "read_err": 145, "read_p95_ms": null, "served_by": {}}
+{"t": 289, "write_ok": 0, "write_err_attempts": 88, "write_p95_ms": null, "read_ok": 0, "read_err": 142, "read_p95_ms": null, "served_by": {}}
+{"t": 290, "write_ok": 0, "write_err_attempts": 150, "write_p95_ms": null, "read_ok": 0, "read_err": 344, "read_p95_ms": null, "served_by": {}}
+{"t": 291, "write_ok": 2, "write_err_attempts": 190, "write_p95_ms": 16345.0, "read_ok": 3, "read_err": 439, "read_p95_ms": 1277.4, "served_by": {"w:aws": 2, "r:aws": 3}}
+{"t": 292, "write_ok": 9, "write_err_attempts": 149, "write_p95_ms": 1798.2, "read_ok": 17, "read_err": 247, "read_p95_ms": 1956.3, "served_by": {"w:aws": 9, "r:aws": 17}}
+{"t": 293, "write_ok": 9, "write_err_attempts": 68, "write_p95_ms": 17035.7, "read_ok": 38, "read_err": 29, "read_p95_ms": 3019.8, "served_by": {"w:aws": 9, "r:aws": 38}}
+{"t": 294, "write_ok": 14, "write_err_attempts": 54, "write_p95_ms": 3509.2, "read_ok": 43, "read_err": 6, "read_p95_ms": 3855.0, "served_by": {"w:aws": 14, "r:aws": 43}}
+{"t": 295, "write_ok": 20, "write_err_attempts": 96, "write_p95_ms": 4457.3, "read_ok": 39, "read_err": 22, "read_p95_ms": 5138.9, "served_by": {"w:aws": 20, "r:aws": 39}}
+{"t": 296, "write_ok": 15, "write_err_attempts": 36, "write_p95_ms": 35780.9, "read_ok": 31, "read_err": 63, "read_p95_ms": 5496.1, "served_by": {"w:aws": 15, "r:aws": 31}}
+{"t": 297, "write_ok": 11, "write_err_attempts": 15, "write_p95_ms": 83292.3, "read_ok": 26, "read_err": 46, "read_p95_ms": 6336.4, "served_by": {"w:aws": 11, "r:aws": 26}}
+{"t": 298, "write_ok": 21, "write_err_attempts": 27, "write_p95_ms": 5903.1, "read_ok": 45, "read_err": 80, "read_p95_ms": 7116.1, "served_by": {"w:aws": 21, "r:aws": 45}}
+{"t": 299, "write_ok": 27, "write_err_attempts": 31, "write_p95_ms": 54682.5, "read_ok": 73, "read_err": 95, "read_p95_ms": 8079.5, "served_by": {"w:aws": 27, "r:aws": 73}}
+{"t": 300, "write_ok": 22, "write_err_attempts": 1, "write_p95_ms": 120114.1, "read_ok": 36, "read_err": 5, "read_p95_ms": 8528.2, "served_by": {"w:aws": 22, "r:aws": 36}}
+{"t": 301, "write_ok": 6, "write_err_attempts": 0, "write_p95_ms": 8338.0, "read_ok": 7, "read_err": 0, "read_p95_ms": 8079.2, "served_by": {"w:aws": 6, "r:aws": 7}}
+{"t": 302, "write_ok": 25, "write_err_attempts": 0, "write_p95_ms": 101334.3, "read_ok": 30, "read_err": 0, "read_p95_ms": 9963.7, "served_by": {"w:aws": 25, "r:aws": 30}}
+{"t": 303, "write_ok": 13, "write_err_attempts": 0, "write_p95_ms": 101613.2, "read_ok": 26, "read_err": 0, "read_p95_ms": 10264.7, "served_by": {"r:aws": 26, "w:aws": 13}}
+{"t": 304, "write_ok": 22, "write_err_attempts": 0, "write_p95_ms": 126334.0, "read_ok": 53, "read_err": 0, "read_p95_ms": 11035.7, "served_by": {"w:aws": 22, "r:aws": 53}}
+{"t": 305, "write_ok": 22, "write_err_attempts": 0, "write_p95_ms": 99511.7, "read_ok": 44, "read_err": 2, "read_p95_ms": 11643.8, "served_by": {"r:aws": 44, "w:aws": 22}}
+{"t": 306, "write_ok": 12, "write_err_attempts": 0, "write_p95_ms": 125670.3, "read_ok": 20, "read_err": 5, "read_p95_ms": 13202.1, "served_by": {"w:aws": 12, "r:aws": 20}}
+{"t": 307, "write_ok": 8, "write_err_attempts": 0, "write_p95_ms": 118414.5, "read_ok": 1, "read_err": 12, "read_p95_ms": 12699.2, "served_by": {"w:aws": 8, "r:aws": 1}}
+{"t": 308, "write_ok": 41, "write_err_attempts": 0, "write_p95_ms": 127029.9, "read_ok": 2, "read_err": 0, "read_p95_ms": 12981.1, "served_by": {"w:aws": 41, "r:aws": 2}}
+{"t": 309, "write_ok": 51, "write_err_attempts": 3, "write_p95_ms": 124478.3, "read_ok": 12, "read_err": 27, "read_p95_ms": 13198.0, "served_by": {"w:aws": 51, "r:aws": 12}}
+{"t": 310, "write_ok": 14, "write_err_attempts": 0, "write_p95_ms": 122499.5, "read_ok": 3, "read_err": 63, "read_p95_ms": 12955.8, "served_by": {"w:aws": 14, "r:aws": 3}}
+{"t": 311, "write_ok": 28, "write_err_attempts": 0, "write_p95_ms": 126523.0, "read_ok": 1, "read_err": 164, "read_p95_ms": 12926.2, "served_by": {"w:aws": 28, "r:aws": 1}}
+{"t": 312, "write_ok": 103, "write_err_attempts": 18, "write_p95_ms": 136726.3, "read_ok": 8, "read_err": 76, "read_p95_ms": 12977.4, "served_by": {"w:aws": 103, "r:aws": 8}}
+{"t": 313, "write_ok": 147, "write_err_attempts": 36, "write_p95_ms": 133059.3, "read_ok": 4, "read_err": 90, "read_p95_ms": 13351.3, "served_by": {"w:aws": 147, "r:aws": 4}}
+{"t": 314, "write_ok": 140, "write_err_attempts": 32, "write_p95_ms": 130014.3, "read_ok": 0, "read_err": 68, "read_p95_ms": null, "served_by": {"w:aws": 140}}
+{"t": 315, "write_ok": 82, "write_err_attempts": 7, "write_p95_ms": 133053.7, "read_ok": 0, "read_err": 2, "read_p95_ms": null, "served_by": {"w:aws": 82}}
+{"t": 316, "write_ok": 21, "write_err_attempts": 0, "write_p95_ms": 119110.3, "read_ok": 0, "read_err": 0, "read_p95_ms": null, "served_by": {"w:aws": 21}}
+{"t": 317, "write_ok": 1, "write_err_attempts": 0, "write_p95_ms": 71534.3, "read_ok": 0, "read_err": 0, "read_p95_ms": null, "served_by": {"w:aws": 1}}

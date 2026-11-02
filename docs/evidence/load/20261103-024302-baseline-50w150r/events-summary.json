@@ -1,0 +1,22 @@
+{
+  "note": "attempt-level events.jsonl (Mac run, superseded) replaced by counts for size; per-request outcomes stay in requests.jsonl.gz",
+  "lines": 73429,
+  "by_event_code": {
+    "acked_after_retry ": 3434,
+    "attempt_failed 502": 12897,
+    "attempt_failed 503": 1018,
+    "attempt_failed timeout": 35735,
+    "attempt_failed transport:ConnectError": 8841,
+    "attempt_failed transport:ReadError": 1487,
+    "attempt_failed transport:RemoteProtocolError": 13,
+    "request_failed 502": 630,
+    "request_failed 503": 287,
+    "request_failed timeout": 8165,
+    "request_failed transport:ConnectError": 215,
+    "request_failed transport:ReadError": 697,
+    "request_failed transport:RemoteProtocolError": 8,
+    "unaccounted_writes ": 2
+  },
+  "first_ts": 1793641403.669,
+  "last_ts": 1793641775.458
+}

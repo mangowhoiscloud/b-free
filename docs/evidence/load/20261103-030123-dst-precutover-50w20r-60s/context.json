@@ -1,0 +1,9 @@
+{
+  "label": "dst-precutover-50w20r-60s",
+  "app_url": "https://b-free-chat-dst.mangowhois.ai",
+  "started_kst": "2026-11-03T03:01:23+09:00",
+  "git": "cfe890e2acc8dc67da69e45a932c18bb44fedfd4",
+  "git_dirty_paths": 75,
+  "edge_colo": "DFW",
+  "client": "Darwin arm64, 18 cores"
+}

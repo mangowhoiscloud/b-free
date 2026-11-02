@@ -1,0 +1,8 @@
+{
+  "label": "job-50w150r",
+  "app_url": "https://b-free-chat-src.mangowhois.ai",
+  "started_kst": "2026-11-03T03:08:51+09:00",
+  "git": "5d4504eb5d2a2361d47a0065a94c2183027fe2d6",
+  "loadgen_or_scripts_uncommitted_paths": 19,
+  "runner": "Job in bravo-platform-rke2/bravo-control (loadgen@sha256:1ab73b4da78b952ff383f3ce2b2a62d1a40dbfcb75904cf00acd88590372b6bb)"
+}

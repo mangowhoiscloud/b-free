@@ -1,0 +1,21 @@
+{"t": 0, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 182.2, "read_ok": 13, "read_err": 0, "read_p95_ms": 198.9, "served_by": {"w:aws": 5, "r:aws": 13}}
+{"t": 1, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 101.1, "read_ok": 16, "read_err": 0, "read_p95_ms": 367.5, "served_by": {"w:aws": 5, "r:aws": 16}}
+{"t": 2, "write_ok": 4, "write_err_attempts": 0, "write_p95_ms": 222.9, "read_ok": 11, "read_err": 0, "read_p95_ms": 260.3, "served_by": {"w:aws": 4, "r:aws": 11}}
+{"t": 3, "write_ok": 6, "write_err_attempts": 0, "write_p95_ms": 205.0, "read_ok": 18, "read_err": 0, "read_p95_ms": 753.0, "served_by": {"w:aws": 6, "r:aws": 18}}
+{"t": 4, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 110.2, "read_ok": 16, "read_err": 0, "read_p95_ms": 245.5, "served_by": {"w:aws": 5, "r:aws": 16}}
+{"t": 5, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 80.8, "read_ok": 15, "read_err": 0, "read_p95_ms": 310.8, "served_by": {"w:aws": 5, "r:aws": 15}}
+{"t": 6, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 126.2, "read_ok": 13, "read_err": 0, "read_p95_ms": 559.1, "served_by": {"w:aws": 5, "r:aws": 13}}
+{"t": 7, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 69.7, "read_ok": 17, "read_err": 0, "read_p95_ms": 252.0, "served_by": {"w:aws": 5, "r:aws": 17}}
+{"t": 8, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 70.8, "read_ok": 13, "read_err": 0, "read_p95_ms": 301.9, "served_by": {"w:aws": 5, "r:aws": 13}}
+{"t": 9, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 103.7, "read_ok": 17, "read_err": 0, "read_p95_ms": 328.2, "served_by": {"w:aws": 5, "r:aws": 17}}
+{"t": 10, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 59.6, "read_ok": 15, "read_err": 0, "read_p95_ms": 306.4, "served_by": {"w:aws": 5, "r:aws": 15}}
+{"t": 11, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 121.4, "read_ok": 14, "read_err": 0, "read_p95_ms": 252.8, "served_by": {"w:aws": 5, "r:aws": 14}}
+{"t": 12, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 166.3, "read_ok": 15, "read_err": 0, "read_p95_ms": 241.2, "served_by": {"w:aws": 5, "r:aws": 15}}
+{"t": 13, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 153.9, "read_ok": 13, "read_err": 0, "read_p95_ms": 866.7, "served_by": {"w:aws": 5, "r:aws": 13}}
+{"t": 14, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 101.6, "read_ok": 18, "read_err": 0, "read_p95_ms": 425.2, "served_by": {"w:aws": 5, "r:aws": 18}}
+{"t": 15, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 94.9, "read_ok": 13, "read_err": 0, "read_p95_ms": 268.2, "served_by": {"w:aws": 5, "r:aws": 13}}
+{"t": 16, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 97.9, "read_ok": 17, "read_err": 0, "read_p95_ms": 421.1, "served_by": {"w:aws": 5, "r:aws": 17}}
+{"t": 17, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 95.5, "read_ok": 13, "read_err": 0, "read_p95_ms": 220.6, "served_by": {"w:aws": 5, "r:aws": 13}}
+{"t": 18, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 104.4, "read_ok": 15, "read_err": 0, "read_p95_ms": 485.6, "served_by": {"w:aws": 5, "r:aws": 15}}
+{"t": 19, "write_ok": 5, "write_err_attempts": 0, "write_p95_ms": 92.9, "read_ok": 15, "read_err": 0, "read_p95_ms": 420.0, "served_by": {"w:aws": 5, "r:aws": 15}}
+{"t": 20, "write_ok": 0, "write_err_attempts": 0, "write_p95_ms": null, "read_ok": 3, "read_err": 0, "read_p95_ms": 361.2, "served_by": {"r:aws": 3}}

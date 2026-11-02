@@ -1,0 +1,11 @@
+{
+  "status": "NOT_RUN",
+  "reason": "not after a DONE cutover: readiness direction=forward, last cutover status=none; the cut needs the S3 cutover (human approval) first",
+  "readiness_before": {
+    "direction": "forward",
+    "sub_state": "streaming",
+    "lag_bytes": 0
+  },
+  "last_cutover": null,
+  "pgbouncer_restart_default_points_to": "source-aws"
+}

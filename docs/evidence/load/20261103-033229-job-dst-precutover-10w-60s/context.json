@@ -1,0 +1,8 @@
+{
+  "label": "job-dst-precutover-10w-60s",
+  "app_url": "https://b-free-chat-dst.mangowhois.ai",
+  "started_kst": "2026-11-03T03:32:29+09:00",
+  "git": "bbb762618bcb8dc80f0d39afd78b26ecc56df736",
+  "loadgen_or_scripts_uncommitted_paths": 16,
+  "runner": "Job in bravo-platform-rke2/bravo-control (loadgen@sha256:66f0abdf7af2b1f3c807b35ff71abdf46d2994d4fa659ac2b841c1e6406b4ecd)"
+}

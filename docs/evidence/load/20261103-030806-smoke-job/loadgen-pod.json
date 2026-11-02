@@ -1,0 +1,16 @@
+{
+  "pod": "loadgen-5875ed1e-rbkr7",
+  "node": "bravo-platform",
+  "image": "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/loadgen@sha256:1ab73b4da78b952ff383f3ce2b2a62d1a40dbfcb75904cf00acd88590372b6bb",
+  "image_id": "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/loadgen@sha256:1ab73b4da78b952ff383f3ce2b2a62d1a40dbfcb75904cf00acd88590372b6bb",
+  "resources": {
+    "limits": {
+      "cpu": "3",
+      "memory": "2Gi"
+    },
+    "requests": {
+      "cpu": "500m",
+      "memory": "512Mi"
+    }
+  }
+}

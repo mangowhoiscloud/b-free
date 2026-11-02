@@ -1,0 +1,17 @@
+{
+  "runner": "operator Mac (Cloudflare colo LAX), tools/loadgen app mode; exploratory, superseded by the platform Job runs",
+  "target": "https://b-free-chat-src.mangowhois.ai",
+  "note": "summary.json files were not kept for these runs; the numbers below were copied from the run output at the time. Timelines, node CPU samples and NFR-2 results are the raw files in this folder.",
+  "runs": {
+    "w":   {"utc": "2026-11-02T17:36:3x", "load": "50 writes/s, 0 reads, 30 s, 4 workers", "room": "load-3960c6f7",
+            "writes": {"sent": 1500, "ok": 1500, "failed": 0, "latency_ms": {"p50": 375.4, "p95": 745.0, "p99": 1156.6}},
+            "client": {"cpu_cores_mean": 0.07, "event_loop_lag_ms_max": 2.1}, "source_node_cpu_m": "up to 1128"},
+    "r":   {"utc": "2026-11-02T17:37:4x", "load": "0 writes, 150 reads/s, 30 s, 8 workers", "room": "load-57ee9ba8",
+            "reads": {"sent": 4500, "ok": 2077, "failed": 2423, "errors": {"timeout": 2163, "http_503": 260}, "latency_ms": {"p50": 6606.4, "p95": 12416.3}},
+            "client": {"cpu_cores_mean": 0.46, "event_loop_lag_ms_max": 15.0}, "source_node_cpu_m": "1949-1969"},
+    "m50": {"utc": "2026-11-02T17:39:2x", "load": "50 writes/s + 50 reads/s, 60 s, 6 workers", "room": "load-f89cabd4",
+            "writes": {"sent": 3000, "ok": 3000, "replay": 1187, "failed": 0, "latency_ms": {"p50": 12746.7, "p95": 71427.5}},
+            "reads": {"sent": 3000, "ok": 1220, "failed": 1780, "rows_returned_mean": 213.26},
+            "client": {"cpu_cores_mean": 0.33, "event_loop_lag_ms_max": 94.5}, "source_node_cpu_m": "1892-1973"}
+  }
+}

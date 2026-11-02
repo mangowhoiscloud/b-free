@@ -1,0 +1,74 @@
+[
+  {
+    "name": "argocd",
+    "sync": "Synced",
+    "revision": null,
+    "health": "Healthy"
+  },
+  {
+    "name": "cilium",
+    "sync": "OutOfSync",
+    "revision": null,
+    "health": "Healthy"
+  },
+  {
+    "name": "cnpg-operator",
+    "sync": "Synced",
+    "revision": null,
+    "health": "Healthy"
+  },
+  {
+    "name": "control",
+    "sync": "OutOfSync",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  },
+  {
+    "name": "ebs-csi",
+    "sync": "Synced",
+    "revision": null,
+    "health": "Healthy"
+  },
+  {
+    "name": "edge",
+    "sync": "Synced",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  },
+  {
+    "name": "gateway-api-crds",
+    "sync": "Synced",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  },
+  {
+    "name": "link-d16",
+    "sync": "Synced",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  },
+  {
+    "name": "observability",
+    "sync": "Synced",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  },
+  {
+    "name": "openbao",
+    "sync": "Synced",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  },
+  {
+    "name": "platform-root",
+    "sync": "Synced",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  },
+  {
+    "name": "storage",
+    "sync": "Synced",
+    "revision": "75af013b023f8ffdc4a6eb15d3d67e6a645a87f0",
+    "health": "Healthy"
+  }
+]

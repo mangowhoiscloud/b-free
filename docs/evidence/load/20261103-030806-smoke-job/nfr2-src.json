@@ -1,0 +1,1 @@
+{"ok": true, "sent": 100, "acked": 100, "accounted": true, "found_exactly_once": 100, "lost": 0, "duplicated": 0, "failed_requests": 0, "lost_sample": [], "duplicated_sample": [], "duplicate_rule": "rows per request body marker (not the UNIQUE idem_key)", "rows_in_room": 100, "failed_but_committed": 0, "rows_not_sent_by_run": 0, "rows_not_sent_sample": []}

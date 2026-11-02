@@ -1,0 +1,154 @@
+{
+  "pgbouncer": {
+    "active": "host=src-db-link.chat.svc.cluster.local port=5432 dbname=chat",
+    "active_points_to": "source-aws",
+    "restart_default_file": "target-src.ini",
+    "restart_default": "host=src-db-link.chat.svc.cluster.local port=5432 dbname=chat",
+    "restart_default_points_to": "source-aws"
+  },
+  "app": {
+    "db_dsn_host": "chat-pgbouncer.chat.svc.cluster.local",
+    "settings": {
+      "APP_PUBLIC_URL": "https://b-free-chat-dst.mangowhois.ai",
+      "DB_PASSWORD_SOURCE": "env-file",
+      "S3_BUCKET": "bravo-demo-attachments",
+      "S3_ENDPOINT_URL": "https://rook-ceph-rgw-bravo.rook-ceph.svc",
+      "AWS_REQUEST_CHECKSUM_CALCULATION": "when_required",
+      "AWS_RESPONSE_CHECKSUM_VALIDATION": "when_required",
+      "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-agent.bravo-observability.svc:4317",
+      "AWS_CA_BUNDLE": "/var/run/bravo/rgw-ca/ca.crt"
+    },
+    "images_registries": [
+      "bravo.local",
+      "cloudflare",
+      "ghcr.io"
+    ]
+  },
+  "subscriptions": {
+    "on_destination_db": [
+      {
+        "name": "bravo_fwd_sub",
+        "enabled": true,
+        "host": "src-db-link.chat.svc"
+      }
+    ],
+    "on_source_db": [
+      {
+        "name": "bravo_rev_sub",
+        "enabled": false,
+        "host": "dst-db-link.chat.svc"
+      }
+    ]
+  },
+  "link_clients_in_destination": [
+    {
+      "name": "src-db-link",
+      "replicas": 1,
+      "hostname": "t1-src-db.mangowhois.ai",
+      "points_to": "source-aws"
+    }
+  ],
+  "egress_policies": [
+    {
+      "name": "allow-dns",
+      "pods": null,
+      "to": [
+        {
+          "k8s-app": "kube-dns"
+        }
+      ]
+    },
+    {
+      "name": "chat-bravo-demo",
+      "pods": {
+        "app.kubernetes.io/instance": "chat",
+        "app.kubernetes.io/name": "bravo-demo"
+      },
+      "to": [
+        {
+          "app.kubernetes.io/name": "chat-pgbouncer"
+        },
+        {
+          "kubernetes.io/metadata.name": "rook-ceph"
+        },
+        {
+          "kubernetes.io/metadata.name": "bravo-observability"
+        },
+        {
+          "k8s-app": "kube-dns"
+        }
+      ]
+    },
+    {
+      "name": "chat-db",
+      "pods": {
+        "cnpg.io/cluster": "chat-db"
+      },
+      "to": [
+        {
+          "cnpg.io/cluster": "chat-db"
+        },
+        {
+          "app.kubernetes.io/component": "env-link"
+        }
+      ]
+    },
+    {
+      "name": "chat-db-backup",
+      "pods": null,
+      "to": [
+        {
+          "app": "rook-ceph-rgw"
+        }
+      ]
+    },
+    {
+      "name": "chat-db-restore",
+      "pods": {
+        "cnpg.io/cluster": "chat-db-restore"
+      },
+      "to": []
+    },
+    {
+      "name": "chat-pgbouncer",
+      "pods": {
+        "app.kubernetes.io/name": "chat-pgbouncer"
+      },
+      "to": [
+        {
+          "cnpg.io/cluster": "chat-db"
+        },
+        {
+          "app.kubernetes.io/component": "env-link"
+        }
+      ]
+    },
+    {
+      "name": "default-deny",
+      "pods": null,
+      "to": []
+    },
+    {
+      "name": "env-link-egress",
+      "pods": {
+        "app.kubernetes.io/component": "env-link"
+      },
+      "to": [
+        "0.0.0.0/0"
+      ]
+    }
+  ],
+  "secret_stores": [
+    {
+      "kind": "ClusterSecretStore",
+      "name": "bravo-platform-openbao",
+      "provider": [
+        "vault"
+      ]
+    }
+  ],
+  "db_backup": {
+    "destinationPath": "s3://bravo-chat-db-backup/",
+    "endpointURL": "https://rook-ceph-rgw-bravo.rook-ceph.svc:443"
+  }
+}

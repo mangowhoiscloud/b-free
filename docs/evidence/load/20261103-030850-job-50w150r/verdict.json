@@ -1,0 +1,5 @@
+{
+  "status": "FAILED_CLIENT",
+  "reason": "loadgen Job OOMKilled at 2 GiB 22 s after start (image l1-20261102T180657Z, no in-flight cap per worker below 1500, a TLS context per WebSocket read); the source node reached 1.95 cores in the same 20 s; no summary or request log was written",
+  "run_id": "766280f0"
+}

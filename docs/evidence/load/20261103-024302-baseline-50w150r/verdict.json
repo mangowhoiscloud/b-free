@@ -1,0 +1,7 @@
+{
+  "loadgen_exit": 1,
+  "writes_failed": 10647,
+  "reads_failed": 44304,
+  "nfr2_ok": false,
+  "note": "load_run.sh stopped after the loadgen (the script file was edited while it ran); NFR-2, gzip and this file were run by hand with the same commands at 02:55 KST"
+}

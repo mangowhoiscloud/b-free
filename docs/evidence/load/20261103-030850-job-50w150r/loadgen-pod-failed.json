@@ -1,0 +1,23 @@
+{
+  "phase": "Failed",
+  "start": "2026-11-02T18:08:53Z",
+  "state": {
+    "terminated": {
+      "containerID": "containerd://b682982be35ac3ca56d35cec835743dbb9e4e2dd50ce6c8ebcbc4aa3b2e72ef2",
+      "exitCode": 137,
+      "finishedAt": "2026-11-02T18:09:16Z",
+      "reason": "OOMKilled",
+      "startedAt": "2026-11-02T18:08:54Z"
+    }
+  },
+  "limits": {
+    "limits": {
+      "cpu": "3",
+      "memory": "2Gi"
+    },
+    "requests": {
+      "cpu": "500m",
+      "memory": "512Mi"
+    }
+  }
+}

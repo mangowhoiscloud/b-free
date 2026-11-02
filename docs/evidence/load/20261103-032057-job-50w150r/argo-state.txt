@@ -1,0 +1,23 @@
+argo-state 2026-11-03 03:20:59 KST, 플랫폼 bravo-platform-rke2
+PASS  main revision: origin main d1bc3085 = 배포 revision, 로컬 HEAD d1bc3085
+PASS  앱 argocd: Synced/Healthy rev -, 마지막 동기화 2026-11-02T13:29:40Z
+WARN  앱 cilium: OutOfSync/Healthy rev -, OutOfSync 3개: Secret/cilium-ca Secret/hubble-relay-client-certs Secret/hubble-server-certs — Cilium Helm이 비교 때마다 새로 만드는 인증서 Secret, 마지막 동기화 2026-11-02T13:43:22Z
+PASS  앱 cnpg-operator: Synced/Healthy rev -, 마지막 동기화 2026-11-02T13:29:26Z
+WARN  앱 control: OutOfSync/Healthy rev d1bc3085, OutOfSync 1개: ConfigMap/environments-tf974758bk(prune 대상) — 고아 리소스만 남음: argocd app sync control --prune, 마지막 동기화 2026-11-02T18:14:29Z
+PASS  앱 ebs-csi: Synced/Healthy rev -, 마지막 동기화 2026-11-02T13:29:23Z
+PASS  앱 edge: Synced/Healthy rev d1bc3085, 마지막 동기화 2026-11-02T18:15:45Z
+PASS  앱 gateway-api-crds: Synced/Healthy rev d1bc3085, 마지막 동기화 2026-11-02T13:26:10Z
+PASS  앱 link-d16: Synced/Healthy rev d1bc3085, 마지막 동기화 2026-11-02T16:53:44Z
+PASS  앱 observability: Synced/Healthy rev d1bc3085, 마지막 동기화 2026-11-02T13:29:26Z
+PASS  앱 openbao: Synced/Healthy rev d1bc3085, 마지막 동기화 2026-11-02T16:54:10Z
+PASS  앱 platform-root: Synced/Healthy rev d1bc3085, 마지막 동기화 2026-11-02T13:48:35Z
+PASS  앱 storage: Synced/Healthy rev d1bc3085, 마지막 동기화 2026-11-02T13:26:09Z
+판정: WARN(배포 차이 없는 OutOfSync만)
+bravo-control 이미지:
+  deployment/api: api@sha256:a99f5aa229c4159bb2c34ba4d9f0acdababece93248e392086b0174aeb322c92
+  deployment/collector: collector@sha256:af3c66c17932423a23a4121f184b149fdf83f526f4b3d9e8dcd97645fdab5a79
+  deployment/console: console@sha256:91678860257abd4a5e97418368e17715491b23047f697e2cb59c4c6511cb7426
+  deployment/gate: gate@sha256:c841a75e376ae70f4d0bd95526d024941dc2826ec014bcab4d880962e3043d78
+  deployment/operator-mcp: api@sha256:a99f5aa229c4159bb2c34ba4d9f0acdababece93248e392086b0174aeb322c92
+  deployment/rehearsal: rehearsal@sha256:1e1337fa61e03e7dbbcbf19ab101021ab2abe455e0e28736412fde39f4f6cacd
+  statefulset/executor: executor@sha256:14c7f0d545f39750654db9cb2169ab7ca7ec82c8be3c4a451ba78531759aa194
