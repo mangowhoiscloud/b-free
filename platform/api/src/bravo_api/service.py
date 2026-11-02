@@ -511,6 +511,41 @@ class Services:
             data={"gaps": len(analysis["gaps"]), "inventory": inv.status},
         )
 
+    async def cost(
+        self, p: Principal, channel: Channel, plan_id: UUID | None, start: str | None, end: str | None
+    ) -> dict[str, Any]:
+        """``GET /v1/cost`` (T1, NFR-8): the collector's ``cost/v1`` receipt. With a plan, the API adds its window
+        (created -> first DONE or DONE_ROLLED_BACK, else now) so the collector splits before / during / after.
+        Read only. The collector caches Cost Explorer for an hour (USD 0.01 per request)."""
+        authorize(p, Action.PLAN_READ, channel)
+        params: dict[str, str] = {k: v for k, v in (("start", start), ("end", end)) if v}
+        if plan_id is not None:
+            async with self.db.tenant_tx(p.tenant_id, p.id) as conn:
+                cur = await conn.execute(
+                    "SELECT plan_id, workload, state, created_at FROM plans WHERE plan_id = %s", (plan_id,)
+                )
+                plan = await cur.fetchone()
+                if plan is None:
+                    raise NotFoundError("plan")
+                cur = await conn.execute(
+                    "SELECT min(at) AS done_at FROM events WHERE plan_id = %s AND kind = 'state.changed' "
+                    "AND data->>'to' IN ('DONE', 'DONE_ROLLED_BACK')",
+                    (plan_id,),
+                )
+                done = (await cur.fetchone())["done_at"]
+            params.update(plan_id=str(plan_id), plan_created_at=_iso(plan["created_at"]) or "",
+                          plan_state=plan["state"], workload=plan["workload"])
+            if done is not None:
+                params["plan_done_at"] = _iso(done) or ""
+        if self.collector is None:
+            raise BusinessError("collector_unconfigured", 503, {"message": "연결 안 됨: 수집기(BRAVO_COLLECTOR_URL) 없음"})
+        try:
+            return await self.collector.cost(params)
+        except UpstreamError as exc:
+            status = 422 if exc.reason == "cost_bad_request" else 503
+            raise BusinessError(exc.reason, status, {"message": "연결 안 됨: 수집기 비용 영수증",
+                                                     "upstream": exc.body if status == 422 else None}) from exc
+
     async def plan_get(self, p: Principal, channel: Channel, plan_id: UUID) -> dict[str, Any]:
         authorize(p, Action.PLAN_READ, channel)
         async with self.db.tenant_tx(p.tenant_id, p.id) as conn:

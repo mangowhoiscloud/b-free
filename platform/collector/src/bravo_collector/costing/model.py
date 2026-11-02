@@ -12,15 +12,15 @@ from typing import Any
 
 # Basis labels (the console shows the Korean label; code is for logic).
 BASIS = {
-    "billed": "청구",            # Cost Explorer (or GCP billing export) actual
-    "estimated": "추정",         # list price x observed running time from the resource's own timestamps
-    "flat": "정액(구독)",         # subscription; amount only when an official price page is cited
+    "billed": "청구",  # Cost Explorer (or GCP billing export) actual
+    "estimated": "추정",  # list price x observed running time from the resource's own timestamps
+    "flat": "정액(구독)",  # subscription; amount only when an official price page is cited
     "api_equivalent": "API 가격 환산(청구 아님)",  # recorded tokens x API price; never billed, never in the total
 }
 NOT_CONNECTED = "연결 안 됨"
 TAG_PENDING = "태그 활성화 대기"
 DAY_TZ = timedelta(hours=9)  # daily buckets in KST/JST (the team and the judges); stated in the response
-GCP_MONTH_HOURS = 730.0      # GCP list prices per month assume 730 hours (cloud.google.com pricing pages)
+GCP_MONTH_HOURS = 730.0  # GCP list prices per month assume 730 hours (cloud.google.com pricing pages)
 
 
 def now_utc() -> datetime:
@@ -71,28 +71,28 @@ class Segment:
 @dataclass
 class Line:
     line_id: str
-    provider: str            # aws | gcp | cloudflare | llm
+    provider: str  # aws | gcp | cloudflare | llm
     service: str
     resource_type: str
     resource_id: str
-    resource: str            # display name
+    resource: str  # display name
     environment: str | None  # source-aws | platform | target-gcp | target-onprem | edge | llm
-    component: str | None    # NFR-8 component tag value: source | platform | target | edge | llm
-    component_source: str    # "tag" or "inferred:<rule>"
-    basis_code: str          # billed | estimated | flat | api_equivalent
+    component: str | None  # NFR-8 component tag value: source | platform | target | edge | llm
+    component_source: str  # "tag" or "inferred:<rule>"
+    basis_code: str  # billed | estimated | flat | api_equivalent
     unit_price: float | None
-    unit: str | None         # e.g. "USD/hour", "USD/GB-month"
+    unit: str | None  # e.g. "USD/hour", "USD/GB-month"
     quantity_unit: str | None
     price_source: dict[str, Any] | None
     segments: list[Segment] = field(default_factory=list)
     running: dict[str, Any] | None = None
     note: str | None = None
-    status: str = "ok"       # ok | not_connected
+    status: str = "ok"  # ok | not_connected
     reason: str | None = None
     in_total: bool = True
-    fixed_quantity: float | None = None   # quantity that is not time-allocated (recorded tokens of one run)
-    fixed_subtotal: float | None = None   # recorded amount of one run (API-price equivalent)
-    plan_id: str | None = None            # agent runs carry their plan
+    fixed_quantity: float | None = None  # quantity that is not time-allocated (recorded tokens of one run)
+    fixed_subtotal: float | None = None  # recorded amount of one run (API-price equivalent)
+    plan_id: str | None = None  # agent runs carry their plan
     detail: dict[str, Any] | None = None  # extra recorded facts (token breakdown, endpoints); never secrets
 
     def quantity(self, w0: datetime, w1: datetime) -> float | None:

@@ -1,10 +1,11 @@
 # Argo CD Applications for the platform RKE2 node (spec §7.2). Repo over SSH with a read-only deploy key
 # (Secret argocd/repo-b-free from OpenBao secret/envs/platform/argocd-repo).
 # Automated sync (prune: false, selfHeal: true) since checkpoint 59173a2 (2026-11-02 22:3x): rendered manifests at that
-# commit matched live for every app with no image change. Exceptions stay manual: cilium (render-time certificates)
-# and control (live collector newer than main).
-# Out-of-Git Secrets (piped from OpenBao) are never pruned. The root app (root.yaml) stays manual until this file is
-# on main, so it cannot revert these children. (app-of-apps root: ../root.yaml).
+# commit matched live for every app with no image change; control joined at 950d22b (live collector pinned).
+# Exception: cilium stays manual (render-time certificates, below).
+# Image changes: pin the digest in the app's kustomization.yaml (or values) and let Argo CD sync it. Never
+# `kubectl set image` / `kubectl apply` a different digest: self-heal reverts anything that is not in main.
+# Out-of-Git Secrets (piped from OpenBao) are never pruned. The root app (root.yaml) syncs this file from main. (app-of-apps root: ../root.yaml).
 # Git: https://github.com/mangowhoiscloud/b-free.git main. Out-of-Git objects (Secrets piped from OpenBao) are never pruned: prune is off.
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -174,9 +175,10 @@ spec:
     repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/control
-  # Manual (2026-11-02 22:3x): live collector 9f675c2d (collector lane, masking fix) is newer than main (0893095f);
-  # an automated sync would roll it back. Re-enable once main pins the live collector digest.
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---

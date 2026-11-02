@@ -39,6 +39,7 @@ def load_config(path: str | None = None) -> dict[str, Any]:
 
 # --- collection ------------------------------------------------------------------------------------------
 
+
 def collect_inventory(cfg: dict[str, Any]) -> dict[str, Any]:
     """All priced lines with their sources. Each provider fails alone into ``not_connected``."""
     lines: list[Line] = []
@@ -55,8 +56,13 @@ def collect_inventory(cfg: dict[str, Any]) -> dict[str, Any]:
             lines += inv.lines
             not_connected += inv.not_connected
             notes += inv.notes
-            sources.append({"name": "AWS Describe/List (EC2, EBS, EKS, NAT, ELB, S3, KMS, ECR, Secrets Manager, RDS, "
-                                    "CloudTrail) + CloudWatch", "status": "partial" if inv.not_connected else "ok"})
+            sources.append(
+                {
+                    "name": "AWS Describe/List (EC2, EBS, EKS, NAT, ELB, S3, KMS, ECR, Secrets Manager, RDS, "
+                    "CloudTrail) + CloudWatch",
+                    "status": "partial" if inv.not_connected else "ok",
+                }
+            )
         except Exception as exc:  # noqa: BLE001 - credentials missing etc.: a reason, never a value
             not_connected.append({"provider": "aws", "what": "AWS 인벤토리", "reason": _reason(exc)})
             sources.append({"name": "AWS Describe/List", "status": "not_connected"})
@@ -72,11 +78,20 @@ def collect_inventory(cfg: dict[str, Any]) -> dict[str, Any]:
             lines += ginv.lines
             not_connected += ginv.not_connected
             notes += ginv.notes
-            sources.append({"name": f"GCP REST (GKE, Compute, Artifact Registry, KMS) project {gcp_cfg['project']}",
-                            "status": "partial" if len(ginv.not_connected) > 1 else "ok"})
+            sources.append(
+                {
+                    "name": f"GCP REST (GKE, Compute, Artifact Registry, KMS) project {gcp_cfg['project']}",
+                    "status": "partial" if len(ginv.not_connected) > 1 else "ok",
+                }
+            )
         except Exception as exc:  # noqa: BLE001
-            not_connected.append({"provider": "gcp", "what": f"GCP 인벤토리({gcp_cfg['project']})",
-                                  "reason": "GCP 자격 없음 또는 거부: " + _reason(exc)})
+            not_connected.append(
+                {
+                    "provider": "gcp",
+                    "what": f"GCP 인벤토리({gcp_cfg['project']})",
+                    "reason": "GCP 자격 없음 또는 거부: " + _reason(exc),
+                }
+            )
             sources.append({"name": "GCP REST", "status": "not_connected"})
     else:
         not_connected.append({"provider": "gcp", "what": "GCP 인벤토리", "reason": "비용 설정에 gcp.project 없음"})
@@ -93,12 +108,21 @@ def collect_inventory(cfg: dict[str, Any]) -> dict[str, Any]:
             cinv.collect()
         else:
             cinv._zero_trust()
-            cinv.not_connected.append({"provider": "cloudflare", "what": "Cloudflare API(LB 구독 · 끝점)",
-                                       "reason": "CLOUDFLARE_ACCOUNT_ID가 없음"})
+            cinv.not_connected.append(
+                {
+                    "provider": "cloudflare",
+                    "what": "Cloudflare API(LB 구독 · 끝점)",
+                    "reason": "CLOUDFLARE_ACCOUNT_ID가 없음",
+                }
+            )
         lines += cinv.lines
         not_connected += cinv.not_connected
-        sources.append({"name": "Cloudflare API (load_balancers, pools, subscriptions)",
-                        "status": "partial" if cinv.not_connected else "ok"})
+        sources.append(
+            {
+                "name": "Cloudflare API (load_balancers, pools, subscriptions)",
+                "status": "partial" if cinv.not_connected else "ok",
+            }
+        )
 
     from .llm import subscription_lines, usage_lines
 
@@ -109,8 +133,13 @@ def collect_inventory(cfg: dict[str, Any]) -> dict[str, Any]:
     if run_src["status"] != "ok":
         not_connected.append({"provider": "llm", "what": "에이전트 실행별 토큰 사용량", "reason": run_src["reason"]})
     sources.append({"name": "에이전트 실행 기록(Harbor result.json)", **run_src})
-    return {"lines": lines, "not_connected": not_connected, "notes": notes, "sources": sources,
-            "observed_at": now_utc()}
+    return {
+        "lines": lines,
+        "not_connected": not_connected,
+        "notes": notes,
+        "sources": sources,
+        "observed_at": now_utc(),
+    }
 
 
 def _reason(exc: Exception) -> str:
@@ -121,6 +150,7 @@ def _reason(exc: Exception) -> str:
 
 # --- pure assembly ---------------------------------------------------------------------------------------
 
+
 def _r(v: float | None, n: int = 6) -> float | None:
     return None if v is None else round(v, n)
 
@@ -129,18 +159,36 @@ def _line_json(line: Line, w0: datetime, w1: datetime, phases: dict[str, tuple[d
     q, st = line.quantity(w0, w1), line.subtotal(w0, w1)
     running = {k: v for k, v in (line.running or {}).items() if not k.startswith("_")} or None
     out = {
-        "line_id": line.line_id, "provider": line.provider, "service": line.service,
-        "resource_type": line.resource_type, "resource_id": line.resource_id, "resource": line.resource,
-        "environment": line.environment, "component": line.component, "component_source": line.component_source,
-        "unit_price": line.unit_price, "unit": line.unit, "price_source": line.price_source,
-        "quantity": _r(q), "quantity_unit": line.quantity_unit, "subtotal": _r(st),
-        "basis": BASIS[line.basis_code], "basis_code": line.basis_code, "in_total": line.in_total,
-        "running": running, "status": line.status, "reason": line.reason, "note": line.note,
-        "plan_id": line.plan_id, "detail": line.detail,
+        "line_id": line.line_id,
+        "provider": line.provider,
+        "service": line.service,
+        "resource_type": line.resource_type,
+        "resource_id": line.resource_id,
+        "resource": line.resource,
+        "environment": line.environment,
+        "component": line.component,
+        "component_source": line.component_source,
+        "unit_price": line.unit_price,
+        "unit": line.unit,
+        "price_source": line.price_source,
+        "quantity": _r(q),
+        "quantity_unit": line.quantity_unit,
+        "subtotal": _r(st),
+        "basis": BASIS[line.basis_code],
+        "basis_code": line.basis_code,
+        "in_total": line.in_total,
+        "running": running,
+        "status": line.status,
+        "reason": line.reason,
+        "note": line.note,
+        "plan_id": line.plan_id,
+        "detail": line.detail,
     }
     if phases:
-        out["phases"] = {ph: {"quantity": _r(line.quantity(a, b)), "subtotal": _r(line.subtotal(a, b))}
-                         for ph, (a, b) in phases.items()}
+        out["phases"] = {
+            ph: {"quantity": _r(line.quantity(a, b)), "subtotal": _r(line.subtotal(a, b))}
+            for ph, (a, b) in phases.items()
+        }
     return out
 
 
@@ -148,10 +196,19 @@ def _sum(values: list[float | None]) -> float:
     return round(sum(v for v in values if v is not None), 6)
 
 
-def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: dict[str, Any] | None = None,
-                  actuals: dict[str, Any] | None = None, not_connected: list[dict[str, Any]] | None = None,
-                  notes: list[str] | None = None, sources: list[dict[str, Any]] | None = None,
-                  observed_at: datetime | None = None, generated_at: datetime | None = None) -> dict[str, Any]:
+def build_receipt(
+    lines: list[Line],
+    *,
+    start: datetime,
+    end: datetime,
+    plan: dict[str, Any] | None = None,
+    actuals: dict[str, Any] | None = None,
+    not_connected: list[dict[str, Any]] | None = None,
+    notes: list[str] | None = None,
+    sources: list[dict[str, Any]] | None = None,
+    observed_at: datetime | None = None,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
     if end <= start:
         raise CostRequestError("end must be after start")
     generated_at = generated_at or now_utc()
@@ -173,8 +230,11 @@ def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: di
                 x.in_total = False
 
     rows = [_line_json(x, start, end, phases) for x in lines]
-    rows = [r for r in rows if not (r["quantity"] == 0 and r["status"] == "ok" and r["subtotal"] in (0, None)
-                                    and r["basis_code"] != "flat")]
+    rows = [
+        r
+        for r in rows
+        if not (r["quantity"] == 0 and r["status"] == "ok" and r["subtotal"] in (0, None) and r["basis_code"] != "flat")
+    ]
     keep = {r["line_id"] for r in rows}
     used = [x for x in lines if x.line_id in keep]
     counted = [x for x in used if x.in_total]
@@ -202,7 +262,7 @@ def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: di
         "by_environment": dict(sorted(by_env.items(), key=lambda kv: -kv[1])),
         "migration_extra": None,
         "note": "total = 청구 + 추정 + 정액(금액이 있는 것). API 가격 환산은 넣지 않음. unpriced_lines가 0보다 크면 "
-                "금액을 모르는 줄이 있어 합계는 하한",
+        "금액을 모르는 줄이 있어 합계는 하한",
     }
 
     summary = None
@@ -217,16 +277,26 @@ def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: di
                 v = x.subtotal(a, b)
                 if v:
                     comp[x.component or "(태그 없음)"] = round(comp.get(x.component or "(태그 없음)", 0) + v, 6)
-            summary[ph] = {"label": PHASE_KO[ph], "start": iso(a), "end": iso(b), "hours": round(hours, 3),
-                           "total": t, "daily": round(t / hours * 24, 6) if hours else None, "by_component": comp}
+            summary[ph] = {
+                "label": PHASE_KO[ph],
+                "start": iso(a),
+                "end": iso(b),
+                "hours": round(hours, 3),
+                "total": t,
+                "daily": round(t / hours * 24, 6) if hours else None,
+                "by_component": comp,
+            }
         during = summary["during"]
         src = during["by_component"].get("source", 0.0)
         extra = round(during["total"] - src, 6)
         migration_extra = {
             "value": extra,
             "formula": "이전 중 전체 − 이전 중 출발지(component=source, 원래 내던 비용)",
-            "inputs": {"during_total": during["total"], "during_source": round(src, 6),
-                       "during_hours": during["hours"]},
+            "inputs": {
+                "during_total": during["total"],
+                "during_source": round(src, 6),
+                "during_hours": during["hours"],
+            },
             "explain": f"{during['total']:.4f} − {src:.4f} = {extra:.4f} USD",
             "lower_bound": totals["unpriced_lines"] > 0,
         }
@@ -243,16 +313,29 @@ def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: di
             v = x.subtotal(a, b)
             if v:
                 comp[x.component or "(태그 없음)"] = round(comp.get(x.component or "(태그 없음)", 0) + v, 6)
-        daily.append({"date": (d0 + DAY_TZ).date().isoformat(), "by_component": comp, "total": _sum(list(comp.values()))})
+        daily.append(
+            {"date": (d0 + DAY_TZ).date().isoformat(), "by_component": comp, "total": _sum(list(comp.values()))}
+        )
         d0 = d1
 
-    price_times = sorted(r["price_source"]["fetched_at"] for r in rows
-                         if r.get("price_source") and r["price_source"].get("fetched_at"))
-    tag = (actuals or {}).get("tag") or {"key": "component", "label": TAG_PENDING, "active": False,
-                                         "reason": "Cost Explorer를 읽지 못함"}
+    price_times = sorted(
+        r["price_source"]["fetched_at"] for r in rows if r.get("price_source") and r["price_source"].get("fetched_at")
+    )
+    tag = (actuals or {}).get("tag") or {
+        "key": "component",
+        "label": TAG_PENDING,
+        "active": False,
+        "reason": "Cost Explorer를 읽지 못함",
+    }
     nc = list(not_connected or [])
     if not tag.get("active"):
-        nc.append({"provider": "aws", "what": "component 태그별 청구(실제 금액)", "reason": f"{TAG_PENDING}: {tag.get('reason')}"})
+        nc.append(
+            {
+                "provider": "aws",
+                "what": "component 태그별 청구(실제 금액)",
+                "reason": f"{TAG_PENDING}: {tag.get('reason')}",
+            }
+        )
     for r in rows:
         if r["status"] != "ok":
             nc.append({"provider": r["provider"], "what": r["resource"], "reason": r["reason"]})
@@ -261,11 +344,22 @@ def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: di
         "generated_at": iso(generated_at),
         "inventory_observed_at": iso(observed_at),
         "currency": "USD",
-        "period": {"start": iso(start), "end": iso(end), "hours": round((end - start).total_seconds() / 3600, 3),
-                   "days": round((end - start).total_seconds() / 86400, 4)},
+        "period": {
+            "start": iso(start),
+            "end": iso(end),
+            "hours": round((end - start).total_seconds() / 3600, 3),
+            "days": round((end - start).total_seconds() / 86400, 4),
+        },
         "day_timezone": "+09:00",
-        "plan": ({**{k: v for k, v in plan.items() if k not in ("created_at", "done_at")},
-                  "created_at": iso(plan.get("created_at")), "done_at": iso(plan.get("done_at"))} if plan else None),
+        "plan": (
+            {
+                **{k: v for k, v in plan.items() if k not in ("created_at", "done_at")},
+                "created_at": iso(plan.get("created_at")),
+                "done_at": iso(plan.get("done_at")),
+            }
+            if plan
+            else None
+        ),
         "phases": ({ph: {"start": iso(a), "end": iso(b)} for ph, (a, b) in phases.items()} if phases else None),
         "summary": summary,
         "migration_extra": migration_extra,
@@ -279,7 +373,8 @@ def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: di
         "sources": list(sources or []),
         "not_connected": nc,
         "not_connected_label": NOT_CONNECTED,
-        "notes": list(notes or []) + [
+        "notes": list(notes or [])
+        + [
             "추정 = 정가(가격 API) × 자원 자체 시각(생성 · 시작 · 종료)으로 본 실행 시간. 지금 Describe에 보이지 않는 "
             "삭제된 자원은 추정에서 빠지고, component 태그가 활성화되면 청구 줄이 그 몫을 채움",
         ],
@@ -288,10 +383,18 @@ def build_receipt(lines: list[Line], *, start: datetime, end: datetime, plan: di
 
 # --- request entry point ---------------------------------------------------------------------------------
 
-def receipt_for_request(*, start: str | None = None, end: str | None = None, plan_id: str | None = None,
-                        plan_created_at: str | None = None, plan_done_at: str | None = None,
-                        plan_state: str | None = None, workload: str | None = None,
-                        config_path: str | None = None) -> dict[str, Any]:
+
+def receipt_for_request(
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    plan_id: str | None = None,
+    plan_created_at: str | None = None,
+    plan_done_at: str | None = None,
+    plan_state: str | None = None,
+    workload: str | None = None,
+    config_path: str | None = None,
+) -> dict[str, Any]:
     now = now_utc()
     try:
         t_end = min(parse_ts(end) or now, now)
@@ -327,12 +430,22 @@ def receipt_for_request(*, start: str | None = None, end: str | None = None, pla
         plan = {"plan_id": plan_id, "state": plan_state, "workload": workload, "created_at": created, "done_at": done}
     sources = list(inv["sources"]) + [
         {"name": "AWS Pricing API / GCP Cloud Billing Catalog API (가격, 24시간 캐시)", "status": "ok"},
-        {"name": "AWS Cost Explorer (1시간 캐시, 요청당 USD 0.01)",
-         "status": (actuals or {}).get("status", "not_connected")},
+        {
+            "name": "AWS Cost Explorer (1시간 캐시, 요청당 USD 0.01)",
+            "status": (actuals or {}).get("status", "not_connected"),
+        },
     ]
     # Lines are shared with the cache: build on copies so the total switch never leaks between requests.
     import copy
 
-    return build_receipt(copy.deepcopy(lines), start=t_start, end=t_end, plan=plan, actuals=actuals,
-                         not_connected=inv["not_connected"], notes=inv["notes"], sources=sources,
-                         observed_at=inv["observed_at"])
+    return build_receipt(
+        copy.deepcopy(lines),
+        start=t_start,
+        end=t_end,
+        plan=plan,
+        actuals=actuals,
+        not_connected=inv["not_connected"],
+        notes=inv["notes"],
+        sources=sources,
+        observed_at=inv["observed_at"],
+    )

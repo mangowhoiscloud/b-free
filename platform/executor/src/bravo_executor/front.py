@@ -61,6 +61,10 @@ class FrontConfig:
     min_samples: int = 30                      # LB mode: below this the step is not judged as healthy
     max_error_rate: float = 0.01
     max_p95_ms: float = 800.0
+    # LB mode: the target must answer at least this fraction of its planned share (10 % step -> 2.5 % of
+    # probes). Cloudflare fails a pool over to the other one when its monitor sees it down: probes then all
+    # succeed from the old environment, and only this check notices that the target is not serving.
+    min_target_share: float = 0.25
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> FrontConfig:
@@ -88,6 +92,7 @@ class FrontConfig:
             min_samples=int(f("BRAVO_FRONT_MIN_SAMPLES", 30)),
             max_error_rate=f("BRAVO_FRONT_MAX_ERROR_RATE", 0.01),
             max_p95_ms=f("BRAVO_FRONT_MAX_P95_MS", 800.0),
+            min_target_share=f("BRAVO_FRONT_MIN_TARGET_SHARE", 0.25),
         )
 
     def tunnel_name(self, env_key: str) -> str:
@@ -151,8 +156,10 @@ class Judgement:
                 "p95_ms": self.p95_ms, "reasons": list(self.reasons), "by_env": dict(self.by_env)}
 
 
-def judge(samples: Sequence[Sample], cfg: FrontConfig) -> Judgement:
-    """A step is healthy only with enough samples, error rate <= max and p95 <= max."""
+def judge(samples: Sequence[Sample], cfg: FrontConfig, target_env_id: str | None = None,
+          weight_pct: int = 0) -> Judgement:
+    """A step is healthy only with enough samples, error rate <= max, p95 <= max and, given a target and
+    its weight, the target answering at least ``min_target_share`` of its planned share of the probes."""
     n = len(samples)
     reasons: list[str] = []
     if n < cfg.min_samples:
@@ -168,6 +175,10 @@ def judge(samples: Sequence[Sample], cfg: FrontConfig) -> Judgement:
     for s in samples:
         key = s.env_id or "none"
         by_env[key] = by_env.get(key, 0) + 1
+    if target_env_id is not None and weight_pct > 0 and n:
+        share, floor = by_env.get(target_env_id, 0) / n, cfg.min_target_share * weight_pct / 100
+        if share < floor:
+            reasons.append(f"TARGET_SHARE({target_env_id}:{share:.3f}<{floor:.3f})")
     return Judgement(not reasons, n, rate, lat, tuple(reasons), by_env)
 
 
@@ -503,7 +514,7 @@ class FrontSwitch:
                 self.resource_lb(), f"WEIGHT_{target_env.upper()}_{step.weight}", set_weights, observe_weights
             )
             samples = await probe.collect(self.cfg.hold_s)
-            verdict = judge(samples, self.cfg)
+            verdict = judge(samples, self.cfg, self.cfg.env_ids[target_env], step.weight)
             entry = {"weight": step.weight, "applied": True, "judgement": verdict.as_dict(),
                      "step_ms": int((time.monotonic() - t_step) * 1000), **evidence}
             summary["steps"].append(entry)

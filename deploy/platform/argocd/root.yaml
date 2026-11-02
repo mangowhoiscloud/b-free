@@ -14,5 +14,9 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-  # Manual until main holds the deployed digests (see apps/platform.yaml).
-  syncPolicy: {}
+  # Automated once main holds apps/platform.yaml with control on auto-sync (apply this file after that push;
+  # applied earlier, it would sync the older copy and turn control back to manual).
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

@@ -126,6 +126,16 @@ def build_router(
     ) -> dict[str, Any]:
         return await services.plan_create(p, Channel.CONSOLE, body, key)
 
+    @router.get("/cost")
+    async def cost(
+        p: Annotated[Principal, Depends(principal)],
+        plan_id: UUID | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> dict[str, Any]:
+        """Cost receipt ``cost/v1`` from the collector (T1, NFR-8); with plan_id, split before / during / after."""
+        return await services.cost(p, Channel.CONSOLE, plan_id, start, end)
+
     @router.get("/plans/{plan_id}")
     async def plan_get(plan_id: UUID, p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
         return await services.plan_get(p, Channel.CONSOLE, plan_id)

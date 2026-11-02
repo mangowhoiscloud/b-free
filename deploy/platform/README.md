@@ -32,6 +32,16 @@
 | `argocd/` | Argo CD 3.5.6 값과 app-of-apps. 비공개 저장소 자격이 없어 아직 동기화 못 함 |
 | `envoy-gateway/`, `cilium/values.yaml`, `images/link/` | 임시 EKS 때만 쓴 기록(쓰지 않음) |
 
+## 이미지 바꾸기(GitOps 규칙, 2026-11-02 22:4x부터)
+
+Argo CD가 `cilium`을 뺀 모든 앱을 main에서 자동 동기화합니다(prune 끔, selfHeal 켬). 그래서 살아 있는 이미지를 바꾸는 길은 하나입니다.
+
+1. 해당 앱의 `kustomization.yaml`(`images:`의 `digest`) 또는 Helm 값에 새 digest를 고정합니다.
+2. main에 올라가면 Argo CD가 동기화합니다(체크포인트 push).
+3. `kubectl set image`, 다른 digest의 `kubectl apply`는 쓰지 않습니다. main에 없는 변경은 selfHeal이 되돌립니다.
+
+`cilium`은 수동입니다. 차트가 렌더링할 때마다 CA와 Hubble 인증서를 새로 만들기 때문입니다. 값을 바꾸면 Argo CD에서 한 번 수동 동기화합니다.
+
 ## 비밀(D-26)
 
 모든 값은 플랫폼 OpenBao에만 있고, `scripts/deliver-secrets.sh deliver`가 파이프로만 Secret을 만듭니다. `scripts/onprem-tokens.sh`(온프렘 TokenRequest 168h), `scripts/gke-links.sh`(GKE 링크), `scripts/cluster-cas.sh`(공개 CA), `scripts/publish-sa-jwks.sh`(서비스 계정 JWKS를 S3 discovery에)도 같은 규칙입니다.

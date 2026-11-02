@@ -264,3 +264,35 @@ resource "aws_iam_role_policy" "ecr_pull" {
   role   = aws_iam_role.web_identity["ecr-pull"].id
   policy = data.aws_iam_policy_document.ecr_pull.json
 }
+
+# 비용 영수증(T1, NFR-8, platform/collector GET /v1/cost, docs/architecture/15-r2-contracts.md 8절): 읽기 전용.
+# 수집 역할에만 붙임. Cost Explorer는 요청당 USD 0.01이라 수집기가 1시간 캐시함. 태그 활성화(ce:Update…)는 넣지 않음:
+# 결제 설정은 사람이 deploy/platform/scripts/cost-tag.sh로 함.
+data "aws_iam_policy_document" "collector_cost_read" {
+  statement {
+    sid       = "CostAndPriceRead"
+    actions   = ["ce:GetCostAndUsage", "ce:ListCostAllocationTags", "pricing:GetProducts"]
+    resources = ["*"]
+  }
+  statement {
+    sid = "InventoryDescribe"
+    actions = [
+      "ec2:DescribeInstances", "ec2:DescribeVolumes", "ec2:DescribeNatGateways",
+      "eks:ListClusters", "eks:DescribeCluster",
+      "elasticloadbalancing:DescribeLoadBalancers", "elasticloadbalancing:DescribeTags",
+      "s3:ListAllMyBuckets", "s3:GetBucketTagging", "s3:GetBucketLocation",
+      "cloudwatch:GetMetricStatistics", "cloudwatch:ListMetrics",
+      "kms:ListKeys", "kms:ListAliases", "kms:DescribeKey",
+      "ecr:DescribeRepositories", "ecr:DescribeImages",
+      "secretsmanager:ListSecrets", "rds:DescribeDBInstances",
+      "cloudtrail:DescribeTrails", "cloudtrail:GetEventSelectors",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "collector_cost_read" {
+  name   = "cost-receipt-read"
+  role   = aws_iam_role.web_identity["collector-ro"].id
+  policy = data.aws_iam_policy_document.collector_cost_read.json
+}

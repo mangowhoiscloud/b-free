@@ -92,6 +92,8 @@ def _finding_ok(f: Any) -> bool:
     )
 
 
+COST_SCHEMA = "cost/v1"
+COST_TIMEOUT_S = 150.0
 ROOT_EMPTY = "inventory_root_empty"  # collector: nothing mounted to scan (503), on /v1/inventory and /snapshot
 
 
@@ -126,6 +128,20 @@ class CollectorClient(_Client):
             raise UpstreamError(f"collector_http_{resp.status_code}", resp.status_code)
         body = self._json(resp, self.name)
         if not isinstance(body, dict) or not isinstance(body.get("clusters"), list):
+            raise UpstreamError("collector_bad_response")
+        return body
+
+    async def cost(self, params: dict[str, str]) -> dict[str, Any]:
+        """``GET /v1/cost``: the cost receipt ``cost/v1`` (T1, NFR-8). The first fill after a collector restart reads
+        every provider and the price lists (up to about a minute), so this call has its own longer timeout."""
+        resp = await self._request("GET", "/v1/cost", params=params,
+                                   timeout=httpx.Timeout(COST_TIMEOUT_S, connect=2.0))
+        if resp.status_code == 422:
+            raise UpstreamError("cost_bad_request", 422, self._json(resp, self.name))
+        if resp.status_code != 200:
+            raise UpstreamError(f"collector_http_{resp.status_code}", resp.status_code)
+        body = self._json(resp, self.name)
+        if not isinstance(body, dict) or body.get("schema_version") != COST_SCHEMA:
             raise UpstreamError("collector_bad_response")
         return body
 

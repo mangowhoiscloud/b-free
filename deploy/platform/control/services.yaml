@@ -78,6 +78,18 @@ spec:
             - {name: AWS_ROLE_ARN, value: "arn:aws:iam::721622471953:role/bravo-platform-collector-ro-25e58db04e5bb0ea1f58d7f626"}
             - {name: AWS_WEB_IDENTITY_TOKEN_FILE, value: /var/run/secrets/sts.amazonaws.com/serviceaccount/token}
             - {name: BRAVO_ONPREM_KUBECONFIG, value: /etc/bravo/onprem/kubeconfig}
+            # GET /v1/cost (T1, NFR-8): inventory and price config, no secrets. The IAM policy cost-receipt-read on the
+            # role above (infra/envs/platform-aws rke2.tf) adds Cost Explorer, Pricing and Describe reads.
+            - {name: BRAVO_COST_CONFIG, value: /etc/bravo/cost.yaml}
+            # GCP reads (target project inventory + Billing Catalog prices) through Workload Identity Federation: the
+            # pod's own token (audience bravo-platform-gcp-wif) -> GCP STS. No key file (infra/envs/target-gcp
+            # platform_cost_reader.tf, viewer roles only).
+            - {name: GOOGLE_APPLICATION_CREDENTIALS, value: /etc/bravo/gcp/credential.json}
+            # Cloudflare read token and ids (optional Secret collector-cloudflare, piped from OpenBao). Absent: the
+            # receipt shows Cloudflare LB as "연결 안 됨" with that reason.
+            - {name: CLOUDFLARE_API_TOKEN, valueFrom: {secretKeyRef: {name: collector-cloudflare, key: api_token, optional: true}}}
+            - {name: CLOUDFLARE_ACCOUNT_ID, valueFrom: {secretKeyRef: {name: collector-cloudflare, key: account_id, optional: true}}}
+            - {name: CLOUDFLARE_ZONE_ID, valueFrom: {secretKeyRef: {name: collector-cloudflare, key: zone_id, optional: true}}}
           ports: [{name: http, containerPort: 8083}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
@@ -85,6 +97,9 @@ spec:
           resources: {requests: {cpu: 50m, memory: 192Mi}, limits: {memory: 512Mi}}
           volumeMounts:
             - {name: registry, mountPath: /etc/bravo/environments.yaml, subPath: environments.yaml, readOnly: true}
+            - {name: cost-config, mountPath: /etc/bravo/cost.yaml, subPath: cost.yaml, readOnly: true}
+            - {name: gcp-wif, mountPath: /etc/bravo/gcp, readOnly: true}
+            - {name: gcp-token, mountPath: /var/run/secrets/gcp, readOnly: true}
             - {name: onprem, mountPath: /etc/bravo/onprem, readOnly: true}
             - {name: aws-token, mountPath: /var/run/secrets/sts.amazonaws.com/serviceaccount, readOnly: true}
             - {name: app, mountPath: /srv/app, readOnly: true}
@@ -93,6 +108,12 @@ spec:
         - {name: git-key, secret: {secretName: git-customer-repo, optional: true, defaultMode: 0440}}
         - {name: git-known-hosts, configMap: {name: github-known-hosts}}
         - {name: registry, configMap: {name: environments}}
+        - {name: cost-config, configMap: {name: cost-config}}
+        - {name: gcp-wif, configMap: {name: gcp-wif-collector}}
+        - name: gcp-token
+          projected:
+            sources:
+              - serviceAccountToken: {audience: bravo-platform-gcp-wif, expirationSeconds: 3600, path: token}
         - {name: onprem, secret: {secretName: onprem-kubeconfig, optional: true}}
         - name: aws-token
           projected:

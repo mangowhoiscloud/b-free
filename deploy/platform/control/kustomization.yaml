@@ -29,6 +29,12 @@ configMapGenerator:
   - name: environments
     files:
       - environments.yaml=config/environments.yaml
+  - name: cost-config
+    files:
+      - cost.yaml=config/cost.yaml
+  - name: gcp-wif-collector
+    files:
+      - credential.json=config/gcp-wif-collector.json
   - name: executor-topology
     files:
       - topology.json=../../cloud/in-cluster/topology.json
@@ -51,10 +57,10 @@ images:
     digest: sha256:bf7f65bb554a902b55d82b0ed37838a3c1d1fefb33f031c79a6ff14e1f97738e
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
-    digest: sha256:9f675c2da30daa49cfe75694c1b6745987881378a1f3fb5d56af2689a3fdf09b # guard-20261102T132858Z (collector lane: field-level credential guard)
+    digest: sha256:be1e69fd48d4fdeb8da4110987fe164c19bd5e71bbe398d8a01856d75834b49d # cost-20261102T133456Z (obs/cost lane: GET /v1/cost; built from the working tree with the collector lane redact.py)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
-    digest: sha256:bf05cadf543d1372820fda4e096015588037ae5743db53b4ad18427e47877e55 # cloud-202611022213 (data/cutover lane: spike fixes, repl_setup/ops with file secrets in executor-0)
+    digest: sha256:f3f82550c17a19983d2b15184e2f0f1046d72fd4ff6e118fd23b2cc2d8a2eb9d # cloud-202611022231 (data/cutover lane: + front LB step timing and per-env probe counts)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
     digest: sha256:929b414d3658b07ce0c3489620f6268333555ed0fd4474a5f4691103a3321614 # readyz-20261102T131522Z (rehearsal lane: worker imports via site-packages .pth, no PYTHONPATH; /readyz checks a usable OpenBao token; arm64)

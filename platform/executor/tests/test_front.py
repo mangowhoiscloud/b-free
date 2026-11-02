@@ -67,6 +67,19 @@ def test_judge_healthy_step() -> None:
     assert j.healthy and j.error_rate == 0.0 and j.p95_ms == 100.0 and j.reasons == ()
 
 
+def test_judge_reverts_when_the_lb_failed_over_to_the_old_environment() -> None:
+    # Cloudflare marked the target pool down: every probe succeeds, all from the old environment.
+    samples = [Sample(i * 0.5, True, 50.0, "aws", 200) for i in range(100)]
+    j = judge(samples, CFG, "onprem", 100)
+    assert not j.healthy and j.error_rate == 0.0 and j.reasons == ("TARGET_SHARE(onprem:0.000<0.250)",)
+    assert judge(samples, CFG).healthy  # without a target, nothing to compare
+
+
+def test_judge_accepts_a_small_step_with_a_few_target_answers() -> None:
+    samples = [*[Sample(i * 0.5, True, 50.0, "aws", 200) for i in range(97)], *_ok(3)]
+    assert judge(samples, CFG, "onprem", 10).healthy  # 3 % >= 2.5 % (a quarter of 10 %)
+
+
 def test_judge_counts_which_environment_answered() -> None:
     samples = [*_ok(9), Sample(5.0, True, 90.0, "aws", 200), Sample(5.5, False, 900.0, None, 502)]
     assert judge(samples, CFG).as_dict()["by_env"] == {"onprem": 9, "aws": 1, "none": 1}

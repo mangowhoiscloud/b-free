@@ -25,8 +25,8 @@ GCP_CATALOG_URL = "https://cloudbilling.googleapis.com/v1/services/{service}/sku
 AWS_UT_PREFIX = {"ap-northeast-2": "APN2", "ap-northeast-1": "APN1", "us-east-1": "", "us-west-2": "USW2"}
 
 GCP_SERVICES = {
-    "compute": "6F81-5844-456A",     # Compute Engine (instances, disks, Cloud NAT, load balancing proxies)
-    "gke": "CCD8-9BF1-090E",         # Kubernetes Engine (cluster management fee)
+    "compute": "6F81-5844-456A",  # Compute Engine (instances, disks, Cloud NAT, load balancing proxies)
+    "gke": "CCD8-9BF1-090E",  # Kubernetes Engine (cluster management fee)
     "networking": "E505-1604-58F8",  # Networking (Cloud NAT uptime and IP usage)
     "artifact_registry": "149C-F9EC-3994",
     "kms": "EE2F-D110-890C",
@@ -36,7 +36,7 @@ GCP_SERVICES = {
 @dataclass(frozen=True)
 class Price:
     usd: float
-    unit: str              # provider's unit: Hrs, GB-Mo, h, GiBy.mo, mo ...
+    unit: str  # provider's unit: Hrs, GB-Mo, h, GiBy.mo, mo ...
     source: dict[str, Any]  # name, ref (usage type or sku id), description, effective date, url, fetched_at
 
 
@@ -60,8 +60,11 @@ class AwsPrices:
     def _pricing(self):
         with self._mx:
             if self._client is None:
-                self._client = self._session.client("pricing", region_name=AWS_PRICING_REGION,
-                                                    config=Config(retries={"max_attempts": 4, "mode": "standard"}))
+                self._client = self._session.client(
+                    "pricing",
+                    region_name=AWS_PRICING_REGION,
+                    config=Config(retries={"max_attempts": 4, "mode": "standard"}),
+                )
             return self._client
 
     def lookup(self, service_code: str, filters: dict[str, str], *, want_unit: str | None = None) -> Price:
@@ -87,16 +90,22 @@ class AwsPrices:
                     usd = dim.get("pricePerUnit", {}).get("USD")
                     if usd is None:
                         continue
-                    found.append((float(usd), dim.get("unit", ""), {
-                        "name": "AWS Pricing API",
-                        "ref": attrs.get("usagetype"),
-                        "sku": p.get("product", {}).get("sku"),
-                        "description": dim.get("description"),
-                        "effective_date": term.get("effectiveDate"),
-                        "url": AWS_PRICING_URL,
-                        "service_code": service_code,
-                        "fetched_at": iso(now_utc()),
-                    }))
+                    found.append(
+                        (
+                            float(usd),
+                            dim.get("unit", ""),
+                            {
+                                "name": "AWS Pricing API",
+                                "ref": attrs.get("usagetype"),
+                                "sku": p.get("product", {}).get("sku"),
+                                "description": dim.get("description"),
+                                "effective_date": term.get("effectiveDate"),
+                                "url": AWS_PRICING_URL,
+                                "service_code": service_code,
+                                "fetched_at": iso(now_utc()),
+                            },
+                        )
+                    )
         if not found:
             return PriceError(f"AWS Pricing API returned no On-Demand price for {service_code} {filters}")
         if len({f[0] for f in found}) > 1:
@@ -109,7 +118,7 @@ class GcpCatalog:
     """SKUs of a few services, filtered to the regions we use, cached for a day."""
 
     def __init__(self, authed_get, quota_project: str | None) -> None:
-        self._get = authed_get          # callable(url, params) -> dict (raises on HTTP error)
+        self._get = authed_get  # callable(url, params) -> dict (raises on HTTP error)
         self._quota_project = quota_project
 
     def skus(self, service: str) -> list[dict[str, Any]]:
@@ -157,15 +166,19 @@ class GcpCatalog:
         # First paid tier: a free tier (price 0 up to N units) is reported in the source, not hidden.
         paid = next((t for t in tiers if _money(t.get("unitPrice", {})) > 0), tiers[0])
         free_units = float(paid.get("startUsageAmount", 0) or 0)
-        return Price(_money(paid.get("unitPrice", {})), expr.get("usageUnit", ""), {
-            "name": "GCP Cloud Billing Catalog API",
-            "ref": s.get("skuId"),
-            "description": s.get("description"),
-            "effective_date": info.get("effectiveTime"),
-            "free_tier_units": free_units or None,
-            "url": GCP_CATALOG_URL.format(service=GCP_SERVICES[service]),
-            "fetched_at": iso(now_utc()),
-        })
+        return Price(
+            _money(paid.get("unitPrice", {})),
+            expr.get("usageUnit", ""),
+            {
+                "name": "GCP Cloud Billing Catalog API",
+                "ref": s.get("skuId"),
+                "description": s.get("description"),
+                "effective_date": info.get("effectiveTime"),
+                "free_tier_units": free_units or None,
+                "url": GCP_CATALOG_URL.format(service=GCP_SERVICES[service]),
+                "fetched_at": iso(now_utc()),
+            },
+        )
 
 
 def _money(m: dict[str, Any]) -> float:
