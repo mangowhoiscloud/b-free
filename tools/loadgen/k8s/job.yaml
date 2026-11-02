@@ -31,8 +31,8 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: loadgen
-          # l1-20261102T182044Z
-          image: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/loadgen@sha256:66f0abdf7af2b1f3c807b35ff71abdf46d2994d4fa659ac2b841c1e6406b4ecd
+          # l1-20261102T184626Z
+          image: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/loadgen@sha256:2d55f4b4b13d74cfe3b653e181e177fa03949ad3e0490be5ad926f60aa52672d
           command: ["sh", "-c"]
           # SIGTERM (load_lib.sh loadgen_job_stop) reaches the loadgen, which stops sending and drains. The files
           # stay until the script has copied them (/out/collected) or 30 minutes pass.
@@ -50,6 +50,7 @@ spec:
             - {name: LOADGEN_APP_URL, value: "@APP_URL@"}
             - {name: LOADGEN_WRITE_RATE, value: "@WRITE_RATE@"}
             - {name: LOADGEN_READ_RATE, value: "@READ_RATE@"}
+            - {name: LOADGEN_READ_OP, value: "@READ_OP@"}
             - {name: LOADGEN_DURATION_S, value: "@DURATION_S@"}
             - {name: LOADGEN_WORKERS, value: "@WORKERS@"}
             - {name: LOADGEN_RUN_ID, value: "@RUN_ID@"}

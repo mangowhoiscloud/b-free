@@ -4,6 +4,7 @@
 # checks NFR-2: it never opens the load's sockets itself.
 #
 #   loadgen_job_start <run_id> <app_url> <write_rate> <read_rate> <duration_s> <workers> [plan_id]
+#     env READ_OP: http (default, GET /api/rooms/<room>/messages) or ws (WebSocket history read)
 #   loadgen_job_stop                 SIGTERM: no new requests, outstanding writes drain
 #   loadgen_job_collect <dir>        waits for the end, copies summary/requests/timeline/events, deletes the Job
 LOADGEN_JOB_TMPL="$REPO/tools/loadgen/k8s/job.yaml"
@@ -19,14 +20,14 @@ loadgen_job_start() {
   LOADGEN_JOB="loadgen-${run_id:0:8}"
   sed -e "s#@RUN8@#${run_id:0:8}#g" -e "s#@RUN_ID@#$run_id#g" -e "s#@APP_URL@#$url#g" \
       -e "s#@WRITE_RATE@#$w#g" -e "s#@READ_RATE@#$r#g" -e "s#@DURATION_S@#$dur#g" -e "s#@WORKERS@#$workers#g" \
-      -e "s#@PLAN_ID@#$plan#g" -e "s#@DEADLINE_S@#$(( ${dur%.*} + 3600 ))#g" "$LOADGEN_JOB_TMPL" | _lk apply -f - >/dev/null
+      -e "s#@PLAN_ID@#$plan#g" -e "s#@READ_OP@#${READ_OP:-http}#g" -e "s#@DEADLINE_S@#$(( ${dur%.*} + 3600 ))#g" "$LOADGEN_JOB_TMPL" | _lk apply -f - >/dev/null
   for _ in $(seq 1 60); do
     LOADGEN_POD="$(_lk get pod -l "bravo.io/run-id=$run_id" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
     [ -n "$LOADGEN_POD" ] && break; sleep 2
   done
   [ -n "$LOADGEN_POD" ] || fail "loadgen: no Pod for job $LOADGEN_JOB"
   _lk wait --for=condition=Ready "pod/$LOADGEN_POD" --timeout=300s >/dev/null || fail "loadgen: pod $LOADGEN_POD not running"
-  log "loadgen job $LOADGEN_JOB pod $LOADGEN_POD running ($w writes/s + $r reads/s, ${dur}s, $workers workers, $url)"
+  log "loadgen job $LOADGEN_JOB pod $LOADGEN_POD running ($w writes/s + $r reads/s (${READ_OP:-http}), ${dur}s, $workers workers, $url)"
 }
 
 loadgen_job_stop() {

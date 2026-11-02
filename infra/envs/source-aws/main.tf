@@ -33,8 +33,10 @@ locals {
     app = {
       instance_types = local.preset.app_instance
       azs            = [local.azs[0]]
-      min_per_az     = 1
-      desired_per_az = 1
+      # 2 nodes (2026-11-03): one t4g.large saturated at 50 writes + 150 reads/s (docs/evidence/load/). The module
+      # ignores desired_size after creation (autoscaler-friendly), so min_per_az is what raises the node count.
+      min_per_az     = 2
+      desired_per_az = 2
       max_per_az     = local.preset.app_max
     }
   }

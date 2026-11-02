@@ -79,6 +79,9 @@ spec:
 ---
 # The Gateway's Envoy reaches the app pods as Cilium identity `ingress`. Once any policy selects the app
 # pods (chat-admin-from-mgmt-connector, deploy/platform/link), that identity is denied unless allowed here.
+# With two nodes (2026-11-03) Envoy on one node reaches an app pod on the other as `remote-node` (aws-cni chaining,
+# native routing: the identity is not carried across nodes). Measured 03:50 KST: cilium-dbg monitor "Policy denied
+# remote-node -> app :8000 SYN", about half the requests 503 "upstream connect error". Port 8000 only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -89,7 +92,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: bravo-demo
   ingress:
-    - fromEntities: [ingress]
+    - fromEntities: [ingress, remote-node]
       toPorts:
         - ports:
             - port: "8000"

@@ -64,6 +64,7 @@ class AppLoadConfig:
     drain_timeout_s: float = 60.0
     read_timeout_s: float = 15.0
     read_window: int = 20
+    read_op: str = "http"  # http: GET /api/rooms/<room>/messages?after= (app 0.3.3+); ws: /ws?room=&after= history
     max_connections: int = 512
     # Open requests per process. Above it a due request is not sent and counts as failed (client_saturated):
     # a collapsed target must not turn the client into thousands of sockets (11/3 02:44: ~9,400 on the Mac)
@@ -189,6 +190,13 @@ class WorkerResult:
     loop_lag_max_ms: float
 
 
+class _ReadError(Exception):
+    def __init__(self, code: str, served: str) -> None:
+        super().__init__(code)
+        self.code = code
+        self.served = served
+
+
 def _event(kind: str, **fields: Any) -> None:
     sys.stderr.write(json.dumps({"event": kind, "ts": round(time.time(), 3), **fields}) + "\n")
 
@@ -230,6 +238,9 @@ class AppLoad:
         self.loop_lag_max_ms = 0.0
         # One TLS context per process for every WebSocket read (a new context per connection costs CPU and memory).
         self._ssl = ssl.create_default_context() if self._ws_base.startswith("wss:") else None
+        self._read_url = f"{cfg.base_url.rstrip('/')}/api/rooms/{quote(cfg.room)}/messages"
+        # Metric op: "read" for the HTTP history read (default), "read_ws" for the WebSocket one, so both stay apart.
+        self._read_metric = "read" if cfg.read_op == "http" else "read_ws"
 
     def stop(self) -> None:
         self._stop.set()
@@ -241,7 +252,7 @@ class AppLoad:
         st = self.writes if op == "write" else self.reads
         st.failed += 1
         st.attempt_errors["client_saturated"] += 1
-        self.metrics.attempt(op, False, "client_saturated", "unknown", 0.0)
+        self.metrics.attempt(op if op == "write" else self._read_metric, False, "client_saturated", "unknown", 0.0)
         now = time.monotonic()
         if op == "write":
             self._sec(now).write_err_attempts += 1
@@ -345,10 +356,54 @@ class AppLoad:
 
     # --- reads ---------------------------------------------------------------------------------
 
-    async def _read(self, scheduled: float) -> None:
+    async def _fetch_ws(self, after: int) -> tuple[list[dict[str, Any]], str]:
+        url = f"{self._ws_base}?room={quote(self.cfg.room)}&after={after}"
+        served = "unknown"
+        try:
+            async with ws_connect(url, ssl=self._ssl, open_timeout=self.cfg.read_timeout_s, close_timeout=2,
+                                  compression=None, max_size=2**22, user_agent_header="bravo-loadgen") as ws:
+                hello = json.loads(await ws.recv())
+                if hello.get("type") != "hello":
+                    raise ValueError("first frame is not hello")
+                served = str((hello.get("env") or {}).get("id") or "unknown")
+                backlog = json.loads(await ws.recv())
+                if backlog.get("type") != "messages" or backlog.get("backlog") is not True:
+                    raise ValueError("second frame is not the backlog")
+                return list(backlog.get("items") or []), served
+        except InvalidStatus as exc:
+            raise _ReadError(f"http_{exc.response.status_code}", served) from exc
+        except ConnectionClosed as exc:
+            raise _ReadError(f"close_{exc.rcvd.code}" if exc.rcvd is not None else "close_abnormal", served) from exc
+        except InvalidHandshake as exc:
+            raise _ReadError(f"handshake:{type(exc).__name__}", served) from exc
+        except (ValueError, KeyError, TypeError) as exc:
+            raise _ReadError("bad_frame", served) from exc
+
+    async def _fetch_http(self, client: httpx.AsyncClient, after: int) -> tuple[list[dict[str, Any]], str]:
+        try:
+            r = await client.get(self._read_url, params={"after": after})
+        except httpx.TimeoutException as exc:
+            raise _ReadError("timeout", "unknown") from exc
+        except httpx.TransportError as exc:
+            raise _ReadError(f"transport:{type(exc).__name__}", "unknown") from exc
+        served = r.headers.get("x-served-by", "unknown")
+        if r.status_code != 200:
+            code = str(r.status_code)
+            try:
+                err = r.json().get("error")
+                if isinstance(err, str) and _ERR_TOKEN.match(err):
+                    code = f"{r.status_code}:{err}"
+            except (ValueError, AttributeError):
+                pass
+            raise _ReadError(code, served)
+        try:
+            return list(r.json()["items"]), served
+        except (ValueError, KeyError, TypeError) as exc:
+            raise _ReadError("bad_body", served) from exc
+
+    async def _read(self, client: httpx.AsyncClient, scheduled: float) -> None:
         cfg, st = self.cfg, self.reads
         after = max(0, self._last_id - cfg.read_window)
-        url = f"{self._ws_base}?room={quote(cfg.room)}&after={after}"
         served = "unknown"
         code = "ok"
         st.attempts += 1
@@ -357,38 +412,26 @@ class AppLoad:
         t0 = now = time.monotonic()
         try:
             async with asyncio.timeout(cfg.read_timeout_s):
-                async with ws_connect(url, ssl=self._ssl, open_timeout=cfg.read_timeout_s, close_timeout=2,
-                                      compression=None, max_size=2**22, user_agent_header="bravo-loadgen") as ws:
-                    hello = json.loads(await ws.recv())
-                    if hello.get("type") != "hello":
-                        raise ValueError("first frame is not hello")
-                    served = str((hello.get("env") or {}).get("id") or "unknown")
-                    backlog = json.loads(await ws.recv())
-                    if backlog.get("type") != "messages" or backlog.get("backlog") is not True:
-                        raise ValueError("second frame is not the backlog")
-                    items = backlog.get("items") or []
-                    if any(it.get("room") != cfg.room or int(it.get("id", 0)) <= after for it in items):
-                        raise ValueError("backlog rows outside the requested room/after")
-                    now = time.monotonic()
-                    st.items += len(items)
-        except InvalidStatus as exc:
-            code = f"http_{exc.response.status_code}"
-        except ConnectionClosed as exc:
-            code = f"close_{exc.rcvd.code}" if exc.rcvd is not None else "close_abnormal"
+                if cfg.read_op == "ws":
+                    items, served = await self._fetch_ws(after)
+                else:
+                    items, served = await self._fetch_http(client, after)
+            if any(it.get("room") != cfg.room or int(it.get("id", 0)) <= after for it in items):
+                raise _ReadError("rows_outside_request", served)
+            now = time.monotonic()
+            st.items += len(items)
+        except _ReadError as exc:
+            code, served = exc.code, exc.served
         except TimeoutError:
             code = "timeout"
-        except InvalidHandshake as exc:
-            code = f"handshake:{type(exc).__name__}"
         except OSError as exc:
             code = f"transport:{type(exc).__name__}"
-        except (ValueError, KeyError, TypeError):
-            code = "bad_frame"
         finally:
             self._inflight_r -= 1
         if code == "ok":
             lat = (now - scheduled) * 1000
-            self.metrics.attempt("read", True, "ok", served, (now - t0) * 1000)
-            self.metrics.request("read", "ok", served, lat)
+            self.metrics.attempt(self._read_metric, True, "ok", served, (now - t0) * 1000)
+            self.metrics.request(self._read_metric, "ok", served, lat)
             st.ok += 1
             st.latencies_ms.append(lat)
             st.ok_at.append(now - self._t0)
@@ -399,22 +442,21 @@ class AppLoad:
             sec.served_by[f"r:{served}"] += 1
             return
         now = time.monotonic()
-        self.metrics.attempt("read", False, code, served, (now - t0) * 1000)
-        self.metrics.request("read", "failed", served, (now - scheduled) * 1000)
+        self.metrics.attempt(self._read_metric, False, code, served, (now - t0) * 1000)
+        self.metrics.request(self._read_metric, "failed", served, (now - scheduled) * 1000)
         st.attempt_errors[code] += 1
         st.failed += 1
         self._sec(now).read_err += 1
 
-    async def _prime_last_id(self) -> None:
+    async def _prime_last_id(self, client: httpx.AsyncClient) -> None:
         """One read of the newest rows so that the first reads do not fetch the whole backlog."""
         try:
             async with asyncio.timeout(self.cfg.read_timeout_s):
-                async with ws_connect(f"{self._ws_base}?room={quote(self.cfg.room)}", ssl=self._ssl, compression=None,
-                                      max_size=2**22, user_agent_header="bravo-loadgen") as ws:
-                    await ws.recv()
-                    backlog = json.loads(await ws.recv())
-                    ids = [int(it["id"]) for it in backlog.get("items") or []]
-                    self._last_id = max(ids, default=0)
+                if self.cfg.read_op == "ws":
+                    items, _ = await self._fetch_ws(0)
+                else:
+                    items, _ = await self._fetch_http(client, 0)
+            self._last_id = max((int(it["id"]) for it in items), default=0)
         except Exception as exc:  # noqa: BLE001 - the run itself measures the errors
             _event("prime_failed", error=type(exc).__name__)
 
@@ -432,7 +474,7 @@ class AppLoad:
         timeout = httpx.Timeout(cfg.attempt_timeout_s)
         cpu0 = _cpu_s()
         async with httpx.AsyncClient(limits=limits, timeout=timeout, headers={"User-Agent": "bravo-loadgen"}) as client:
-            await self._prime_last_id()
+            await self._prime_last_id(client)
             tasks: set[asyncio.Task[None]] = set()
             lag_task = asyncio.create_task(self._loop_lag())
             start = time.monotonic() + max(0.0, self.start_wall - time.time())
@@ -468,7 +510,7 @@ class AppLoad:
                     if saturated:
                         self._refuse("read")
                         continue
-                    t = asyncio.create_task(self._read(due_r))
+                    t = asyncio.create_task(self._read(client, due_r))
                 tasks.add(t)
                 t.add_done_callback(tasks.discard)
             send_window = time.monotonic() - start
@@ -555,6 +597,7 @@ def run_workers(cfg: AppLoadConfig, mcfg: MetricsConfig, workers: int,
         "duration_s": cfg.duration_s,
         "send_window_s": round(window, 2),
         "target_per_s": {"write": cfg.write_rate, "read": cfg.read_rate},
+        "read_op": cfg.read_op,
         "writes": writes.summary(window),
         "reads": reads.summary(window),
         "client": {

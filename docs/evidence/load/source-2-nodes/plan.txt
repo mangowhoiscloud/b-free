@@ -1,0 +1,34 @@
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  ~ update in-place
+
+Terraform will perform the following actions:
+
+  # module.cluster.aws_eks_node_group.this["app-ap-northeast-2a"] will be updated in-place
+  ~ resource "aws_eks_node_group" "this" {
+        id                     = "bravo-source:app-ap-northeast-2a"
+        tags                   = {
+            "component"  = "source"
+            "env"        = "source-aws"
+            "managed-by" = "terraform"
+        }
+        # (17 unchanged attributes hidden)
+
+      ~ scaling_config {
+          ~ min_size     = 1 -> 2
+            # (2 unchanged attributes hidden)
+        }
+
+        # (3 unchanged blocks hidden)
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+
+Changes to Outputs:
+  ~ node_pools                = {
+      ~ app = {
+          ~ desired        = 1 -> 2
+            # (4 unchanged attributes hidden)
+        }
+    }

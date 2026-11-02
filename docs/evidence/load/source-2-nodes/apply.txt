@@ -1,0 +1,48 @@
+# 2026-11-03T03:47:17+09:00 aws eks update-nodegroup-config desiredSize=2 (module ignores desired_size; min 2 needs desired >= 2 first)
+3ac45c1e-53f0-3b38-8ceb-7d051addf214	InProgress	ConfigUpdate
+# 2026-11-03T03:47:48+09:00 nodegroup ACTIVE
+module.cluster.aws_eks_node_group.this["app-ap-northeast-2a"]: Modifying... [id=bravo-source:app-ap-northeast-2a]
+module.cluster.aws_eks_node_group.this["app-ap-northeast-2a"]: Modifications complete after 4s [id=bravo-source:app-ap-northeast-2a]
+Apply complete! Resources: 0 added, 1 changed, 0 destroyed.
+{
+    "minSize": 2,
+    "maxSize": 2,
+    "desiredSize": 2
+}
+NAME                                              STATUS     ROLES    AGE   VERSION               INTERNAL-IP    EXTERNAL-IP   OS-IMAGE                        KERNEL-VERSION                             CONTAINER-RUNTIME
+ip-10-10-11-107.ap-northeast-2.compute.internal   Ready      <none>   8h    v1.36.5-eks-6e7947a   10.10.11.107   <none>        Amazon Linux 2023.12.20261102   6.18.56-125.164.amzn2023.aarch64 (arm64)   containerd://2.3.7+unknown
+ip-10-10-11-11.ap-northeast-2.compute.internal    NotReady   <none>   9s    v1.36.5-eks-6e7947a   10.10.11.11    <none>        Amazon Linux 2023.12.20261102   6.18.56-125.164.amzn2023.aarch64 (arm64)   containerd://2.3.7+unknown
+# 2026-11-03T03:48:46+09:00 rollout restart chat/chat-bravo-demo and cf-edge/cloudflared so the scheduler spreads them over both nodes
+deployment.apps/chat-bravo-demo restarted
+Waiting for deployment "chat-bravo-demo" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "chat-bravo-demo" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "chat-bravo-demo" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "chat-bravo-demo" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "chat-bravo-demo" rollout to finish: 1 old replicas are pending termination...
+deployment "chat-bravo-demo" successfully rolled out
+deployment.apps/cloudflared restarted
+Waiting for deployment "cloudflared" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "cloudflared" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "cloudflared" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "cloudflared" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "cloudflared" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "cloudflared" rollout to finish: 1 old replicas are pending termination...
+deployment "cloudflared" successfully rolled out
+NAMESPACE NAME STATUS NODE
+bravo-observability otel-agent-7859bf9f4d-gx68d Running ip-10-10-11-107.ap-northeast-2.compute.internal
+bravo-observability platform-otel-7495cbb896-68zqz Running ip-10-10-11-107.ap-northeast-2.compute.internal
+bravo-observability platform-otel-7495cbb896-xf4h2 Running ip-10-10-11-107.ap-northeast-2.compute.internal
+cf-edge cloudflared-79fbbb4cb9-96k57 Running ip-10-10-11-11.ap-northeast-2.compute.internal
+cf-edge cloudflared-79fbbb4cb9-m55lz Running ip-10-10-11-11.ap-northeast-2.compute.internal
+cf-edge cloudflared-c69f866ff-474v7 Completed 6h55m
+cf-edge cloudflared-mgmt-755869498d-22qrl Running ip-10-10-11-107.ap-northeast-2.compute.internal
+cf-edge cloudflared-mgmt-755869498d-kvkhv Running ip-10-10-11-107.ap-northeast-2.compute.internal
+chat chat-bravo-demo-79d558f6d6-9mb8z Running ip-10-10-11-107.ap-northeast-2.compute.internal
+chat chat-bravo-demo-79d558f6d6-g8p4s Running ip-10-10-11-11.ap-northeast-2.compute.internal
+chat chat-db-1 Running ip-10-10-11-107.ap-northeast-2.compute.internal
+chat chat-db-restore-1 Running ip-10-10-11-107.ap-northeast-2.compute.internal
+chat chat-pgbouncer-788cc759f6-4mx46 Running ip-10-10-11-107.ap-northeast-2.compute.internal
+chat dst-db-link-745c696bf8-nnq97 Running ip-10-10-11-107.ap-northeast-2.compute.internal
+chat gate-netprobe-9htgq Running ip-10-10-11-11.ap-northeast-2.compute.internal
+chat gate-netprobe-shfnj Completed ip-10-10-11-107.ap-northeast-2.compute.internal
+chat gate-netprobe-vqgks Completed ip-10-10-11-107.ap-northeast-2.compute.internal

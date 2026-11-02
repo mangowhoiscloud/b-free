@@ -56,6 +56,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="app mode: give a write up after this many seconds from its scheduled time")
     p.add_argument("--drain-timeout", type=float, default=_f("LOADGEN_DRAIN_TIMEOUT_S", 60))
     p.add_argument("--read-timeout", type=float, default=_f("LOADGEN_READ_TIMEOUT_S", 15), help="app mode")
+    p.add_argument("--read-op", choices=("http", "ws"), default=_env("LOADGEN_READ_OP", "http"),
+                   help="app mode: http = GET /api/rooms/<room>/messages?after= (app 0.3.3+), ws = /ws history")
     p.add_argument("--read-window", type=int, default=int(_env("LOADGEN_READ_WINDOW", "20") or 20),
                    help="app mode: a read asks for rows after (newest acked id - window)")
     p.add_argument("--run-id", default=_env("LOADGEN_RUN_ID"), help="default: a new UUID")
@@ -115,6 +117,7 @@ def _main_app(args: argparse.Namespace) -> int:
         read_timeout_s=args.read_timeout,
         read_window=args.read_window,
         max_inflight=args.max_inflight,
+        read_op=args.read_op,
     )
     mcfg = MetricsConfig(args.otlp_endpoint, args.run_id, args.plan_id, args.metrics_interval)
     pools: list[Any] = []

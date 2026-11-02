@@ -71,7 +71,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: bravo-gate-netprobe
   labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
-  annotations: {bravo.io/app-image: "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6"}
+  annotations: {bravo.io/app-image: "721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:76e8f595d90267b3d740fdf9012cdf5c93d6337faf63e3601a1da3b2a65c262d"}
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -86,7 +86,7 @@ spec:
     - name: gate-identity
       expression: "'bravo-gate' in request.userInfo.groups"
   validations:
-    - expression: "object.spec.containers.all(c, c.image == '721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6')"
+    - expression: "object.spec.containers.all(c, c.image == '721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:76e8f595d90267b3d740fdf9012cdf5c93d6337faf63e3601a1da3b2a65c262d')"
       message: "gate probe Pod: only the app Deployment's image (pinned digest) is allowed"
     - expression: "!has(object.spec.initContainers) || size(object.spec.initContainers) == 0"
       message: "gate probe Pod: no init containers"
