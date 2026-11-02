@@ -278,7 +278,7 @@ provides-extras = ["dev", "openai"]
 [[package]]
 name = "bravo-rehearsal"
 version = "0.0.1"
-source = { virtual = "." }
+source = { editable = "." }
 
 [package.optional-dependencies]
 dev = [

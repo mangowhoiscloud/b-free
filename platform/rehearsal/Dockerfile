@@ -15,7 +15,8 @@ COPY agent/src ./agent/src
 COPY rehearsal/pyproject.toml rehearsal/uv.lock ./rehearsal/
 WORKDIR /app/rehearsal
 # Every package from uv.lock (hash-checked); bravo-agents installed from source, not editable.
-RUN uv sync --frozen --no-dev --extra service --no-editable
+# The project itself is not installed here: its source is copied to /app/src below (PYTHONPATH).
+RUN uv sync --frozen --no-dev --extra service --no-editable --no-install-project
 
 FROM ${PYTHON_IMAGE}
 ARG APP_UID=10001

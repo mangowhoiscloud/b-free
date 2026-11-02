@@ -31,10 +31,32 @@ def docker_ok() -> bool:
     return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
 
 
-def free_port() -> int:
+def free_port(host: str = "127.0.0.1") -> int:
     with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
+        s.bind((host, 0))
         return int(s.getsockname()[1])
+
+
+def container_reachable_host() -> str:
+    """Host address a container reaches as ``host.docker.internal`` (containers get ``--add-host ...:host-gateway``).
+
+    Docker Desktop forwards that name to the host's loopback, so a 127.0.0.1 listener is enough there. Docker
+    Engine on Linux maps ``host-gateway`` to the default bridge gateway (docker0, e.g. 172.17.0.1): a local address
+    of the host, not loopback, so a 127.0.0.1 listener cannot be reached from a container. Use that gateway when it
+    is local.
+    """
+    out = subprocess.run(
+        ["docker", "network", "inspect", "bridge", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}"],
+        capture_output=True, text=True, check=False,
+    ).stdout
+    for gateway in out.split():
+        with socket.socket() as s:
+            try:
+                s.bind((gateway, 0))
+            except OSError:  # not an address of this host (Docker Desktop VM) or not IPv4
+                continue
+        return gateway
+    return "127.0.0.1"
 
 
 @dataclass
@@ -53,6 +75,8 @@ def start_pg(extra: list[str] | None = None) -> PgContainer:
     password = uuid.uuid4().hex
     subprocess.run(
         ["docker", "run", "-d", "--rm", "--name", name, "-e", f"POSTGRES_PASSWORD={password}",
+         # Docker Desktop defines host.docker.internal itself; Docker Engine on Linux needs host-gateway.
+         "--add-host", "host.docker.internal:host-gateway",
          "-p", "127.0.0.1::5432", PG_IMAGE, "postgres", "-c", "wal_level=logical",
          "-c", "wal_retrieve_retry_interval=1000", *(extra or [])],
         check=True, capture_output=True,
@@ -144,6 +168,7 @@ def subscriber(docker_required: None) -> Iterator[PgContainer]:
 
 @dataclass
 class Tunnel:
+    client_host: str  # relay client listener: reachable from the host and, as host.docker.internal, from containers
     client_port: int
     agent_port: int
     relay: Proc
@@ -157,8 +182,9 @@ class Tunnel:
 
 @pytest.fixture
 def tunnel(publisher: PgContainer, tmp_path: Path) -> Iterator[Tunnel]:
-    client_port, agent_port = free_port(), free_port()
-    relay = Proc(["relay", "--client-bind", "127.0.0.1", "--client-port", str(client_port),
+    client_host = container_reachable_host()
+    client_port, agent_port = free_port(client_host), free_port()
+    relay = Proc(["relay", "--client-bind", client_host, "--client-port", str(client_port),
                   "--agent-port", str(agent_port), "--wait-agent-timeout", "3", "--stats-interval", "5"],
                  tmp_path / "relay.log").start()
     status = tmp_path / "reverse.json"
@@ -167,7 +193,7 @@ def tunnel(publisher: PgContainer, tmp_path: Path) -> Iterator[Tunnel]:
                  tmp_path / "agent.log").start()
     try:
         wait_idle(agent_port, 4)
-        yield Tunnel(client_port, agent_port, relay, agent, status)
+        yield Tunnel(client_host, client_port, agent_port, relay, agent, status)
     finally:
         agent.stop()
         relay.stop()
