@@ -108,6 +108,10 @@ spec:
             - {name: BRAVO_FRONT_APP, value: b-free-chat}
             - {name: BRAVO_FRONT_ENV_IDS, value: "src=aws,dst=onprem"}
             - {name: BRAVO_FRONT_LB_ENABLED, value: "1"}
+            # SHIFT p95 limit set from measurement (spec 5.3 / FR-8: limits fixed by 11/2–11/5 measurement, lead 11/3):
+            # before cutover the dst app writes to the source DB over the D-16 link; one round trip is 290–340 ms
+            # (KT -> Cloudflare DFW), dst write p95 668–956 ms vs src 260 ms. 800 ms would revert every shift on this path.
+            - {name: BRAVO_FRONT_MAX_P95_MS, value: "1500"}
             # SHIFT step judgement from the load generator's series when a load run is active (contract 15 §10.4);
             # the Executor's own write probe otherwise. Ingress rule: observability/networkpolicy.yaml.
             - {name: BRAVO_FRONT_PROM_URL, value: "http://prometheus.bravo-observe.svc.cluster.local:9090"}
