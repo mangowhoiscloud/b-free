@@ -5,8 +5,8 @@
  * SSE: EventSource cannot set headers, so the stream uses fetch via @microsoft/fetch-event-source.
  */
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { asObj, asStr, parseApproval, parseDevTokens, parseEvent, parseException, parseGate, parsePlan, parseRun } from './normalize';
-import type { Approval, ApprovalInput, ControlException, CreatePlanInput, DevToken, GateResult, Plan, PlanEvent, Run } from './types';
+import { asObj, asStr, parseApproval, parseDevTokens, parseEvent, parseException, parseGate, parsePlan, parseReplay, parseRun } from './normalize';
+import type { Approval, ApprovalInput, ControlException, CreatePlanInput, DevToken, GateResult, Plan, PlanEvent, Replay, Run } from './types';
 import { parseEnvironments, parseMe, parsePlans, type EnvSummary, type Me, type PlanSummary } from './home';
 
 export type StreamStatus = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'denied';
@@ -33,7 +33,10 @@ export interface ApiClient {
   getPlan(token: string, planId: string): Promise<Plan>;
   runGate(token: string, planId: string, idemKey: string): Promise<GateResult | null>;
   approve(token: string, planId: string, input: ApprovalInput, idemKey: string): Promise<Approval | null>;
-  shift(token: string, planId: string, idemKey: string): Promise<{ run_id: string | null; reason: string | null; run: Run | null }>;
+  /** POST /v1/plans/{id}/shift {"stage":"cutover"}: starts the 10/50/100 shift (contract 15 §10.2). */
+  shift(token: string, planId: string, idemKey: string): Promise<{ run_id: string | null; reason: string | null; run_kind: string | null; state: string | null; run: Run | null }>;
+  /** GET /v1/plans/{id}/runs/{run_id}/replay: a finished run as recorded events (contract 15 §12). */
+  getReplay(token: string, planId: string, runId: string): Promise<Replay | null>;
   /** Returns an unsubscribe function. `lastEventId` resumes after that event. */
   subscribe(token: string, planId: string, lastEventId: string | null, h: StreamHandlers): () => void;
 }
@@ -75,7 +78,24 @@ const REASON_TEXT: Record<string, string> = {
   exception_expiry_invalid: '만료 시각은 지금부터 5분 뒤에서 30일 뒤 사이여야 합니다.',
   exception_not_found: '예외를 찾지 못했습니다.',
   idempotency_key_reuse: '같은 Idempotency-Key에 다른 입력이 왔습니다.',
+  run_not_found: '이 계획의 실행이 아닙니다.',
+  // Executor refusals of shift/cutover (contract 15 §10.1). No run row is made.
+  APPROVAL_NOT_STARTED: 'Executor 거부: 이 승인은 콘솔에서 시작되지 않았습니다(APPROVAL_NOT_STARTED).',
+  STARTER_IS_APPROVER: 'Executor 거부: 승인한 사람은 시작할 수 없습니다(STARTER_IS_APPROVER). 다른 operator가 시작합니다.',
+  SHIFT_NOT_DONE: 'Executor 거부: 같은 승인의 전환(10/50/100)이 끝나지 않아 DB 컷오버를 시작하지 않습니다(SHIFT_NOT_DONE).',
+  APPROVAL_ALREADY_USED: 'Executor 거부: 이 승인은 이미 다른 실행에 쓰였습니다(APPROVAL_ALREADY_USED).',
+  APPROVER_IS_REQUESTER: 'Executor 거부: 승인자와 요청자가 같습니다(APPROVER_IS_REQUESTER).',
+  APPROVAL_EXPIRED: 'Executor 거부: 승인이 만료되었습니다(APPROVAL_EXPIRED).',
+  APPROVAL_NOT_FOUND: 'Executor 거부: 승인 행을 찾지 못했습니다(APPROVAL_NOT_FOUND).',
+  APPROVAL_PLAN_MISMATCH: 'Executor 거부: 승인이 다른 계획의 것입니다(APPROVAL_PLAN_MISMATCH).',
+  APPROVAL_STAGE_MISMATCH: 'Executor 거부: 승인 단계가 맞지 않습니다(APPROVAL_STAGE_MISMATCH).',
 };
+
+/** Text for a reason string that may carry a known code (e.g. an Executor refusal relayed in `reason`). */
+export function reasonCodeText(reason: string): string {
+  const code = Object.keys(REASON_TEXT).find((k) => reason === k || reason.includes(k));
+  return code ? `${REASON_TEXT[code]} (${reason})` : reason;
+}
 
 /** Plain Korean text for an error shown on screen. */
 export function errorText(err: unknown): string {
@@ -225,7 +245,11 @@ export function createHttpClient(base: string): ApiClient {
       });
       const o = asObj(body);
       // 202 may carry run_id null with a reason when the Executor did not take the run.
-      return { run_id: asStr(o?.run_id), reason: asStr(o?.reason), run: parseRun(body) };
+      return { run_id: asStr(o?.run_id), reason: asStr(o?.reason), run_kind: asStr(o?.run_kind), state: asStr(o?.state), run: parseRun(body) };
+    },
+
+    async getReplay(token, planId, runId) {
+      return parseReplay(await request('GET', `/v1/plans/${enc(planId)}/runs/${enc(runId)}/replay`, { token }));
     },
 
     subscribe(token, planId, lastEventId, h) {

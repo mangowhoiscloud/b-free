@@ -666,3 +666,60 @@ h1, h2, h3 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* SHIFT progress (contract 15 §10) */
+.shift {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.shift__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.weightbar {
+  position: relative;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.weightbar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--series-1);
+  opacity: 0.55;
+}
+.weightbar__label {
+  position: relative;
+  padding-left: 8px;
+  font-size: 12px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.row--current th,
+.row--current td {
+  background: var(--panel-2);
+}
+/* Recorded replay: impossible to mistake for live (contract 15 §12). */
+.replay-banner {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 10px 14px;
+  border: 2px dashed var(--ink-2);
+  border-radius: var(--radius);
+  background: repeating-linear-gradient(135deg, var(--panel), var(--panel) 8px, var(--panel-2) 8px, var(--panel-2) 16px);
+  font-size: 14px;
+}
+.replay-banner b {
+  font-size: 16px;
+}

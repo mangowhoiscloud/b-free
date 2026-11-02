@@ -57,7 +57,7 @@ function upsertStage(stages: RunStage[], s: RunStage): RunStage[] {
 }
 
 function emptyRun(runId: string): Run {
-  return { run_id: runId, status: 'RUNNING', write_pause_ms: null, write_pause_budget_ms: null, stages: [], receipt: null };
+  return { run_id: runId, kind: null, status: 'RUNNING', write_pause_ms: null, write_pause_budget_ms: null, stages: [], receipt: null };
 }
 
 /**
@@ -104,6 +104,7 @@ export function applyEvent(plan: Plan, e: PlanEvent): Plan {
         const run = plan.run && plan.run.run_id === runId ? plan.run : emptyRun(runId);
         next.run = {
           ...run,
+          kind: asStr(e.data.kind) ?? run.kind,
           status: asStr(e.data.status) ?? run.status,
           write_pause_ms: asNum(e.data.write_pause_ms) ?? run.write_pause_ms,
           write_pause_budget_ms: asNum(e.data.write_pause_budget_ms) ?? run.write_pause_budget_ms,
@@ -141,6 +142,7 @@ export function emptyPlan(planId: string): Plan {
     run: null,
     dependencies: null,
     analysis: null,
+    shift: null,
     state_reason: null,
   };
 }

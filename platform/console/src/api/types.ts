@@ -16,19 +16,24 @@ export const MAIN_STATES = [
   'REHEARSE',
   'GATE',
   'AWAIT_APPROVAL',
+  'SHIFT',
   'CUTOVER',
   'WATCH',
+  'DONE',
 ] as const;
 export const ALERT_STATES = ['SAFE_HOLD', 'ABORT_PRE_WRITE'] as const;
+/** States off the main line (API statemachine.py): failback after WATCH, and a person needed after rehearsals. */
+export const SIDE_STATES = ['FAILBACK', 'DONE_ROLLED_BACK', 'NEEDS_HUMAN'] as const;
 
 export type MainState = (typeof MAIN_STATES)[number];
 export type AlertState = (typeof ALERT_STATES)[number];
-export type PlanState = MainState | AlertState;
+export type SideState = (typeof SIDE_STATES)[number];
+export type PlanState = MainState | AlertState | SideState;
 
 export function isPlanState(v: unknown): v is PlanState {
   return (
     typeof v === 'string' &&
-    ((MAIN_STATES as readonly string[]).includes(v) || (ALERT_STATES as readonly string[]).includes(v))
+    ((MAIN_STATES as readonly string[]).includes(v) || (ALERT_STATES as readonly string[]).includes(v) || (SIDE_STATES as readonly string[]).includes(v))
   );
 }
 
@@ -161,6 +166,58 @@ export interface RunStage {
   started_at: string | null;
   ms: number | null;
   result: string;
+  /** front.* and failback.8_front_to_src stages (contract 15 §10.3): weights, judgement, revert. */
+  front: Record<string, unknown> | null;
+}
+
+/** One judged step of the 10/50/100 shift (contract 15 §10.2 `shift.steps[]`). */
+export interface ShiftStep {
+  weight: number | null;
+  healthy: boolean | null;
+  target_samples: number | null;
+  target_errors: number | null;
+  target_error_rate: number | null;
+  target_p95_ms: number | null;
+  samples: number | null;
+  error_rate: number | null;
+  p95_ms: number | null;
+  by_env: Record<string, number>;
+  hold_ms: number | null;
+  step_ms: number | null;
+  reasons: string[];
+}
+
+/** GET /v1/plans/{id} `shift`: the plan's last shift run. */
+export interface ShiftSummary {
+  run_id: string;
+  status: string;
+  target_env: string | null;
+  current_weight: number | null;
+  started_at: string | null;
+  ended_at: string | null;
+  steps: ShiftStep[];
+  reverted: { at_weight: number | null; reasons: string[] } | null;
+}
+
+/** Receipt `scope` (contract 15 §11.1) or the API's `verification_scope` for older receipts (§11.4). */
+export interface ReceiptScope {
+  source: 'receipt' | 'derived' | (string & {});
+  hash_rule: string | null;
+  tables: string[];
+  sequences: string[];
+  objects: { checked: string | null; referenced: number | null; reference_set_sha256: string | null } | string | null;
+}
+
+/** GET /v1/plans/{id}/runs/{run_id}/replay (contract 15 §12). */
+export interface Replay {
+  mode: string;
+  run_id: string;
+  kind: string | null;
+  status: string | null;
+  recorded_at: string | null;
+  ended_at: string | null;
+  generated_at: string | null;
+  events: (PlanEvent & { offset_ms: number | null })[];
 }
 
 export type RunStatus = 'RUNNING' | 'DONE' | 'ABORT_PRE_WRITE' | 'SAFE_HOLD';
@@ -201,6 +258,8 @@ export interface Receipt {
   objects: { verdict: string | null; reason: string | null; referenced: number | null };
   tables: ReceiptTable[];
   sequences: ReceiptSequence[];
+  /** What each part checked: receipt `scope`, else the API's `verification_scope` (§11.4). */
+  scope: ReceiptScope | null;
   /** Older pilot body (single pairs); kept so older receipts still render. */
   rows: HashPair;
   pk_hash: HashPair;
@@ -211,6 +270,8 @@ export interface Receipt {
 /** Executor GET /v1/runs/{id} shape (CONTRACT §6) plus run_id. */
 export interface Run {
   run_id: string;
+  /** shift · cutover · failback (contract 15 §10.2). */
+  kind: string | null;
   status: RunStatus | (string & {});
   write_pause_ms: number | null;
   write_pause_budget_ms: number | null;
@@ -264,6 +325,8 @@ export interface Plan {
   dependencies: DependencyCounts | null;
   /** plan.analysis (GET /v1/plans/{id}): inventory status and gaps. Null until ANALYZE has run. */
   analysis: PlanAnalysis | null;
+  /** Last shift run (contract 15 §10.2), null when none. */
+  shift: ShiftSummary | null;
 }
 
 /** service.py `_apply_analysis`: inventory {status, reason, …}, gaps[], control_differences[]. */

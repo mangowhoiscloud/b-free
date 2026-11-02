@@ -5,6 +5,7 @@ import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav
 import { AgentsScreen } from './live/AgentsScreen';
 import { ApprovalsScreen } from './live/ApprovalsScreen';
 import { CostScreen } from './live/CostScreen';
+import { ReplayScreen } from './live/ReplayScreen';
 import { EndingScreen } from './live/EndingScreen';
 import { HomeScreen } from './live/HomeScreen';
 import { ClustersScreen } from './live/ClustersScreen';
@@ -30,6 +31,7 @@ const SCREENS = [
   { id: 'approvals', label: '승인 기록', group: '이전' },
   { id: 'workflow', label: '워크플로우', group: '이전' },
   { id: 'cost', label: '비용 영수증', group: '이전' },
+  { id: 'replay', label: '기록 재생', group: '증거' },
   { id: 'clusters', label: '클러스터', group: '환경' },
   { id: 'demo', label: '데모 앱', group: '환경' },
   { id: 'observability', label: '관측', group: '관측' },
@@ -147,6 +149,7 @@ export function App() {
           {screen === 'approvals' && <ApprovalsScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} user={session.user} names={planNames} />}
           {screen === 'ending' && <EndingScreen />}
           {screen === 'cost' && <CostScreen session={session} />}
+          {screen === 'replay' && <ReplayScreen planId={planId} session={session} view={view} shiftInfo={planQ.data?.plan.shift ?? null} />}
         </div>
       )}
       {screen === 'plan' && (
@@ -185,7 +188,7 @@ export function App() {
               <div className="col col--side">
                 <ApprovalPanel planId={planId} view={view} user={session.user} />
                 <ExceptionsPanel planId={planId} view={view} user={session.user} names={planNames} />
-                <CutoverPanel planId={planId} view={view} user={session.user} />
+                <CutoverPanel planId={planId} view={view} user={session.user} shiftInfo={planQ.data?.plan.shift ?? null} />
               </div>
               <div className="col col--events">
                 <EventStream events={stream.events} status={stream.status} detail={stream.detail} />

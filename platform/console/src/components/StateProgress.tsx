@@ -1,5 +1,5 @@
 import type { ConsoleView } from '../api/derive';
-import { ALERT_STATES, MAIN_STATES, type MainState, type PlanState } from '../api/types';
+import { ALERT_STATES, MAIN_STATES, SIDE_STATES, type MainState, type PlanState } from '../api/types';
 import { IconAlert, ModeBadge } from './bits';
 
 const LABEL: Record<PlanState, string> = {
@@ -9,8 +9,13 @@ const LABEL: Record<PlanState, string> = {
   REHEARSE: '리허설',
   GATE: '게이트',
   AWAIT_APPROVAL: '승인 대기',
+  SHIFT: '전환 10/50/100',
   CUTOVER: '컷오버',
   WATCH: '관찰',
+  DONE: '끝',
+  FAILBACK: '되돌리기',
+  DONE_ROLLED_BACK: '되돌리기 끝',
+  NEEDS_HUMAN: '사람 판단 필요',
   SAFE_HOLD: '안전 정지',
   ABORT_PRE_WRITE: '쓰기 전 중단',
 };
@@ -38,11 +43,15 @@ function currentIndex(view: ConsoleView): number {
   const i = (MAIN_STATES as readonly string[]).indexOf(view.state);
   if (i >= 0) return i;
   if (view.state === 'ABORT_PRE_WRITE' || view.state === 'SAFE_HOLD') return MAIN_STATES.indexOf('CUTOVER');
+  // Side states: failback runs after WATCH; NEEDS_HUMAN stops the rehearsal loop.
+  if (view.state === 'FAILBACK' || view.state === 'DONE_ROLLED_BACK') return MAIN_STATES.indexOf('WATCH');
+  if (view.state === 'NEEDS_HUMAN') return MAIN_STATES.indexOf('REHEARSE');
   return 0;
 }
 
 export function StateProgress({ view }: { view: ConsoleView }) {
   const cur = currentIndex(view);
+  const side = (SIDE_STATES as readonly string[]).includes(view.state) ? view.state : null;
   const interrupted = view.alert !== null;
   return (
     <nav className="progress" aria-label="상태 머신 진행">
@@ -81,6 +90,12 @@ export function StateProgress({ view }: { view: ConsoleView }) {
           );
         })}
       </ol>
+      {side && (
+        <p className="reason-codes" role="status">
+          <span className="muted">본선 밖 상태</span> <code>{side}</code> {LABEL[side as PlanState]}
+          {side === 'DONE_ROLLED_BACK' && view.stateReason === 'front_not_moved' && <span className="muted"> · DB는 되돌렸지만 앞단은 옮기지 못함(front_not_moved)</span>}
+        </p>
+      )}
       <ul className="progress__alerts" aria-label="경보 상태">
         {ALERT_STATES.map((s) => {
           const active = view.state === s;

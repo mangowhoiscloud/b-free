@@ -152,7 +152,7 @@ function NewMigration({ envs, clusters, token, onCreated }: { envs: EnvSummary[]
   );
 }
 
-const DONE = new Set(['WATCH']);
+const DONE = new Set(['WATCH', 'DONE', 'DONE_ROLLED_BACK']);
 
 /** GET /v1/cost totals for the KPI (same defensive reading as the cost screen). */
 function useCostTotal(apiBase: string) {
@@ -177,7 +177,7 @@ export function HomeScreen({ session, onOpenPlan }: { session: Session; onOpenPl
   const clusters = useLive('collector', 'v1/clusters', 5000, parseClusters);
   const cost = useCostTotal(apiBase);
   // Last write pause: the newest plan that reached CUTOVER or later carries the run record.
-  const ranPlan = (plans.data ?? []).find((p) => p.state === 'CUTOVER' || p.state === 'WATCH' || p.state === 'SAFE_HOLD');
+  const ranPlan = (plans.data ?? []).find((p) => ['CUTOVER', 'WATCH', 'DONE', 'FAILBACK', 'DONE_ROLLED_BACK', 'SAFE_HOLD'].includes(p.state ?? ''));
   const ran = useQuery({ queryKey: ['plan', ranPlan?.plan_id, 'kpi'], enabled: Boolean(ranPlan), queryFn: () => api.getPlan(token, ranPlan?.plan_id ?? ''), retry: 0, staleTime: 15_000 });
 
   const me = session.me.data;

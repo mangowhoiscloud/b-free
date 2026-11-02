@@ -61,7 +61,7 @@ images:
     digest: sha256:a99f5aa229c4159bb2c34ba4d9f0acdababece93248e392086b0174aeb322c92 # shift-20261102T175005Z (cutover lane L1: SHIFT state 10/50/100 -> CUTOVER, replay, receipt scope, migration 0009; tree at 9253b8b)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:91678860257abd4a5e97418368e17715491b23047f697e2cb59c4c6511cb7426 # r16 (console lane: gate run elapsed timer, gate proxy 90 s for live measurement)
+    digest: sha256:a2d8c7df850fecaa5f76c6e5c54f89515e87c3debeac24eadd0b5cc73b9bf310 # r17 (console lane: SHIFT 10/50/100 + start rules, receipt scope/hash_rule, recorded replay, failback front)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:c841a75e376ae70f4d0bd95526d024941dc2826ec014bcab4d880962e3043d78 # l3-20261102T174547Z (gate lane L3: method per row, SEC-GIT-PLAINTEXT gitleaks 8.30.1, OBJ-PLAIN-EGRESS, NET-EXTERNAL-SCAN, OBJ-ENC object level, CIS evidence; rule gate-controls/2026-11-03.2)

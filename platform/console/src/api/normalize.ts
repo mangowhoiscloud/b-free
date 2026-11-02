@@ -19,6 +19,10 @@ import {
   type ControlException,
   type Plan,
   type PlanAnalysis,
+  type ReceiptScope,
+  type Replay,
+  type ShiftStep,
+  type ShiftSummary,
   type PlanEvent,
   type ReadinessRow,
   type Receipt,
@@ -262,6 +266,7 @@ function stage(v: unknown): RunStage | null {
     started_at: asStr(o.started_at),
     ms: asNum(o.ms),
     result: asStr(o.result) ?? '',
+    front: asObj(o.front),
   };
 }
 
@@ -289,6 +294,7 @@ export function parseReceipt(v: unknown): Receipt | null {
     direction: asStr(body.direction),
     parts: { tables: asStr(parts.tables), sequences: asStr(parts.sequences), objects: asStr(parts.objects) },
     objects: { verdict: asStr(objects.verdict), reason: asStr(objects.reason), referenced: typeof objects.referenced === 'number' ? objects.referenced : null },
+    scope: parseScope(asObj(body.scope) ? { source: 'receipt', ...asObj(body.scope) } : (o.verification_scope ?? body.verification_scope)),
     tables: (Array.isArray(body.tables) ? body.tables : []).map((t) => {
       const x = asObj(t) ?? {};
       return { name: asStr(x.name) ?? '—', rows: numMap(x.rows), pkHash: strMap(x.pk_hash), contentHash: strMap(x.content_hash), match: typeof x.match === 'boolean' ? x.match : null };
@@ -304,12 +310,88 @@ export function parseReceipt(v: unknown): Receipt | null {
   };
 }
 
+function parseScope(v: unknown): ReceiptScope | null {
+  const o = asObj(v);
+  if (!o) return null;
+  const obj = asObj(o.objects);
+  const names = (x: unknown) => asArr(x).map(asStr).filter((s): s is string => s !== null);
+  return {
+    source: asStr(o.source) ?? 'receipt',
+    hash_rule: asStr(o.hash_rule),
+    tables: names(o.tables),
+    sequences: names(o.sequences),
+    objects: obj ? { checked: asStr(obj.checked), referenced: asNum(obj.referenced), reference_set_sha256: asStr(obj.reference_set_sha256) } : asStr(o.objects),
+  };
+}
+
+function parseShiftStep(v: unknown): ShiftStep | null {
+  const o = asObj(v);
+  if (!o) return null;
+  return {
+    weight: asNum(o.weight),
+    healthy: typeof o.healthy === 'boolean' ? o.healthy : null,
+    target_samples: asNum(o.target_samples),
+    target_errors: asNum(o.target_errors),
+    target_error_rate: asNum(o.target_error_rate),
+    target_p95_ms: asNum(o.target_p95_ms),
+    samples: asNum(o.samples),
+    error_rate: asNum(o.error_rate),
+    p95_ms: asNum(o.p95_ms),
+    by_env: Object.fromEntries(Object.entries(asObj(o.by_env) ?? {}).map(([k, n]) => [k, asNum(n) ?? 0])),
+    hold_ms: asNum(o.hold_ms),
+    step_ms: asNum(o.step_ms),
+    reasons: asArr(o.reasons).map(asStr).filter((s): s is string => s !== null),
+  };
+}
+
+export function parseShift(v: unknown): ShiftSummary | null {
+  const o = asObj(v);
+  const id = asStr(o?.run_id);
+  if (!o || !id) return null;
+  const rv = asObj(o.reverted);
+  return {
+    run_id: id,
+    status: asStr(o.status) ?? 'RUNNING',
+    target_env: asStr(o.target_env),
+    current_weight: asNum(o.current_weight),
+    started_at: asStr(o.started_at),
+    ended_at: asStr(o.ended_at),
+    steps: asArr(o.steps).map(parseShiftStep).filter((s): s is ShiftStep => s !== null),
+    reverted: rv ? { at_weight: asNum(rv.at_weight), reasons: asArr(rv.reasons).map(asStr).filter((s): s is string => s !== null) } : null,
+  };
+}
+
+export function parseReplay(v: unknown): Replay | null {
+  const o = asObj(v);
+  const id = asStr(o?.run_id);
+  if (!o || !id) return null;
+  return {
+    mode: asStr(o.mode) ?? 'unknown',
+    run_id: id,
+    kind: asStr(o.kind),
+    status: asStr(o.status),
+    recorded_at: asStr(o.recorded_at),
+    ended_at: asStr(o.ended_at),
+    generated_at: asStr(o.generated_at),
+    events: asArr(o.events)
+      .map((e, i) => {
+        // Replay events may carry `state: null` (contract 15 §12); keep them, the state is not shown.
+        const x = asObj(e);
+        if (!x) return null;
+        const ev = parseEvent(JSON.stringify({ ...x, state: isPlanState(x.state) ? x.state : 'COLLECT' }), `r${i + 1}`);
+        return ev ? { ...ev, offset_ms: asNum(x.offset_ms) } : null;
+      })
+      .filter((e): e is PlanEvent & { offset_ms: number | null } => e !== null),
+  };
+}
+
 export function parseRun(v: unknown): Run | null {
   const o = asObj(v);
   const id = asStr(o?.run_id);
   if (!o || !id) return null;
   return {
     run_id: id,
+    kind: asStr(o.kind) ?? asStr(o.run_kind),
     status: asStr(o.status) ?? 'RUNNING',
     write_pause_ms: asNum(o.write_pause_ms),
     write_pause_budget_ms: asNum(o.write_pause_budget_ms),
@@ -387,6 +469,7 @@ export function parsePlan(v: unknown): Plan {
     run,
     dependencies: dependencies(o.dependencies ?? o.dependency_counts),
     analysis: parseAnalysis(o.analysis),
+    shift: parseShift(o.shift),
   };
 }
 

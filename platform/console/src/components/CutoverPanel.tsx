@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { errorText } from '../api/client';
+import { errorText, reasonCodeText } from '../api/client';
 import type { ConsoleView } from '../api/derive';
-import type { DevToken, HashPair, Receipt } from '../api/types';
+import type { DevToken, HashPair, Receipt, RunStage, ShiftSummary } from '../api/types';
+import { ShiftProgress } from './ShiftProgress';
 import { fmtMs, remainingMs, shortId } from '../lib/format';
 import { idemKey } from '../lib/idem';
 import { useApi, useNow } from '../state';
@@ -18,7 +19,39 @@ const STAGE_LABEL: Record<string, string> = {
   commit_record: '확정 기록(6b)',
   dst_login_resume: '목적지 LOGIN · 대상 변경 · RESUME',
   verify_write: 'PgBouncer로 쓰기 확인',
+  'front.preflight': '앞단 사전 확인',
+  'front.set_10': '목적지 10 % 반영',
+  'front.step_10': '10 % 판정',
+  'front.set_50': '목적지 50 % 반영',
+  'front.step_50': '50 % 판정',
+  'front.set_100': '목적지 100 % 반영',
+  'front.step_100': '100 % 판정',
+  'front.revert_0': '목적지 0 %로 복귀(1a)',
+  'front.summary': '전환 요약',
+  'front.failed': '앞단 변경 실패',
+  'failback.8_front_to_src': '앞단을 출발지 100 %로(되돌리기 마지막)',
 };
+
+const KIND_TEXT: Record<string, string> = { shift: '전환(10/50/100)', cutover: 'DB 컷오버', failback: '되돌리기' };
+
+/** Short line from a stage's `front` detail (contract 15 §10.3, §10.7). */
+function frontLine(s: RunStage): string | null {
+  const f = s.front;
+  if (!f) return null;
+  const pw = f.pool_weights && typeof f.pool_weights === 'object' ? Object.entries(f.pool_weights as Record<string, unknown>).map(([k, v]) => `${k} ${String(v)}`).join(' · ') : null;
+  if (s.name === 'failback.8_front_to_src') {
+    return `${f.moved === true ? '출발지 100 %로 옮김' : f.moved === false ? '옮기지 못함' : '이동 결과 없음'}${typeof f.reason === 'string' ? ` · ${f.reason}` : ''}`;
+  }
+  if (s.name === 'front.revert_0') return `${String(f.at_weight ?? '—')} %에서 복귀 · ${Array.isArray(f.reasons) ? f.reasons.join(' · ') : ''}${pw ? ` · pool ${pw}` : ''}`;
+  if (s.name.startsWith('front.step_')) {
+    const j = (f.judgement && typeof f.judgement === 'object' ? f.judgement : {}) as Record<string, unknown>;
+    return `목적지 ${String(j.target_samples ?? '—')}건 · 오류율 ${typeof j.target_error_rate === 'number' ? `${(j.target_error_rate * 100).toFixed(1)} %` : '—'} · p95 ${typeof j.target_p95_ms === 'number' ? `${Math.round(j.target_p95_ms)} ms` : '—'}${Array.isArray(j.reasons) && j.reasons.length ? ` · ${j.reasons.join(' · ')}` : ''}`;
+  }
+  if (s.name.startsWith('front.set_')) return `가중치 ${String(f.weight ?? '—')} %${pw ? ` · pool ${pw}` : ''}`;
+  if (s.name === 'front.preflight') return `모드 ${String(f.mode ?? '—')} · 활성 ${String(f.active_env ?? '—')} · 대상 ${String(f.target_env ?? '—')}`;
+  if (s.name === 'front.failed') return `오류 ${String(f.error ?? '—')}`;
+  return null;
+}
 
 function resultTone(result: string): Tone {
   const r = result.toUpperCase();
@@ -34,7 +67,7 @@ const RUN_STATUS_TEXT: Record<string, string> = {
   SAFE_HOLD: '안전 정지',
 };
 
-export function CutoverPanel({ planId, view, user }: { planId: string; view: ConsoleView; user: DevToken | null }) {
+export function CutoverPanel({ planId, view, user, shiftInfo }: { planId: string; view: ConsoleView; user: DevToken | null; shiftInfo: ShiftSummary | null }) {
   const api = useApi();
   const qc = useQueryClient();
   const now = useNow();
@@ -59,6 +92,8 @@ export function CutoverPanel({ planId, view, user }: { planId: string; view: Con
   else if (!approvalMatches) reasons.push('현재 승인 요청에 대한 승인이 아직 없습니다.');
   if (left !== null && left <= 0) reasons.push('승인이 만료되었습니다.');
   if (approval?.consumed) reasons.push('이 승인은 이미 실행에 쓰였습니다. 새 실행에는 새 승인이 필요합니다.');
+  // Executor refuses STARTER_IS_APPROVER (contract 15 §10.1): the approver cannot also start.
+  if (user && approval?.approver && user.email === approval.approver) reasons.push('이 승인을 한 사람은 시작할 수 없습니다(STARTER_IS_APPROVER). 다른 operator가 시작합니다.');
   const disabled = reasons.length > 0 || shift.isPending;
 
   const run = view.run;
@@ -80,20 +115,34 @@ export function CutoverPanel({ planId, view, user }: { planId: string; view: Con
           onClick={() => setConfirming(true)}
           aria-describedby={reasons.length ? 'cutover-reasons' : undefined}
         >
-          {shift.isPending ? '시작 요청 중…' : '컷오버 시작'}
+          {shift.isPending ? '시작 요청 중…' : '전환 시작 (10→50→100, 이어서 컷오버)'}
         </button>
       }
     >
       <Reasons id="cutover-reasons" reasons={reasons} />
+      {!approval?.approver && view.state === 'AWAIT_APPROVAL' && (
+        <p className="muted">승인한 사람은 시작할 수 없습니다(STARTER_IS_APPROVER). 승인자를 이벤트에서 확인하지 못하면 Executor가 시작 때 거부합니다.</p>
+      )}
       <ErrorLine
         text={
           shift.error
             ? errorText(shift.error)
             : shift.data && shift.data.run_id === null
-              ? `실행이 만들어지지 않았습니다.${shift.data.reason ? ` 사유 ${shift.data.reason}` : ''}`
+              ? `실행이 만들어지지 않았습니다. 지금 상태 ${shift.data.state ?? '—'}${shift.data.reason ? ` · ${reasonCodeText(shift.data.reason)}` : ''}`
               : null
         }
       />
+      {shift.data && shift.data.run_id && (
+        <p className="muted" role="status">
+          시작됨 · {KIND_TEXT[shift.data.run_kind ?? ''] ?? shift.data.run_kind ?? '—'} 실행 <span className="mono">{shortId(shift.data.run_id, 10)}</span> · 상태 {shift.data.state ?? '—'}
+        </p>
+      )}
+      {view.stateReason?.startsWith('shift_reverted') && (
+        <p className="muted" role="status">
+          지난 전환이 기준을 넘어 0 %로 돌아갔습니다: <span className="mono">{view.stateReason}</span>. 새 승인 요청이 나갔습니다(1a).
+        </p>
+      )}
+      {shiftInfo && <ShiftProgress shift={shiftInfo} />}
 
       <div className="pause">
         <div className="pause__label">
@@ -132,9 +181,21 @@ export function CutoverPanel({ planId, view, user }: { planId: string; view: Con
               </dd>
             </div>
             <div>
-              <dt>단계</dt>
-              <dd className="mono">{run.stages.length} / 8</dd>
+              <dt>종류</dt>
+              <dd>{KIND_TEXT[run.kind ?? ''] ?? run.kind ?? '—'}</dd>
             </div>
+            <div>
+              <dt>단계</dt>
+              <dd className="mono">{run.kind === 'cutover' ? `${run.stages.length} / 8` : run.stages.length}</dd>
+            </div>
+            {run.status !== 'RUNNING' && (
+              <div>
+                <dt>기록</dt>
+                <dd>
+                  <a href={`#/replay?run=${encodeURIComponent(run.run_id)}`}>기록 재생 보기</a>
+                </dd>
+              </div>
+            )}
           </dl>
           <div className="table-wrap" tabIndex={0} role="region" aria-label="컷오버 단계">
             <table className="table table--stages">
@@ -156,6 +217,7 @@ export function CutoverPanel({ planId, view, user }: { planId: string; view: Con
                     <th scope="row">
                       {STAGE_LABEL[s.name] ?? s.name}
                       {STAGE_LABEL[s.name] && <span className="stage-code mono">{s.name}</span>}
+                      {frontLine(s) && <span className="cell-sub">{frontLine(s)}</span>}
                     </th>
                     <td>
                       <Mark tone={resultTone(s.result)}>{s.result || '—'}</Mark>
@@ -176,13 +238,13 @@ export function CutoverPanel({ planId, view, user }: { planId: string; view: Con
           <ReceiptView receipt={run.receipt} />
         </>
       ) : (
-        <p className="empty">아직 실행이 없습니다. 승인 뒤 operator가 이 버튼으로 시작합니다. MCP로는 시작할 수 없습니다.</p>
+        <p className="empty">아직 실행이 없습니다. 컷오버 승인 뒤 승인자가 아닌 operator가 이 버튼으로 전환(10/50/100)을 시작하고, 세 단계를 통과하면 시스템이 DB 컷오버를 이어서 시작합니다. MCP로는 시작할 수 없습니다.</p>
       )}
 
       <ConfirmDialog
         open={confirming}
-        title="컷오버를 시작합니다"
-        confirmText="컷오버 시작"
+        title="전환을 시작합니다"
+        confirmText="전환 시작"
         busy={shift.isPending}
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
@@ -190,7 +252,9 @@ export function CutoverPanel({ planId, view, user }: { planId: string; view: Con
           shift.mutate();
         }}
       >
-        <p>출발지 쓰기를 잠시 멈추고 목적지로 옮깁니다. 6a 단계 전 실패는 원복하고, 뒤의 실패는 안전 정지로 멈춥니다.</p>
+        <p>
+          앞단 가중치를 목적지 10 %, 50 %, 100 %로 올리며 단계마다 실제 쓰기로 판정합니다. 기준을 넘으면 0 %로 돌아가고 새 승인이 필요합니다. 세 단계를 통과하면 같은 승인으로 DB 컷오버가 이어집니다(6a 전 실패는 원복, 뒤의 실패는 안전 정지).
+        </p>
         <dl className="kv">
           <div>
             <dt>승인 ID</dt>
@@ -268,6 +332,23 @@ function ReceiptView({ receipt }: { receipt: Receipt | null }) {
               ({receipt.objects.reason ?? '이유 없음'}{receipt.objects.referenced !== null ? `, 참조 ${receipt.objects.referenced}개` : ''}). 첨부는 비교하지 않았으므로 전체 MATCH가 아닙니다.
             </span>
           )}
+        </p>
+      )}
+      {receipt.scope && (
+        <p className="reason-codes">
+          <span className="muted">검사 범위{receipt.scope.source === 'derived' ? '(API가 지난 영수증에서 만든 verification_scope)' : '(영수증 scope)'}</span> hash_rule{' '}
+          <code>{receipt.scope.hash_rule ?? (receipt.scope.source === 'derived' ? '영수증에 없음' : '—')}</code>
+          {receipt.scope.hash_rule?.startsWith('v1') && <span className="muted"> (스펙 hash_rule v1 계열: PK 정렬 · NULL · 타입 직렬화 고정)</span>} · 표 <code>{receipt.scope.tables.join(', ') || '—'}</code> · 시퀀스{' '}
+          <code>{receipt.scope.sequences.join(', ') || '—'}</code> · 첨부{' '}
+          <code>
+            {typeof receipt.scope.objects === 'string'
+              ? receipt.scope.objects === 'not_in_receipt'
+                ? '영수증에 없음(그때는 검사하지 않음)'
+                : receipt.scope.objects
+              : receipt.scope.objects
+                ? `${receipt.scope.objects.checked ?? '—'} · 참조 ${receipt.scope.objects.referenced ?? '—'}${receipt.scope.objects.reference_set_sha256 ? ` · 집합 ${receipt.scope.objects.reference_set_sha256.slice(0, 12)}…` : ''}`
+                : '—'}
+          </code>
         </p>
       )}
       {noBody && <p className="footnote">API가 영수증 본문(표 · 시퀀스)을 보내지 않아 판정만 보입니다.</p>}
