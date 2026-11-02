@@ -1,0 +1,33 @@
+# 2026-11-02 23:39:59 KST live platform DB (bravo-platform-rke2, platform-db-1): 0008 in one transaction as the owner role, then ROLLBACK (nothing kept)
+# command: (BEGIN; SET ROLE bravo_owner; SET lock_timeout='3s'; <0008_control_exceptions.sql>; SELECT count(*) FROM pg_policies WHERE tablename='control_exceptions'; ROLLBACK) | kubectl exec -i platform-db-1 -c postgres -- psql -U postgres -d bravo -v ON_ERROR_STOP=1
+BEGIN
+SET
+SET
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+ALTER TABLE
+CREATE POLICY
+DO
+ALTER TABLE
+CREATE FUNCTION
+REVOKE
+GRANT
+CREATE FUNCTION
+CREATE TRIGGER
+ALTER TABLE
+ALTER TABLE
+GRANT
+GRANT
+GRANT
+GRANT
+ policies 
+----------
+        2
+(1 row)
+
+ROLLBACK
+# after: schema_migrations and to_regclass('control_exceptions')
+0001_schema.sql,0002_rls_grants.sql,0003_full_path.sql,0004_change_approval.sql,0005_access_bootstrap.sql,0006_console_landing.sql,0007_owner_definer_rls.sql
+NULL

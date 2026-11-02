@@ -377,7 +377,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 
 ## 9. 통제 예외(S1 5b)
 
-스펙 S1 예외 흐름 5b: "목적지에서 대체할 수 없는 통제가 있다 → 승인자가 예외를 승인하면 '예외 승인'으로 따로 표시하고 동등 판정에서 뺀다." 5a는 그대로입니다. UNKNOWN은 예외로 바꿀 수 없고 늘 막습니다. 인수 조건 "예외 승인 없는 FAIL이나 UNKNOWN이면 이전 후보 등록이 막힌다"의 "예외 승인"이 이 절입니다. 이 절은 2026-11-02 23:3x KST에 코드보다 먼저 고정했습니다. 코드가 다르면 코드를 고칩니다.
+스펙 S1 예외 흐름 5b: "목적지에서 대체할 수 없는 통제가 있다 → 승인자가 예외를 승인하면 '예외 승인'으로 따로 표시하고 동등 판정에서 뺀다." 5a는 그대로입니다. UNKNOWN은 예외로 바꿀 수 없고 늘 막습니다. 인수 조건 "예외 승인 없는 FAIL이나 UNKNOWN이면 이전 후보 등록이 막힌다"의 "예외 승인"이 이 절입니다. 이 절은 2026-11-02 23:3x KST에 코드보다 먼저 고정했고, 구현(커밋 `f1cd770`, 시험 `platform/api/tests/test_exceptions.py`)이 따릅니다. 증거는 `docs/evidence/control-exception/`.
 
 실제 사례: GKE `target-gcp`의 OBJ-06(평문 HTTP 거부). GCS XML API는 `http://`를 받고, 막는 조직 정책 `storage.secureHttpTransport`는 조직이 없는 이 프로젝트에 걸 수 없습니다(`infra/envs/target-gcp/README.md`).
 
@@ -409,7 +409,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 
 - `stale`은 게이트를 다시 돌렸을 때 그 통제가 양쪽 모두 측정됐고(UNKNOWN 아님) 값 쌍이나 증거 digest가 다를 때 API가 기록합니다. 목적지를 고쳐 PASS가 되면 `verdict_changed`입니다.
 - 그 통제가 UNKNOWN이거나 판정에 없으면(게이트에 못 닿음 등) 예외는 그 판정에 쓰이지 않고 상태도 그대로입니다. 그 판정은 UNKNOWN으로 막힙니다(5a).
-- `expired`는 요청 · 승인 · 게이트 실행 때 API가 기록합니다. 목록 응답은 아직 기록 전이어도 `expires_at`이 지났으면 `expired`로 보입니다.
+- `expired`는 새 요청과 게이트 실행 때 API가 기록합니다. 목록 응답은 아직 기록 전이어도 `expires_at`이 지났으면 `expired`로 보입니다. 만료된 요청을 승인 · 거절하면 409 `exception_stale`(`exception_expired`)입니다.
 - 계획마다 통제 하나에 열린 예외(`requested` · `approved`)는 하나뿐입니다.
 
 ### 9.3 엔드포인트

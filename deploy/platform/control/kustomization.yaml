@@ -48,13 +48,13 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:eefdcf9f8af3e884fe6f17b47db6d34bd7542e173efe01c819f72bd9a963cff2 # cost-20261102T134535Z (obs/cost lane: + GET /v1/cost over r2-20261102T130026Z; tree at 59883af)
+    digest: sha256:376c87f1583b4a695f684ef9f47143522b8754afe4bb239ba097b63722b92d26 # exception-20261102T143819Z (API lane: S1 5b control exceptions, migration 0008 via the Sync-hook migrate Job, gate report with source/target; tree at f1cd770)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
     digest: sha256:194273013b7d4e0d2b9ead738301332896faca95bcb193a447c9e45709d150a2 # r13 (console lane: control exceptions S1 5b request/approve UI, A4 held ANALYZE, B10 receipt parts)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
-    digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)
+    digest: sha256:71428216456e779286ef8d09313def20d0a305b08ec2969ed8fb5b31f8d49f1b # exception-20261102T143819Z (src/dst evidence digests on report rows for S1 5b; over dbauth-20261102T134943Z; tree at f1cd770)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
     digest: sha256:8de337b9f53bd5c9ccef050ea3fc431d55ca539948255164a756b7b56326667c # d16link-20261102T143435Z (D-16: source EKS API over the link src-k8s, tls_server_name = EKS endpoint host; over cost-20261102T141430Z)

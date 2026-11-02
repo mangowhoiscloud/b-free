@@ -1,0 +1,24 @@
+# 2026-11-02 23:40:05 KST from the live api Pod (old image eefdcf9f): what the API called before, and the report it reads now
+GET /v1/controls (no source/target, the old API call) -> 422 {"detail":[{"type":"missing","loc":["query","source"],"msg":"Field required","input":null},{"type":"missing","loc":["query","target"],"msg":"Field required","input":null}]}
+GET /v1/environments -> 200 [{"environment_id":"source-aws","display_name":"출발지 · Amazon EKS (bravo-source)","sections":["kubernetes"]},{"environment_id":"target-onprem","display_name":"목적지 · 온프렘 K3s (Lima)","sections":["kubernetes"]}]
+report source-aws -> target-onprem : 200 gate_verdict BLOCK expires_at 2026-11-02T15:40:06.474467+00:00
+   OBJ-01 UNKNOWN UNKNOWN BLOCK unknown not_configured
+   OBJ-02 UNKNOWN UNKNOWN BLOCK unknown not_configured
+   OBJ-03 UNKNOWN UNKNOWN BLOCK unknown not_configured
+   OBJ-04 UNKNOWN UNKNOWN BLOCK unknown not_configured
+   OBJ-05 UNKNOWN UNKNOWN BLOCK unknown not_configured
+   DB-ANON-READ UNKNOWN UNKNOWN BLOCK unknown not_configured
+   DB-AUTH UNKNOWN UNKNOWN BLOCK unknown not_configured
+   SEC-SECRET-READ-K8S UNKNOWN UNKNOWN BLOCK unknown secret_probe_not_configured
+   SEC-SECRET-READ-AWS UNKNOWN UNKNOWN BLOCK unknown not_configured
+   OBJ-ENC UNKNOWN UNKNOWN BLOCK unknown not_configured
+   SEC-ENC-CMK UNKNOWN UNKNOWN BLOCK unknown not_configured
+   OBJ-06 UNKNOWN UNKNOWN BLOCK unknown not_configured
+   DB-TLS UNKNOWN UNKNOWN BLOCK unknown not_configured
+   DB-AUDIT UNKNOWN UNKNOWN BLOCK unknown not_configured
+   AUD-PLATFORM UNKNOWN UNKNOWN BLOCK unknown not_configured
+   NET-DEFAULT-DENY UNKNOWN UNKNOWN BLOCK unknown app_namespace_not_configured
+   NET-PATHS UNKNOWN UNKNOWN BLOCK unknown not_configured
+   DR-ARCHIVE UNKNOWN UNKNOWN BLOCK unknown not_configured
+   DR-RESTORE UNKNOWN UNKNOWN BLOCK unknown restore_cluster_not_configured
+report source-aws -> target-gcp : 404 {'detail': {'reason': 'unknown_environment', 'environments': ['target-gcp']}}

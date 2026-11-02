@@ -1,0 +1,9 @@
+# 2026-11-02 23:38 KST: docker buildx build --builder desktop-linux --platform linux/arm64 --push, context = git archive f1cd770 platform/{api,gate}
+digest sha256:376c87f1583b4a695f684ef9f47143522b8754afe4bb239ba097b63722b92d26 <- 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api, tag exception-20261102T143819Z
+digest sha256:71428216456e779286ef8d09313def20d0a305b08ec2969ed8fb5b31f8d49f1b <- 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate, tag exception-20261102T143819Z
+# ECR describe-images (index digest, media type, pushed at)
+sha256:376c87f1583b4a695f684ef9f47143522b8754afe4bb239ba097b63722b92d26	application/vnd.oci.image.index.v1+json	2026-11-02T23:38:29.744000+09:00
+sha256:71428216456e779286ef8d09313def20d0a305b08ec2969ed8fb5b31f8d49f1b	application/vnd.oci.image.index.v1+json	2026-11-02T23:38:42.185000+09:00
+# local smoke 23:39 KST: api image runs python -m bravo_api.migrate as a NOSUPERUSER NOBYPASSRLS owner on a throwaway postgres:16.13
+applied 0001..0008 (8 applied now); control_exceptions relrowsecurity=t relforcerowsecurity=t
+# gate image: build_rows OBJ-06 src PASS / dst FAIL (plain_http_accepted) -> OBJ-06 PASS FAIL sha256:7b670cfd13f9c2f14287e8e108d74b4987b6d3f49216d3f8db42018147ac8997
