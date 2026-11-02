@@ -57,7 +57,7 @@ images:
     digest: sha256:59f6ba2b9fcddcf3b106663319bbaadfa7ea6f969be7bbbd7c3548eab2e51ae4 # neutral-20261102T163611Z (gate lane: gate report by POST = plan evaluation run with write probes; over merge-20261102T144519Z; tree at 50218ea)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:9db331e04ff03d85c368901fabff632fdc8e984765da87b5a79080ea26f5da89 # r15 (console lane: gate rows show measuring source, sources_disagree stays blocked)
+    digest: sha256:91678860257abd4a5e97418368e17715491b23047f697e2cb59c4c6511cb7426 # r16 (console lane: gate run elapsed timer, gate proxy 90 s for live measurement)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959 # neutral-20261102T164936Z (gate lane: provider-neutral SEC/AUD questions, POST run with write probes, OBJ-04 IAM simulation, NET-PATHS probe Pod, GKE over link gke-k8s, parallel sections; tree at 50399a7)
