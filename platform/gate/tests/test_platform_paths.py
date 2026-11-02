@@ -98,7 +98,7 @@ def test_secret_transformers_judge_provider_from_apiserver_metrics() -> None:
     ])
     obs = judge_secret_transformers(parse_metrics(text, {"apiserver_storage_transformation_operations_total"}))
     assert (obs.verdict, obs.reason) == ("PASS", "cluster_secrets_encrypted")
-    assert "aescbc" in obs.evidence["secret_transformers"]
+    assert obs.evidence["secret_transformers"] == ["aescbc"]  # the RKE2 key-name prefix is not a provider
     ident = 'apiserver_storage_transformation_operations_total{resource="secrets",status="OK",transformer_prefix=""} 3'
     obs = judge_secret_transformers(parse_metrics(ident, {"apiserver_storage_transformation_operations_total"}))
     assert (obs.verdict, obs.reason) == ("FAIL", "cluster_secrets_not_encrypted")

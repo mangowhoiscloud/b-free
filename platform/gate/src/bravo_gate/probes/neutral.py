@@ -60,7 +60,11 @@ def judge_secret_transformers(series: list[tuple[str, dict[str, str], float]]) -
             continue
         prefix = labels.get("transformer_prefix", "")
         m = re.match(r"^k8s:enc:([a-z0-9]+):", prefix)
-        providers.add(m.group(1) if m else (prefix.rstrip(":") or "identity"))
+        if m:
+            providers.add(m.group(1))
+        elif prefix in ("", "identity"):
+            providers.add("identity")
+        # other prefixes are key names inside a provider (RKE2: "aescbckey:"), not providers
     if not providers:
         return unknown("no_secret_storage_transformations")
     ev = {"secret_transformers": sorted(providers)}
