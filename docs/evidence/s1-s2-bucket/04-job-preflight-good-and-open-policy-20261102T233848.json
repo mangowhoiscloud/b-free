@@ -1,0 +1,202 @@
+{
+ "ran": true,
+ "reason": null,
+ "namespace": "verify-8a67ac33-1-job",
+ "test_bucket": "bravo-rehearsal-verify",
+ "endpoint": "https://rook-ceph-rgw-bravo.rook-ceph.svc",
+ "policies": 2,
+ "rendered": [
+  {
+   "Version": "2012-10-17",
+   "Statement": [
+    {
+     "Sid": "DenyInsecureTransport",
+     "Effect": "Deny",
+     "Principal": {
+      "AWS": [
+       "*"
+      ]
+     },
+     "Action": [
+      "s3:*"
+     ],
+     "Resource": [
+      "arn:aws:s3:::bravo-rehearsal-verify",
+      "arn:aws:s3:::bravo-rehearsal-verify/*"
+     ],
+     "Condition": {
+      "Bool": {
+       "aws:SecureTransport": "false"
+      }
+     }
+    },
+    {
+     "Sid": "ListAttachments",
+     "Effect": "Allow",
+     "Principal": {
+      "AWS": [
+       "arn:aws:iam:::user/chat-app"
+      ]
+     },
+     "Action": [
+      "s3:ListBucket"
+     ],
+     "Resource": [
+      "arn:aws:s3:::bravo-rehearsal-verify"
+     ]
+    },
+    {
+     "Sid": "ReadWriteAttachments",
+     "Effect": "Allow",
+     "Principal": {
+      "AWS": [
+       "arn:aws:iam:::user/chat-app"
+      ]
+     },
+     "Action": [
+      "s3:GetObject",
+      "s3:PutObject"
+     ],
+     "Resource": [
+      "arn:aws:s3:::bravo-rehearsal-verify/*"
+     ]
+    }
+   ]
+  },
+  {
+   "Version": "2012-10-17",
+   "Statement": [
+    {
+     "Sid": "Open",
+     "Effect": "Allow",
+     "Principal": "*",
+     "Action": "s3:GetObject",
+     "Resource": "arn:aws:s3:::bravo-rehearsal-verify/*"
+    }
+   ]
+  }
+ ],
+ "started_at": "2026-11-02T14:38:49.365947+00:00",
+ "baseline_notes": [],
+ "job": "verify-job-t-adf06d75d6",
+ "secret_deleted": true,
+ "pod": "verify-job-t-adf06d75d6-m4rbk",
+ "pod_uid": "cf4ad6e9-8ac9-407b-9009-df2473f81f88",
+ "node": "bravo-onprem-agent",
+ "image": "docker.io/library/python:3.12-slim-bookworm",
+ "image_id": "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+ "job_succeeded": true,
+ "image_names": [
+  "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+  "docker.io/library/python@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753",
+  "docker.io/library/python:3.12-slim-bookworm"
+ ],
+ "result": {
+  "bucket": "bravo-rehearsal-verify",
+  "canary_put": "200",
+  "cleanup": {
+   "canary_delete": "204",
+   "policy_delete": "204"
+  },
+  "control": {
+   "anonymous_get": "200",
+   "ok": true,
+   "policy_delete": "204",
+   "policy_put": "204"
+  },
+  "egress": [
+   {
+    "blocked": true,
+    "error": "TimeoutError",
+    "target": "1.1.1.1:443"
+   },
+   {
+    "blocked": true,
+    "error": "TimeoutError",
+    "target": "169.254.169.254:80"
+   }
+  ],
+  "policies": [
+   {
+    "checks": [
+     {
+      "detail": "204",
+      "name": "policy_applied",
+      "ok": true
+     },
+     {
+      "detail": "403 AccessDenied",
+      "name": "anonymous_get_denied",
+      "ok": true
+     },
+     {
+      "detail": "200",
+      "name": "authenticated_get_allowed",
+      "ok": true
+     }
+    ],
+    "index": 0,
+    "policy_delete": "204"
+   },
+   {
+    "checks": [
+     {
+      "detail": "204",
+      "name": "policy_applied",
+      "ok": true
+     },
+     {
+      "detail": "200",
+      "name": "anonymous_get_denied",
+      "ok": false
+     },
+     {
+      "detail": "200",
+      "name": "authenticated_get_allowed",
+      "ok": true
+     }
+    ],
+    "index": 1,
+    "policy_delete": "204"
+   }
+  ],
+  "reset": "204",
+  "run": "t-adf06d75d67244bc8d89f94e46dd08b3"
+ },
+ "control_ok": true,
+ "egress_blocked": true,
+ "checks": [
+  {
+   "name": "behavioral:policy_applied#0",
+   "ok": true,
+   "detail": "204"
+  },
+  {
+   "name": "behavioral:anonymous_get_denied#0",
+   "ok": true,
+   "detail": "403 AccessDenied"
+  },
+  {
+   "name": "behavioral:authenticated_get_allowed#0",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "name": "behavioral:policy_applied#1",
+   "ok": true,
+   "detail": "204"
+  },
+  {
+   "name": "behavioral:anonymous_get_denied#1",
+   "ok": false,
+   "detail": "200"
+  },
+  {
+   "name": "behavioral:authenticated_get_allowed#1",
+   "ok": true,
+   "detail": "200"
+  }
+ ],
+ "finished_at": "2026-11-02T14:38:59.480054+00:00",
+ "leftovers": []
+}

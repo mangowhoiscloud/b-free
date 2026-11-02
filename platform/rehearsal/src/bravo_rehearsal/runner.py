@@ -216,6 +216,17 @@ async def rehearse(a: argparse.Namespace) -> int:
     for ns, iso in trial.isolation.items():
         for chk in iso["checks"]:
             print(f"isolation ns={ns} pod={iso['pod']} " + json.dumps(chk, sort_keys=True))
+    beh = (trial.verifier_observed or {}).get("behavioral")
+    if beh is not None:
+        res = beh.get("result") or {}
+        print(f"behavioral ran={beh.get('ran')} reason={beh.get('reason')} ns={beh.get('namespace')} "
+              f"pod={beh.get('pod')} uid={beh.get('pod_uid')} image_id={beh.get('image_id')} "
+              f"leftovers={beh.get('leftovers')}")
+        print("behavioral control=" + json.dumps(res.get("control"), sort_keys=True)
+              + " egress=" + json.dumps(res.get("egress"), sort_keys=True))
+        for c in beh.get("checks") or []:
+            print(f"behavioral_check {c['name']} ok={c['ok']} detail={c['detail']}")
+    print(f"verifier_kind={trial.verifier_kind}")
     if trial.harbor_trial_dir:
         out = Path(trial.harbor_trial_dir)
         out.mkdir(parents=True, exist_ok=True)

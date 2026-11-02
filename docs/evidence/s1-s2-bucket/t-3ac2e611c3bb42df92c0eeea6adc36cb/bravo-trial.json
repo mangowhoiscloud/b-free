@@ -1,0 +1,1096 @@
+{
+  "trial_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb",
+  "plan_id": "f545fcb5-edda-46a7-bf86-8439b791315a",
+  "rehearsal_id": "cli-359e8d3c",
+  "attempt": 1,
+  "task": "governance",
+  "role": "governance",
+  "phase": "done",
+  "verdict": "PASS",
+  "reason": null,
+  "artifact": {
+    "plan_id": "p-f545fcb5-edda-46a7-bf86-8439b791315a",
+    "trial_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb",
+    "attempt": 1,
+    "rationale": "Sources read: /src/infra/app.tf (S3 attachments bucket policy strong/weak, Secrets Manager db_app, Pod Identity roles chat_app and external_secrets, KMS CMK) and /src/chart/values.yaml. Gate evidence gate-s1-20261102t233338 shows destination OBJ-01 FAIL: anonymous unsigned GET of bravo-demo-attachments/_gate/canary returned 200 on RGW; app accesses the bucket as owner user arn:aws:iam:::user/obc-chat-bravo-demo-attachments-b292e551-66ce-442d-b51b-e5865a628e1b. Translations: (1) S3 strong bucket policy -> RGW bucket policy granting only the owner user GetObject/PutObject/ListBucket (mirrors chat_app IAM role scope, no Delete) plus explicit Deny for non-TLS requests; explicit Deny/no-anonymous-Allow intended to close the anonymous-read finding. (2) chat_app IAM role -> namespaced Role/RoleBinding in 'chat' for SA chat-app, get-only on the single secret chat-db-app (no list/watch, no cluster scope). (3) Secrets Manager db_app -> OpenBao policy read-only on secret/data/envs/onprem/chat/db-app. (4) ExternalSecret in 'chat' using namespaced SecretStore openbao-chat to materialise chat-db-app/password (chart passwordSource env-file). Risk high because: inventory analysis is 'unconfigured'; the anonymous 200 may come from a public-read bucket/object ACL rather than policy, and RGW support for aws:SecureTransport condition is not verified in evidence; the ESO PushSecret write path (secretsmanager:PutSecretValue) and KMS CMK equivalent (ENC-02) are not translated because no destination evidence exists for OpenBao transit/RGW SSE-KMS; NET-01 fails on both sides and chart networkPolicy.enabled=false. Controls are mapped only; no verdict is made.",
+    "risk": "high",
+    "evidence_refs": [
+      "gate-s1-20261102t233338"
+    ],
+    "role": "governance",
+    "step": "translate",
+    "translations": [
+      {
+        "source": {
+          "type": "aws_s3_bucket_policy",
+          "id": "aws_s3_bucket_policy.attachments"
+        },
+        "target": {
+          "type": "rgw_bucket_policy",
+          "name": "chat-attachments-policy"
+        },
+        "document": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": [
+                  "*"
+                ]
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:GetObjectVersion",
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-demo-attachments",
+                "arn:aws:s3:::bravo-demo-attachments/*"
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            },
+            {
+              "Sid": "AllowAppOwnerObjects",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/obc-chat-bravo-demo-attachments-b292e551-66ce-442d-b51b-e5865a628e1b"
+                ]
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-demo-attachments/*"
+              ]
+            },
+            {
+              "Sid": "AllowAppOwnerList",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/obc-chat-bravo-demo-attachments-b292e551-66ce-442d-b51b-e5865a628e1b"
+                ]
+              },
+              "Action": [
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-demo-attachments"
+              ]
+            }
+          ]
+        },
+        "control_ids": [
+          "IAM-01",
+          "ENC-01"
+        ]
+      },
+      {
+        "source": {
+          "type": "aws_iam_role",
+          "id": "aws_iam_role.chat_app"
+        },
+        "target": {
+          "type": "k8s_rbac",
+          "name": "chat-app-secrets-reader"
+        },
+        "document": {
+          "apiVersion": "v1",
+          "kind": "List",
+          "items": [
+            {
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "kind": "Role",
+              "metadata": {
+                "name": "chat-app-secrets-reader",
+                "namespace": "chat"
+              },
+              "rules": [
+                {
+                  "apiGroups": [
+                    ""
+                  ],
+                  "resources": [
+                    "secrets"
+                  ],
+                  "resourceNames": [
+                    "chat-db-app"
+                  ],
+                  "verbs": [
+                    "get"
+                  ]
+                }
+              ]
+            },
+            {
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "kind": "RoleBinding",
+              "metadata": {
+                "name": "chat-app-secrets-reader",
+                "namespace": "chat"
+              },
+              "roleRef": {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "Role",
+                "name": "chat-app-secrets-reader"
+              },
+              "subjects": [
+                {
+                  "kind": "ServiceAccount",
+                  "name": "chat-app",
+                  "namespace": "chat"
+                }
+              ]
+            }
+          ]
+        },
+        "control_ids": [
+          "IAM-01",
+          "ISO-01",
+          "SEC-01"
+        ]
+      },
+      {
+        "source": {
+          "type": "aws_secretsmanager_secret",
+          "id": "aws_secretsmanager_secret.db_app"
+        },
+        "target": {
+          "type": "openbao_policy",
+          "name": "chat-db-app-read"
+        },
+        "document": {
+          "path": {
+            "secret/data/envs/onprem/chat/db-app": {
+              "capabilities": [
+                "read"
+              ]
+            }
+          }
+        },
+        "control_ids": [
+          "SEC-01",
+          "ENC-02",
+          "IAM-01"
+        ]
+      },
+      {
+        "source": {
+          "type": "aws_secretsmanager_secret",
+          "id": "aws_secretsmanager_secret.db_app"
+        },
+        "target": {
+          "type": "external_secret",
+          "name": "chat-db-app"
+        },
+        "document": {
+          "apiVersion": "external-secrets.io/v1beta1",
+          "kind": "ExternalSecret",
+          "metadata": {
+            "name": "chat-db-app",
+            "namespace": "chat"
+          },
+          "spec": {
+            "refreshInterval": "1h",
+            "secretStoreRef": {
+              "kind": "SecretStore",
+              "name": "openbao-chat"
+            },
+            "target": {
+              "name": "chat-db-app",
+              "creationPolicy": "Owner"
+            },
+            "data": [
+              {
+                "secretKey": "password",
+                "remoteRef": {
+                  "key": "envs/onprem/chat/db-app",
+                  "property": "password"
+                }
+              }
+            ]
+          }
+        },
+        "control_ids": [
+          "SEC-01",
+          "ENC-01",
+          "ISO-01"
+        ]
+      }
+    ],
+    "exception_justifications": [
+      {
+        "control_id": "IAM-01",
+        "justification": "Destination anonymous read (gate-s1-20261102t233338) may be granted by a public-read bucket or object ACL; a bucket policy without an anonymous Allow does not by itself revoke ACL grants. A human operator must confirm the bucket/object ACLs on bravo-demo-attachments are reset to private before re-running the gate."
+      },
+      {
+        "control_id": "ENC-02",
+        "justification": "Source uses a KMS CMK for S3 SSE-KMS and Secrets Manager. No evidence exists for RGW SSE-KMS or OpenBao seal/transit configuration on target-onprem, so customer-key encryption is not translated here and needs operator confirmation."
+      },
+      {
+        "control_id": "NET-01",
+        "justification": "NET-01 is FAIL on both source and destination and chart networkPolicy.enabled defaults to false. Default-deny NetworkPolicy is outside these IAM/secret translations; it needs a separate network proposal before cutover."
+      }
+    ],
+    "audit_summary": "The governance proposal for source-aws -> target-onprem has four translations. 1) The RGW bucket policy for bravo-demo-attachments lets only the app owner user (obc-chat-...-b292e551) get, put and list. It also denies requests that are not on TLS. This addresses the anonymous read in gate run 1 (gate-s1-20261102t233338) and maps to IAM-01 and ENC-01. 2) The Kubernetes Role and RoleBinding in namespace chat let service account chat-app get the single secret chat-db-app. They grant no list or watch and no cluster scope (IAM-01, ISO-01, SEC-01). 3) The OpenBao policy is read-only on secret/data/envs/onprem/chat/db-app (SEC-01, ENC-02, IAM-01). 4) The ExternalSecret chat-db-app syncs the DB password through the namespaced SecretStore openbao-chat (SEC-01, ENC-01, ISO-01). Before approval, the approver should do the following. Confirm that the bucket and object ACLs are private, because the 200 may come from an ACL. Confirm that RGW honours aws:SecureTransport. Confirm customer-key encryption on target-onprem, for ENC-02. Note that NET-01 fails on both sides. Not translated: the ESO PushSecret write role and the KMS key policy. AUD-01 and DR-01 are UNKNOWN and no translation covers them. Risk: high. This proposal does not decide any control verdict."
+  },
+  "artifact_digest": "sha256:80aa08ec2ddd50c56c2242dcecdc008c2d757e60f5e8004f03db7f30f38e2d1a",
+  "verifier": {
+    "run_id": "verify-f545fcb5-1/verify-runner-t-3ac2e611c3",
+    "pod_uid": "f377828c-632e-4345-8be2-d717a4fa9644",
+    "image_digest": "sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753",
+    "image_id": "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+    "task_version": "01a3399d669803efd60b589b8f91de437549df613eb41c54bb97e05ea6622852",
+    "artifact_digest": "sha256:80aa08ec2ddd50c56c2242dcecdc008c2d757e60f5e8004f03db7f30f38e2d1a",
+    "reward": 1.0,
+    "checks": [
+      {
+        "name": "behavioral:policy_applied",
+        "ok": true,
+        "detail": "204"
+      },
+      {
+        "name": "behavioral:anonymous_get_denied",
+        "ok": true,
+        "detail": "403 AccessDenied"
+      },
+      {
+        "name": "behavioral:authenticated_get_allowed",
+        "ok": true,
+        "detail": "200"
+      }
+    ],
+    "refused_uploads": [
+      "/logs/artifacts"
+    ],
+    "verifier_kind": "behavioral+static_rules",
+    "collected_at": "2026-11-02T14:44:01.807608+00:00",
+    "behavioral": {
+      "ran": true,
+      "reason": null,
+      "namespace": "verify-f545fcb5-1-job",
+      "test_bucket": "bravo-rehearsal-verify",
+      "endpoint": "https://rook-ceph-rgw-bravo.rook-ceph.svc",
+      "policies": 1,
+      "rendered": [
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": [
+                  "*"
+                ]
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:GetObjectVersion",
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-rehearsal-verify",
+                "arn:aws:s3:::bravo-rehearsal-verify/*"
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            },
+            {
+              "Sid": "AllowAppOwnerObjects",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/bravo-rehearsal-verify"
+                ]
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-rehearsal-verify/*"
+              ]
+            },
+            {
+              "Sid": "AllowAppOwnerList",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/bravo-rehearsal-verify"
+                ]
+              },
+              "Action": [
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-rehearsal-verify"
+              ]
+            }
+          ]
+        }
+      ],
+      "started_at": "2026-11-02T14:43:45.587717+00:00",
+      "baseline_notes": [],
+      "job": "verify-job-t-3ac2e611c3",
+      "secret_deleted": true,
+      "pod": "verify-job-t-3ac2e611c3-tssjf",
+      "pod_uid": "a7407d83-8600-443c-b258-ff19e40f739c",
+      "node": "bravo-onprem-agent",
+      "image": "docker.io/library/python:3.12-slim-bookworm",
+      "image_id": "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+      "job_succeeded": true,
+      "image_names": [
+        "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+        "docker.io/library/python@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753",
+        "docker.io/library/python:3.12-slim-bookworm"
+      ],
+      "result": {
+        "bucket": "bravo-rehearsal-verify",
+        "canary_put": "200",
+        "cleanup": {
+          "canary_delete": "204",
+          "policy_delete": "204"
+        },
+        "control": {
+          "anonymous_get": "200",
+          "ok": true,
+          "policy_delete": "204",
+          "policy_put": "204"
+        },
+        "egress": [
+          {
+            "blocked": true,
+            "error": "TimeoutError",
+            "target": "1.1.1.1:443"
+          },
+          {
+            "blocked": true,
+            "error": "TimeoutError",
+            "target": "169.254.169.254:80"
+          }
+        ],
+        "policies": [
+          {
+            "checks": [
+              {
+                "detail": "204",
+                "name": "policy_applied",
+                "ok": true
+              },
+              {
+                "detail": "403 AccessDenied",
+                "name": "anonymous_get_denied",
+                "ok": true
+              },
+              {
+                "detail": "200",
+                "name": "authenticated_get_allowed",
+                "ok": true
+              }
+            ],
+            "index": 0,
+            "policy_delete": "204"
+          }
+        ],
+        "reset": "204",
+        "run": "t-3ac2e611c3bb42df92c0eeea6adc36cb"
+      },
+      "control_ok": true,
+      "egress_blocked": true,
+      "checks": [
+        {
+          "name": "behavioral:policy_applied",
+          "ok": true,
+          "detail": "204"
+        },
+        {
+          "name": "behavioral:anonymous_get_denied",
+          "ok": true,
+          "detail": "403 AccessDenied"
+        },
+        {
+          "name": "behavioral:authenticated_get_allowed",
+          "ok": true,
+          "detail": "200"
+        }
+      ],
+      "finished_at": "2026-11-02T14:43:55.784058+00:00",
+      "leftovers": []
+    }
+  },
+  "tool_events": [
+    {
+      "seq": 1,
+      "tool": "rehearsal_exec",
+      "args_sha256": "4393e6ef47f0aadea41b28388702f1dfee5321d2881b821e3c5a5bca198739a9",
+      "allowed": false,
+      "rule": "free_text_command",
+      "result": null,
+      "at": "2026-11-02T14:40:46.713017+00:00",
+      "origin": "probe"
+    },
+    {
+      "seq": 2,
+      "tool": "rehearsal_exec",
+      "args_sha256": "c38fd189387c4ef9560a232a364e8ac597fe06c90d804eb14de6fb53bdcc323b",
+      "allowed": false,
+      "rule": "kubectl_not_allowed",
+      "result": null,
+      "at": "2026-11-02T14:40:46.715536+00:00",
+      "origin": "probe"
+    },
+    {
+      "seq": 3,
+      "tool": "inventory_describe",
+      "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T14:40:49.593963+00:00"
+    },
+    {
+      "seq": 4,
+      "tool": "controls_describe",
+      "args_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:40:52.963340+00:00"
+    },
+    {
+      "seq": 5,
+      "tool": "rehearsal_exec",
+      "args_sha256": "a2245a72ec82ab0baaa45e7f98a41d9a36e0b8a84a74c7119684999b41230f06",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:40:54.640097+00:00"
+    },
+    {
+      "seq": 6,
+      "tool": "rehearsal_exec",
+      "args_sha256": "878798578d57e8b855e28208d6ccb1150bf7a9130730a0c757806e77b203aa41",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:40:56.318471+00:00"
+    },
+    {
+      "seq": 7,
+      "tool": "rehearsal_exec",
+      "args_sha256": "13a3e3f9e296a22edfb34f859e3eef5253d35f2c12203f184d486210ea00071c",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:40:56.657040+00:00"
+    },
+    {
+      "seq": 8,
+      "tool": "rehearsal_exec",
+      "args_sha256": "ad04c5532e0aaebfab4404bed2b1887e3f4c7ce38e5adfb9feee122370fe8b21",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:40:58.476129+00:00"
+    },
+    {
+      "seq": 9,
+      "tool": "rehearsal_exec",
+      "args_sha256": "1c3b79abd2d70c0a923bf3c7812c26c96d33d80b85c1443f32f82689af2721e2",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:40:58.854682+00:00"
+    },
+    {
+      "seq": 10,
+      "tool": "rehearsal_exec",
+      "args_sha256": "ebda6b7c4654666eeecdce93313f8a3596203d27f091caa29b95e28ea5e6d2a3",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:41:02.424741+00:00"
+    },
+    {
+      "seq": 11,
+      "tool": "rehearsal_exec",
+      "args_sha256": "59ea2e8116a807fbb86204c000449d53f6202cdf871cd53d0f2cbfb264153f56",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:41:02.853204+00:00"
+    },
+    {
+      "seq": 12,
+      "tool": "rehearsal_exec",
+      "args_sha256": "aa67627f4aed00d308ed1fa01f25dce266fcf5c6d550e824ca15c237226a3d24",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:41:04.679259+00:00"
+    },
+    {
+      "seq": 13,
+      "tool": "rehearsal_exec",
+      "args_sha256": "207112a133af2211a64d9832a5291dd2feee0455216dfb9b25c03beb40f6f233",
+      "allowed": true,
+      "rule": "ok",
+      "result": "done",
+      "at": "2026-11-02T14:41:05.003757+00:00"
+    },
+    {
+      "seq": 14,
+      "tool": "policy_evaluate",
+      "args_sha256": "f79a15790b67b100a8cf40e87903a8a9ff91a894bb0ad6b2d96a440e99056ee3",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T14:41:23.437458+00:00"
+    },
+    {
+      "seq": 15,
+      "tool": "policy_evaluate",
+      "args_sha256": "4435bdcc84ed0b3474c9b6ba1ac6456b2dfde8fc7762a3b3ebc1186086fef2b5",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T14:41:28.566332+00:00"
+    },
+    {
+      "seq": 16,
+      "tool": "policy_evaluate",
+      "args_sha256": "7446d56fa9f2f09acbea25bb5030a163f4e2e2d914622a7946a7a9dfaa217acf",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T14:41:41.114243+00:00"
+    },
+    {
+      "seq": 17,
+      "tool": "plan_propose",
+      "args_sha256": "2cbbf239bd01c822d8e7b35a85fb29c57d15b81f3cd905cf2037076ce3fbac2e",
+      "allowed": true,
+      "rule": "ok",
+      "result": null,
+      "at": "2026-11-02T14:42:08.728596+00:00"
+    }
+  ],
+  "hook_events": [
+    {
+      "seq": 1,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__inventory_describe",
+      "tool_input_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "at": "2026-11-02T14:40:49.583026+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 2,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__inventory_describe",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:40:49.597134+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 3,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__controls_describe",
+      "tool_input_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326",
+      "at": "2026-11-02T14:40:49.726024+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 4,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__controls_describe",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:40:52.965039+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 5,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "a2245a72ec82ab0baaa45e7f98a41d9a36e0b8a84a74c7119684999b41230f06",
+      "at": "2026-11-02T14:40:54.607349+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 6,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:40:54.641684+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 7,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "878798578d57e8b855e28208d6ccb1150bf7a9130730a0c757806e77b203aa41",
+      "at": "2026-11-02T14:40:56.288621+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 8,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:40:56.319885+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 9,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "13a3e3f9e296a22edfb34f859e3eef5253d35f2c12203f184d486210ea00071c",
+      "at": "2026-11-02T14:40:56.630489+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 10,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:40:56.658705+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 11,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "ad04c5532e0aaebfab4404bed2b1887e3f4c7ce38e5adfb9feee122370fe8b21",
+      "at": "2026-11-02T14:40:58.450096+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 12,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:40:58.480324+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 13,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "1c3b79abd2d70c0a923bf3c7812c26c96d33d80b85c1443f32f82689af2721e2",
+      "at": "2026-11-02T14:40:58.823819+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 14,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:40:58.856607+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 15,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "ebda6b7c4654666eeecdce93313f8a3596203d27f091caa29b95e28ea5e6d2a3",
+      "at": "2026-11-02T14:41:02.395545+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 16,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:41:02.426165+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 17,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "59ea2e8116a807fbb86204c000449d53f6202cdf871cd53d0f2cbfb264153f56",
+      "at": "2026-11-02T14:41:02.824591+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 18,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:41:02.854793+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 19,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "aa67627f4aed00d308ed1fa01f25dce266fcf5c6d550e824ca15c237226a3d24",
+      "at": "2026-11-02T14:41:04.652283+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 20,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:41:04.680805+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 21,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "207112a133af2211a64d9832a5291dd2feee0455216dfb9b25c03beb40f6f233",
+      "at": "2026-11-02T14:41:04.976915+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 22,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__rehearsal_exec",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:41:05.005409+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 23,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "f79a15790b67b100a8cf40e87903a8a9ff91a894bb0ad6b2d96a440e99056ee3",
+      "at": "2026-11-02T14:41:23.434090+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 24,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:41:23.438667+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 25,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "4435bdcc84ed0b3474c9b6ba1ac6456b2dfde8fc7762a3b3ebc1186086fef2b5",
+      "at": "2026-11-02T14:41:28.563384+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 26,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:41:28.567572+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 27,
+      "kind": "tool_request",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "7446d56fa9f2f09acbea25bb5030a163f4e2e2d914622a7946a7a9dfaa217acf",
+      "at": "2026-11-02T14:41:41.110826+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 28,
+      "kind": "tool_result",
+      "tool_name": "mcp__platform__policy_evaluate",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:41:41.115610+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 29,
+      "kind": "tool_request",
+      "tool_name": "StructuredOutput",
+      "tool_input_sha256": "5f4ba7506b0199f572a96c67e68678fc9f1302ae47d30a1f4a41e62e4cd906a4",
+      "at": "2026-11-02T14:42:08.671379+00:00",
+      "authoritative": false
+    },
+    {
+      "seq": 30,
+      "kind": "tool_result",
+      "tool_name": "StructuredOutput",
+      "tool_input_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "at": "2026-11-02T14:42:08.675598+00:00",
+      "authoritative": false
+    }
+  ],
+  "isolation": {
+    "rehearsal-f545fcb5-1": {
+      "pod": "rehearsal-sandbox-t-3ac2e611c3",
+      "checks": [
+        {
+          "check": "control_exec",
+          "exit_code": 0,
+          "at": 1793630440.242243
+        },
+        {
+          "check": "egress",
+          "target": "1.1.1.1:443",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793630440.242246,
+          "seconds": 3.07
+        },
+        {
+          "check": "egress",
+          "target": "169.254.169.254:80",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793630443.3084302,
+          "seconds": 3.08
+        },
+        {
+          "check": "privileged_pod_admission",
+          "admitted": false,
+          "result": "rejected",
+          "at": 1793630446.392816
+        }
+      ],
+      "baseline_notes": [
+        "np/default-deny: generated by cluster policy, verified equivalent"
+      ]
+    },
+    "verify-f545fcb5-1": {
+      "pod": "verify-runner-t-3ac2e611c3",
+      "checks": [
+        {
+          "check": "control_exec",
+          "exit_code": 0,
+          "at": 1793630574.339262
+        },
+        {
+          "check": "egress",
+          "target": "1.1.1.1:443",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793630574.3392682,
+          "seconds": 3.1
+        },
+        {
+          "check": "egress",
+          "target": "169.254.169.254:80",
+          "exit_code": 1,
+          "error": "TimeoutError: timed out",
+          "blocked": true,
+          "at": 1793630577.438934,
+          "seconds": 3.07
+        },
+        {
+          "check": "privileged_pod_admission",
+          "admitted": false,
+          "result": "rejected",
+          "at": 1793630580.507547
+        }
+      ],
+      "baseline_notes": []
+    }
+  },
+  "namespaces": [
+    "rehearsal-f545fcb5-1",
+    "verify-f545fcb5-1"
+  ],
+  "leftovers": [],
+  "harbor_trial_dir": "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/runs/t-3ac2e611c3bb42df92c0eeea6adc36cb",
+  "verifier_kind": "behavioral+static_rules",
+  "worker_started": true,
+  "verifier_observed": {
+    "reward": 1.0,
+    "record": {
+      "namespace": "verify-f545fcb5-1",
+      "pod": "verify-runner-t-3ac2e611c3",
+      "pod_uid": "f377828c-632e-4345-8be2-d717a4fa9644",
+      "image_id": "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+      "image": "docker.io/library/python:3.12-slim-bookworm",
+      "image_names": [
+        "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+        "docker.io/library/python@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753",
+        "docker.io/library/python:3.12-slim-bookworm"
+      ],
+      "refused_uploads": [
+        "/logs/artifacts"
+      ]
+    },
+    "behavioral": {
+      "ran": true,
+      "reason": null,
+      "namespace": "verify-f545fcb5-1-job",
+      "test_bucket": "bravo-rehearsal-verify",
+      "endpoint": "https://rook-ceph-rgw-bravo.rook-ceph.svc",
+      "policies": 1,
+      "rendered": [
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": [
+                  "*"
+                ]
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:GetObjectVersion",
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-rehearsal-verify",
+                "arn:aws:s3:::bravo-rehearsal-verify/*"
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            },
+            {
+              "Sid": "AllowAppOwnerObjects",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/bravo-rehearsal-verify"
+                ]
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-rehearsal-verify/*"
+              ]
+            },
+            {
+              "Sid": "AllowAppOwnerList",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam:::user/bravo-rehearsal-verify"
+                ]
+              },
+              "Action": [
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::bravo-rehearsal-verify"
+              ]
+            }
+          ]
+        }
+      ],
+      "started_at": "2026-11-02T14:43:45.587717+00:00",
+      "baseline_notes": [],
+      "job": "verify-job-t-3ac2e611c3",
+      "secret_deleted": true,
+      "pod": "verify-job-t-3ac2e611c3-tssjf",
+      "pod_uid": "a7407d83-8600-443c-b258-ff19e40f739c",
+      "node": "bravo-onprem-agent",
+      "image": "docker.io/library/python:3.12-slim-bookworm",
+      "image_id": "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+      "job_succeeded": true,
+      "image_names": [
+        "docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39",
+        "docker.io/library/python@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753",
+        "docker.io/library/python:3.12-slim-bookworm"
+      ],
+      "result": {
+        "bucket": "bravo-rehearsal-verify",
+        "canary_put": "200",
+        "cleanup": {
+          "canary_delete": "204",
+          "policy_delete": "204"
+        },
+        "control": {
+          "anonymous_get": "200",
+          "ok": true,
+          "policy_delete": "204",
+          "policy_put": "204"
+        },
+        "egress": [
+          {
+            "blocked": true,
+            "error": "TimeoutError",
+            "target": "1.1.1.1:443"
+          },
+          {
+            "blocked": true,
+            "error": "TimeoutError",
+            "target": "169.254.169.254:80"
+          }
+        ],
+        "policies": [
+          {
+            "checks": [
+              {
+                "detail": "204",
+                "name": "policy_applied",
+                "ok": true
+              },
+              {
+                "detail": "403 AccessDenied",
+                "name": "anonymous_get_denied",
+                "ok": true
+              },
+              {
+                "detail": "200",
+                "name": "authenticated_get_allowed",
+                "ok": true
+              }
+            ],
+            "index": 0,
+            "policy_delete": "204"
+          }
+        ],
+        "reset": "204",
+        "run": "t-3ac2e611c3bb42df92c0eeea6adc36cb"
+      },
+      "control_ok": true,
+      "egress_blocked": true,
+      "checks": [
+        {
+          "name": "behavioral:policy_applied",
+          "ok": true,
+          "detail": "204"
+        },
+        {
+          "name": "behavioral:anonymous_get_denied",
+          "ok": true,
+          "detail": "403 AccessDenied"
+        },
+        {
+          "name": "behavioral:authenticated_get_allowed",
+          "ok": true,
+          "detail": "200"
+        }
+      ],
+      "finished_at": "2026-11-02T14:43:55.784058+00:00",
+      "leftovers": []
+    }
+  },
+  "created_at": "2026-11-02T14:40:38.320847+00:00",
+  "label": "S1->S2 RKE2 · 심은 시나리오(첨부 버킷 익명 읽기) BLOCK 뒤 리허설, B7 동작 검증 Job"
+}

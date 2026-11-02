@@ -1,0 +1,849 @@
+{
+  "rule_version": "gate-controls/2026-11-02.1",
+  "source": "source-aws",
+  "target": "target-onprem",
+  "gate_verdict": "BLOCK",
+  "blocked_controls": [
+    "SEC-01",
+    "ENC-01",
+    "AUD-01",
+    "NET-01",
+    "IAM-01",
+    "DR-01"
+  ],
+  "controls": [
+    {
+      "control_id": "SEC-01",
+      "aliases": [
+        "ENC-02"
+      ],
+      "name_ko": "비밀 저장",
+      "question": "Are app secrets protected from other identities and encrypted with a customer key?",
+      "src": "PASS",
+      "dst": "FAIL",
+      "src_status": "충족",
+      "dst_status": "보완 필요",
+      "verdict": "BLOCK",
+      "reason": "regression",
+      "questions": [
+        "SEC-SECRET-READ-K8S",
+        "SEC-SECRET-READ-AWS",
+        "OBJ-ENC",
+        "SEC-ENC-CMK"
+      ]
+    },
+    {
+      "control_id": "ENC-01",
+      "aliases": [],
+      "name_ko": "전송 암호화",
+      "question": "Is every hop encrypted with TLS and plaintext refused?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "questions": [
+        "OBJ-06",
+        "DB-TLS"
+      ]
+    },
+    {
+      "control_id": "AUD-01",
+      "aliases": [],
+      "name_ko": "감사 로그",
+      "question": "Are audit events (login, DDL, privilege change, control plane) recorded?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "questions": [
+        "DB-AUDIT",
+        "AUD-PLATFORM"
+      ]
+    },
+    {
+      "control_id": "NET-01",
+      "aliases": [],
+      "name_ko": "네트워크 노출",
+      "question": "Are only allowed paths reachable, with default deny?",
+      "src": "FAIL",
+      "dst": "FAIL",
+      "src_status": "보완 필요",
+      "dst_status": "보완 필요",
+      "verdict": "BLOCK",
+      "reason": "fail_both",
+      "questions": [
+        "NET-DEFAULT-DENY",
+        "NET-PATHS"
+      ]
+    },
+    {
+      "control_id": "IAM-01",
+      "aliases": [
+        "ISO-01"
+      ],
+      "name_ko": "최소 권한",
+      "question": "Are anonymous and other identities denied access to app resources?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "questions": [
+        "OBJ-01",
+        "OBJ-02",
+        "OBJ-03",
+        "OBJ-04",
+        "OBJ-05",
+        "DB-ANON-READ",
+        "DB-AUTH"
+      ]
+    },
+    {
+      "control_id": "DR-01",
+      "aliases": [],
+      "name_ko": "백업 · 복구",
+      "question": "Is backup running and has a restore into a new environment succeeded?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "questions": [
+        "DR-ARCHIVE",
+        "DR-RESTORE"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "control_id": "OBJ-01",
+      "parent_control": "IAM-01",
+      "question": "Can an anonymous user read the attachment canary object?",
+      "src": "UNKNOWN",
+      "dst": "PASS",
+      "src_status": "미검증",
+      "dst_status": "충족",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "canary_unverified",
+        "evidence": {
+          "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84",
+          "endpoint": "https://s3.ap-northeast-2.amazonaws.com",
+          "canary": "_gate/canary",
+          "head": "denied 403 403",
+          "request": "unsigned GET",
+          "key": "_gate/canary",
+          "response": "403 AccessDenied"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "PASS",
+        "reason": "anonymous_read_denied",
+        "evidence": {
+          "bucket": "bravo-demo-attachments",
+          "endpoint": "https://localhost:51926",
+          "request": "unsigned GET",
+          "key": "_gate/canary",
+          "response": "403 AccessDenied"
+        }
+      },
+      "src_evidence_digest": "sha256:e305edd88b41657113149cc97c6b4ac58e1baf267b42ac8354186fb951b286e7",
+      "dst_evidence_digest": "sha256:4b7988c62b85de893fcdc798ccb08c228c00976332fd0ac990616ff730b2dafb"
+    },
+    {
+      "control_id": "OBJ-02",
+      "parent_control": "IAM-01",
+      "question": "Can an anonymous user list the attachment bucket?",
+      "src": "UNKNOWN",
+      "dst": "PASS",
+      "src_status": "미검증",
+      "dst_status": "충족",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "canary_unverified",
+        "evidence": {
+          "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84",
+          "endpoint": "https://s3.ap-northeast-2.amazonaws.com",
+          "canary": "_gate/canary",
+          "head": "denied 403 403",
+          "request": "unsigned LIST",
+          "response": "403 AccessDenied"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "PASS",
+        "reason": "anonymous_list_denied",
+        "evidence": {
+          "bucket": "bravo-demo-attachments",
+          "endpoint": "https://localhost:51926",
+          "request": "unsigned LIST",
+          "response": "403 AccessDenied"
+        }
+      },
+      "src_evidence_digest": "sha256:2c66e2b0ebb15aa76ec09d3df7bf3a653fa81796c3be9e0ac6533b9b55f7aa6c",
+      "dst_evidence_digest": "sha256:3e764d2a4af804a749b564a88d7fdfaafec938967362fe5dfb3221a3b5875d54"
+    },
+    {
+      "control_id": "OBJ-03",
+      "parent_control": "IAM-01",
+      "question": "Can an anonymous user write to the attachment bucket?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "write_probe_disabled",
+        "evidence": {
+          "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84",
+          "endpoint": "https://s3.ap-northeast-2.amazonaws.com",
+          "request": "unsigned PUT",
+          "key": "_gate/anon-put-probe"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "write_probe_disabled",
+        "evidence": {
+          "bucket": "bravo-demo-attachments",
+          "endpoint": "https://localhost:51926",
+          "request": "unsigned PUT",
+          "key": "_gate/anon-put-probe"
+        }
+      },
+      "src_evidence_digest": "sha256:eb9b4e3fdc14180e2f7b8b9f6c87a781b11d19c9f39c95d87fd9ca68380ec0c9",
+      "dst_evidence_digest": "sha256:dfa3082d7f0d0347212b83afdfd70bf39fb3da0ef1a3d6097d549fd74357df67"
+    },
+    {
+      "control_id": "OBJ-04",
+      "parent_control": "IAM-01",
+      "question": "Can the app credential read and write the attachment bucket (control path)?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "app_credential_missing",
+        "evidence": {
+          "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84",
+          "endpoint": "https://s3.ap-northeast-2.amazonaws.com"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "write_probe_disabled",
+        "evidence": {
+          "app_read": "ok",
+          "bucket": "bravo-demo-attachments",
+          "endpoint": "https://localhost:51926",
+          "request": "app HEAD canary",
+          "key": "_gate/canary",
+          "response": "ok 200"
+        }
+      },
+      "src_evidence_digest": "sha256:0af47734c61ca061c50b65ca3306c66da714f85d92b57f97457e746891cf6614",
+      "dst_evidence_digest": "sha256:5a8db51bb203ac04115c5e9cba5dfc0f00b88860d3a80d61ceb9a07a4b6b06ae"
+    },
+    {
+      "control_id": "OBJ-05",
+      "parent_control": "IAM-01",
+      "question": "Is a different credential denied reading the attachment canary?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "other_credential_missing",
+        "evidence": {
+          "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84",
+          "endpoint": "https://s3.ap-northeast-2.amazonaws.com"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "other_credential_missing",
+        "evidence": {
+          "bucket": "bravo-demo-attachments",
+          "endpoint": "https://localhost:51926"
+        }
+      },
+      "src_evidence_digest": "sha256:bae11ba75e087dc7f5303753a8e9925b881baed471ddf7facebcab8af3d4ee8d",
+      "dst_evidence_digest": "sha256:92e0faf69a52890c3c48370a1f84f9c500dc495e4c0fb3be4ad8dd237d156121"
+    },
+    {
+      "control_id": "DB-ANON-READ",
+      "parent_control": "IAM-01",
+      "question": "Can PUBLIC read the app tables?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "src_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5",
+      "dst_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5"
+    },
+    {
+      "control_id": "DB-AUTH",
+      "parent_control": "IAM-01",
+      "question": "Can the app role log in without a password?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "src_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5",
+      "dst_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5"
+    },
+    {
+      "control_id": "SEC-SECRET-READ-K8S",
+      "parent_control": "SEC-01",
+      "question": "Can another service account read the app secret?",
+      "src": "PASS",
+      "dst": "PASS",
+      "src_status": "충족",
+      "dst_status": "충족",
+      "verdict": "PASS",
+      "reason": null,
+      "src_evidence": {
+        "verdict": "PASS",
+        "reason": "ok",
+        "evidence": {
+          "parts": [
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/bravo-executor",
+                "verb": "get",
+                "secret": "chat/chat-admin"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/bravo-executor",
+                "verb": "list",
+                "secret": "chat/*"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/chat-db",
+                "verb": "get",
+                "secret": "chat/chat-admin"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/chat-db",
+                "verb": "list",
+                "secret": "chat/*"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "default/default",
+                "verb": "get",
+                "secret": "chat/chat-admin"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "default/default",
+                "verb": "list",
+                "secret": "chat/*"
+              }
+            }
+          ]
+        }
+      },
+      "dst_evidence": {
+        "verdict": "PASS",
+        "reason": "ok",
+        "evidence": {
+          "parts": [
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/bravo-executor",
+                "verb": "get",
+                "secret": "chat/chat-admin"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/bravo-executor",
+                "verb": "list",
+                "secret": "chat/*"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/chat-db",
+                "verb": "get",
+                "secret": "chat/chat-admin"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "chat/chat-db",
+                "verb": "list",
+                "secret": "chat/*"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "default/default",
+                "verb": "get",
+                "secret": "chat/chat-admin"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "identity": "default/default",
+                "verb": "list",
+                "secret": "chat/*"
+              }
+            }
+          ]
+        }
+      },
+      "src_evidence_digest": "sha256:2497058fa1dd1a4b642e712da311b04b0265cdaef4ca05a96f2d5f1d115a2149",
+      "dst_evidence_digest": "sha256:2497058fa1dd1a4b642e712da311b04b0265cdaef4ca05a96f2d5f1d115a2149"
+    },
+    {
+      "control_id": "SEC-SECRET-READ-AWS",
+      "parent_control": "SEC-01",
+      "question": "Can another IAM principal read the app secret?",
+      "src": "PASS",
+      "dst": "UNKNOWN",
+      "src_status": "충족",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "PASS",
+        "reason": "ok",
+        "evidence": {
+          "parts": [
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "secret": "bravo-source/chat/db-app",
+                "principal": "arn:aws:iam::721622471953:role/bravo-source-ebs-csi-fea7b6132bc602d9a2d7364f49",
+                "decision": "implicitDeny"
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "other_identity_denied",
+              "evidence": {
+                "secret": "bravo-source/chat/db-app",
+                "principal": "arn:aws:iam::721622471953:role/bravo-source-node-40ca019e8ee974e33ed7633028",
+                "decision": "implicitDeny"
+              }
+            }
+          ]
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "aws"
+        }
+      },
+      "src_evidence_digest": "sha256:5f67f3e6e0b2e8dfc918aa10aaff2a56a468b9d82b4b42330ff3f2185fa1bc96",
+      "dst_evidence_digest": "sha256:aa1fbbbf921c06a3190be3b2a0bbf80bd8cf599408f5f58bb80be6dd4340da8f"
+    },
+    {
+      "control_id": "OBJ-ENC",
+      "parent_control": "SEC-01",
+      "question": "Is the attachment bucket encrypted at rest with a customer-managed key?",
+      "src": "PASS",
+      "dst": "FAIL",
+      "src_status": "충족",
+      "dst_status": "보완 필요",
+      "verdict": "BLOCK",
+      "reason": "regression",
+      "src_evidence": {
+        "verdict": "PASS",
+        "reason": "customer_managed_key",
+        "evidence": {
+          "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84",
+          "endpoint": "https://s3.ap-northeast-2.amazonaws.com",
+          "rules": [
+            {
+              "algorithm": "aws:kms",
+              "kms_key": "arn:aws:kms:ap-northeast-2:721622471953:key/6bd675bf-a934-407e-a674-3170c6d65040"
+            }
+          ]
+        }
+      },
+      "dst_evidence": {
+        "verdict": "FAIL",
+        "reason": "no_default_encryption",
+        "evidence": {
+          "bucket": "bravo-demo-attachments",
+          "endpoint": "https://localhost:51926",
+          "code": "ServerSideEncryptionConfigurationNotFoundError"
+        }
+      },
+      "src_evidence_digest": "sha256:fef56e76d7dea5bdb3043c5108f19f13fb581b16d9606302bf920c134472de2b",
+      "dst_evidence_digest": "sha256:a6b648707026475ea88d9cf7c131ec7a5bd808bb9e1082569322fc066d2434bb"
+    },
+    {
+      "control_id": "SEC-ENC-CMK",
+      "parent_control": "SEC-01",
+      "question": "Are app secrets encrypted with a customer-managed key?",
+      "src": "PASS",
+      "dst": "UNKNOWN",
+      "src_status": "충족",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "PASS",
+        "reason": "ok",
+        "evidence": {
+          "parts": [
+            {
+              "verdict": "PASS",
+              "reason": "customer_managed_key",
+              "evidence": {
+                "secret": "bravo-source/chat/db-app"
+              }
+            }
+          ]
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "aws"
+        }
+      },
+      "src_evidence_digest": "sha256:6eae38cfaa975ff5ad71501495dd2f8ffd0275c57ef16b27352b131835c8c441",
+      "dst_evidence_digest": "sha256:aa1fbbbf921c06a3190be3b2a0bbf80bd8cf599408f5f58bb80be6dd4340da8f"
+    },
+    {
+      "control_id": "OBJ-06",
+      "parent_control": "ENC-01",
+      "question": "Is plain HTTP to the attachment store rejected?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "app_credential_missing",
+        "evidence": {
+          "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84",
+          "endpoint": "https://s3.ap-northeast-2.amazonaws.com"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "plain_http_inconclusive",
+        "evidence": {
+          "bucket": "bravo-demo-attachments",
+          "endpoint": "https://localhost:51926",
+          "request": "app GET over http://",
+          "plain_endpoint": "http://localhost:51926",
+          "https_head": "ok",
+          "response": "error ConnectionClosedError: Connection was closed before we received a valid response from endpoint URL: \"http://localhost:51926/bravo-demo-attachments/_gate/canary\"."
+        }
+      },
+      "src_evidence_digest": "sha256:0af47734c61ca061c50b65ca3306c66da714f85d92b57f97457e746891cf6614",
+      "dst_evidence_digest": "sha256:f12b6e1991d3ce5cfba5faa2adb0ad38ece06952ad4e4efed2820562d8be4f7d"
+    },
+    {
+      "control_id": "DB-TLS",
+      "parent_control": "ENC-01",
+      "question": "Does the DB refuse plaintext and verify CA and hostname?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "src_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5",
+      "dst_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5"
+    },
+    {
+      "control_id": "DB-AUDIT",
+      "parent_control": "AUD-01",
+      "question": "Does the DB record logins, DDL and role changes?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "src_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5",
+      "dst_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5"
+    },
+    {
+      "control_id": "AUD-PLATFORM",
+      "parent_control": "AUD-01",
+      "question": "Is control-plane audit logging on?",
+      "src": "PASS",
+      "dst": "UNKNOWN",
+      "src_status": "충족",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "PASS",
+        "reason": "ok",
+        "evidence": {
+          "parts": [
+            {
+              "verdict": "PASS",
+              "reason": "cloudtrail_logging_management_events",
+              "evidence": {
+                "trails": [
+                  "bravo-source-management"
+                ]
+              }
+            },
+            {
+              "verdict": "PASS",
+              "reason": "eks_audit_log_on",
+              "evidence": {
+                "cluster": "bravo-source"
+              }
+            }
+          ]
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "aws"
+        }
+      },
+      "src_evidence_digest": "sha256:7e9b9bd78c998e4f139f93bcdda8b475854e215c5edf096da218215a668ca9b0",
+      "dst_evidence_digest": "sha256:aa1fbbbf921c06a3190be3b2a0bbf80bd8cf599408f5f58bb80be6dd4340da8f"
+    },
+    {
+      "control_id": "NET-DEFAULT-DENY",
+      "parent_control": "NET-01",
+      "question": "Does the app namespace default-deny ingress and egress?",
+      "src": "FAIL",
+      "dst": "FAIL",
+      "src_status": "보완 필요",
+      "dst_status": "보완 필요",
+      "verdict": "BLOCK",
+      "reason": "fail_both",
+      "src_evidence": {
+        "verdict": "FAIL",
+        "reason": "default_deny_missing",
+        "evidence": {
+          "namespace": "chat",
+          "default_deny_ingress": false,
+          "default_deny_egress": false,
+          "policies": []
+        }
+      },
+      "dst_evidence": {
+        "verdict": "FAIL",
+        "reason": "default_deny_missing",
+        "evidence": {
+          "namespace": "chat",
+          "default_deny_ingress": false,
+          "default_deny_egress": false,
+          "policies": []
+        }
+      },
+      "src_evidence_digest": "sha256:734d39c262f8e5d6be1b2d6fade464cdda4a2eda09383bdd1a179f297f6ea01a",
+      "dst_evidence_digest": "sha256:734d39c262f8e5d6be1b2d6fade464cdda4a2eda09383bdd1a179f297f6ea01a"
+    },
+    {
+      "control_id": "NET-PATHS",
+      "parent_control": "NET-01",
+      "question": "Are only allowed paths reachable (control path succeeds)?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "network"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "network"
+        }
+      },
+      "src_evidence_digest": "sha256:c5d001f9d4c5339b4f526d577009bd1c20054f0cb4de9d164227851d419e5ed6",
+      "dst_evidence_digest": "sha256:c5d001f9d4c5339b4f526d577009bd1c20054f0cb4de9d164227851d419e5ed6"
+    },
+    {
+      "control_id": "DR-ARCHIVE",
+      "parent_control": "DR-01",
+      "question": "Is WAL archiving running without failures?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "not_configured",
+        "evidence": {
+          "section": "postgres"
+        }
+      },
+      "src_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5",
+      "dst_evidence_digest": "sha256:863f2437d30b86de900c5e6b5b3a6b6ac781134bdd43203b87fcff378c7673d5"
+    },
+    {
+      "control_id": "DR-RESTORE",
+      "parent_control": "DR-01",
+      "question": "Did a restore into a new cluster come up healthy?",
+      "src": "UNKNOWN",
+      "dst": "UNKNOWN",
+      "src_status": "미검증",
+      "dst_status": "미검증",
+      "verdict": "BLOCK",
+      "reason": "unknown",
+      "src_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "restore_cluster_missing",
+        "evidence": {
+          "cluster": "chat/chat-db-restore"
+        }
+      },
+      "dst_evidence": {
+        "verdict": "UNKNOWN",
+        "reason": "restore_cluster_missing",
+        "evidence": {
+          "cluster": "chat/chat-db-restore"
+        }
+      },
+      "src_evidence_digest": "sha256:0d796a24a33b4bbaef3aaf7bac78e648faa6c8c39e0d741d44823925389d582e",
+      "dst_evidence_digest": "sha256:0d796a24a33b4bbaef3aaf7bac78e648faa6c8c39e0d741d44823925389d582e"
+    }
+  ],
+  "input_digest": "ae12070f5427d8a80cc3850477d39ac05c3922e4bfdbdae4f57edd731bacb635",
+  "test_version": "bravo-gate/0.1.0",
+  "collected_at": "2026-11-02T14:33:28.004462+00:00",
+  "expires_at": "2026-11-02T15:33:28.004462+00:00"
+}

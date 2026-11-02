@@ -1,0 +1,372 @@
+{
+  "schema_version": "ATIF-v1.8",
+  "session_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb",
+  "agent": {
+    "name": "bravo-rehearsal",
+    "version": "0.0.1"
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "timestamp": "2026-11-02T14:40:46.713017+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec blocked rule=free_text_command",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-1",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "4393e6ef47f0aadea41b28388702f1dfee5321d2881b821e3c5a5bca198739a9"
+          },
+          "extra": {
+            "allowed": false,
+            "rule": "free_text_command",
+            "result": null,
+            "origin": "probe"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 2,
+      "timestamp": "2026-11-02T14:40:46.715536+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec blocked rule=kubectl_not_allowed",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-2",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "c38fd189387c4ef9560a232a364e8ac597fe06c90d804eb14de6fb53bdcc323b"
+          },
+          "extra": {
+            "allowed": false,
+            "rule": "kubectl_not_allowed",
+            "result": null,
+            "origin": "probe"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 3,
+      "timestamp": "2026-11-02T14:40:49.593963+00:00",
+      "source": "agent",
+      "message": "inventory_describe allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-3",
+          "function_name": "inventory_describe",
+          "arguments": {
+            "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 4,
+      "timestamp": "2026-11-02T14:40:52.963340+00:00",
+      "source": "agent",
+      "message": "controls_describe allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-4",
+          "function_name": "controls_describe",
+          "arguments": {
+            "args_sha256": "937e53f8251c95adfd01073d71835b2499495d9702fe889d87d73a149fd9c326"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 5,
+      "timestamp": "2026-11-02T14:40:54.640097+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-5",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "a2245a72ec82ab0baaa45e7f98a41d9a36e0b8a84a74c7119684999b41230f06"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 6,
+      "timestamp": "2026-11-02T14:40:56.318471+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-6",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "878798578d57e8b855e28208d6ccb1150bf7a9130730a0c757806e77b203aa41"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 7,
+      "timestamp": "2026-11-02T14:40:56.657040+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-7",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "13a3e3f9e296a22edfb34f859e3eef5253d35f2c12203f184d486210ea00071c"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 8,
+      "timestamp": "2026-11-02T14:40:58.476129+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-8",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "ad04c5532e0aaebfab4404bed2b1887e3f4c7ce38e5adfb9feee122370fe8b21"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 9,
+      "timestamp": "2026-11-02T14:40:58.854682+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-9",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "1c3b79abd2d70c0a923bf3c7812c26c96d33d80b85c1443f32f82689af2721e2"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 10,
+      "timestamp": "2026-11-02T14:41:02.424741+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-10",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "ebda6b7c4654666eeecdce93313f8a3596203d27f091caa29b95e28ea5e6d2a3"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 11,
+      "timestamp": "2026-11-02T14:41:02.853204+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-11",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "59ea2e8116a807fbb86204c000449d53f6202cdf871cd53d0f2cbfb264153f56"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 12,
+      "timestamp": "2026-11-02T14:41:04.679259+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-12",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "aa67627f4aed00d308ed1fa01f25dce266fcf5c6d550e824ca15c237226a3d24"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 13,
+      "timestamp": "2026-11-02T14:41:05.003757+00:00",
+      "source": "agent",
+      "message": "rehearsal_exec allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-13",
+          "function_name": "rehearsal_exec",
+          "arguments": {
+            "args_sha256": "207112a133af2211a64d9832a5291dd2feee0455216dfb9b25c03beb40f6f233"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": "done",
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 14,
+      "timestamp": "2026-11-02T14:41:23.437458+00:00",
+      "source": "agent",
+      "message": "policy_evaluate allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-14",
+          "function_name": "policy_evaluate",
+          "arguments": {
+            "args_sha256": "f79a15790b67b100a8cf40e87903a8a9ff91a894bb0ad6b2d96a440e99056ee3"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 15,
+      "timestamp": "2026-11-02T14:41:28.566332+00:00",
+      "source": "agent",
+      "message": "policy_evaluate allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-15",
+          "function_name": "policy_evaluate",
+          "arguments": {
+            "args_sha256": "4435bdcc84ed0b3474c9b6ba1ac6456b2dfde8fc7762a3b3ebc1186086fef2b5"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 16,
+      "timestamp": "2026-11-02T14:41:41.114243+00:00",
+      "source": "agent",
+      "message": "policy_evaluate allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-16",
+          "function_name": "policy_evaluate",
+          "arguments": {
+            "args_sha256": "7446d56fa9f2f09acbea25bb5030a163f4e2e2d914622a7946a7a9dfaa217acf"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 17,
+      "timestamp": "2026-11-02T14:42:08.728596+00:00",
+      "source": "agent",
+      "message": "plan_propose allowed rule=ok",
+      "tool_calls": [
+        {
+          "tool_call_id": "t-3ac2e611c3bb42df92c0eeea6adc36cb-17",
+          "function_name": "plan_propose",
+          "arguments": {
+            "args_sha256": "2cbbf239bd01c822d8e7b35a85fb29c57d15b81f3cd905cf2037076ce3fbac2e"
+          },
+          "extra": {
+            "allowed": true,
+            "rule": "ok",
+            "result": null,
+            "origin": "agent"
+          }
+        }
+      ]
+    }
+  ],
+  "extra": {
+    "artifact_digest": "sha256:80aa08ec2ddd50c56c2242dcecdc008c2d757e60f5e8004f03db7f30f38e2d1a",
+    "role": "governance",
+    "attempt": 1
+  }
+}

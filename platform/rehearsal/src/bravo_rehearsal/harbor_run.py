@@ -9,6 +9,8 @@ the Trial verdict. A reward counts only when all of these hold (05 3 분리와 �
 2. Our verify-namespace environment observed the verifier Pod (UID, image ID) from the
    Kubernetes API, and the image ID carries the pinned verifier digest.
 3. The verifier's ``binding.json`` names the digest of the frozen ``plan_propose`` artifact.
+4. When the proposal has a bucket policy the behavioural Job tests (``behavioral.py``), that Job ran on the pinned
+   verifier image with its control step and egress block observed; its checks join the static ones (B7).
 
 A reward file the agent pre-seeds in its sandbox (Harbor issue #2551) is never read: the
 separate verifier runs in another namespace, Harbor clears the host reward files before it
@@ -25,6 +27,7 @@ from typing import Any
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig, VerifierConfig
 from harbor.models.trial.result import ExceptionInfo, TrialResult
 
+from .behavioral import KIND as KIND_BEHAVIORAL
 from .harbor_binding import Binding
 from .trials import Trial, now_iso
 
@@ -72,10 +75,22 @@ def _read_json(path: Path) -> Any:
         return None
 
 
+def _image_bound(record: dict[str, Any], expected: str) -> bool:
+    """The container status gives one repo digest; the node's image record lists every name of that same image
+    (a side-loaded image can show another digest first). Bound when the pinned digest names that image."""
+    names = [str(record.get("image_id", "")), *(str(n) for n in record.get("image_names") or [])]
+    return any(n.endswith("@" + expected) or n.endswith(expected) for n in names if n)
+
+
 def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, verifier_mode: str | None,
            rewards: dict[str, float | int] | None, verifier_dir: Path, verifier_image: str,
-           task_version: str) -> None:
-    """Set the Trial verdict once from what Harbor and our verify environment observed."""
+           task_version: str, behavioral: dict[str, Any] | None = None) -> None:
+    """Set the Trial verdict once from what Harbor and our verify environment observed.
+
+    ``behavioral`` is the record of the behavioural verification Job (``behavioral.JobRun``) when the proposal has
+    a policy that Job tests, else None. A PASS then also needs that Job to have run (pinned image, control step and
+    egress block observed) with every check ok; only then is the kind ``behavioral+static_rules``. A required Job
+    that did not run makes a would-be PASS an INFRA_ERROR, never a static-only PASS."""
     if trial.verdict is not None:
         return
     if exception is not None:
@@ -92,7 +107,7 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
         return
     reward = (rewards or {}).get("reward")
     # What the separate verifier returned, kept even if the binding below refuses it (evidence says what ran).
-    trial.verifier_observed = {"reward": reward, "record": binding.verifier}
+    trial.verifier_observed = {"reward": reward, "record": binding.verifier, "behavioral": behavioral}
     if not isinstance(reward, (int, float)) or isinstance(reward, bool):
         trial.finish("INFRA_ERROR", "verifier_no_reward")
         return
@@ -101,10 +116,7 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
         trial.finish("INFRA_ERROR", "verifier_unbound")
         return
     expected = verifier_image.rsplit("@", 1)[1]
-    # The container status gives one repo digest; the node's image record lists every name of that same image
-    # (a side-loaded image can show another digest first). Bound when the pinned digest names that image.
-    names = [str(record.get("image_id", "")), *(str(n) for n in record.get("image_names") or [])]
-    if not any(n.endswith("@" + expected) or n.endswith(expected) for n in names if n):
+    if not _image_bound(record, expected):
         trial.finish("INFRA_ERROR", "verifier_image_mismatch")
         return
     bound = _read_json(verifier_dir / "binding.json")
@@ -113,6 +125,7 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
         return
     checks = _read_json(verifier_dir / "checks.json")
     checks = checks if isinstance(checks, list) else []
+    static_ok = reward >= 1
     trial.verifier = {
         "run_id": f"{record['namespace']}/{record['pod']}",
         "pod_uid": record["pod_uid"],
@@ -123,20 +136,46 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
         "reward": float(reward),
         "checks": checks,
         "refused_uploads": record.get("refused_uploads", []),
-        "verifier_kind": trial.verifier_kind or "unknown",  # e.g. static_rules: no redeploy, no live probe
+        "verifier_kind": trial.verifier_kind or "unknown",  # static_rules unless the behavioural Job ran below
         "collected_at": now_iso(),
     }
-    if reward >= 1:
+    # Static rules decide by reward (as before); their failed checks name the reason of a FAIL.
+    failed = [] if static_ok else [str(c.get("name")) for c in checks if isinstance(c, dict) and not c.get("ok")]
+    if behavioral is not None:
+        trial.verifier["behavioral"] = behavioral
+        problem = None
+        if not behavioral.get("ran"):
+            problem = f"behavioral_job:{behavioral.get('reason') or 'not_run'}"
+        elif not _image_bound(behavioral, expected):
+            problem = "behavioral_image_mismatch"
+        elif not behavioral.get("egress_blocked"):
+            problem = "behavioral_job_egress_open"
+        elif not behavioral.get("control_ok"):
+            problem = "behavioral_control_failed"  # the test bucket could not show an open policy
+        if problem is not None:
+            if static_ok:  # a static-only PASS is not offered when the behavioural Job was required
+                trial.finish("INFRA_ERROR", problem)
+            else:
+                trial.finish("FAIL", "verifier:" + ",".join(failed))
+            return
+        trial.verifier_kind = trial.verifier["verifier_kind"] = KIND_BEHAVIORAL
+        b_checks = [c for c in behavioral.get("checks") or [] if isinstance(c, dict)]
+        if not b_checks:
+            trial.finish("INFRA_ERROR", "behavioral_job:no_checks")
+            return
+        trial.verifier["checks"] = checks + b_checks
+        failed += [str(c.get("name")) for c in b_checks if not c.get("ok")]
+    if static_ok and not failed:
         trial.finish("PASS", None)
     else:
-        failed = [str(c.get("name")) for c in checks if isinstance(c, dict) and not c.get("ok")]
         trial.finish("FAIL", "verifier:" + ",".join(failed))
 
 
 def accept_result(trial: Trial, binding: Binding, result: TrialResult, *, verifier_dir: Path,
-                  verifier_image: str, task_version: str) -> None:
+                  verifier_image: str, task_version: str, behavioral: dict[str, Any] | None = None) -> None:
     mode = result.verifier_environment_mode
     accept(trial, binding, exception=result.exception_info,
            verifier_mode=getattr(mode, "value", mode) if mode is not None else None,
            rewards=result.verifier_result.rewards if result.verifier_result else None,
-           verifier_dir=verifier_dir, verifier_image=verifier_image, task_version=task_version)
+           verifier_dir=verifier_dir, verifier_image=verifier_image, task_version=task_version,
+           behavioral=behavioral)

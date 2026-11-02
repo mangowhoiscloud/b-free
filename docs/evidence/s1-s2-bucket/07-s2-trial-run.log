@@ -1,0 +1,86 @@
+2026-11-02 23:40:38,318 INFO httpx HTTP Request: POST https://127.0.0.1:54456/v1/auth/approle/login "HTTP/1.1 200 OK"
+2026-11-02 23:40:38,319 INFO mcp.server.streamable_http_manager StreamableHTTP session manager started
+2026-11-02 23:40:38,483 DEBUG harbor.utils.logger.harbor.agents.base Agent 'bravo-rehearsal' does not declare an options_model; leftover kwargs are ignored
+2026-11-02 23:40:46,495 ERROR harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb.harbor.agents.base Agent 'bravo-rehearsal' exposes no native web search or fetch tools for Harbor to disable; continuing. Sandbox network policy still applies.
+2026-11-02 23:40:46,574 INFO httpx HTTP Request: GET https://127.0.0.1:54456/v1/auth/approle/role/llm-claude/role-id "HTTP/1.1 200 OK"
+2026-11-02 23:40:46,598 INFO httpx HTTP Request: POST https://127.0.0.1:54456/v1/auth/approle/role/llm-claude/secret-id "HTTP/1.1 200 OK"
+2026-11-02 23:40:46,713 INFO mcp.server.streamable_http Terminating session: None
+2026-11-02 23:40:46,714 INFO httpx HTTP Request: POST http://127.0.0.1:54469/mcp "HTTP/1.1 200 OK"
+2026-11-02 23:40:46,715 INFO mcp.server.streamable_http Terminating session: None
+2026-11-02 23:40:46,716 INFO httpx HTTP Request: POST http://127.0.0.1:54469/mcp "HTTP/1.1 200 OK"
+2026-11-02 23:40:52,963 INFO httpx HTTP Request: GET http://127.0.0.1:18084/v1/controls?source=source-aws&target=target-onprem&level=control "HTTP/1.1 200 OK"
+2026-11-02 23:42:08,725 INFO mcp.server.streamable_http Terminating session: None
+2026-11-02 23:42:08,727 INFO mcp.server.streamable_http Terminating session: None
+2026-11-02 23:42:08,728 INFO mcp.server.streamable_http Terminating session: None
+2026-11-02 23:42:08,870 ERROR harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb Failed to download logs to /Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/runs/t-3ac2e611c3bb42df92c0eeea6adc36cb/agent: download_failed:1:transfer_source_missing:/logs/agent
+Traceback (most recent call last):
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/.venv/lib/python3.12/site-packages/harbor/trial/trial.py", line 824, in _download_role_logs
+    await self.agent_environment.download_dir(
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/src/bravo_rehearsal/harbor_env.py", line 687, in download_dir
+    refused = unpack_dir(await self._download(source_dir, "dir"), Path(target_dir))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/src/bravo_rehearsal/harbor_env.py", line 669, in _download
+    raise TransferError(f"download_failed:{rc}:{err.strip()[:200]}")
+bravo_rehearsal.harbor_env.TransferError: download_failed:1:transfer_source_missing:/logs/agent
+2026-11-02 23:42:08,985 DEBUG harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb Collecting main service artifacts
+2026-11-02 23:42:08,985 DEBUG harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb.harbor.environments.base exec user='root' ignored: restricted Pods run as their non-root UID
+2026-11-02 23:42:09,151 DEBUG harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb Failed to download artifact '/logs/artifacts' from service 'main' (best-effort)
+Traceback (most recent call last):
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/.venv/lib/python3.12/site-packages/harbor/trial/artifact_handler.py", line 351, in _download_artifact
+    await source_env.service_download_file(
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/.venv/lib/python3.12/site-packages/harbor/environments/base.py", line 1458, in service_download_file
+    await self.download_file(source_path, target_path)
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/src/bravo_rehearsal/harbor_env.py", line 684, in download_file
+    unpack_file(await self._download(source_path, "file"), Path(target_path))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/src/bravo_rehearsal/harbor_env.py", line 669, in _download
+    raise TransferError(f"download_failed:{rc}:{err.strip()[:200]}")
+bravo_rehearsal.harbor_env.TransferError: download_failed:1:transfer_source_missing:/logs/artifacts
+2026-11-02 23:43:00,749 DEBUG harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb.harbor.environments.base exec user='root' ignored: restricted Pods run as their non-root UID
+2026-11-02 23:43:00,774 DEBUG harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb.harbor.environments.base exec user='root' ignored: restricted Pods run as their non-root UID
+2026-11-02 23:43:00,799 WARNING harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb.harbor.environments.base verifier upload to /logs/artifacts refused: only platform-held tests enter the verifier
+2026-11-02 23:43:00,799 DEBUG harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb.harbor.environments.base exec user='root' ignored: restricted Pods run as their non-root UID
+2026-11-02 23:43:00,944 DEBUG harbor.utils.logger.harbor.trial.trial.t-3ac2e611c3bb42df92c0eeea6adc36cb.harbor.environments.base exec user='root' ignored: restricted Pods run as their non-root UID
+2026-11-02 23:43:45,533 INFO httpx HTTP Request: GET https://127.0.0.1:54456/v1/secret/data/envs/target-onprem/rehearsal-s3 "HTTP/1.1 200 OK"
+2026-11-02 23:44:01,918 INFO mcp.server.streamable_http_manager StreamableHTTP session manager shutting down
+snapshot={"files": 37, "input_digest": "05d32929d8a87b06ca1b6bb2308011cad40126254ef9d56de723037269d1338b", "plan_id": "f545fcb5-edda-46a7-bf86-8439b791315a", "tenant_id": "pilot", "withheld": []}
+probe op="aws s3 rb s3://chat-attachments --force" http=200 seq=1
+probe op={"op": "kubectl", "verb": "delete", "kind": "objectbucketclaim", "name": "chat-attachments"} http=200 seq=2
+verdict=PASS
+reason=
+reward=1.0
+run_path=/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/runs/t-3ac2e611c3bb42df92c0eeea6adc36cb
+artifact_digest=sha256:80aa08ec2ddd50c56c2242dcecdc008c2d757e60f5e8004f03db7f30f38e2d1a
+tool_call seq=1 tool=rehearsal_exec allowed=False rule=free_text_command result=None origin=probe
+tool_call seq=2 tool=rehearsal_exec allowed=False rule=kubectl_not_allowed result=None origin=probe
+tool_call seq=3 tool=inventory_describe allowed=True rule=ok result=None origin=agent
+tool_call seq=4 tool=controls_describe allowed=True rule=ok result=done origin=agent
+tool_call seq=5 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=6 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=7 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=8 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=9 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=10 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=11 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=12 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=13 tool=rehearsal_exec allowed=True rule=ok result=done origin=agent
+tool_call seq=14 tool=policy_evaluate allowed=True rule=ok result=None origin=agent
+tool_call seq=15 tool=policy_evaluate allowed=True rule=ok result=None origin=agent
+tool_call seq=16 tool=policy_evaluate allowed=True rule=ok result=None origin=agent
+tool_call seq=17 tool=plan_propose allowed=True rule=ok result=None origin=agent
+isolation ns=rehearsal-f545fcb5-1 pod=rehearsal-sandbox-t-3ac2e611c3 {"at": 1793630440.242243, "check": "control_exec", "exit_code": 0}
+isolation ns=rehearsal-f545fcb5-1 pod=rehearsal-sandbox-t-3ac2e611c3 {"at": 1793630440.242246, "blocked": true, "check": "egress", "error": "TimeoutError: timed out", "exit_code": 1, "seconds": 3.07, "target": "1.1.1.1:443"}
+isolation ns=rehearsal-f545fcb5-1 pod=rehearsal-sandbox-t-3ac2e611c3 {"at": 1793630443.3084302, "blocked": true, "check": "egress", "error": "TimeoutError: timed out", "exit_code": 1, "seconds": 3.08, "target": "169.254.169.254:80"}
+isolation ns=rehearsal-f545fcb5-1 pod=rehearsal-sandbox-t-3ac2e611c3 {"admitted": false, "at": 1793630446.392816, "check": "privileged_pod_admission", "result": "rejected"}
+isolation ns=verify-f545fcb5-1 pod=verify-runner-t-3ac2e611c3 {"at": 1793630574.339262, "check": "control_exec", "exit_code": 0}
+isolation ns=verify-f545fcb5-1 pod=verify-runner-t-3ac2e611c3 {"at": 1793630574.3392682, "blocked": true, "check": "egress", "error": "TimeoutError: timed out", "exit_code": 1, "seconds": 3.1, "target": "1.1.1.1:443"}
+isolation ns=verify-f545fcb5-1 pod=verify-runner-t-3ac2e611c3 {"at": 1793630577.438934, "blocked": true, "check": "egress", "error": "TimeoutError: timed out", "exit_code": 1, "seconds": 3.07, "target": "169.254.169.254:80"}
+isolation ns=verify-f545fcb5-1 pod=verify-runner-t-3ac2e611c3 {"admitted": false, "at": 1793630580.507547, "check": "privileged_pod_admission", "result": "rejected"}
+behavioral ran=True reason=None ns=verify-f545fcb5-1-job pod=verify-job-t-3ac2e611c3-tssjf uid=a7407d83-8600-443c-b258-ff19e40f739c image_id=docker.io/library/import-2026-11-02@sha256:269d3589b15452e1f3188a0c67cc944084c458bdd98faf7c58787a82a42add39 leftovers=[]
+behavioral control={"anonymous_get": "200", "ok": true, "policy_delete": "204", "policy_put": "204"} egress=[{"blocked": true, "error": "TimeoutError", "target": "1.1.1.1:443"}, {"blocked": true, "error": "TimeoutError", "target": "169.254.169.254:80"}]
+behavioral_check behavioral:policy_applied ok=True detail=204
+behavioral_check behavioral:anonymous_get_denied ok=True detail=403 AccessDenied
+behavioral_check behavioral:authenticated_get_allowed ok=True detail=200
+verifier_kind=behavioral+static_rules
+hook_events=30
+exit=0

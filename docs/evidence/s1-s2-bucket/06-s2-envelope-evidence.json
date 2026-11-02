@@ -1,0 +1,2 @@
+[{"id": "gate-s1-20261102t233338", "kind": "gate_report",
+  "summary": "Gate run 1 (source-aws -> target-onprem, 2026-11-02 23:33 KST, input_digest 24ec5f5b): BLOCK. OBJ-01 dst FAIL anonymous_read_allowed: an unsigned GET of bravo-demo-attachments/_gate/canary returned 200. Destination attachment bucket: bravo-demo-attachments on RGW https://rook-ceph-rgw-bravo.rook-ceph.svc. The app reads and writes it as the bucket owner, RGW user arn:aws:iam:::user/obc-chat-bravo-demo-attachments-b292e551-66ce-442d-b51b-e5865a628e1b."}]

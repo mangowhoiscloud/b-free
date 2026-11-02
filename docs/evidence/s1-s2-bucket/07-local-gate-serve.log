@@ -1,0 +1,13 @@
+rgw_regression 2026-11-02T23:40:00+0900: 상태: 심은 시나리오 적용됨
+{"env": "target-onprem", "context": "bravo-onprem", "at": "2026-11-02T23:40:00.239571+09:00", "bucket": "bravo-demo-attachments", "planted": true, "policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}, "anonymous_get_canary": "200 OK"}
+rgw_regression 2026-11-02T23:40:00+0900: gate serve http://127.0.0.1:18084 (source-aws, target-onprem object_store at https://localhost:54360); Ctrl-C to stop
+INFO:     Started server process [13024]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18084 (Press CTRL+C to quit)
+INFO:     127.0.0.1:54383 - "GET /v1/controls?source=source-aws&target=target-onprem HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54574 - "GET /v1/controls?source=source-aws&target=target-onprem&level=control HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [13024]

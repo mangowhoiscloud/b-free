@@ -1,9 +1,12 @@
-# Rehearsal service (platform/rehearsal, D-26): read-only, the four server-side tools only.
+# Rehearsal service (platform/rehearsal, D-26): read-only, the four server-side tools and the B7 verification Job.
 # db_inspect: collector_ro per environment. db_rehearse: the synthetic DB. evidence_read: the
 # platform DB as bravo_rehearsal_ro. Nothing else: no Cloudflare, no chat-admin, no chat-db.
 path "secret/data/envs/+/collector-ro" { capabilities = ["read"] }
 path "secret/data/platform/rehearsal-synthetic-db" { capabilities = ["read"] }
 path "secret/data/platform/rehearsal-evidence-db" { capabilities = ["read"] }
+# Behavioural verification Job (B7, platform/rehearsal behavioral.py): the rehearsal test bucket owner's key on the
+# destination RGW. The service hands it only to the Job's Secret in verify-<plan>-<n>-job (deleted after the Job).
+path "secret/data/envs/+/rehearsal-s3" { capabilities = ["read"] }
 # Model credential delivery to the agent worker (13 6). The service never reads the credential: it checks
 # presence from KV metadata (/readyz) and mints one secret_id (60 s, 1 use) per Trial for the provider's
 # AppRole (llm-claude, llm-openai; policies platform-llm-*.hcl), which the worker uses to read it once.

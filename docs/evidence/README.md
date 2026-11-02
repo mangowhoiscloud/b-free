@@ -14,5 +14,6 @@
 | 위치 | 내용 | 환경 |
 |---|---|---|
 | [pilot-notebook/](pilot-notebook/README.md) | 노트북 Compose 파일럿의 스모크 11회 · 계약 시험 5회 원본 사본과 실행별 PASS · FAIL(`RUNS.tsv`). 감사 B22 | **파일럿(노트북) 기록.** 클라우드 결과 아님 |
+| [s1-s2-bucket/](s1-s2-bucket/README.md) | S1 첨부 버킷 심은 시나리오(익명 읽기) → 게이트 OBJ-01 dst FAIL · BLOCK, S2 리허설 Trial `t-3ac2e611…` PASS(`verifier_kind: behavioral+static_rules`, 감사 B7) | 온프렘 RKE2 `bravo-onprem`, 운영자 노트북의 게이트 CLI · 리허설 CLI 러너 (2026-11-02 23:33–23:45 KST) |
 
 클라우드(출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS)에서 낸 실행 기록은 아직 없습니다(2026-11-02 20:45 KST). 데모 사전 실행 기록은 `docs/demo/SCRIPT.md` 5절이 이 폴더의 행을 가리킵니다.

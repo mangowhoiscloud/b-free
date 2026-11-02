@@ -1,0 +1,23 @@
+2026-11-02T23:43:50+0900
+NAME                                                   POD-SELECTOR                AGE
+networkpolicy.networking.k8s.io/allow-kube-dns         <none>                      5s
+networkpolicy.networking.k8s.io/allow-rgw-egress       bravo.dev/role=verify-job   5s
+networkpolicy.networking.k8s.io/allow-same-namespace   <none>                      5s
+networkpolicy.networking.k8s.io/default-deny           <none>                      5s
+
+NAME                                STATUS    COMPLETIONS   DURATION   AGE   CONTAINERS   IMAGES                                                                                              SELECTOR
+job.batch/verify-job-t-3ac2e611c3   Running   0/1           5s         5s    verify       python:3.12-slim-bookworm@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753   batch.kubernetes.io/controller-uid=ac174397-301f-411b-ab5f-672b654a4b6d
+
+NAME                                READY   STATUS    RESTARTS   AGE   IP           NODE                 NOMINATED NODE   READINESS GATES
+pod/verify-job-t-3ac2e611c3-tssjf   1/1     Running   0          5s    10.42.1.16   bravo-onprem-agent   <none>           <none>
+
+NAME                   TYPE     DATA   AGE
+secret/verify-job-s3   Opaque   2      5s
+
+NAME                         DATA   AGE
+configmap/kube-root-ca.crt   1      5s
+configmap/verify-job         3      5s
+
+NAME                        REQUEST                                                                                                    LIMIT                                          AGE
+resourcequota/trial-quota   configmaps: 2/16, pods: 1/4, requests.cpu: 50m/1, requests.memory: 64Mi/1Gi, secrets: 1/4, services: 0/2   limits.cpu: 500m/2, limits.memory: 128Mi/2Gi   5s
+{"egress":[{"ports":[{"port":443,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"rook-ceph"}},"podSelector":{"matchLabels":{"app":"rook-ceph-rgw"}}}]}],"podSelector":{"matchLabels":{"bravo.dev/role":"verify-job"}},"policyTypes":["Egress"]}

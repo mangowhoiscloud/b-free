@@ -12,9 +12,12 @@ reason (``llm_unconfigured`` first); nothing is simulated. Then, per Trial:
    ``/mcp``; ``plan_propose`` freezes the artifact; the platform applies it).
 3. Harbor's separate verifier in ``verify-<plan>-<n>``: the frozen artifact from the platform,
    the private tests, ``reward.json``.
+3b. If the proposal has an ``rgw_bucket_policy``: the behavioural verification Job in
+   ``verify-<plan>-<n>-job`` (``behavioral.py``) applies it to the RGW test bucket and checks that an
+   unsigned GET is refused and a signed GET works (B7).
 4. ``harbor_run.accept``: verdict bound to (trial, attempt, artifact digest, verifier Pod UID,
-   verifier image digest, task version). Harbor stops both environments, which deletes the
-   namespaces; what is left is recorded on the Trial.
+   verifier image digest, task version, and the behavioural Job when it was required). Harbor stops
+   both environments, which deletes the namespaces; what is left is recorded on the Trial.
 
 Run: ``uvicorn bravo_rehearsal.service:create_app --factory --port 8090``.
 """
@@ -44,6 +47,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.routing import Route
 
 from . import allowlist as allowlist_mod
+from . import behavioral as behavioral_mod
 from . import harbor_binding, harbor_run, harbor_task, task_generator, trial_token
 from .cluster import Cluster, ClusterError, Names
 from .harbor_env import DefinitionInvalid
@@ -310,8 +314,11 @@ class Orchestrator:
 
             ht.add_hook(TrialEvent.VERIFICATION_START, verifying)
             result = await ht.run()
+            # B7: a proposed bucket policy is also applied to the RGW test bucket and probed by a separate Job.
+            beh = await self.behavioral(trial) if result.exception_info is None else None
             harbor_run.accept_result(trial, binding, result, verifier_dir=ht.paths.verifier_dir,
-                                     verifier_image=str(self.s.verifier_image), task_version=task["version"])
+                                     verifier_image=str(self.s.verifier_image), task_version=task["version"],
+                                     behavioral=beh)
         except ClusterError as exc:
             trial.finish("INFRA_ERROR", exc.reason)
         except (harbor_task.TaskInvalid, DefinitionInvalid) as exc:
@@ -325,6 +332,39 @@ class Orchestrator:
         finally:
             trial.locked = True
             harbor_binding.release(trial.trial_id)
+
+    async def behavioral(self, trial: Trial) -> dict[str, Any] | None:
+        """The behavioural verification Job (``behavioral.py``) for the frozen proposal's bucket policies, or None
+        when the proposal has none. Never raises: a Job that cannot run is a record with ``ran: False`` and a reason.
+        The test bucket key is read here from OpenBao and goes only to the Job's Secret."""
+        docs = behavioral_mod.proposed_policies(trial.artifact)
+        if not docs:
+            return None
+        trial.phase = "verifying"
+        env = (trial.envelope.get("inputs") or {}).get("target_env")
+        if not env:
+            return {"ran": False, "reason": "target_env_missing"}
+        if self.bao is None or self.s.kubeconfig is None or trial.names is None:
+            return {"ran": False, "reason": "openbao_unconfigured" if self.bao is None else "cluster_unconfigured"}
+        try:
+            record = await self.bao.read(behavioral_mod.SECRET_PATH.format(env=env))
+        except ToolBlocked as exc:
+            return {"ran": False, "reason": exc.reason}
+        missing = [k for k in behavioral_mod.SECRET_FIELDS if not record.get(k)]
+        if missing:
+            return {"ran": False, "reason": "test_bucket_record_incomplete", "missing": missing}
+        kubeconfig, names = self.s.kubeconfig, trial.names
+
+        def work() -> dict[str, Any]:
+            return behavioral_mod.JobRun(kubeconfig, self.s.kube_context).run(
+                names=names, trial_id=trial.trial_id, image=str(self.s.verifier_image), record=record, docs=docs,
+                deadline_s=self.s.verifier_deadline_s)
+
+        try:
+            return await asyncio.to_thread(work)
+        except Exception as exc:  # cluster unreachable, config errors: the Job did not run
+            LOG.warning("behavioral job failed trial_id=%s error=%s", trial.trial_id, type(exc).__name__)
+            return {"ran": False, "reason": f"job_error:{type(exc).__name__}"}
 
     async def _worker_env(self, trial: Trial, task: dict[str, Any], config_dir: str) -> dict[str, str]:
         """07 7 / 13 6: built from scratch, exact names only. Route settings, the Trial token and, for the

@@ -1,0 +1,4 @@
+rehearsal-bao.sh: policy platform-rehearsal (/Users/mango/workspace/softbank2026 hackathon/bravo-platform/deploy/pilot/bao/policies/platform-rehearsal.hcl)
+rehearsal-bao.sh: policy platform-rehearsal-issuer
+rehearsal-bao.sh: approle: role rehearsal (policy platform-rehearsal, periodic token 1h, secret_id 60s / 1 use)
+rehearsal-bao.sh: issuer token: not created (create-orphan refused); with-rehearsal will use the custody admin token

@@ -1,0 +1,11 @@
+rgw_regression 2026-11-02T23:45:25+0900: 상태: 심은 시나리오 적용됨
+{"env": "target-onprem", "context": "bravo-onprem", "at": "2026-11-02T23:45:25.888498+09:00", "bucket": "bravo-demo-attachments", "planted": true, "policy_sids": ["DenyInsecureTransport", "BravoPlantedRegressionAnonymousRead"], "public_access_block": {"BlockPublicAcls": false, "IgnorePublicAcls": false, "BlockPublicPolicy": false, "RestrictPublicBuckets": false}, "anonymous_get_canary": "200 OK"}
+gate OBJ-01: src=UNKNOWN dst=FAIL -> BLOCK (unknown); dst anonymous_read_allowed 200
+gate OBJ-02: src=UNKNOWN dst=PASS -> BLOCK (unknown); dst anonymous_list_denied 403 AccessDenied
+gate OBJ-03: src=UNKNOWN dst=UNKNOWN -> BLOCK (unknown); dst write_probe_disabled 
+gate OBJ-04: src=UNKNOWN dst=UNKNOWN -> BLOCK (unknown); dst write_probe_disabled ok 200
+gate OBJ-05: src=UNKNOWN dst=UNKNOWN -> BLOCK (unknown); dst other_credential_missing 
+gate OBJ-ENC: src=PASS dst=FAIL -> BLOCK (regression); dst no_default_encryption 
+gate OBJ-06: src=UNKNOWN dst=UNKNOWN -> BLOCK (unknown); dst plain_http_inconclusive error ConnectionClosedError: Connection was closed before we received a valid response from endpoint URL: "http://localhost:56298/bravo-demo-attachments/_gate/canary".
+gate IAM-01: src=UNKNOWN dst=FAIL -> BLOCK (unknown)
+gate verdict=BLOCK blocked=SEC-01,ENC-01,AUD-01,NET-01,IAM-01,DR-01 input_digest=3867ad2795e24e6070c4c8745b3fec3b454c15e34c30c2fa8eaa2771284ac8c3 report=docs/evidence/s1-s2-bucket/gate-final-still-planted-20261102T234524.json

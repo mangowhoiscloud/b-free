@@ -268,6 +268,8 @@ step_rgw() {
     | jq -sc '{access_key_id: (.[0].data.AWS_ACCESS_KEY_ID | @base64d), secret_access_key: (.[0].data.AWS_SECRET_ACCESS_KEY | @base64d),
                endpoint: "https://rook-ceph-rgw-bravo.rook-ceph.svc", bucket: .[2].data.BUCKET_NAME, ca_pem: .[1].data["ca.crt"]}' \
     | "$keys" env-put-json "$ENV_ID" object-store
+  # B7: rehearsal test bucket bravo-rehearsal-verify and its owner's key -> OpenBao secret/envs/<env>/rehearsal-s3.
+  "$here/scripts/rgw-rehearsal-bucket.sh" "$ctx" "$ENV_ID"
 }
 
 step_kyverno() {

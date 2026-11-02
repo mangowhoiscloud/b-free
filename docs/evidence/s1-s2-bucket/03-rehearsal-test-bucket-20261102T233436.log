@@ -1,0 +1,6 @@
+rgw-rehearsal-bucket: bravo-rehearsal-verify created (owner bravo-rehearsal-verify)
+rgw-rehearsal-bucket: public access block:
+  none (intended)
+rgw-rehearsal-bucket: bucket policy:
+  none
+keys.sh: wrote secret/envs/target-onprem/rehearsal-s3 fields access_key_id,secret_access_key,endpoint,bucket,ca_pem,owner_arn,target_bucket,target_app_arn from stdin, version 1 (values not shown)

@@ -63,4 +63,4 @@ images:
     digest: sha256:f5ec7dfdbe01e7a37a6fdbdde4125c12b921f99cbe51dee787b9c8b8de0caeb0 # cloud-202611022259 (data/cutover lane: + attachment_copy CLI in topology mode for T8 pre-copy in executor-0)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
-    digest: sha256:929b414d3658b07ce0c3489620f6268333555ed0fd4474a5f4691103a3321614 # readyz-20261102T131522Z (rehearsal lane: worker imports via site-packages .pth, no PYTHONPATH; /readyz checks a usable OpenBao token; arm64)
+    digest: sha256:1e1337fa61e03e7dbbcbf19ab101021ab2abe455e0e28736412fde39f4f6cacd # b7-20261102T144209Z (rehearsal lane: B7 behavioural verification Job for rgw_bucket_policy proposals, verifier_kind behavioral+static_rules; over readyz-20261102T131522Z; arm64)

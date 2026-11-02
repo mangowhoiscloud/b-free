@@ -1,7 +1,7 @@
 # Applied to the ON-PREM cluster (context bravo-onprem). The platform rehearsal service (Harbor provisioner,
 # platform/rehearsal harbor_env.py) creates and deletes rehearsal-<plan>-<n> / verify-<plan>-<n> namespaces with
 # their baseline (NetworkPolicy, ResourceQuota, LimitRange, ServiceAccount, Role, RoleBinding), runs the sandbox
-# and verifier Pods and execs into them (websocket). It reaches this API through the D-16 link dst-k8s with a
+# and verifier Pods and execs into them (websocket), and runs the B7 verification Job (verify-<plan>-<n>-job). It reaches this API through the D-16 link dst-k8s with a
 # TokenRequest token (168h) of kube-system/bravo-rehearsal, kept only in OpenBao secret/envs/target-onprem/k8s-rehearsal.
 # The ValidatingAdmissionPolicy below confines every write of this account to rehearsal-* / verify-* namespaces,
 # so the cluster-wide ClusterRole cannot touch chat, kube-system or any other namespace.
@@ -34,6 +34,18 @@ rules:
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [roles, rolebindings]
     verbs: [create, get, list, delete]
+  # B7 behavioural verification Job (platform/rehearsal behavioral.py) in verify-<plan>-<n>-job: the Job, its
+  # Secret with the test bucket key (deleted right after the Job), and the node's image names to bind the Job's
+  # image to the pinned verifier digest (read only).
+  - apiGroups: [batch]
+    resources: [jobs, jobs/status]
+    verbs: [create, get, list, watch, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, get, delete]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
