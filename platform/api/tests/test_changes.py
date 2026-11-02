@@ -444,3 +444,126 @@ def test_watcher_labels_probe_denials_and_emits_each_trial_phase_once(
     assert [(r["kind"], r["data"].get("origin"), r["data"].get("phase")) for r in rows] == [
         ("tool.denied", "probe", None), ("tool.denied", "agent", None), ("trial.progress", None, "agent_running")]
     assert rows[2]["data"]["elapsed_s"] == 14.2 and rows[2]["data"]["tool_summary"]["probe"]["denied"] == 1
+
+
+GOV_ARTIFACT = {
+    "role": "governance",
+    "step": "translate",
+    "translations": [{"source": {"type": "aws_s3_bucket_policy", "id": "attachments"},
+                      "target": {"type": "rgw_bucket_policy", "name": "chat-attachments"}, "control_ids": ["IAM-01"],
+                      "document": {"Statement": [{"Effect": "Deny", "Principal": "*", "Action": "s3:*",
+                                                  "Resource": "arn:aws:s3:::bravo-demo-attachments/*"}]}}],
+    "rationale": "deny plain HTTP",
+    "risk": "low",
+}
+
+
+def _running(pg: dict[str, str], pid: str, role: str) -> uuid.UUID:
+    rid = uuid.uuid4()
+    with psycopg.connect(pg["owner"], autocommit=True) as c:
+        c.execute(
+            """INSERT INTO rehearsals (rehearsal_id, tenant_id, plan_id, attempt, task, role, idem_key, status, trial_id,
+                                       requested_by, channel)
+               VALUES (%s, 't1', %s, 1, %s, %s, %s, 'running', %s, %s, 'console')""",
+            (rid, pid, role.replace("_", "-"), role, f"rehearsal-{rid}", f"t-{rid.hex[:12]}",
+             _principal(pg, "operator@bravo.test")),
+        )
+        c.execute("UPDATE plans SET active_rehearsal_id = %s, rehearsal = 'running' WHERE plan_id = %s", (rid, pid))
+    return rid
+
+
+def _settle_row(settings: Settings, pg: dict[str, str], rid: uuid.UUID, body: dict[str, Any]) -> dict[str, Any]:
+    async def go() -> dict[str, Any]:
+        db = Database(pg["bravo_api"])
+        await db.open()
+        try:
+            async with db.tenant_tx("t1") as conn:
+                return await settle(conn, settings, await _row(conn, rid), body)
+        finally:
+            await db.close()
+
+    return asyncio.run(go())
+
+
+def _pass_body(rid: uuid.UUID, artifact: dict[str, Any]) -> dict[str, Any]:
+    d = artifact_digest(artifact)
+    return {"verdict": "PASS", "trial_id": f"t-{rid.hex[:12]}", "attempt": 1, "artifact": artifact, "artifact_digest": d,
+            "verifier": {"artifact_digest": d, "run_id": "v", "pod_uid": "p", "image_digest": "sha256:" + "0" * 64,
+                         "task_version": "1", "collected_at": "now", "reward": 1.0}}
+
+
+def _apply(console: Console, pg: dict[str, str], pid: str, image: str | None) -> None:
+    """Worker side of one change: prepare -> (console approval) -> apply."""
+    cid = _wait(lambda: (c := console.get("viewer", f"/plans/{pid}").json()["change"]) and c["active"] and c["change_id"],
+                "active change")
+    _worker(pg, "UPDATE changes SET status = 'preparing', worker = 't' WHERE change_id = %s", (cid,))
+    _worker(pg, "UPDATE changes SET status = 'prepared', image_repository = %s, image_digest = %s, prepared_at = now() "
+                "WHERE change_id = %s", ("bravo.local/bravo-demo" if image else None, image, cid))
+    awaiting = _wait(lambda: console.get("viewer", f"/plans/{pid}").json()["awaiting_approval"], "change request")
+    assert awaiting["change"]["change_id"] == cid
+    _approve_change(console, pid, awaiting)
+    _worker(pg, "UPDATE changes SET status = 'applying' WHERE change_id = %s", (cid,))
+    _worker(pg, "UPDATE changes SET status = 'applied', deployed_digest = %s, ended_at = now() WHERE change_id = %s",
+            (image, cid))
+
+
+def test_two_roles_rehearse_side_by_side_and_their_changes_follow_each_other(
+    console: Console, settings: Settings, pg: dict[str, str]
+) -> None:
+    """S2 from 0:00: one active rehearsal per role. The first PASS opens its change; a PASS while that change is in
+    flight is queued (the pending approval's revision stays valid) and opens when it is applied; only the last
+    applied change leaves REHEARSE for the gate re-check."""
+    pid = console.plan()
+    with psycopg.connect(pg["owner"], autocommit=True) as c:
+        c.execute("UPDATE plans SET state = 'PROPOSE' WHERE plan_id = %s", (pid,))
+    gov, app = _running(pg, pid, "governance"), _running(pg, pid, "app_migration")
+    same = console.post("operator", f"/plans/{pid}/rehearsals", {"task": "fix-bucket-policy", "role": "governance"})
+    assert same.status_code == 409 and same.json()["error"] == "rehearsal_active"
+    other = console.post("operator", f"/plans/{pid}/rehearsals", {"task": "ci-build", "role": "ci"})
+    assert other.json()["error"] == "rehearsal_unconfigured"  # not blocked by the two running roles (no service here)
+
+    plan = _settle_row(settings, pg, gov, _pass_body(gov, GOV_ARTIFACT))
+    assert plan["state"] == "REHEARSE" and plan["active_rehearsal_id"] == app  # app still in flight
+    rev = plan["revision"]
+    plan = _settle_row(settings, pg, app, _pass_body(app, ARTIFACT))
+    assert plan["state"] == "REHEARSE" and plan["state_reason"] == "change_queued:app_migration"
+    assert plan["revision"] == rev and plan["active_rehearsal_id"] is None
+    with psycopg.connect(pg["owner"]) as c:
+        roles = [r[0] for r in c.execute("SELECT role FROM changes WHERE plan_id = %s ORDER BY created_at", (pid,))]
+    assert roles == ["governance"]  # the app change waits
+
+    _apply(console, pg, pid, None)  # policy-only change: no image
+    plan = _wait(lambda: (p := console.get("viewer", f"/plans/{pid}").json())["change"]["role"] == "app_migration" and p,
+                 "queued change opened")
+    assert plan["state"] == "REHEARSE" and plan["state_reason"] == "change_applied:next_change"
+    assert plan["revision"] == rev + 1
+    _apply(console, pg, pid, IMG)
+    plan = _wait(lambda: (p := console.get("viewer", f"/plans/{pid}").json())["state"] == "AWAIT_APPROVAL" and p,
+                 "gate re-check after the last change")
+    assert plan["applied_image_digest"] == IMG
+    kinds = _kinds(pg, pid)
+    assert kinds.count("change.applied") == 2 and kinds.count("change.requested") == 2
+
+
+def test_a_role_fail_keeps_the_other_roles_change_and_counts_against_its_own_budget(
+    console: Console, settings: Settings, pg: dict[str, str]
+) -> None:
+    """FR-5 per role: app_migration's FAILs do not use governance's budget, and while governance's change is in flight
+    an app FAIL keeps REHEARSE (and that change's approval request). The third app FAIL still stops the plan."""
+    pid = console.plan()
+    with psycopg.connect(pg["owner"], autocommit=True) as c:
+        c.execute("UPDATE plans SET state = 'PROPOSE' WHERE plan_id = %s", (pid,))
+    gov = _running(pg, pid, "governance")
+    plan = _settle_row(settings, pg, gov, _pass_body(gov, GOV_ARTIFACT))
+    assert plan["state"] == "REHEARSE" and plan["active_change_id"] is not None
+    states = []
+    for n in (1, 2, 3):
+        app = _running(pg, pid, "app_migration")
+        plan = _settle_row(settings, pg, app, {"verdict": "FAIL", "reason": f"verifier:check_{n}"})
+        states.append((plan["state"], plan["state_reason"]))
+    assert states[:2] == [("REHEARSE", "rehearsal_failed:verifier:check_1:app_migration"),
+                          ("REHEARSE", "rehearsal_failed:verifier:check_2:app_migration")]
+    assert states[2] == ("NEEDS_HUMAN", "rehearsal_attempts_exhausted")
+    assert plan["rehearsal_budget"] == {"app_migration": {"failures": 3, "infra_errors": 0}}
+    view = console.get("viewer", f"/plans/{pid}").json()["rehearsals_by_role"]
+    assert view["governance"]["status"] == "PASS" and view["app_migration"]["failed"] == 3

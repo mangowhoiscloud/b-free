@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# 데모 직전 점검(B16-B20, P6, P9). 읽기만 합니다. 아무것도 바꾸지 않고, 비밀 값을 출력하지 않습니다.
+# 데모 직전 점검(B16-B20, P6, P9, D-30). 비밀 값을 출력하지 않습니다. 클러스터 설정은 바꾸지 않습니다.
+# 유일한 쓰기: `path` 그룹이 executor-0에서 b-free-chat-dst로 채팅 쓰기 PREFLIGHT_DST_WRITES건(기본 20)을 방
+# preflight-probe에 보냄(SHIFT가 재는 것과 같은 경로, 데모 방과 섞이지 않음). 끄려면 --only로 path를 빼거나 0.
 # 11/7 · 11/8 T-60분과 T-10분에 돌립니다(docs/demo/ONSITE-CHECKLIST.md). 목표 시간 2분 이내(그룹은 동시에 돎).
 #
 #   deploy/scripts/preflight.sh                  전체 점검, 표 출력
 #   deploy/scripts/preflight.sh --out DIR        표(TABLE.md)와 원자료(results.tsv)를 DIR에 저장
 #   deploy/scripts/preflight.sh --only cred,link 일부 그룹만
 #
-# 그룹: kube argo bao cred link repl rgw s1 edge http console host freeze
+# 그룹: kube argo bao cred link path repl pool rgw s1 app edge http console host freeze
 # 상태: PASS 그대로 진행 · WARN 진행 가능하나 확인 필요 · FAIL 데모 전에 고칠 것
 # 종료 코드: 0 FAIL 없음, 1 FAIL 있음, 2 사용법
 #
@@ -16,6 +18,8 @@
 #   PREFLIGHT_EXPECT_REGRESSION  S1 심은 퇴행 기대 상태(기본 planted, 다른 값 removed)
 #   PREFLIGHT_REPL_MAX_AGE_S     정방향 구독 latest_end_time 경과 PASS 상한(기본 45. 2배까지 WARN, 넘으면 FAIL).
 #                                wal_sender_timeout 60초에서 쉬는 링크는 30초마다 keepalive가 오므로 45초를 씀
+#   PREFLIGHT_DST_WRITES         path 그룹의 목적지 쓰기 표본 수(기본 20, 0이면 쓰지 않음). D-30: p95 1,000ms 넘으면 WARN,
+#                                1,500ms(SHIFT 기준 BRAVO_FRONT_MAX_P95_MS) 넘으면 FAIL. 20건 p95는 참고값(SHIFT는 100건)
 #   PREFLIGHT_FREEZE_TAG         비교할 동결 태그(기본: 가장 최근 demo-freeze-* 태그)
 #   PREFLIGHT_OPERATOR_COOKIE    운영자(naver) 브라우저의 CF_Authorization 쿠키 값. PREFLIGHT_APPROVER_COOKIE 승인자(gmail).
 #                                있으면 GET https://b-free.mangowhois.ai/v1/me로 역할을 확인. 값은 curl 설정(stdin)으로만 넘기고
@@ -47,7 +51,7 @@ res() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4//$'\n'/ }" >>"$RES"; }
 
 # ---- kube: 컨텍스트, 노드, 핵심 네임스페이스 Pod --------------------------------------------------------------
 g_kube() {
-  local a nodes ready total bad
+  local a nodes ready total bad st n r k rd lim
   for a in platform source onprem gke; do
     if ! nodes="$(kc "$a" get nodes -o json 2>"$TMP/kube-$a.err")"; then
       res FAIL kube "$a API" "응답 없음: $(head -c 160 "$TMP/kube-$a.err")"; continue
@@ -64,6 +68,22 @@ g_kube() {
       | "\(.metadata.namespace)/\(.metadata.name)(\(.status.phase))"' | head -n 8 | tr '\n' ' ')"
     res "$([[ -z $bad ]] && echo PASS || echo WARN)" kube "$a Pod" "${bad:-데모 네임스페이스의 Pod 모두 Ready}"
   done
+  # Gate memory (60359eb: parallel POST runs were OOM-killed at 512Mi; limit now 1Gi). Restarts, last termination,
+  # node OOM events for gate Pods, and the live usage against the limit.
+  local g oom top
+  g="$(kc platform -n bravo-control get pods -l app.kubernetes.io/name=gate -o json 2>/dev/null | jq -r '[.items[] | . as $p
+    | .status.containerStatuses[]? | {c: .name, r: .restartCount, last: (.lastState.terminated.reason // "-"),
+        ready: .ready, lim: ([$p.spec.containers[] | select(.name == "gate") | .resources.limits.memory][0] // "-")}]
+    | "\(length) \(map(.r) | add // 0) \(map(select(.last == "OOMKilled")) | length) \(all(.ready)) \(map(select(.c == "gate") | .lim)[0] // "-")"')"
+  oom="$(kc platform get events -A --field-selector reason=OOMKilling -o json 2>/dev/null | jq '[.items[] | select((.message // "") | test("gate"))] | length')"
+  top="$(kc platform -n bravo-control top pod -l app.kubernetes.io/name=gate --no-headers 2>/dev/null | awk '{print $3}' | head -n 1)"
+  read -r n r k rd lim <<<"$g"
+  if [[ -z $g || $n == 0 ]]; then res FAIL kube "게이트 메모리 · 재시작" "gate Pod 없음"
+  else
+    st=PASS; ((r > 0)) && st=WARN; [[ $rd != true ]] && st=FAIL; ((k > 0 || ${oom:-0} > 0)) && st=FAIL
+    [[ $lim == 1Gi ]] || st=$([[ $st == FAIL ]] && echo FAIL || echo WARN)
+    res "$st" kube "게이트 메모리 · 재시작" "컨테이너 $n개 Ready=$rd, 재시작 $r, 마지막 종료 OOMKilled $k, 노드 OOMKilling 이벤트 ${oom:-?}건, 한도 $lim(기대 1Gi), 지금 ${top:-?}"
+  fi
 }
 
 # ---- argo: 플랫폼 Argo CD 앱 동기화 · 건강, 배포 revision과 main ------------------------------------------------
@@ -124,6 +144,117 @@ g_link() {
   wait
 }
 
+# ---- path: D-30 목적지 쓰기 경로. 컷오버 전 목적지 앱은 목적지 PgBouncer → D-16 링크 src-db-link → 출발지 DB에 씀 ----
+# 2026-11-03 집(KT) 망: 링크 한 왕복 290–340 ms(Cloudflare DFW), 목적지 쓰기 p95 668–956 ms, SHIFT 기준 1,500 ms(D-30).
+# 03:0x 측정 쓰기 p50 582 ms = 링크 왕복 p50 282 ms의 약 2배라, 왕복 기준은 쓰기 기준의 절반(WARN 500, FAIL 750 ms).
+# prepare_threshold=None: PgBouncer transaction pooling shares server connections, so no server-side prepared statements.
+LINK_RTT_PY='import json, os, statistics, time, psycopg
+pw = open(os.environ["DB_PASSWORD_FILE"]).read().strip()
+t = time.monotonic()
+conn = psycopg.connect(os.environ["DB_DSN"], password=pw, autocommit=True, connect_timeout=15, prepare_threshold=None)
+c_ms = (time.monotonic() - t) * 1000; pw = ""
+xs = []
+for _ in range(15):
+    t = time.monotonic(); conn.execute("SELECT 1").fetchone(); xs.append((time.monotonic() - t) * 1000)
+conn.close(); xs.sort()
+print(json.dumps({"n": len(xs), "p50": round(statistics.median(xs), 1), "max": round(xs[-1], 1), "connect": round(c_ms, 1)}))'
+# Sequential chat writes from the platform (where SHIFT samples), a new connection per write like the Executor's probe;
+# latency from request to response headers. Room preflight-probe only.
+DST_WRITES_PY='import http.client, json, ssl, statistics, sys, time, uuid
+n, host = int(sys.argv[1]), "b-free-chat-dst.mangowhois.ai"
+ctx = ssl.create_default_context()
+lat, codes, served = [], {}, {}
+for i in range(n):
+    c = http.client.HTTPSConnection(host, 443, context=ctx, timeout=10)
+    try:
+        c.connect()
+        body = json.dumps({"author": "bravo-preflight", "body": "preflight write %d/%d" % (i + 1, n)})
+        t = time.monotonic()
+        c.request("POST", "/api/rooms/preflight-probe/messages?_s=pf-" + uuid.uuid4().hex[:8], body=body,
+                  headers={"Content-Type": "application/json", "Idempotency-Key": str(uuid.uuid4()), "Cache-Control": "no-cache"})
+        r = c.getresponse(); ms = (time.monotonic() - t) * 1000; r.read()
+        codes[str(r.status)] = codes.get(str(r.status), 0) + 1
+        sb = r.getheader("X-Served-By") or "-"; served[sb] = served.get(sb, 0) + 1
+        if r.status in (200, 201): lat.append(ms)
+    except Exception as e:
+        codes[type(e).__name__] = codes.get(type(e).__name__, 0) + 1
+    finally:
+        c.close()
+lat.sort()
+p95 = lat[max(0, -(-len(lat) * 95 // 100) - 1)] if lat else None
+print(json.dumps({"n": n, "ok": len(lat), "codes": codes, "served_by": served,
+                  "p50": round(statistics.median(lat)) if lat else None, "p95": round(p95) if p95 else None,
+                  "max": round(lat[-1]) if lat else None}))'
+g_path() {
+  local n="${PREFLIGHT_DST_WRITES:-20}" out p50 mx p95 ok st colo
+  (
+    out="$(kc onprem -n chat exec -i deploy/chat-bravo-demo -c app -- python - <<<"$LINK_RTT_PY" 2>"$TMP/rtt.err" | tail -n 1)"
+    if ! p50="$(jq -er .p50 <<<"$out" 2>/dev/null)"; then
+      res FAIL path "링크 왕복(온프렘 → 출발지 DB)" "측정 실패: $(tail -c 160 "$TMP/rtt.err")"
+    else
+      mx="$(jq -r .max <<<"$out")"; st=PASS
+      # The Lima VMs leave through this Mac's network, so the Mac sees the same Cloudflare POP for the link host.
+      colo="$(curl -s --max-time 8 https://t1-src-db.mangowhois.ai/cdn-cgi/trace 2>/dev/null | sed -n 's/^colo=//p')"
+      (($(printf '%.0f' "$p50") > 500)) && st=WARN
+      (($(printf '%.0f' "$p50") > 750)) && st=FAIL
+      res "$st" path "링크 왕복(온프렘 → 출발지 DB)" "온프렘 앱 Pod에서 앱 DSN(목적지 PgBouncer → src-db-link)으로 SELECT 1 $(jq -r .n <<<"$out")번: p50 ${p50} ms, 최대 ${mx} ms, 이 망의 Cloudflare POP ${colo:-?}. 기준 WARN 500 · FAIL 750 ms(쓰기 약 2왕복). 11/3 집 망 290–340 ms(DFW)$([[ $st != PASS ]] && echo '. 회장 망 경로를 다시 확인(Cloudflare POP)')"
+    fi
+  ) &
+  if ((n > 0)); then
+    out="$(kc platform -n bravo-control exec -i executor-0 -c executor -- python - "$n" <<<"$DST_WRITES_PY" 2>"$TMP/dstw.err" | tail -n 1)"
+    if ! ok="$(jq -er .ok <<<"$out" 2>/dev/null)"; then
+      res FAIL path "목적지 쓰기 p95(b-free-chat-dst)" "측정 실패: $(tail -c 160 "$TMP/dstw.err")"
+    else
+      p95="$(jq -r '.p95 // 99999' <<<"$out")"; st=PASS
+      ((p95 > 1000)) && st=WARN
+      ((p95 > 1500 || ok < n)) && st=FAIL
+      [[ $(jq -r '.served_by | keys | join(",")' <<<"$out") == onprem ]] || st=FAIL
+      res "$st" path "목적지 쓰기 p95(b-free-chat-dst)" "executor-0에서 차례 쓰기 ${n}건(새 연결, 방 preflight-probe): 성공 $ok, 코드 $(jq -c .codes <<<"$out"), X-Served-By $(jq -c .served_by <<<"$out"), p50 $(jq -r .p50 <<<"$out") · p95 $p95 · 최대 $(jq -r .max <<<"$out") ms. 기준 WARN 1,000 · FAIL 1,500 ms(D-30, SHIFT BRAVO_FRONT_MAX_P95_MS)$([[ $st != PASS ]] && echo '. 회장 망을 다시 확인하고 링크 왕복 줄을 볼 것')"
+    fi
+  else
+    res WARN path "목적지 쓰기 p95(b-free-chat-dst)" "PREFLIGHT_DST_WRITES=0: 재지 않음"
+  fi
+  wait
+}
+
+# ---- pool: PgBouncer 활성 대상(지금 파일)과 지속 대상(ConfigMap chat-pgbouncer-target, L1a 1c0094c) ------------------
+g_pool() {
+  local want="${PREFLIGHT_EXPECT_ACTIVE:-src}" a cm pod x y
+  for a in source onprem; do
+    cm="$(kc "$a" -n chat get configmap chat-pgbouncer-target -o jsonpath='{.data.target}' 2>/dev/null)"
+    pod="$(kc "$a" -n chat get pod -l app.kubernetes.io/name=chat-pgbouncer --field-selector=status.phase=Running -o name 2>/dev/null | head -n 1)"
+    if [[ -z $pod ]]; then res FAIL pool "PgBouncer($a)" "Running Pod 없음"; continue; fi
+    x="$(kc "$a" -n chat exec "${pod#pod/}" -c pgbouncer -- cat /run/pgbouncer/active.ini 2>/dev/null)" || x="(읽기 실패)"
+    y="$(kc "$a" -n chat exec "${pod#pod/}" -c pgbouncer -- cat "/etc/pgbouncer/targets/target-$want.ini" 2>/dev/null)" || y="(읽기 실패)"
+    if [[ $cm == "$want" && $y != "(읽기 실패)" && $x == "$y" ]]; then
+      res PASS pool "PgBouncer($a)" "지속 대상 chat-pgbouncer-target=$cm, 활성 대상 = target-$want.ini(컷오버 전 기대 $want)"
+    else
+      res FAIL pool "PgBouncer($a)" "지속 대상 ${cm:-ConfigMap 없음}, 활성 대상 $([[ $x == "$y" ]] && echo "= target-$want.ini" || echo "≠ target-$want.ini") (기대 $want). $([[ $want == src ]] && echo "Executor 사전 검사가 컷오버를 거부함: reset-demo.sh --plan … --only data" || echo "컷오버 뒤 기대 상태와 다름")"
+    fi
+  done
+}
+
+# ---- app: 앱 digest가 세 클러스터에서 같고 게이트 VAP 고정 값과 같음(0.3.3 76e8f595, 60359eb 이후) ------------------
+g_app() {
+  local a spec run vap pin want all="" line
+  want="$(sed -n 's/^DEMO_IMAGE_DIGEST=//p' "$REPO/deploy/landing-zone/versions.env" | tail -n 1)"
+  for a in source onprem gke; do
+    spec="$(kc "$a" -n chat get deploy chat-bravo-demo -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)"
+    run="$(kc "$a" -n chat get pods -l app.kubernetes.io/name=bravo-demo,app.kubernetes.io/instance=chat --field-selector=status.phase=Running \
+      -o jsonpath='{range .items[*]}{.status.containerStatuses[0].imageID}{"\n"}{end}' 2>/dev/null | sed 's/.*@//' | sort -u | tr '\n' ' ')"
+    vap="$(kc "$a" get validatingadmissionpolicy bravo-gate-netprobe -o json 2>/dev/null \
+      | jq -r '[.metadata.annotations["bravo.io/app-image"] // "" | sub(".*@"; "")] + [.spec.validations[]?.expression | scan("sha256:[0-9a-f]{64}")] | unique | join(" ")')"
+    spec="${spec##*@}"; run="${run% }"
+    line="spec ${spec:0:19}, 실행 ${run:-없음}, VAP ${vap:-없음}"
+    if [[ -n $spec && $spec == "$want" && $run == "$want" && $vap == "$want" ]]; then res PASS app "앱 digest($a)" "${line//$want/${want:0:19}}"
+    else res FAIL app "앱 digest($a)" "${line//$want/${want:0:19}} — 기대 ${want:0:19}(versions.env). VAP가 다르면 게이트 NET-PATHS 시험 Pod가 거부됨"; fi
+    all+="$spec $run "
+  done
+  [[ $(tr ' ' '\n' <<<"$all" | sed '/^$/d' | sort -u | wc -l | tr -d ' ') == 1 ]] \
+    && res PASS app "앱 digest 세 클러스터" "모두 ${want:0:19}(0.3.3)" \
+    || res FAIL app "앱 digest 세 클러스터" "서로 다름: $(tr ' ' '\n' <<<"$all" | sed '/^$/d' | sort -u | cut -c1-19 | tr '\n' ' ')"
+}
+
 # ---- repl: 논리 복제(정방향 흐름, 역방향 준비), latest_end_time 경과, 슬롯 WAL 보존 --------------------------------
 psql_ro() { # ALIAS SQL...
   local a=$1 pod; shift
@@ -147,17 +278,21 @@ g_repl() {
         "streaming pid $pid, latest_end_time ${age}s 전(PASS 상한 ${max}s), 마지막 메시지 ${rage}s 전"
     fi
   fi
-  if row="$(psql_ro source "SELECT subname, subenabled FROM pg_subscription WHERE subname='bravo_rev_sub'" 2>/dev/null)"; then
-    IFS=$'\t' read -r name en <<<"$(tail -n 1 <<<"$row")"
+  local revslot=""
+  if row="$(psql_ro source "SELECT subname, subenabled, coalesce(subslotname, '') FROM pg_subscription WHERE subname='bravo_rev_sub'" 2>/dev/null)"; then
+    IFS=$'\t' read -r name en revslot <<<"$(tail -n 1 <<<"$row")"
     if [[ -z $name ]]; then res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "없음: 되돌리기(S4) 준비 안 됨"
     elif [[ $en == f ]]; then
-      # Contract 15 §10: before the cutover there is no reverse slot on on-prem; the cutover creates it at step 6a.
+      # Contract 15 §10 (L1a b65f9cd): before the cutover the reverse subscription has slot_name NONE and on-prem has
+      # no reverse slot; the cutover creates the slot at step 6a. A pre-created slot keeps WAL (about 3.6 MB/min).
       if [[ -n $(psql_ro onprem "SELECT slot_name FROM pg_replication_slots WHERE slot_name='bravo_rev_sub'" 2>/dev/null | tail -n 1) ]]; then
-        res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "꺼짐인데 온프렘에 역방향 슬롯이 남음(WAL 보존). reset-demo.sh(drop-rev-slot)"
+        res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "꺼짐인데 온프렘에 역방향 슬롯이 남음(WAL 보존). reset-demo.sh(repl_setup drop-rev-slot)"
+      elif [[ -n $revslot ]]; then
+        res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "꺼짐인데 slot_name=$revslot(컷오버 전에는 NONE). reset-demo.sh(repl_setup drop-rev-slot)"
       else
-        res PASS repl "역방향 구독 bravo_rev_sub(출발지)" "있음, 꺼짐, 온프렘 슬롯 없음(컷오버 전 상태)"
+        res PASS repl "역방향 구독 bravo_rev_sub(출발지)" "있음, 꺼짐, slot_name NONE, 온프렘 역방향 슬롯 없음(컷오버 전 상태, 슬롯은 컷오버 6a에서 만듦)"
       fi
-    else res WARN repl "역방향 구독 bravo_rev_sub(출발지)" "켜짐: 컷오버 뒤 상태. reset-demo.sh 전에 콘솔에서 되돌리기"; fi
+    else res WARN repl "역방향 구독 bravo_rev_sub(출발지)" "켜짐(slot_name ${revslot:-NONE}): 컷오버 뒤 상태. reset-demo.sh 전에 콘솔에서 되돌리기"; fi
   else
     res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "조회 실패"
   fi
@@ -167,10 +302,11 @@ g_repl() {
     keep="$(psql_ro "$a" "SHOW max_slot_wal_keep_size" 2>/dev/null | tail -n 1)"
     while IFS=$'\t' read -r slot active ret status safe; do
       [[ -n $slot ]] || continue
-      local st=PASS
+      local st=PASS note=""
       [[ $status == lost || $status == unreserved ]] && st=FAIL
       [[ $st == PASS && -n $safe && $safe -lt 536870912 ]] && st=WARN
-      res "$st" repl "슬롯 $slot($a)" "active=$active, 보존 WAL $ret, wal_status=$status, 남은 여유 $((${safe:-0} / 1048576))MB(max_slot_wal_keep_size $keep)"
+      if [[ $a == onprem && $slot == bravo_rev_sub && $en == f ]]; then st=FAIL; note=" — 컷오버 전에는 없어야 함(drop-rev-slot)"; fi
+      res "$st" repl "슬롯 $slot($a)" "active=$active, 보존 WAL $ret, wal_status=$status, 남은 여유 $((${safe:-0} / 1048576))MB(max_slot_wal_keep_size $keep)$note"
     done < <(psql_ro "$a" "SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)), wal_status, coalesce(safe_wal_size::text,'') FROM pg_replication_slots" 2>/dev/null)
   done
 }
@@ -273,7 +409,7 @@ g_freeze() {
 
 # ---- 실행 --------------------------------------------------------------------------------------------------------
 run() { local g=$1; RES="$TMP/$g.tsv"; : >"$RES"; local t=$SECONDS; "g_$g"; printf '%s\t%s\n' "$g" "$((SECONDS - t))" >"$TMP/$g.time"; }
-for g in kube argo bao link repl rgw edge http console host freeze; do
+for g in kube argo bao link path repl pool rgw app edge http console host freeze; do
   case $g in
     edge) want edge || want cred || continue; run cf & ;;
     bao) want bao || want cred || continue; run bao & ;;
@@ -283,11 +419,11 @@ for g in kube argo bao link repl rgw edge http console host freeze; do
 done
 wait
 
-ORDER=(kube argo bao cred link repl rgw s1 edge http console host freeze)
+ORDER=(kube argo bao cred link path repl pool rgw s1 app edge http console host freeze)
 cat "$TMP"/*.tsv 2>/dev/null >"$TMP/all"
 : >"$TMP/sorted"
 for g in "${ORDER[@]}"; do awk -F'\t' -v g="$g" '$2 == g' "$TMP/all" >>"$TMP/sorted"; done
-awk -F'\t' 'BEGIN{split("kube argo bao cred link repl rgw s1 edge http console host freeze",o," "); for(i in o) k[o[i]]=1} !($2 in k)' "$TMP/all" >>"$TMP/sorted"
+awk -F'\t' 'BEGIN{split("kube argo bao cred link path repl pool rgw s1 app edge http console host freeze",o," "); for(i in o) k[o[i]]=1} !($2 in k)' "$TMP/all" >>"$TMP/sorted"
 if [[ -n $ONLY ]]; then awk -F'\t' -v o=",$ONLY," 'index(o, "," $2 ",")' "$TMP/sorted" >"$TMP/f" && mv "$TMP/f" "$TMP/sorted"; fi
 
 ELAPSED=$((SECONDS - START_S))

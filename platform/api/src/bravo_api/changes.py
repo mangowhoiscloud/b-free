@@ -196,16 +196,31 @@ class ChangeService:
             if replay is not None:
                 return replay
             plan = await lock_plan(conn, plan_id)
-            if plan["state"] != State.REHEARSE.value or plan["rehearsal"] != "passed":
+            if plan["state"] != State.REHEARSE.value:
                 raise BusinessError("state_mismatch", detail={"state": plan["state"]})
             if plan["active_change_id"] is not None:
                 raise BusinessError("change_active", detail={"change_id": str(plan["active_change_id"])})
+            # The newest PASS whose last change ended without applying (refused, failed, prepare_failed). With roles
+            # side by side this is not necessarily plan.last_rehearsal_id.
             cur = await conn.execute(
-                "SELECT * FROM rehearsals WHERE rehearsal_id = %s AND status = 'PASS'", (plan["last_rehearsal_id"],)
+                """SELECT r.* FROM rehearsals r
+                    WHERE r.plan_id = %s AND r.status = 'PASS'
+                      AND EXISTS (SELECT 1 FROM changes c WHERE c.rehearsal_id = r.rehearsal_id)
+                      AND NOT EXISTS (SELECT 1 FROM changes c WHERE c.rehearsal_id = r.rehearsal_id
+                                        AND c.status IN ('requested', 'preparing', 'prepared', 'approved', 'applying',
+                                                         'applied'))
+                    ORDER BY r.ended_at DESC NULLS LAST LIMIT 1""",
+                (plan_id,),
             )
             reh = await cur.fetchone()
-            if reh is None or reh["artifact"] is None or reh["artifact_digest"] != plan["approved_artifact_digest"]:
+            if reh is None or reh["artifact"] is None or _sha(_canonical(reh["artifact"])) != reh["artifact_digest"]:
                 raise BusinessError("rehearsal_artifact_missing")
+            await conn.execute(
+                "UPDATE plans SET revision = revision + 1, approved_artifact_digest = %s, version = version + 1, "
+                "updated_at = now() WHERE plan_id = %s",
+                (reh["artifact_digest"], plan_id),
+            )
+            plan = await lock_plan(conn, plan_id)
             # The person asking now is the requester of this change (separation of duties applies to them).
             opened = await open_change(conn, plan, {**reh, "requested_by": p.id}, reh["artifact"],
                                        reh["artifact_digest"], actor=Actor.of(p))
@@ -299,14 +314,33 @@ class ChangeWatcher:
                              "approved_image_digest": a["image_digest"], "deployed_digest": c["deployed_digest"],
                              "policies_applied": c["policies_applied"], "gate_recheck": c["gate_recheck"],
                              "signature": c["signature"]})
+            # A policy-only change deploys no image: keep the image an earlier change of this plan deployed.
+            applied_image = c["deployed_digest"] or plan["applied_image_digest"]
+            from .rehearsal import open_queued_change, open_rehearsals  # rehearsal imports this module
+
+            others = await open_rehearsals(conn, plan_id)
+            cur = await conn.execute(
+                "UPDATE plans SET active_change_id = NULL, last_change_id = %s, applied_image_digest = %s, "
+                "version = version + 1, updated_at = now() WHERE plan_id = %s RETURNING *",
+                (change_id, applied_image, plan_id),
+            )
+            plan = await cur.fetchone()
+            opened = await open_queued_change(conn, plan)
+            if opened is not None or others:
+                # Another role's change is next, or another role still rehearses: the gate re-check waits for it.
+                await conn.execute(
+                    "UPDATE plans SET state_reason = %s, version = version + 1, updated_at = now() WHERE plan_id = %s",
+                    ("change_applied:next_change" if opened is not None else "change_applied:rehearsal_running",
+                     plan_id),
+                )
+                return None
             await transition(
                 conn,
                 plan_id,
                 Trigger.CHANGE_APPLIED,
                 actor=SYSTEM,
                 reason="change_applied",
-                updates={"active_change_id": None, "last_change_id": change_id,
-                         "applied_image_digest": c["deployed_digest"]},
+                updates={"active_change_id": None, "last_change_id": change_id, "applied_image_digest": applied_image},
                 data={"change_id": str(change_id), "deployed_digest": c["deployed_digest"]},
             )
             return c["requested_by"]
@@ -331,3 +365,10 @@ class ChangeWatcher:
                 WHERE plan_id = %s""",
             (c["change_id"], f"{prefix}:{reason or 'unknown'}", plan["plan_id"]),
         )
+        # A queued PASS of another role does not wait behind a change that ended without applying.
+        from .rehearsal import open_queued_change
+
+        cur = await conn.execute("SELECT * FROM plans WHERE plan_id = %s", (plan["plan_id"],))
+        fresh = await cur.fetchone()
+        if fresh is not None and fresh["state"] == State.REHEARSE.value:
+            await open_queued_change(conn, fresh)

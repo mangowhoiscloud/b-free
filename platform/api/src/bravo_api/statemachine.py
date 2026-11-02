@@ -155,6 +155,7 @@ _SETTABLE = frozenset(
         "rehearsal",
         "rehearsal_failures",
         "rehearsal_infra_errors",
+        "rehearsal_budget",
         "approved_artifact_digest",
         "revision",
         "active_change_id",

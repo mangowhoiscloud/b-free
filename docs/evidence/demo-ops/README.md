@@ -7,6 +7,7 @@
 | `preflight-20261102T175807Z/` | 사전 점검 1회(13초). 다른 갈래의 LB 전환 시험 도중이라 가중치 dst 0.9 · src 0.1, 대표 이름 `env.id=onprem`으로 FAIL을 잡음 | `deploy/scripts/preflight.sh --out …` |
 | `preflight-20261102T180122Z/` | 사전 점검 1회(7초). PASS 98 · WARN 8 · FAIL 10. 아래 "03:01 결과" | 같음 |
 | `rotation-20261102T175318Z/` | 회전 연습: 회전 전후 만료 표, 실제 회전 로그, `run` dry-run 2개 | `deploy/scripts/rotate-credentials.sh` |
+| `preflight-20261102T190929Z/` | 사전 점검 1회(15초), Argo가 `3a6d168`에 동기화된 뒤. PASS 116 · WARN 7 · FAIL 1. 아래 "04:09 추가 점검" | 같음 |
 | `reset-20261102T174859Z/` | reset dry-run · 실제 실행 시간, 계획 범위 삭제 시험 | `deploy/scripts/reset-demo.sh` |
 
 ## 03:01 사전 점검 결과(`preflight-20261102T180122Z/TABLE.md`)
@@ -48,3 +49,18 @@ Cloudflare API 토큰(플랫폼이 LB 가중치를 바꿀 때 씀)은 11/9 23:59
 - **역방향 슬롯이 WAL을 쌓음.** 온프렘 chat-db의 비활성 슬롯 `bravo_rev_sub` 보존 WAL이 02:38 448 MB → 03:01 530 MB(부하 시험 중 약 3.6 MB/분). 한도 `max_slot_wal_keep_size` 2GB를 넘으면 슬롯이 사라져 S4 되돌리기 복제가 안 됩니다. 이 속도면 약 7시간입니다. 데모 전 reset의 `repl_setup rearm`이 슬롯을 다시 만듭니다. preflight는 남은 여유 512MB 아래에서 WARN, `lost`면 FAIL.
 - **Argo `control` OutOfSync의 정체.** 6개 모두 prune 대상 고아 ConfigMap(kustomize 해시 이름, `prune: false`)이고 배포 차이가 아닙니다. 정리는 `argocd app sync control --prune`(쓰기, 팀장 판단). Cilium의 3개는 Helm이 비교 때마다 새로 만드는 인증서 Secret입니다.
 - **동결 시험.** `demo-freeze.sh create --name demo-freeze-test-0303`(02:43, 8.6초) → `check`(6초) PASS. 시험 태그와 기록은 지웠습니다(진짜 동결은 데모 전날).
+
+## 04:09 추가 점검(코디네이터 요청: D-30, 역방향 슬롯, PgBouncer 지속 대상, 게이트 메모리, 앱 0.3.3)
+
+`preflight-20261102T190929Z/TABLE.md`. 남은 FAIL은 naver 운영자 신원 하나(첫 로그인 전)입니다.
+
+| 그룹 · 줄 | 측정 | 판정 기준 |
+|---|---|---|
+| `path` 링크 왕복 | 온프렘 앱 Pod에서 앱 DSN(목적지 PgBouncer → `src-db-link` → 출발지 DB)으로 `SELECT 1` 15번: p50 281.8 ms, 최대 569.3 ms. 이 망의 Cloudflare POP PDX(04:08 측정은 DFW) | 쓰기 한 건 ≈ 링크 2왕복(쓰기 p50 585 ms ≈ 왕복 282 ms × 2)이라 쓰기 기준의 절반: WARN 500 · FAIL 750 ms |
+| `path` 목적지 쓰기 p95 | executor-0에서 `b-free-chat-dst`로 새 연결 차례 쓰기 20건(방 `preflight-probe`): 201 × 20, X-Served-By onprem × 20, p50 588 · p95 724 · 최대 833 ms | D-30: WARN 1,000 · FAIL 1,500 ms(SHIFT `BRAVO_FRONT_MAX_P95_MS`). 20건 p95는 참고값(SHIFT 표본은 100건) |
+| `repl` 역방향 | 출발지 `bravo_rev_sub` 꺼짐, slot_name NONE, 온프렘 역방향 슬롯 없음 | 슬롯이 있거나 slot_name이 있으면 FAIL(Executor도 REVERSE_SLOT_PRESENT로 거부) |
+| `pool` | 출발지 · 온프렘 모두 `chat-pgbouncer-target=src`, 활성 대상 = `target-src.ini` | 하나라도 다르면 FAIL |
+| `kube` 게이트 | 컨테이너 1개 Ready, 재시작 0, OOMKilled 0, 노드 OOMKilling 이벤트 0, 한도 1Gi, 사용 65Mi | OOMKilled · 이벤트 있으면 FAIL, 재시작만 있으면 WARN, 한도가 1Gi가 아니면 WARN |
+| `app` | spec · 실행 중 · 게이트 VAP 고정 값이 세 클러스터 모두 `sha256:76e8f595…`(= `deploy/landing-zone/versions.env`) | 하나라도 다르면 FAIL |
+
+측정 도구 결함 하나를 고쳤습니다. 첫 구현은 psycopg 기본값으로 6번째 질의부터 서버 쪽 prepared statement를 만들었고, PgBouncer transaction 모드에서 공유되는 서버 연결에 남아 다음 측정이 `DuplicatePreparedStatement`로 실패했습니다(04:08 실행, 표는 지움). 지금은 앱과 같이 `prepare_threshold=None`입니다. 앱은 처음부터 `prepare_threshold=None`이라 남은 이름과 부딪히지 않습니다.

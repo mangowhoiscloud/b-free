@@ -6,6 +6,7 @@
 - 명령은 저장소 뿌리에서 돌립니다. 표시가 없는 명령은 읽기만 합니다. "쓰기"로 표시한 명령만 무엇을 바꿉니다.
 - 모든 판정은 `deploy/scripts/preflight.sh`의 PASS · WARN · FAIL입니다. FAIL이 하나라도 있으면 5절대로 고친 뒤 다시 돌립니다.
 - 결과는 `--out docs/evidence/demo-ops/preflight-<UTC 시각>`으로 남깁니다. 비밀 값은 출력에 없습니다.
+- preflight의 쓰기는 하나뿐입니다. `path` 그룹이 플랫폼 executor-0에서 `b-free-chat-dst`로 채팅 쓰기 20건을 방 `preflight-probe`에 보냅니다(SHIFT가 재는 경로). 데모 방과 섞이지 않습니다. 빼려면 `PREFLIGHT_DST_WRITES=0`.
 
 ## 1. 하나에 몰린 장애 영역(알고 들어감)
 
@@ -21,12 +22,13 @@
 1. 전원. Mac에 충전기를 꽂음. 멀티탭 하나를 우리 자리 전용으로 씀. preflight `Mac 전원`이 `AC Power`여야 함.
 2. 절전 끄기. 터미널 하나에서 `caffeinate -dimsu`를 띄워 두고 닫지 않음. 또는 `sudo pmset -a sleep 0 disksleep 0`(쓰기, 끝나면 `sudo pmset -a sleep 1`로 되돌림). 덮개를 닫지 않음. preflight `Mac 절전`이 PASS여야 함.
 3. 네트워크. 유선 LAN(USB-C 어댑터)을 먼저 씀. Wi-Fi는 보조, 휴대폰 테더링은 예비. 회장 네트워크가 Cloudflare(443, 7844)와 AWS SSM(443)을 막지 않는지 preflight `edge` · `link` · `kube`로 봄.
-4. 네트워크를 바꾼 뒤에는 SSM 포트 포워드를 다시 띄움(쓰기 아님, 세션만):
+4. 회장 망의 Cloudflare 경로(D-30). Lima VM이 이 Mac 위에 있으므로 온프렘 → 출발지 DB 링크는 회장 망을 지납니다. 컷오버 전 목적지 쓰기는 이 링크를 한 번 이상 왕복합니다. 11/3 집(KT) 망에서는 Cloudflare 미국 POP(DFW)를 지나 한 왕복 290–340 ms, 목적지 쓰기 p95 668–956 ms였고, SHIFT 기준은 1,500 ms입니다. 도착하면 바로 `deploy/scripts/preflight.sh --only path`로 잽니다. `목적지 쓰기 p95`가 1,000 ms를 넘으면 WARN, 1,500 ms를 넘으면 FAIL입니다. FAIL이면 SHIFT가 10%에서 0%로 되돌아갑니다. 그때는 다른 망(유선 ↔ Wi-Fi ↔ 테더링)으로 바꿔 다시 잽니다. `curl -s https://t1-src-db.mangowhois.ai/cdn-cgi/trace | grep colo`로 어느 POP를 지나는지도 봅니다.
+5. 네트워크를 바꾼 뒤에는 SSM 포트 포워드를 다시 띄움(쓰기 아님, 세션만):
    `aws ssm start-session --region ap-northeast-2 --target <플랫폼 EC2 instance_id> --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["6443"],"localPortNumber":["26443"]}'`
    (instance_id는 `deploy/platform/README.md`의 kube API 줄). 그다음 `kubectl --context bravo-platform-rke2 get nodes`.
-5. Lima VM. `limactl list`에서 `bravo-onprem-server`, `bravo-onprem-agent`가 `Running`. Mac을 다시 시작하지 않음. VM 재시작 뒤 RKE2 · Ceph가 다시 준비되는 시간은 잰 적 없음.
-6. 이 Mac에서 부하 생성기(loadgen)를 돌리지 않음. 11/3 02:44 KST에 노트북 loadgen이 TIME_WAIT 소켓 약 9,400개를 남겼고, kubectl과 curl이 `can't assign requested address`로 실패했음. preflight `Mac TCP 포트`가 PASS여야 함.
-7. 예비 노트북은 브라우저 전용(콘솔 두 신원, 사전 실행 기록 화면). 키 보관 파일과 kubeconfig는 옮기지 않음.
+6. Lima VM. `limactl list`에서 `bravo-onprem-server`, `bravo-onprem-agent`가 `Running`. Mac을 다시 시작하지 않음. VM 재시작 뒤 RKE2 · Ceph가 다시 준비되는 시간은 잰 적 없음.
+7. 이 Mac에서 부하 생성기(loadgen)를 돌리지 않음. 11/3 02:44 KST에 노트북 loadgen이 TIME_WAIT 소켓 약 9,400개를 남겼고, kubectl과 curl이 `can't assign requested address`로 실패했음. preflight `Mac TCP 포트`가 PASS여야 함.
+8. 예비 노트북은 브라우저 전용(콘솔 두 신원, 사전 실행 기록 화면). 키 보관 파일과 kubeconfig는 옮기지 않음.
 
 ## 3. 데모 전날(11/6, 늦어도 11/7 오전)
 
@@ -62,7 +64,7 @@ RGW 토큰은 TTL 1시간이고 CronJob `rook-ceph/rgw-kms-renew`가 15분마다
 
 ## 5. T-60분
 
-1. 2절 1–6을 다시 봄.
+1. 2절 1–7을 다시 봄.
 2. 두 브라우저 프로필로 새로 로그인합니다. 운영자는 naver, 승인자는 gmail입니다. 콘솔 세션은 24시간이고, 로그인은 One-time PIN 메일이 와야 됩니다. 회장 Wi-Fi에서 메일이 늦을 수 있어 T-60에 끝냅니다. 콘솔 위쪽의 역할 표시가 각각 operator, approver인지 봅니다.
 3. 전체 점검:
    `deploy/scripts/preflight.sh --out docs/evidence/demo-ops/preflight-$(date -u +%Y%m%dT%H%M%SZ)`
@@ -72,23 +74,31 @@ RGW 토큰은 TTL 1시간이고 CronJob `rook-ceph/rgw-kms-renew`가 15분마다
 
 ## 6. T-10분
 
-1. 빠른 점검(약 15초): `deploy/scripts/preflight.sh --only kube,link,repl,rgw,http,console,host`
+1. 빠른 점검(약 20초): `deploy/scripts/preflight.sh --only kube,link,path,repl,pool,rgw,app,http,console,host`
 2. 시작 상태: preflight `LB pool bravo-b-free-chat-src` 가중치 1, `bravo-b-free-chat-dst` 0, `b-free-chat.mangowhois.ai` `env.id=aws`, 심은 퇴행 `planted`.
-3. 정방향 복제: preflight `정방향 구독 bravo_fwd_sub`의 `latest_end_time`이 45초 안. 역방향 슬롯 남은 여유가 512MB 위.
-4. 열어 둘 화면: 콘솔 두 창(운영자, 승인자), 사전 실행 기록(`docs/evidence/`), Grafana, 휴대폰 채팅 창.
+3. 정방향 복제: preflight `정방향 구독 bravo_fwd_sub`의 `latest_end_time`이 45초 안. 역방향 구독은 꺼져 있고 slot_name NONE, 온프렘에 역방향 슬롯이 없음(컷오버 6a에서 만듦, L1a b65f9cd).
+4. PgBouncer: 출발지 · 온프렘 모두 지속 대상 `chat-pgbouncer-target=src`, 활성 대상 `target-src.ini`(L1a 1c0094c). 아니면 Executor 사전 검사가 컷오버를 거부함.
+5. 목적지 쓰기 경로: `path` 두 줄이 PASS(링크 왕복 500 ms 아래, 목적지 쓰기 p95 1,000 ms 아래).
+6. 앱과 게이트: `app` 줄에서 세 클러스터 앱 digest가 같고(0.3.3 `76e8f595`) 게이트 VAP 고정 값과 같음. `게이트 메모리 · 재시작`에 OOMKilled 0.
+7. 열어 둘 화면: 콘솔 두 창(운영자, 승인자), 사전 실행 기록(`docs/evidence/`), Grafana, 휴대폰 채팅 창.
 
 ## 7. FAIL이면
 
 | preflight 줄 | 뜻 | 할 일 |
 |---|---|---|
-| `kube platform API` 응답 없음 | SSM 포트 포워드가 끊김 | 2절 4번 |
+| `kube platform API` 응답 없음 | SSM 포트 포워드가 끊김 | 2절 5번 |
 | `kube onprem API` 응답 없음 | Lima VM이나 Mac 문제 | `limactl list`, 멈췄으면 `limactl start bravo-onprem-server`, `limactl start bravo-onprem-agent`. 준비 시간 미측정: 무대 직전이면 대체 장면 |
 | `bao 봉인 상태` sealed=True | OpenBao 재시작 뒤 봉인 | `deploy/pilot/scripts/keys.sh unseal`(쓰기, custody 필요) |
 | `argo 앱 …` FAIL | 동기화 실패 · 건강 아님 · main보다 뒤 | Argo CD 화면에서 원인 확인. 동결 뒤라면 누가 push했는지부터 봄 |
 | `cred …` FAIL(2시간 안에 만료) | 자격 증명 만료 직전 | 4절 표의 회전 방법. RGW · 링크 재시작이 끼면 무대 밖에서 |
 | `link …` FAIL | 그 링크로 상대 서비스가 답하지 않음 | `kubectl -n <ns> logs deploy/<링크>`. `bad handshake`면 토큰 문제(회전), 아니면 노출 쪽 터널(`edge` 터널 줄)과 상대 서비스 확인 |
 | `repl 정방향 구독` FAIL · WARN | 복제가 링크에서 끊겼거나 늦음 | 온프렘 `chat/src-db-link` 확인 · 재시작. 다시 45초 안으로 들어오는지 preflight `--only repl` |
-| `repl 슬롯 bravo_rev_sub` WARN · FAIL | 쓰지 않는 역방향 슬롯이 WAL을 쌓음. 한도(2GB)를 넘으면 슬롯이 사라져 S4 되돌리기가 안 됨 | `reset-demo.sh --plan …`의 data 단계(`repl_setup rearm`이 슬롯을 다시 만듦). 11/3 03:0x 측정 보존 464MB, 여유 1.6GB |
+| `repl 역방향 구독` 또는 `repl 슬롯 bravo_rev_sub(onprem)` FAIL | 컷오버 전인데 역방향 슬롯이 남음. 쓰지 않는 슬롯은 WAL을 쌓고(11/3 측정 약 3.6 MB/분) 2GB를 넘으면 사라져 S4가 안 됨. Executor 사전 검사도 컷오버를 거부함(REVERSE_SLOT_PRESENT) | `reset-demo.sh --plan … --only data`(쓰기: `repl_setup drop-rev-slot`, 다시 복사 없음). 11/3 03:15 KST에 이 방법으로 지움 |
+| `path 목적지 쓰기 p95` WARN · FAIL | 회장 망에서 온프렘 → 출발지 DB 링크가 느림(D-30). FAIL이면 SHIFT가 10%에서 되돌아감 | 2절 4번: 망을 바꿔 다시 잼, `링크 왕복` 줄과 Cloudflare POP 확인. 그래도 FAIL이면 S3 SHIFT는 사전 실행 기록으로 |
+| `path 링크 왕복` WARN · FAIL | 같은 원인. 쓰기 한 건이 링크 약 2왕복(11/3 측정 쓰기 p50 582 ms, 왕복 p50 282 ms) | 위와 같음 |
+| `pool PgBouncer(…)` FAIL | 지속 대상 ConfigMap 또는 활성 대상이 src가 아님(앞선 시험이 남김) | `reset-demo.sh --plan … --only data`(쓰기: ConfigMap을 src로 두고 rollout restart) |
+| `kube 게이트 메모리 · 재시작` WARN · FAIL | 게이트가 재시작됐거나 OOMKilled(512Mi 때 병렬 POST 실행에서 실측, 60359eb에서 1Gi) | `kubectl --context bravo-platform-rke2 -n bravo-control describe pod -l app.kubernetes.io/name=gate`. 한도가 1Gi가 아니면 Argo 동기화 확인 |
+| `app 앱 digest` FAIL | 세 클러스터 앱이 다르거나 게이트 VAP 고정 값과 다름. VAP가 다르면 게이트 NET-PATHS 시험 Pod가 거부됨 | 앱 갈래 배포 확인. VAP는 `deploy/platform/link/gate-rbac/<env>.yaml` 고정 값 → `gate-credentials.sh rbac` |
 | `rgw 암호화 객체 읽기` FAIL | RGW가 OpenBao 링크 · 토큰으로 복호화하지 못함 | `link onprem rook-ceph/plat-bao-link` 줄과 `RGW 토큰 갱신` 줄을 먼저 봄 |
 | `edge LB pool` 가중치가 시작값과 다름 | 앞선 시험이 전환을 남김 | `reset-demo.sh --plan … --only front`(쓰기) |
 | `http b-free-chat` env.id가 aws가 아님 | 위와 같음, 또는 출발지 앱 문제 | 위와 같음. 이미 src인데 실패면 출발지 앱 확인(reset이 전환하지 않음) |

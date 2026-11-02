@@ -794,6 +794,24 @@ class Services:
                     "started_at": _iso(rh["created_at"]),
                     "ended_at": _iso(rh["ended_at"]),
                 }
+        # Roles rehearse side by side (one active rehearsal per role, migration 0011): the newest one of each role.
+        cur = await conn.execute(
+            "SELECT DISTINCT ON (role) role, rehearsal_id, attempt, task, trial_id, status, reason, created_at, ended_at "
+            "FROM rehearsals WHERE plan_id = %s ORDER BY role, created_at DESC",
+            (plan["plan_id"],),
+        )
+        budget = plan.get("rehearsal_budget") or {}
+        by_role = {
+            r["role"]: {
+                "rehearsal_id": str(r["rehearsal_id"]), "attempt": r["attempt"], "task": r["task"],
+                "trial_id": r["trial_id"], "status": r["status"], "reason": r["reason"],
+                "active": r["status"] in ("requested", "running", "proposed"),
+                "failed": int((budget.get(r["role"]) or {}).get("failures", 0)),
+                "infra_errors": int((budget.get(r["role"]) or {}).get("infra_errors", 0)),
+                "started_at": _iso(r["created_at"]), "ended_at": _iso(r["ended_at"]),
+            }
+            for r in await cur.fetchall()
+        }
         return {
             "plan_id": str(plan["plan_id"]),
             "workload": plan["workload"],
@@ -808,6 +826,7 @@ class Services:
                 "max": self.settings.rehearsal_max_attempts,
             },
             "last_rehearsal": rehearsal,
+            "rehearsals_by_role": by_role,
             "analysis": plan["analysis"],
             "collected_at": _iso(plan["collected_at"]),
             "revision": plan["revision"],

@@ -221,7 +221,7 @@ API → `platform/rehearsal`. 순서: 수집기 인벤토리 → 수집기 스�
 ```
 
 - 헤더: `Authorization: Bearer <BRAVO_REHEARSAL_API_TOKEN>`, `Idempotency-Key: rehearsal-<rehearsal_id>`.
-- `attempt` = 지금까지의 FAIL 판정 수 + 1. 전제 조건 · 인프라 재시도는 같은 번호를 씁니다.
+- `attempt` = 그 역할의 지금까지 FAIL 판정 수 + 1(역할마다 진행 중 하나, 예산도 역할마다: 마이그레이션 0011). 전제 조건 · 인프라 재시도는 같은 번호를 씁니다.
 - 스냅숏: `PUT` 본문 tar.gz, 헤더 `X-Bravo-Inventory-Digest: <input_digest>`, `Content-Type: application/gzip`. 200 `{tenant_id, plan_id, input_digest, files, withheld}`, 422 `{"error": "snapshot_digest_mismatch" | …}`.
 - 수집기 `GET /v1/inventory/snapshot`(2026-11-02 저녁 추가): 스캔한 파일만 tar.gz, 헤더 `X-Bravo-Inventory-Digest`. 파일이 없으면 503 `{"error": "inventory_root_empty"}`. 실제 수집기 → 실제 리허설 서비스까지 시험이 통과합니다(`tests/test_rehearsal.py::test_real_collector_snapshot_reaches_the_real_rehearsal_service`).
 - 시도로 세지 않는 "아무것도 돌지 않음" 이유: `llm_unconfigured`, `cluster_unconfigured`, `rehearsal_unreachable`, `task_unknown`, `verifier_unconfigured`, `tool_layer_unconfigured`, `role_task_mismatch`, `role_unknown`, `role_allowlist_missing`, `role_allowlist_invalid`, `unauthorized`, `envelope_invalid`, `state_not_allowed_for_role`, `agent_runtime_unavailable`, `openbao_unconfigured`, `openbao_unreachable`, `openbao_denied`, `llm_token_missing`, `bad_request`, `idempotency_key_reuse`, `inventory_unavailable`, `inventory_root_empty`, `collector_unreachable`, `collector_response_lost`, `collector_bad_response`, `snapshot_unavailable`, `snapshot_inventory_mismatch`, `snapshot_upload_failed`, 그리고 리허설 서비스의 스냅숏 거부 코드(`snapshot_*`, `bad_inventory_digest`, `bad_snapshot_key`, `inventory_digest_missing`).

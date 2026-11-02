@@ -24,7 +24,7 @@ from psycopg.types.json import Jsonb
 
 from . import idempotency
 from .auth import Action, Channel, Principal, authorize
-from .changes import open_change
+from .changes import CHANGE_ROLES, open_change
 from .config import Settings
 from .db import Conn, Database
 from .errors import BusinessError
@@ -249,8 +249,13 @@ class RehearsalService:
             state = State(plan["state"])
             if state.value not in PRE_CUTOVER:
                 raise BusinessError("rehearsal_not_allowed", detail={"state": state.value})  # S2-AC5
-            if plan["active_rehearsal_id"] is not None:
-                raise BusinessError("rehearsal_active")
+            # One active rehearsal per role (S2: governance and app_migration run side by side from 0:00).
+            cur = await conn.execute(
+                "SELECT rehearsal_id FROM rehearsals WHERE plan_id = %s AND role = %s AND status = ANY(%s) LIMIT 1",
+                (plan_id, req.role, list(OPEN)),
+            )
+            if await cur.fetchone() is not None:
+                raise BusinessError("rehearsal_active", detail={"role": req.role})
             if self._client is None:  # checked after the state rules so S2-AC5 is reported as such
                 raise BusinessError("rehearsal_unconfigured", status=503)
             if state is State.NEEDS_HUMAN:
@@ -262,22 +267,27 @@ class RehearsalService:
                     Trigger.REPROPOSAL_REQUESTED,
                     actor=actor,
                     reason="human_reset",
-                    updates={"rehearsal_failures": 0, "rehearsal_infra_errors": 0},
+                    updates={"rehearsal_failures": 0, "rehearsal_infra_errors": 0, "rehearsal_budget": {}},
                 )
             elif state is State.GATE:
                 if plan["last_gate_verdict_id"] is None:
                     raise BusinessError("gate_not_run")
                 plan = await transition(conn, plan_id, Trigger.REPROPOSAL_REQUESTED, actor=actor, reason="gate_block")
+            elif state is State.REHEARSE:
+                # Another role already proposed or passed. This role may start unless its own PASS still waits for
+                # its change (queued or not yet ended).
+                if await pending_pass(conn, plan_id, req.role) is not None:
+                    raise BusinessError("rehearsal_passed_change_pending", detail={"role": req.role})
             elif state is not State.PROPOSE:
                 raise BusinessError("state_mismatch", detail={"state": state.value})
-            # The attempt within the FR-5 budget (1..max): FAIL verdicts so far + 1. Precondition and infra
-            # retries reuse the number, so the envelope's attempt <= max_attempts holds (bravo_agents).
-            failures = int(plan["rehearsal_failures"])
+            # The attempt within this role's FR-5 budget (1..max): its FAIL verdicts so far + 1. Precondition and
+            # infra retries reuse the number, so the envelope's attempt <= max_attempts holds (bravo_agents).
+            failures = role_budget(plan, req.role)["failures"]
             attempt = failures + 1
             cur = await conn.execute(
-                "SELECT attempt, reason, verifier FROM rehearsals WHERE plan_id = %s AND status = 'FAIL' "
+                "SELECT attempt, reason, verifier FROM rehearsals WHERE plan_id = %s AND role = %s AND status = 'FAIL' "
                 "ORDER BY created_at DESC LIMIT %s",
-                (plan_id, failures),
+                (plan_id, req.role, failures),
             )
             prior = prior_failures(list(reversed(await cur.fetchall())))
             analysis = plan["analysis"]
@@ -327,7 +337,7 @@ class RehearsalService:
                 "role": req.role,
                 "trial_id": None,
                 "status": "requested",
-                "state": State.PROPOSE.value,
+                "state": plan["state"],
                 "reason": None,
             }
             await idempotency.complete(
@@ -409,8 +419,103 @@ async def _row(conn: Conn, rehearsal_id: UUID) -> dict[str, Any]:
     return row
 
 
+def role_budget(plan: dict[str, Any], role: str) -> dict[str, int]:
+    """This role's FR-5 counters in the current budget (``plans.rehearsal_budget``, migration 0011)."""
+    b = (plan.get("rehearsal_budget") or {}).get(role) or {}
+    return {"failures": int(b.get("failures", 0)), "infra_errors": int(b.get("infra_errors", 0))}
+
+
+async def open_rehearsals(conn: Conn, plan_id: UUID, *, but: UUID | None = None) -> list[dict[str, Any]]:
+    cur = await conn.execute(
+        "SELECT rehearsal_id, role FROM rehearsals WHERE plan_id = %s AND status = ANY(%s) AND rehearsal_id <> %s "
+        "ORDER BY created_at DESC",
+        (plan_id, list(OPEN), but or uuid.UUID(int=0)),
+    )
+    return list(await cur.fetchall())
+
+
+# Change statuses that still hold a passing rehearsal's place (its change is in flight).
+CHANGE_IN_FLIGHT = ("requested", "preparing", "prepared", "approved", "applying")
+
+
+async def _round_start(conn: Conn, plan_id: UUID) -> Any:
+    """When the current rehearsal round began: the last re-proposal (a person's reset or a gate BLOCK). PASSes settled
+    before it belong to an earlier round and are never queued again."""
+    cur = await conn.execute(
+        "SELECT max(at) AS at FROM events WHERE plan_id = %s AND kind = 'state.changed' "
+        "AND data->>'reason' IN ('human_reset', 'gate_block')",
+        (plan_id,),
+    )
+    row = await cur.fetchone()
+    return row["at"] if row else None
+
+
+async def pending_pass(conn: Conn, plan_id: UUID, role: str | None = None) -> dict[str, Any] | None:
+    """The oldest PASS of this round (of ``role`` if given) whose change has not ended: still queued (no change row
+    yet, another change was active) or in flight. Applied, refused, failed or superseded changes do not count."""
+    since = await _round_start(conn, plan_id)
+    cur = await conn.execute(
+        """SELECT r.* FROM rehearsals r
+            WHERE r.plan_id = %s AND r.status = 'PASS' AND r.role = ANY(%s) AND (%s::text IS NULL OR r.role = %s)
+              AND (%s::timestamptz IS NULL OR r.ended_at > %s)
+              AND (NOT EXISTS (SELECT 1 FROM changes c WHERE c.rehearsal_id = r.rehearsal_id)
+                   OR EXISTS (SELECT 1 FROM changes c WHERE c.rehearsal_id = r.rehearsal_id AND c.status = ANY(%s)))
+            ORDER BY r.ended_at NULLS LAST, r.created_at LIMIT 1""",
+        (plan_id, list(CHANGE_ROLES), role, role, since, since, list(CHANGE_IN_FLIGHT)),
+    )
+    return await cur.fetchone()
+
+
+async def queued_pass(conn: Conn, plan_id: UUID) -> dict[str, Any] | None:
+    """The oldest PASS of this round whose change was never opened (another change was active when it passed)."""
+    since = await _round_start(conn, plan_id)
+    cur = await conn.execute(
+        """SELECT r.* FROM rehearsals r
+            WHERE r.plan_id = %s AND r.status = 'PASS' AND r.role = ANY(%s)
+              AND (%s::timestamptz IS NULL OR r.ended_at > %s)
+              AND NOT EXISTS (SELECT 1 FROM changes c WHERE c.rehearsal_id = r.rehearsal_id)
+            ORDER BY r.ended_at NULLS LAST, r.created_at LIMIT 1""",
+        (plan_id, list(CHANGE_ROLES), since, since),
+    )
+    return await cur.fetchone()
+
+
+async def open_queued_change(conn: Conn, plan: dict[str, Any]) -> dict[str, Any] | None:
+    """Open the change of the oldest queued PASS (the plan stays in REHEARSE). New content -> new revision."""
+    q = await queued_pass(conn, plan["plan_id"])
+    if q is None or q["artifact"] is None or artifact_digest(q["artifact"]) != q["artifact_digest"]:
+        return None
+    cur = await conn.execute(
+        "UPDATE plans SET revision = revision + 1, approved_artifact_digest = %s, version = version + 1, "
+        "updated_at = now() WHERE plan_id = %s RETURNING *",
+        (q["artifact_digest"], plan["plan_id"]),
+    )
+    fresh = await cur.fetchone()
+    return await open_change(conn, fresh, q, q["artifact"], q["artifact_digest"], actor=SYSTEM)
+
+
+async def _record_only(conn: Conn, plan: dict[str, Any], updates: dict[str, Any], reason: str) -> dict[str, Any]:
+    """Settle without a state change: another role is still in flight, so the plan keeps its state."""
+    from psycopg import sql
+
+    sets = {k: Jsonb(v) if isinstance(v, dict) else v for k, v in updates.items()}
+    assignments = sql.SQL(", ").join(sql.SQL("{} = {}").format(sql.Identifier(k), sql.Placeholder(k)) for k in sets)
+    cur = await conn.execute(
+        sql.SQL("UPDATE plans SET {a}, state_reason = {r}, version = version + 1, updated_at = now() "
+                "WHERE plan_id = {p} RETURNING *").format(a=assignments, r=sql.Placeholder("_reason"),
+                                                          p=sql.Placeholder("_plan")),
+        {**sets, "_reason": reason, "_plan": plan["plan_id"]},
+    )
+    return await cur.fetchone() or plan
+
+
 async def settle(conn: Conn, settings: Settings, row: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
-    """Record a terminal Trial result once and move the plan. Returns the plan row."""
+    """Record a terminal Trial result once and move the plan. Returns the plan row.
+
+    Rehearsals of different roles run side by side. The plan follows them: the first proposal moves PROPOSE ->
+    REHEARSE; a PASS opens its change, or queues it while another change is in flight (opened when that one ends,
+    ``changes.ChangeWatcher``); a FAIL or infrastructure error counts against that role's budget and returns the plan
+    to PROPOSE only when nothing else of the plan is in flight; an exhausted budget sends the plan to NEEDS_HUMAN."""
     plan = await lock_plan(conn, row["plan_id"])
     verdict = body.get("verdict")
     reason = body.get("reason") if isinstance(body.get("reason"), str) else None
@@ -430,7 +535,7 @@ async def settle(conn: Conn, settings: Settings, row: dict[str, Any], body: dict
             list(OPEN),
         ),
     )
-    if await cur.fetchone() is None or plan["active_rehearsal_id"] != row["rehearsal_id"]:
+    if await cur.fetchone() is None:
         LOG.warning("late or duplicate trial result ignored rehearsal_id=%s", row["rehearsal_id"])
         return plan  # terminal status already set: late results are recorded in logs only
     await emit(
@@ -450,13 +555,22 @@ async def settle(conn: Conn, settings: Settings, row: dict[str, Any], body: dict
         },
     )
     state = State(plan["state"])
-    common: dict[str, Any] = {"actor": SYSTEM, "data": {"rehearsal_id": str(row["rehearsal_id"])}}
-    base = {"active_rehearsal_id": None, "last_rehearsal_id": row["rehearsal_id"]}
-    if state not in (State.PROPOSE, State.REHEARSE):  # pragma: no cover - guarded by active_rehearsal_id
-        return plan
+    role = row["role"]
+    common: dict[str, Any] = {"actor": SYSTEM, "data": {"rehearsal_id": str(row["rehearsal_id"]), "role": role}}
+    others = await open_rehearsals(conn, row["plan_id"], but=row["rehearsal_id"])
+    # The plan points at the newest rehearsal still in flight, else at none.
+    base = {"active_rehearsal_id": others[0]["rehearsal_id"] if others else None, "last_rehearsal_id": row["rehearsal_id"]}
+    if state not in (State.PROPOSE, State.REHEARSE):
+        # e.g. another role exhausted its budget (NEEDS_HUMAN) while this one ran: recorded, the plan stays.
+        return await _record_only(conn, plan, base, plan["state_reason"] or f"rehearsal_{(verdict or '').lower()}:{role}")
     if verdict == "PASS":
         if state is State.PROPOSE:
             plan = await transition(conn, plan["plan_id"], Trigger.PROPOSAL_ACCEPTED, **common)
+        if plan["active_change_id"] is not None:
+            # Another role's change is in flight (its approval binds the current revision): this PASS waits, and its
+            # change opens when that one ends. The revision is not bumped now.
+            return await transition(conn, plan["plan_id"], Trigger.REHEARSAL_PASSED, reason=f"change_queued:{role}",
+                                    updates={**base, "rehearsal": "passed"}, **common)
         # Spec r2: stay in REHEARSE and open a change (T31). The change approval binds the diff, the image
         # digest the trusted pipeline builds from it and the policy diff; only the applied change leaves for GATE.
         plan = await transition(
@@ -474,27 +588,28 @@ async def settle(conn: Conn, settings: Settings, row: dict[str, Any], body: dict
         )
         await open_change(conn, plan, row, body["artifact"], body["artifact_digest"], actor=SYSTEM)
         return await lock_plan(conn, plan["plan_id"])
+    budget = dict(plan.get("rehearsal_budget") or {})
+    mine = role_budget(plan, role)
     if verdict == "FAIL":
-        failures = plan["rehearsal_failures"] + 1
-        exhausted = failures >= settings.rehearsal_max_attempts
-        return await transition(
-            conn,
-            plan["plan_id"],
-            Trigger.ATTEMPTS_EXHAUSTED if exhausted else Trigger.REHEARSAL_FAILED,
-            reason="rehearsal_attempts_exhausted" if exhausted else f"rehearsal_failed:{reason or 'verifier'}",
-            updates={**base, "rehearsal": "needs_human" if exhausted else "failed", "rehearsal_failures": failures},
-            **common,
-        )
-    infra = plan["rehearsal_infra_errors"] + (0 if reason in PRECONDITIONS else 1)
-    exhausted = infra > settings.rehearsal_max_infra_errors
-    return await transition(
-        conn,
-        plan["plan_id"],
-        Trigger.ATTEMPTS_EXHAUSTED if exhausted else Trigger.REHEARSAL_INFRA_ERROR,
-        reason="rehearsal_infra_errors_exhausted" if exhausted else reason or "infra_error",
-        updates={**base, "rehearsal": "needs_human" if exhausted else "infra_error", "rehearsal_infra_errors": infra},
-        **common,
-    )
+        mine["failures"] += 1
+        exhausted = mine["failures"] >= settings.rehearsal_max_attempts
+        trigger = Trigger.ATTEMPTS_EXHAUSTED if exhausted else Trigger.REHEARSAL_FAILED
+        why = "rehearsal_attempts_exhausted" if exhausted else f"rehearsal_failed:{reason or 'verifier'}"
+        status = "needs_human" if exhausted else "failed"
+    else:
+        mine["infra_errors"] += 0 if reason in PRECONDITIONS else 1
+        exhausted = mine["infra_errors"] > settings.rehearsal_max_infra_errors
+        trigger = Trigger.ATTEMPTS_EXHAUSTED if exhausted else Trigger.REHEARSAL_INFRA_ERROR
+        why = "rehearsal_infra_errors_exhausted" if exhausted else reason or "infra_error"
+        status = "needs_human" if exhausted else "infra_error"
+    budget[role] = mine
+    updates = {**base, "rehearsal": status, "rehearsal_failures": mine["failures"],
+               "rehearsal_infra_errors": mine["infra_errors"], "rehearsal_budget": budget}
+    if (not exhausted and state is State.REHEARSE
+            and (others or plan["active_change_id"] is not None or await pending_pass(conn, plan["plan_id"]))):
+        # Another role is still running or its change is in flight: keep REHEARSE (and that change's approval).
+        return await _record_only(conn, plan, updates, f"{why}:{role}")
+    return await transition(conn, plan["plan_id"], trigger, reason=why, updates=updates, **common)
 
 
 PHASES = ("provisioning", "agent_running", "proposed", "verifying", "done")
@@ -638,7 +753,7 @@ class RehearsalWatcher:
                 actor=SYSTEM,
                 data={"rehearsal_id": str(row["rehearsal_id"]), "trial_id": row["trial_id"], "artifact_digest": digest},
             )
-            if plan["state"] == State.PROPOSE.value and plan["active_rehearsal_id"] == row["rehearsal_id"]:
+            if plan["state"] == State.PROPOSE.value:  # the first proposal of any role moves the plan on
                 await transition(
                     conn,
                     row["plan_id"],
