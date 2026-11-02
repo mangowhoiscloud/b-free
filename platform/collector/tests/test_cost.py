@@ -116,6 +116,16 @@ def test_plan_not_done_runs_to_now_and_daily_buckets_are_kst():
     # 00:00Z = 09:00 KST: the first KST day ends at 15:00Z.
     assert [d["date"] for d in r["daily"]] == ["2026-11-02", "2026-11-03"]
     assert r["daily"][0]["total"] == pytest.approx(15.0) and r["daily"][1]["total"] == pytest.approx(5.0)
+    assert r["daily"][0]["hours"] == 15 and r["daily"][0]["active_lines"] == 1
+
+
+def test_a_day_with_nothing_running_is_zero_with_no_active_lines():
+    lines = [line("late", "source", 1.0, h(30), h(40))]  # starts on the second KST day
+    r = build_receipt(lines, start=h(-9), end=h(40))     # 2026-11-01 15:00Z = 11-02 00:00 KST
+    first = r["daily"][0]
+    assert first["date"] == "2026-11-02" and first["hours"] == 24
+    assert first["by_component"] == {} and first["total"] == 0 and first["active_lines"] == 0
+    assert r["daily"][1]["active_lines"] == 1
     assert r["day_timezone"] == "+09:00"
 
 
@@ -298,6 +308,8 @@ def test_http_cost_without_providers_reports_not_connected(tmp_path, monkeypatch
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["schema_version"] == "cost/v1"
+        assert body["period"]["start"].endswith("T15:00:00Z")  # month start at 00:00 KST
+        assert body["daily"][0]["hours"] == 24 or len(body["daily"]) == 1
         whats = {n["what"] for n in body["not_connected"]}
         assert {"AWS 인벤토리", "GCP 인벤토리", "에이전트 실행별 토큰 사용량"} <= whats
         assert body["totals"]["total"] == 0 and body["totals"]["unpriced_lines"] == 1

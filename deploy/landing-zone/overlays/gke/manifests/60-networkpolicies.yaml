@@ -110,3 +110,6 @@ spec:
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: platform-otel}}}]
       ports: [{port: 4317, protocol: TCP}]
+    # Node-local anetd flow metrics (hostNetwork :9965) in the node subnet.
+    - to: [{ipBlock: {cidr: "${NODE_CIDR}"}}]
+      ports: [{port: 9965, protocol: TCP}]

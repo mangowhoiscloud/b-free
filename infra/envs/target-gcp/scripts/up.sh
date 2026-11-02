@@ -63,10 +63,13 @@ helm --kube-context "$CLUSTER" upgrade --install external-secrets external-secre
 API_SERVER_CIDR="$(k get endpointslices -n default -l kubernetes.io/service-name=kubernetes -o json \
   | jq -r '[.items[].endpoints[].addresses[]][0]')/32"
 BAO_CA_B64="$(base64 <"$BAO_CA" | tr -d '\n')"   # CA certificate (public), not a secret
-export API_SERVER_CIDR BAO_CA_B64
+# Node subnet: otel-agent reads the node-local Dataplane V2 flow metrics (anetd hostNetwork :9965).
+NODE_CIDR="$(gcloud compute networks subnets describe "$CLUSTER-nodes" --region "$REGION" --project "$PROJECT" \
+  --format='value(ipCidrRange)')"
+export API_SERVER_CIDR BAO_CA_B64 NODE_CIDR
 VARS='${PD_KMS_KEY} ${BAO_CA_B64} ${PG_IMAGE} ${IMAGE_REGISTRY} ${PGB_IMAGE_NAME} ${PGB_DIGEST} ${PGB_INITIAL_TARGET}
 ${GATEWAY_ADDRESS_NAME} ${GATEWAY_IP} ${CLOUDFLARED_IMAGE} ${OTEL_IMAGE} ${CLUSTER_NAME} ${REGION} ${API_SERVER_CIDR}
-${DEMO_IMAGE_NAME} ${DEMO_DIGEST} ${PUBLIC_HOSTNAME} ${ATTACH_BUCKET} ${PROXY_ONLY_CIDR}'
+${DEMO_IMAGE_NAME} ${DEMO_DIGEST} ${PUBLIC_HOSTNAME} ${ATTACH_BUCKET} ${PROXY_ONLY_CIDR} ${NODE_CIDR}'
 rm -f "$RENDER_DIR"/*.yaml
 for f in "$OVERLAY_DIR"/manifests/*.yaml "$OVERLAY_DIR"/values/chat.yaml; do
   envsubst "$VARS" <"$f" >"$RENDER_DIR/$(basename "$f")"

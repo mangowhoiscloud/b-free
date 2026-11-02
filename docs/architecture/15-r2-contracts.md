@@ -288,9 +288,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | 환경 연결 패널에 그 `bravo_env`가 없거나 120초를 넘음 | 그 환경 에이전트의 OTLP가 플랫폼에 오지 않음(링크, 토큰, 에이전트 중 하나) | 연결 안 됨: 환경 에이전트 OTLP 수신 없음(마지막 수신 N초 전) |
 | 환경은 연결됐는데 요청률 0, 오류율 · 분위수 없음(NaN) | 그 창 안에 프로브 밖 요청이 없음 | 트래픽 없음 |
 | 환경은 연결됐는데 `chat_writes_total` 계열이 없음 | 앱 카운터는 첫 쓰기 때 생김. Pod 시작 뒤 쓰기 0건 | 쓰기 0건(Pod 시작 뒤) |
-| `target-onprem`의 Hubble 계열 없음 | 온프렘 Cilium에 `hubble.metrics`가 아직 없음. `overlays/rke2/cilium-values.yaml`에는 넣었고, 랜딩 존 `cilium` 단계를 다시 돌리면 생김(온프렘 갈래) | 연결 안 됨: 온프렘 Hubble 지표 꺼짐 |
-| `target-gcp`의 Hubble 계열 없음 | GKE Dataplane V2는 Cilium 차트를 쓰지 않음. 관측 설정은 `enableRelay`만 켜져 있고 지표(`--enable-dataplane-v2-metrics`)는 꺼져 있음(2026-11-02 22:10 KST `gcloud container clusters describe`) | 연결 안 됨: GKE Dataplane V2 지표 꺼짐 |
-| `platform`의 Hubble 계열 없음 | 플랫폼 Cilium(`deploy/platform/cilium`)에 `hubble.metrics`가 없음. Prometheus 수집 작업 `hubble`은 준비돼 있음 | 연결 안 됨: 플랫폼 Hubble 지표 꺼짐 |
+| 어느 `bravo_env`의 Hubble 계열이 없음 | 그 환경의 Hubble 지표 수집이 끊김. 2026-11-02 14:14Z부터 넷 모두 들어옴: 출발지 EKS와 온프렘은 랜딩 존 Cilium `hubble.metrics`(온프렘은 14:06Z 무렵 `install.sh rke2 bravo-onprem cilium`을 다시 돌림), 플랫폼은 `deploy/platform/cilium`(플랫폼 갈래), GKE는 Dataplane V2 지표(`gcloud container clusters update --enable-dataplane-v2-metrics`, Terraform `enable_metrics = true`)를 `otel-agent` DaemonSet이 자기 노드의 anetd `:9965`에서 읽음(`overlays/gke/manifests/50-otel-agent.yaml`, 노드 서브넷 허용 `60-networkpolicies.yaml`). GKE는 같은 `hubble_*` 이름을 냄 | 연결 안 됨: <환경> Hubble 지표 수신 없음 |
 | Executor 단계 패널이 빔 | 컷오버 실행이 아직 없거나 Executor가 span을 보내지 못함 | API의 `run.stages[]`를 봄 |
 
 ## 8. 비용 영수증 API(마무리 장면, NFR-8)
@@ -302,7 +300,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | 요청 | 누가 | 뜻 |
 |---|---|---|
 | `GET /v1/cost[?plan_id=<uuid>][&start=<ISO>][&end=<ISO>]` | API(콘솔 출처 `b-free`, Access JWT, viewer 이상) | 콘솔이 부르는 경로. `plan_id`가 있으면 API가 플랫폼 DB에서 계획 생성 시각과 처음 `DONE` · `DONE_ROLLED_BACK`이 된 시각을 읽어 수집기에 넘김. 응답은 수집기 본문 그대로 |
-| `GET /v1/cost?start=&end=&plan_id=&plan_created_at=&plan_done_at=&plan_state=&workload=` | 수집기(:8083, 클러스터 안, 콘솔 `/svc/collector/` 읽기 전용 프록시로도 닿음) | 같은 본문. 시각은 ISO 8601(UTC). 기본 기간은 이번 달 1일 00:00Z부터 지금까지. 계획을 주고 `start`가 없으면 계획 생성 24시간 전부터 |
+| `GET /v1/cost?start=&end=&plan_id=&plan_created_at=&plan_done_at=&plan_state=&workload=` | 수집기(:8083, 클러스터 안, 콘솔 `/svc/collector/` 읽기 전용 프록시로도 닿음) | 같은 본문. 시각은 ISO 8601(UTC). 기본 기간은 이번 달 1일 00:00 KST(전날 15:00Z)부터 지금까지. 일별 묶음과 같은 시간대라 첫날도 24시간입니다. 계획을 주고 `start`가 없으면 계획 생성 24시간 전부터 |
 | `python -m bravo_collector cost [--config] [--start] [--end] [--plan-id] [--plan-created-at] [--plan-done-at]` | 운영자 | 같은 본문을 표준 출력으로 |
 
 오류: 수집기 422(시각 형식, `end <= start`, 62일 초과, `plan_done_at < plan_created_at`)는 API에서 422 `cost_bad_request`. 수집기가 설정되지 않으면 503 `collector_unconfigured`, 닿지 않으면 503 `collector_unreachable`(문구 "연결 안 됨: 수집기 비용 영수증"). 없는 계획은 404.
@@ -319,7 +317,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | `migration_extra` | `value`, `formula`("이전 중 전체 − 이전 중 출발지(component=source, 원래 내던 비용)"), `inputs` {`during_total`, `during_source`, `during_hours`}, `explain`(계산식 문자열), `lower_bound`(금액을 모르는 줄이 있으면 `true`) |
 | `totals` | `total`(청구 + 추정 + 금액이 있는 정액), `estimated`, `billed`(태그 청구가 없으면 `null`), `flat`, `api_equivalent_not_billed`(합계에 넣지 않음), `unpriced_lines`, `by_component`, `by_environment`, `migration_extra` |
 | `lines[]` | 8.3 |
-| `daily[]` | {`date`(KST), `by_component`, `total`}. 합계에 들어가는 줄만 |
+| `daily[]` | {`date`(KST), `start`, `end`, `hours`, `by_component`, `total`, `active_lines`}. 합계에 들어가는 줄만. `active_lines`가 0이면 그날 돌던 자원이 없다는 뜻(빈 날은 사실이지 누락이 아님. 2026-11-01은 이 프로젝트 자원이 하나도 없었음: 가장 이른 자원이 11-02 10:31Z 생성) |
 | `tag` | `component` 비용 할당 태그 상태: `status`(`Active` · `Inactive` · `NOT_REGISTERED`), `label`("활성" · "태그 활성화 대기"), `reason`, `activation_attempts[]` |
 | `actuals` | Cost Explorer 결과: `status`, `period`, `by_service` {`scope`(계정 전체, 다른 프로젝트 포함, 합계에 넣지 않는 참고 값), `estimated`, `total`, `groups`, `daily`}, `cached_at`, `ttl_s`(3600), `from_cache`, `requests_this_response`, `charge_usd_on_fill` |
 | `price_list_at`, `bill_received_at` | 가장 이른 단가 조회 시각, Cost Explorer를 읽은 시각 |

@@ -57,7 +57,7 @@ images:
     digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
-    digest: sha256:ddeb284ba1bbf773c9dc78fdbcf8f85f1903a4293b178566b09e85c95c9592ae # cost-20261102T135034Z (obs/cost lane: GET /v1/cost with stale-while-revalidate caches and start-up warm-up)
+    digest: sha256:9dc004dbb44f8b23b8935ffd7242893f1c1a1079814cfc8cf01f355969f22f8b # cost-20261102T141430Z (obs/cost lane: GET /v1/cost, KST month-start period + daily active_lines, stale-while-revalidate caches, start-up warm-up)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
     digest: sha256:f5ec7dfdbe01e7a37a6fdbdde4125c12b921f99cbe51dee787b9c8b8de0caeb0 # cloud-202611022259 (data/cutover lane: + attachment_copy CLI in topology mode for T8 pre-copy in executor-0)

@@ -84,7 +84,9 @@ resource "google_container_cluster" "this" {
     }
     # 관리형 Hubble(Dataplane V2 관측). 흐름 기록이 NET-01의 증거(TECH-STACK-SPEC 1절).
     advanced_datapath_observability_config {
-      enable_metrics = false
+      # Dataplane V2 flow metrics on anetd :9965 (scraped by the landing-zone otel-agent, 15-r2-contracts 7).
+      # Turned on for bravo-target-gcp on 2026-11-02 with gcloud --enable-dataplane-v2-metrics; this keeps it on.
+      enable_metrics = true
       enable_relay   = var.enable_hubble_relay
     }
   }

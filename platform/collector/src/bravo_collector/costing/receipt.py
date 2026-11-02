@@ -310,12 +310,24 @@ def build_receipt(
         d1 = d0 + timedelta(days=1)
         a, b = max(d0, start), min(d1, end)
         comp: dict[str, float] = {}
+        active = 0
         for x in counted:
+            if x.quantity(a, b):
+                active += 1  # running that day, priced or not
             v = x.subtotal(a, b)
             if v:
                 comp[x.component or "(태그 없음)"] = round(comp.get(x.component or "(태그 없음)", 0) + v, 6)
         daily.append(
-            {"date": (d0 + DAY_TZ).date().isoformat(), "by_component": comp, "total": _sum(list(comp.values()))}
+            {
+                "date": (d0 + DAY_TZ).date().isoformat(),
+                "start": iso(a),
+                "end": iso(b),
+                "hours": round((b - a).total_seconds() / 3600, 3),
+                "by_component": comp,
+                "total": _sum(list(comp.values())),
+                # 0 = no counted resource was running that day (an empty day is a fact, not a gap).
+                "active_lines": active,
+            }
         )
         d0 = d1
 
@@ -399,7 +411,8 @@ def receipt_for_request(
     now = now_utc()
     try:
         t_end = min(parse_ts(end) or now, now)
-        t_start = parse_ts(start) or now.replace(day=1, hour=0, minute=0, second=0)
+        # Default: the month start in the day-bucket zone (KST/JST), so the first daily bucket is a whole day.
+        t_start = parse_ts(start) or ((now + DAY_TZ).replace(day=1, hour=0, minute=0, second=0) - DAY_TZ)
         created = parse_ts(plan_created_at)
         done = parse_ts(plan_done_at)
     except ValueError as exc:
