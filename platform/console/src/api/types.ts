@@ -95,6 +95,8 @@ export interface AppliedException {
   evidence_digest: string | null;
   expires_at: string | null;
   approved_by: string | null;
+  /** 대체 통제 (contract 15 §9, spec §8.5). */
+  compensating_control: string | null;
 }
 
 export type ExceptionStatus = 'requested' | 'approved' | 'rejected' | 'stale' | 'expired';
@@ -109,6 +111,8 @@ export interface ControlException {
   dst: string | null;
   evidence_digest: string | null;
   reason: string | null;
+  /** 대체 통제: what stands in for the missing control (contract 15 §9.1). */
+  compensating_control: string | null;
   expires_at: string | null;
   status: ExceptionStatus | (string & {});
   stale_reason: string | null;
@@ -142,6 +146,8 @@ export interface GateResult {
   controls: ControlRow[];
   readiness: ReadinessRow[];
   exceptions: AppliedException[];
+  /** End of the gate evidence validity; no exception may be requested or approved after it. Null = unknown. */
+  evidence_expires_at: string | null;
 }
 
 /** run_stages row (CONTRACT §5). */

@@ -17,6 +17,14 @@ function exceptable(c: ControlRow): boolean {
   return c.verdict === 'BLOCK' && c.dst === 'FAIL' && (c.src === 'PASS' || c.src === 'FAIL') && c.evidence_digest !== null;
 }
 
+/** Evidence validity of a verdict (contract 15 §9.1): past `evidence_expires_at`, or without one (the gate
+ *  report was not read), nothing can be excepted — the API refuses with exception_stale/evidence_expired. */
+export function evidenceBlock(gate: { evidence_expires_at: string | null }): string | null {
+  if (gate.evidence_expires_at === null) return '이 판정에는 증거 유효기간이 없어(게이트 보고서를 읽지 못한 판정) 예외를 걸 수 없습니다. 게이트를 다시 돌립니다.';
+  if (Date.parse(gate.evidence_expires_at) <= Date.now()) return `이 판정의 증거가 만료되었습니다(${fmtTs(gate.evidence_expires_at)}). 만료된 증거로는 예외를 걸 수 없습니다. 게이트를 다시 돌립니다.`;
+  return null;
+}
+
 function isoLocal(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -28,6 +36,7 @@ function RequestException({ planId, gate, row, user, onDone }: { planId: string;
   const api = useApi();
   const qc = useQueryClient();
   const [reason, setReason] = useState('');
+  const [compensating, setCompensating] = useState('');
   const [expires, setExpires] = useState(() => isoLocal(Date.now() + 7 * 24 * 3600_000));
   const scope = `exception-request:${planId}:${row.control_id}:${gate.verdict_id}`;
   const send = useMutation({
@@ -35,7 +44,7 @@ function RequestException({ planId, gate, row, user, onDone }: { planId: string;
       api.requestException(
         user?.token ?? '',
         planId,
-        { control_id: row.control_id, gate_verdict_id: gate.verdict_id, evidence_digest: row.evidence_digest ?? '', reason: reason.trim(), expires_at: new Date(expires).toISOString() },
+        { control_id: row.control_id, gate_verdict_id: gate.verdict_id, evidence_digest: row.evidence_digest ?? '', reason: reason.trim(), compensating_control: compensating.trim(), expires_at: new Date(expires).toISOString() },
         idemKey(scope),
       ),
     onSuccess: () => onDone(),
@@ -46,7 +55,10 @@ function RequestException({ planId, gate, row, user, onDone }: { planId: string;
   });
   const exp = Date.parse(expires);
   const problems: string[] = [];
-  if (reason.trim().length < 10) problems.push('사유는 10자 이상 씁니다: 왜 대체할 수 없는지와 보완 통제.');
+  if (reason.trim().length < 10) problems.push('사유는 10자 이상 씁니다: 왜 목적지에서 대체할 수 없는지.');
+  if (compensating.trim().length < 10) problems.push('대체 통제는 10자 이상 씁니다: 대신 둔 통제.');
+  const evBlock = evidenceBlock(gate);
+  if (evBlock) problems.push(evBlock);
   if (!(exp > Date.now() + 5 * 60_000 && exp < Date.now() + 30 * 24 * 3600_000)) problems.push('만료는 지금부터 5분 뒤에서 30일 뒤 사이여야 합니다.');
   return (
     <form
@@ -64,7 +76,11 @@ function RequestException({ planId, gate, row, user, onDone }: { planId: string;
       </p>
       <label className="field">
         <span className="field__label">사유 (10–2000자)</span>
-        <textarea className="input" rows={3} maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: 대상에서 이 통제를 걸 수 없는 이유와 대신 둔 보완 통제…" />
+        <textarea className="input" rows={3} maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="왜 목적지에서 이 통제를 걸 수 없는지…" />
+      </label>
+      <label className="field">
+        <span className="field__label">대체 통제 (필수, 10–2000자)</span>
+        <textarea className="input" rows={2} maxLength={2000} required value={compensating} onChange={(e) => setCompensating(e.target.value)} placeholder="대신 둔 통제…" />
       </label>
       <label className="field field--inline">
         <span className="field__label">만료</span>
@@ -167,6 +183,10 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                 <dt>판정 시각</dt>
                 <dd className="mono">{fmtDateTime(gate.decided_at)}</dd>
               </div>
+              <div>
+                <dt>증거 유효</dt>
+                <dd className="mono">{gate.evidence_expires_at ? `~${fmtTs(gate.evidence_expires_at)}${Date.parse(gate.evidence_expires_at) <= Date.now() ? ' (만료)' : ''}` : '— 판정에 없음'}</dd>
+              </div>
               {view.gateRequestedBy && (
                 <div>
                   <dt>요청</dt>
@@ -230,8 +250,9 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                         <>
                           <Mark tone="neutral">예외 승인</Mark>
                           <span className="cell-sub">
-                            승인 {applied?.approved_by ?? '—'} · 만료 {fmtTs(applied?.expires_at ?? null)}
+                            승인 {applied?.approved_by ?? '—'} · 기간 ~{fmtTs(applied?.expires_at ?? null)}
                           </span>
+                          <span className="cell-sub">대체 통제: {applied?.compensating_control ?? '— 판정에 없음'}</span>
                         </>
                       ) : (
                         <Mark tone={c.verdict === 'PASS' ? 'pass' : 'block'}>
@@ -247,7 +268,11 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                       ) : open ? (
                         <span className="muted">{EXCEPTION_STATUS[open.status]?.text ?? open.status} · {open.requested_by ?? '—'}</span>
                       ) : exceptable(c) ? (
-                        canRequest ? (
+                        evidenceBlock(gate) ? (
+                          <span className="muted" title={evidenceBlock(gate) ?? undefined}>
+                            {gate.evidence_expires_at ? `증거 만료(${fmtTs(gate.evidence_expires_at)})` : '증거 유효기간 없음'} · 게이트를 다시 돌린 뒤 요청
+                          </span>
+                        ) : canRequest ? (
                           <button type="button" className="btn btn--ghost" onClick={() => setRequesting(requesting === c.control_id ? null : c.control_id)} aria-expanded={requesting === c.control_id}>
                             예외 요청
                           </button>

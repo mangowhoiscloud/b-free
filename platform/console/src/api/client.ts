@@ -24,7 +24,7 @@ export interface ApiClient {
   listEnvironments(token: string): Promise<EnvSummary[]>;
   /** Control exceptions (contract 15 §9.3). Writes are console-only and carry Idempotency-Key. */
   listExceptions(token: string, planId: string): Promise<ControlException[]>;
-  requestException(token: string, planId: string, body: { control_id: string; gate_verdict_id: string; evidence_digest: string; reason: string; expires_at: string }, idemKey: string): Promise<ControlException | null>;
+  requestException(token: string, planId: string, body: { control_id: string; gate_verdict_id: string; evidence_digest: string; reason: string; compensating_control: string; expires_at: string }, idemKey: string): Promise<ControlException | null>;
   approveException(token: string, planId: string, exceptionId: string, body: { evidence_digest: string; note?: string }, idemKey: string): Promise<ControlException | null>;
   rejectException(token: string, planId: string, exceptionId: string, body: { note?: string }, idemKey: string): Promise<ControlException | null>;
   /** GET /v1/plans/{id}/changes: change approvals' binding (diff, image digest, policy diff). */
@@ -68,7 +68,7 @@ const REASON_TEXT: Record<string, string> = {
   wrong_audience: '콘솔용 토큰이 아닙니다(AUD 불일치).',
   not_a_member: '이 테넌트의 구성원이 아닙니다.',
   unknown_principal: 'Access 로그인은 되었지만 이 계정이 플랫폼 구성원으로 등록되어 있지 않습니다.',
-  exception_stale: '예외의 근거가 지금 판정과 맞지 않습니다(판정이 바뀌었거나 증거가 바뀜, 또는 만료). 게이트 결과를 새로 본 뒤 다시 하세요.',
+  exception_stale: '예외의 근거가 지금 판정과 맞지 않습니다(판정 · 증거가 바뀌었거나, 증거나 예외가 만료됨). 게이트를 다시 돌린 뒤 다시 하세요.',
   exception_open: '이 통제에는 이미 열린 예외(승인 대기 또는 승인됨)가 있습니다.',
   exception_not_pending: '이 예외는 이미 결정되어 승인 · 거절할 수 없습니다.',
   exception_not_allowed: '이 행은 예외를 걸 수 없습니다(UNKNOWN은 예외 불가, 목적지가 FAIL이 아니거나 증거가 없음).',

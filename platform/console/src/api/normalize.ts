@@ -213,9 +213,10 @@ export function parseGate(v: unknown): GateResult | null {
         const e = asObj(x);
         const eid = asStr(e?.exception_id);
         if (!e || !eid) return null;
-        return { exception_id: eid, control_id: asStr(e.control_id) ?? '—', src: asStr(e.src), dst: asStr(e.dst), evidence_digest: asStr(e.evidence_digest), expires_at: asStr(e.expires_at), approved_by: asStr(e.approved_by) };
+        return { exception_id: eid, control_id: asStr(e.control_id) ?? '—', src: asStr(e.src), dst: asStr(e.dst), evidence_digest: asStr(e.evidence_digest), expires_at: asStr(e.expires_at), approved_by: asStr(e.approved_by), compensating_control: asStr(e.compensating_control) };
       })
       .filter((x): x is AppliedException => x !== null),
+    evidence_expires_at: asStr(o.evidence_expires_at),
   };
 }
 
@@ -234,6 +235,7 @@ export function parseException(v: unknown): ControlException | null {
     dst: asStr(o.dst),
     evidence_digest: asStr(o.evidence_digest),
     reason: asStr(o.reason),
+    compensating_control: asStr(o.compensating_control),
     expires_at: asStr(o.expires_at),
     status: asStr(o.status) ?? 'requested',
     stale_reason: asStr(o.stale_reason),

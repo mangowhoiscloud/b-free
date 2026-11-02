@@ -104,7 +104,10 @@ function Decide({ planId, ex, view, user, names }: { planId: string; ex: Control
   const approveReasons = [...reasons];
   if (!row) approveReasons.push('마지막 게이트 판정에 이 통제 행이 없어 승인할 수 없습니다.');
   else if (!rowSame) approveReasons.push('마지막 게이트 판정의 이 행이 예외를 요청할 때와 달라(값 또는 증거) 승인할 수 없습니다. 새로 요청해야 합니다.');
-  if (ex.expires_at && Date.parse(ex.expires_at) <= Date.now()) approveReasons.push('만료 시각이 지났습니다.');
+  if (ex.expires_at && Date.parse(ex.expires_at) <= Date.now()) approveReasons.push('예외의 만료 시각이 지났습니다.');
+  const evExp = view.gate?.evidence_expires_at ?? null;
+  if (view.gate && !evExp) approveReasons.push('마지막 판정에 증거 유효기간이 없어(게이트 보고서를 읽지 못한 판정) 승인할 수 없습니다. operator가 게이트를 다시 돌려야 합니다.');
+  else if (evExp && Date.parse(evExp) <= Date.now()) approveReasons.push(`마지막 판정의 증거가 만료되었습니다(${fmtTs(evExp)}). 만료된 증거로는 승인하지 않습니다. operator가 게이트를 다시 돌려야 합니다.`);
   const busy = approve.isPending || reject.isPending;
   return (
     <div className="exception__decide">
@@ -130,7 +133,14 @@ function Decide({ planId, ex, view, user, names }: { planId: string; ex: Control
             {short(ex.evidence_digest)}
           </dd>
         </div>
+        <div>
+          <dt>증거 유효</dt>
+          <dd className="mono">{evExp ? `~${fmtTs(evExp)}` : '— 판정에 없음'}</dd>
+        </div>
       </dl>
+      <p>
+        <b>대체 통제</b> {ex.compensating_control ?? <span className="muted">— 응답에 없음</span>}
+      </p>
       <p>
         마지막 판정의 이 행:{' '}
         {row ? (
@@ -190,9 +200,14 @@ export function ExceptionsPanel({ planId, view, user, names }: { planId: string;
                   {ex.applied && <span className="muted">마지막 판정에 반영됨</span>}
                   {ex.stale_reason && <span className="muted">({ex.stale_reason})</span>}
                 </div>
-                <p className="exception__reason">{ex.reason ?? '사유 없음'}</p>
+                <p className="exception__reason">
+                  <b>사유</b> {ex.reason ?? '—'}
+                </p>
+                <p className="exception__reason">
+                  <b>대체 통제</b> {ex.compensating_control ?? <span className="muted">— 응답에 없음</span>}
+                </p>
                 <p className="muted">
-                  {ex.target_environment ?? '목적지 —'} · 만료 {fmtTs(ex.expires_at)} · 요청 {ex.requested_by ?? '—'} {fmtTs(ex.requested_at)}
+                  {ex.target_environment ?? '목적지 —'} · 기간 ~{fmtTs(ex.expires_at)} · 요청 {ex.requested_by ?? '—'} {fmtTs(ex.requested_at)}
                   {ex.decided_by ? ` · 결정 ${ex.decided_by} ${fmtTs(ex.decided_at)}` : ''}
                   {ex.decision_note ? ` · 메모 ${ex.decision_note}` : ''}
                 </p>

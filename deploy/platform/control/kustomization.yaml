@@ -51,7 +51,7 @@ images:
     digest: sha256:376c87f1583b4a695f684ef9f47143522b8754afe4bb239ba097b63722b92d26 # exception-20261102T143819Z (API lane: S1 5b control exceptions, migration 0008 via the Sync-hook migrate Job, gate report with source/target; tree at f1cd770)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:194273013b7d4e0d2b9ead738301332896faca95bcb193a447c9e45709d150a2 # r13 (console lane: control exceptions S1 5b request/approve UI, A4 held ANALYZE, B10 receipt parts)
+    digest: sha256:0352ad8b872dd084fedcb41bf4ee806f1ab3fc5893ac0ed85a0b637739b95456 # r14 (console lane: exception compensating_control + evidence_expires_at gating, spec §8.5)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:71428216456e779286ef8d09313def20d0a305b08ec2969ed8fb5b31f8d49f1b # exception-20261102T143819Z (src/dst evidence digests on report rows for S1 5b; over dbauth-20261102T134943Z; tree at f1cd770)
