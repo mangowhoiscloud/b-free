@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Run the gate for both pairs through the PLATFORM gate service (the path the platform API and the console use:
-# GET http://gate.bravo-control.svc:8084/v1/controls/report?source=…&target=…) and save raw reports + 통제 ID별 비교표.
+# Run the gate for both pairs through the PLATFORM gate service the way the platform API evaluates a plan
+# (POST http://gate.bravo-control.svc:8084/v1/controls/report {"source", "target"}) and save raw reports + 통제 ID별 비교표.
 #   run-platform-gate.sh [pod/<name> | svc/gate]        default svc/gate
-# Read-only: HTTP GET never writes (OBJ-03/OBJ-04 PUT probes answer write_probe_not_allowed_here, audit 48).
+# The POST run does the write probes (OBJ-03/OBJ-04) on the gate's own _gate/ keys and deletes them again.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CTX="${BRAVO_PLATFORM_CONTEXT:-bravo-platform-rke2}"
@@ -22,8 +22,8 @@ for _ in $(seq 1 40); do curl -sf "http://127.0.0.1:$port/healthz" >/dev/null &&
 } >"$OUT/run.txt"
 for t in target-onprem target-gcp; do
   start="$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S KST')"
-  curl -s -m 600 "http://127.0.0.1:$port/v1/controls/report?source=source-aws&target=$t" >"$OUT/report-source-aws-$t.json"
-  curl -s -m 600 "http://127.0.0.1:$port/v1/controls?source=source-aws&target=$t&level=control" >"$OUT/controls-source-aws-$t.json"
+  curl -s -m 600 -X POST -H 'content-type: application/json' -d "{\"source\":\"source-aws\",\"target\":\"$t\"}" \
+    "http://127.0.0.1:$port/v1/controls/report" >"$OUT/report-source-aws-$t.json"
   echo "$t: started $start, finished $(TZ=Asia/Seoul date '+%H:%M:%S KST')" >>"$OUT/run.txt"
 done
 python3 -I "$HERE/gate-table.py" "$OUT" >"$OUT/TABLES.md"

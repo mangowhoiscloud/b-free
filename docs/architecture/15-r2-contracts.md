@@ -77,17 +77,20 @@ S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` P
 
 증거 객체(`src_evidence`, `dst_evidence`): `{"verdict": "PASS|FAIL|UNKNOWN", "reason": "<코드>", "evidence": {...}}`. `evidence`에는 비밀이 없습니다(오류 문자열도 가림, 감사 38). 여러 하위 관찰은 `{"parts": [...]}`. 절이 없는 쪽은 `UNKNOWN` · `not_configured`로 남고 게이트를 막습니다(감사 B16).
 
-**플랫폼에서 무엇으로 재나(2026-11-03).** 플랫폼 게이트(`gate.bravo-control.svc:8084`)는 레지스트리 `deploy/platform/control/config/environments.yaml`의 `source-aws`, `target-onprem`, `target-gcp`를 씁니다. 환경마다 수집기와 다른 자기 읽기 신원입니다(`deploy/platform/link/gate-rbac/README.md`).
+**플랫폼에서 무엇으로 재나(2026-11-03, 규칙 `gate-controls/2026-11-03.1`).** 플랫폼 게이트(`gate.bravo-control.svc:8084`)는 레지스트리 `deploy/platform/control/config/environments.yaml`의 `source-aws`, `target-onprem`, `target-gcp`를 씁니다. 환경마다 수집기와 다른 자기 읽기 신원입니다(`deploy/platform/link/gate-rbac/README.md`).
 
-| 환경 | K8s | DB(역할 `gate_ro`) | 첨부 저장소 | AWS |
+| 환경 | K8s | DB(역할 `gate_ro`) | 첨부 저장소 | 비밀 · 감사(`platform`) |
 |---|---|---|---|---|
-| `source-aws` | `src-k8s`, EKS 토큰(역할 `gate-ro`, 그룹 `bravo-gate`) | `src-db` | S3, 역할 `gate-ro`(canary 한 개 GET, 암호화 설정 읽기), OBJ-05는 권한 없는 역할 `gate-other` | 역할 `gate-ro`(읽기 · 시뮬레이션) |
-| `target-onprem` | `dst-k8s`, SA `kube-system/bravo-gate` | `dst-db` | RGW, `dst-s3`(TLS) · `dst-s3http`(평문 수신, OBJ-06), 앱 키 · `bravo-gate-other` 키 | 없음 |
-| `target-gcp` | GKE DNS 엔드포인트, Google SA `bravo-gate-ro`(WIF) | `gke-db` | GCS XML API, 앱 HMAC · `gate-other` HMAC. OBJ-ENC는 JSON API `buckets.get`의 `defaultKmsKeyName` | 없음 |
+| `source-aws` | `src-k8s`, EKS 토큰(역할 `gate-ro`, 그룹 `bravo-gate`) | `src-db` | S3, 역할 `gate-ro`(canary 한 개 GET, 암호화 · 버킷 정책 읽기), OBJ-05는 권한 없는 역할 `gate-other`, OBJ-04는 앱 역할의 IAM 시뮬레이션 | `eks`: Secrets Manager · KMS · EKS · CloudTrail(역할 `gate-ro`) |
+| `target-onprem` | `dst-k8s`, SA `kube-system/bravo-gate` | `dst-db` | RGW, `dst-s3`(TLS) · `dst-s3http`(평문 수신, OBJ-06), 앱 키 · `bravo-gate-other` 키 | `rke2`: kube-apiserver `/metrics` · 정적 Pod 플래그, 플랫폼 OpenBao |
+| `target-gcp` | `gke-k8s`(클러스터 CA는 container API), Google SA `bravo-gate-ro`(WIF) | `gke-db` | GCS XML API, 앱 HMAC · `gate-other` HMAC. OBJ-ENC는 JSON API `buckets.get` | `gke`: container API `databaseEncryption`, Cloud Audit Logs, 플랫폼 OpenBao |
 
-- K8s 권한은 질문이 부르는 것뿐입니다. SubjectAccessReview 만들기, 네임스페이스 읽기, ns `chat`의 NetworkPolicy 목록과 CNPG Cluster 읽기입니다. Secret `get`은 없습니다. 그래서 SEC-SECRET-READ-K8S는 앱 Secret이 있는지 확인하지 않고 증거에 `secret_existence: not_checked_no_get_right`를 남깁니다.
-- 레지스트리 키(`platform/gate/README.md`): `kubernetes.provider`(`eks` · `gke`), `api_server`, `postgres.dial_host`(링크에 붙고 `verify-full`은 DSN의 DB 이름으로), `object_store.ca_file`, `object_store.plain_http_endpoint_url`. OBJ-06은 앱 자격이 없으면 읽기 자격으로 잽니다.
-- 늘 UNKNOWN인 질문(측정 불가, 이유 고정): OBJ-03 · OBJ-04의 쓰기 시험(HTTP GET은 쓰지 않음, 감사 48. 출발지 OBJ-04는 앱 자격이 IRSA라 게이트에 없음), AWS 절 질문(SEC-SECRET-READ-AWS, SEC-ENC-CMK, AUD-PLATFORM)의 비 AWS 목적지(`not_configured`), NET-PATHS(대조 · 거부 경로를 정하지 않음). 그래서 두 쌍 모두 지금은 BLOCK입니다.
+- **ID 변경(공급자 중립).** `SEC-SECRET-READ-AWS` → `SEC-SECRET-STORE-READ`, `SEC-ENC-CMK` → `SEC-SECRET-AT-REST`, `AUD-PLATFORM` → `AUD-CONTROL-PLANE`. 세 질문은 절 `platform`을 쓰고, 같은 질문을 세 공급자에 던집니다. 시험 방법은 `platform/gate/README.md` 표입니다. 옛 ID에 묶인 통제 예외는 새 행과 맞지 않습니다(새 ID로 다시 요청).
+- **실행 두 가지.** `GET /v1/controls/report`는 읽기만 합니다. `POST /v1/controls/report` `{"source", "target"}`는 계획 평가 실행이고 OBJ-03 · OBJ-04 쓰기 시험을 게이트의 `_gate/` 키에만 하고 지웁니다. 플랫폼 API(`GateControlsClient`)는 POST를 씁니다.
+- **OBJ-04(AWS).** 게이트에 앱 자격(IRSA 역할)을 주지 않습니다. `iam:SimulatePrincipalPolicy`로 앱 역할이 canary `s3:GetObject`, 시험 키 `s3:PutObject`(버킷 정책 포함), 버킷 KMS 키 `kms:GenerateDataKey` · `kms:Decrypt`(키 정책 포함, `kms:ViaService`=S3)를 할 수 있는지 봅니다. RGW · GCS는 게이트가 가진 앱 키로 실제 PUT · 삭제입니다.
+- **NET-PATHS.** 앱 네임스페이스에 앱 Deployment의 라벨 · 이미지로 짧은 시험 Pod를 띄워 잽니다(SA 토큰 없음, 늘 준비 안 됨, 90초, 지움). 대조 `chat-pgbouncer.chat.svc:6432`는 연결, 거부 `169.254.169.254:80` · `1.1.1.1:80`은 거부 · 시간 초과여야 PASS.
+- K8s 권한은 질문이 부르는 것뿐입니다. SubjectAccessReview 만들기, 네임스페이스 읽기, `/metrics`, ns `chat`의 NetworkPolicy 목록 · CNPG Cluster 읽기 · Deployment 읽기 · 시험 Pod 만들기/지우기/로그. Secret `get`은 없습니다(SEC-SECRET-READ-K8S 증거 `secret_existence: not_checked_no_get_right`).
+- 레지스트리 키(`platform/gate/README.md`): `kubernetes.provider`(`eks` · `gke`), `api_server`, `gke_cluster`, `postgres.dial_host`, `object_store.ca_file` · `plain_http_endpoint_url` · `app_principal_arn` · `write_probes`, `network.probe_from: pod` · `app_deployment`, `platform.kind` · `gke_cluster` · `apiserver_pod` · `secret_store`.
 
 ## 3. 의존성 인벤토리(`platform/collector`, :8083)
 

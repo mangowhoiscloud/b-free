@@ -60,7 +60,7 @@ images:
     digest: sha256:9db331e04ff03d85c368901fabff632fdc8e984765da87b5a79080ea26f5da89 # r15 (console lane: gate rows show measuring source, sources_disagree stays blocked)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
-    digest: sha256:6ef05ddbcb4714147364d0f926c6015e47eed58acb614e2660744609884cb235 # neutral-20261102T163916Z (gate lane: provider-neutral SEC/AUD questions, POST run with write probes, OBJ-04 IAM simulation, NET-PATHS probe Pod, GKE over link gke-k8s; tree at 21f45cb)
+    digest: sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959 # neutral-20261102T164936Z (gate lane: provider-neutral SEC/AUD questions, POST run with write probes, OBJ-04 IAM simulation, NET-PATHS probe Pod, GKE over link gke-k8s, parallel sections; tree at 50399a7)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
     digest: sha256:af3c66c17932423a23a4121f184b149fdf83f526f4b3d9e8dcd97645fdab5a79 # neutral-20261102T163611Z (gate lane: provider gke over link gke-k8s with its WIF identity bravo-cost-reader; over d16link-20261102T143435Z; tree at 50218ea)

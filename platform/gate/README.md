@@ -6,27 +6,27 @@
 
 ## 질문과 통제
 
-질문 하나는 환경 설정의 한 절(`needs`)을 씁니다. 게이트는 다섯 절(`object_store`, `postgres`, `kubernetes`, `aws`, `network`)의 질문 19개를 늘 모두 던집니다. 절이 없는 쪽은 `UNKNOWN`(`not_configured`)이고, 게이트를 막습니다. 설정하지 않은 질문이 표에서 빠져 일부만 보고 통과하는 일은 없습니다(감사 B16).
+질문 하나는 환경 설정의 한 절(`needs`)을 씁니다. 게이트는 다섯 절(`object_store`, `postgres`, `kubernetes`, `platform`, `network`)의 질문 19개를 늘 모두 던집니다. 규칙 판 `gate-controls/2026-11-03.1`부터 모든 질문이 공급자 중립입니다. 같은 질문을 EKS, RKE2, GKE에 던지고 뒤의 시험만 `platform.kind`에 따라 다릅니다(`probes/neutral.py`). AWS 전용 ID는 바뀌었습니다: `SEC-SECRET-READ-AWS` → `SEC-SECRET-STORE-READ`, `SEC-ENC-CMK` → `SEC-SECRET-AT-REST`, `AUD-PLATFORM` → `AUD-CONTROL-PLANE`. 절이 없는 쪽은 `UNKNOWN`(`not_configured`)이고, 게이트를 막습니다. 설정하지 않은 질문이 표에서 빠져 일부만 보고 통과하는 일은 없습니다(감사 B16).
 
 | 통제 | 질문 ID | 시험(행동 시험이 우선) | 절 |
 |---|---|---|---|
 | IAM-01 · ISO-01 | OBJ-01 | 서명 없는 GET `<bucket>/_gate/canary` → 401 · 403이면 PASS | `object_store` |
 | | OBJ-02 | 서명 없는 LIST → 401 · 403이면 PASS | `object_store` |
-| | OBJ-03 | 서명 없는 PUT `_gate/anon-put-probe` → 거부면 PASS. `write_probes: true`일 때만 | `object_store` |
-| | OBJ-04 | 앱 자격으로 canary HEAD, `_gate/app-put-probe` PUT → 둘 다 200이면 PASS(대조군) | `object_store` |
+| | OBJ-03 | 서명 없는 PUT `_gate/anon-put-probe` → 거부면 PASS. SSE-KMS 기본 암호화 버킷이 서명 전 단계에서 `400 InvalidArgument`(SigV4 필요)로 막으면 `x-amz-server-side-encryption: AES256`을 붙여 다시 보내 권한 판정을 받음. `write_probes: true`인 저장소에서 POST 실행일 때만 | `object_store` |
+| | OBJ-04 | 앱 자격으로 canary HEAD, `_gate/app-put-probe` PUT(POST 실행, 지운 결과를 증거에) → 둘 다 200이면 PASS(대조군). AWS는 게이트에 앱 자격(IRSA 역할)이 없으므로 `app_principal_arn`의 `iam:SimulatePrincipalPolicy`로 잼: canary `s3:GetObject`, 시험 키 `s3:PutObject`(버킷 정책을 자원 정책으로), 버킷 KMS 키 `kms:GenerateDataKey` · `kms:Decrypt`(키 정책, `kms:ViaService`=S3). 문맥 `aws:SecureTransport=true`, `aws:PrincipalArn`=앱 역할 | `object_store` |
 | | OBJ-05 | 다른 자격으로 canary GET → 403이면 PASS | `object_store` |
 | | DB-ANON-READ | `has_table_privilege('public', 표, 'SELECT')`가 거짓이면 PASS | `postgres` |
 | | DB-AUTH | 앱 역할로 비밀번호 없이 실제 로그인 → 거부, `password_encryption=scram-sha-256`, 그리고 `pg_hba` 규칙 판정: 앱 역할 · DB에 닿는 네트워크 규칙(`host`, `hostssl`, `hostnossl`, `hostgssenc`, `hostnogssenc`)의 trust · ident · peer는 FAIL, `trust`는 `local`을 포함해 어디서나 FAIL. `local`의 peer · ident(CNPG 기본 `local all all peer map=local`, 파드 안 Unix 소켓)는 네트워크 경로가 아니라 판정하지 않음. 증거에 모든 규칙과 판정 이유를 남김. 앱 역할이 DB에 없으면 UNKNOWN(`app_role_missing`) | `postgres` |
 | SEC-01 · ENC-02 | SEC-SECRET-READ-K8S | 다른 서비스 계정의 Secret `get` · `list`를 SubjectAccessReview로 시험 → 거부면 PASS. `evaluationError`가 있으면 UNKNOWN. 앱 네임스페이스나 Secret이 없으면 UNKNOWN(메타데이터만 읽음) | `kubernetes` |
-| | SEC-SECRET-READ-AWS | 다른 IAM 주체(`other_principal_arns`, 또는 `other_principal_roles` 이름을 `iam:GetRole`로 풀어서)의 `secretsmanager:GetSecretValue`를 `iam:SimulatePrincipalPolicy`(자원 정책 포함)로 시험 | `aws` |
+| | SEC-SECRET-STORE-READ | 앱 비밀의 원본 저장소를 다른 신원이 읽을 수 있나. EKS: 다른 IAM 주체의 `secretsmanager:GetSecretValue`를 `iam:SimulatePrincipalPolicy`(자원 정책 포함)로. RKE2 · GKE: 플랫폼 OpenBao에서 게이트의 `gate-meta` 역할로 앱 비밀 경로가 있는지(KV 메타데이터) 확인하고, 권한 없는 `gate-other` 역할의 값 읽기가 모두 403이면 PASS | `platform` |
 | | OBJ-ENC | 첨부 버킷 기본 암호화가 고객 관리 키(`aws:kms`, AWS면 DescribeKey로 `KeyManager=CUSTOMER` 확인). `AES256`이나 설정 없음은 FAIL | `object_store` |
-| | SEC-ENC-CMK | Secrets Manager 비밀의 `KmsKeyId`가 고객 관리 키(`KeyManager=CUSTOMER`) | `aws` |
+| | SEC-SECRET-AT-REST | 앱 비밀이 저장소와 클러스터 양쪽에서 고객 쪽이 쥔 키로 암호화되나. EKS: Secrets Manager `KmsKeyId`가 `KeyManager=CUSTOMER` + EKS `encryptionConfig`(secrets) 키도 CUSTOMER. RKE2: OpenBao가 원본(봉인 해제, Shamir, 경로 있음) + kube-apiserver `/metrics`의 Secret 저장 변환자가 `k8s:enc:<공급자>`(identity 아님), `--encryption-provider-config` 플래그. GKE: OpenBao가 원본 + `databaseEncryption` ENCRYPTED(Cloud KMS 키) | `platform` |
 | ENC-01 | OBJ-06 | 앱 자격으로 `http://` GET → 연결 거부 · 403이면 PASS. 엔드포인트 자체가 `http://`이면 FAIL | `object_store` |
 | | DB-TLS | `sslmode=disable` 접속이 거부, `ssl=on`, 최소 TLS 1.2, CA로 `verify-full` 성공 | `postgres` |
 | AUD-01 | DB-AUDIT | `pgaudit` 적재, `pgaudit.log`에 ddl · role(또는 all), `log_connections=on` | `postgres` |
-| | AUD-PLATFORM | 다중 리전 CloudTrail이 기록 중이고, 이벤트 선택자가 관리 이벤트 쓰기(`IncludeManagementEvents` + `All`/`WriteOnly`, 또는 고급 선택자 `eventCategory=Management`)를 기록. EKS면 `audit` 로그 켬 | `aws` |
+| | AUD-CONTROL-PLANE | 제어면 감사가 켜져 있고 지금 기록하나. EKS: 다중 리전 CloudTrail이 관리 이벤트 쓰기를 기록 + EKS `audit` 로그 켬. RKE2: `--audit-policy-file` · `--audit-log-path` 플래그, 시험 중 `apiserver_audit_event_total`이 늘고 `apiserver_audit_error_total`은 늘지 않음. GKE: Cloud Audit Logs 관리 활동(`cloudaudit.googleapis.com/activity`, `k8s_cluster`)에 최근 1시간 항목이 있음 | `platform` |
 | NET-01 | NET-DEFAULT-DENY | 앱 네임스페이스에 전체 Pod 대상 기본 거부(ingress, egress) NetworkPolicy. 네임스페이스가 없으면 UNKNOWN | `kubernetes` |
-| | NET-PATHS | 대조 경로는 TCP 연결 성공, 허용하지 않은 경로는 거부 · 시간 초과. 대조 경로가 실패하거나, 허용하지 않은 경로가 DNS 오류 같은 다른 오류면 UNKNOWN | `network` |
+| | NET-PATHS | 앱 네임스페이스에서 대조 경로는 TCP 연결 성공, 허용하지 않은 경로는 거부 · 시간 초과. `probe_from: pod`면 앱 Deployment의 라벨 · 이미지로 짧은 시험 Pod를 띄워 잼(`probes/netpod.py`: SA 토큰 없음, 늘 준비 안 됨, 90초, 끝나면 지움). 플랫폼 레지스트리: 대조 `chat-pgbouncer.chat.svc:6432`, 거부 `169.254.169.254:80`(인스턴스 메타데이터) · `1.1.1.1:80`(바깥, 앱이 안 쓰는 포트). 대조 경로가 실패하거나, 허용하지 않은 경로가 DNS 오류 같은 다른 오류면 UNKNOWN | `network` |
 | DR-01 | DR-ARCHIVE | `archive_mode` 켬, 한 번 이상 보관, 마지막 실패가 마지막 성공보다 이전 | `postgres` |
 | | DR-RESTORE | `bootstrap.recovery`로 만든 CNPG Cluster가 healthy | `kubernetes` |
 
@@ -34,7 +34,7 @@
 
 **거부로 세는 것(감사 A5).** S3 오류 코드 `AccessDenied` · `AllAccessDisabled`, 또는 본문 없는 HEAD의 403만 거부입니다. `InvalidAccessKeyId`, `SignatureDoesNotMatch`, `ExpiredToken`은 정책 평가 전의 자격 오류라 UNKNOWN(`credential_not_evaluated`)입니다.
 
-**쓰기 시험.** OBJ-03과 OBJ-04의 PUT은 `write_probes: true`인 저장소에서, CLI `run --write-probes`로 돌릴 때만 합니다. HTTP GET(`/v1/controls`, `/v1/controls/report`)은 쓰지 않고 `write_probe_not_allowed_here`로 UNKNOWN을 냅니다(감사 48). 게이트가 쓴 시험 객체는 앱 자격으로 지우고, 지운 결과(`cleanup`)를 증거에 남깁니다. 실제 AWS에는 켜지 않습니다.
+**쓰기 시험.** OBJ-03과 OBJ-04의 PUT은 `write_probes: true`인 저장소에서 `POST /v1/controls/report`(플랫폼 API가 계획을 평가할 때 부르는 실행)나 CLI `run --write-probes`로 돌릴 때만 합니다. GET(`/v1/controls`, `/v1/controls/report`)은 쓰지 않고 `write_probe_not_allowed_here`로 UNKNOWN을 냅니다(감사 48). 쓰는 곳은 게이트 자신의 `_gate/` 키뿐이고, 쓴 객체는 앱 자격으로 지우고 지운 결과(`cleanup`)를 증거에 남깁니다. AWS 출발지에서는 익명 PUT(OBJ-03)만 실제로 보내고, 앱 쪽(OBJ-04)은 IAM 시뮬레이션입니다.
 
 **OBJ-06.** 같은 앱 자격이 https로 canary를 읽은 뒤, http로 GET합니다. 연결 거부, 또는 http에서만 `AccessDenied`이면 PASS입니다. 200이면 FAIL, 시간 초과 · 끊김 · DNS 오류 · 리다이렉트는 UNKNOWN(`plain_http_inconclusive`)입니다(감사 A5). 판정은 행동입니다. RGW에서 `aws:SecureTransport`를 `Bool`로 쓴 거부 정책은 평문 요청에 키가 없어 적용되지 않습니다. 그러면 평문 GET이 200을 받고 OBJ-06은 FAIL입니다. `BoolIfExists`로 써야 PASS가 됩니다.
 
@@ -141,11 +141,12 @@ environments:
 |---|---|
 | `GET /v1/controls?source=ID&target=ID` | `CONTRACT.md` 6절 형식 그대로: `[{control_id, question, src, dst}]`, 값 `PASS` · `FAIL` · `UNKNOWN`. 질문마다 한 행 |
 | `GET /v1/controls?source=ID&target=ID&level=control` | 같은 형식으로 통제마다 한 행(SEC-01, ENC-01, AUD-01, NET-01, IAM-01, DR-01) |
-| `GET /v1/controls/report?source=ID&target=ID` | 같은 실행의 전체 결과: 행별 판정과 `reason`, 증거, 증거 digest(`src_evidence_digest`, `dst_evidence_digest`), 네 상태 문구, `input_digest`, `rule_version`, `test_version`, `collected_at`, `expires_at` |
+| `GET /v1/controls/report?source=ID&target=ID` | 같은 실행의 전체 결과: 행별 판정과 `reason`, 증거, 증거 digest(`src_evidence_digest`, `dst_evidence_digest`), 네 상태 문구, `input_digest`, `rule_version`, `test_version`, `collected_at`, `expires_at`. 읽기만 |
+| `POST /v1/controls/report` `{"source": ID, "target": ID}` | 같은 보고서. 쓰기 시험(OBJ-03 · OBJ-04)을 `write_probes: true`인 저장소에서 함(게이트의 `_gate/` 키만, 지움). 플랫폼 API가 계획을 평가할 때(만들기 · 진행 · 재확인) 부르는 길 |
 | `GET /v1/catalog` | 통제와 질문 목록 |
 | `GET /v1/environments` | 등록된 환경과 설정된 절(비밀 없음) |
 
-플랫폼 API 게이트는 Executor의 `/v1/controls`와 이 서비스의 `/v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`을 읽습니다(2026-11-02 23:xx부터, 계약 15 9.5). 증거 digest는 `"sha256:"` + 증거 객체(`{verdict, reason, evidence}`)의 정렬 JSON sha256입니다. 통제 예외(스펙 S1 5b)는 목적지 digest에 묶이고, `EXCEPTION`(예외 승인) 판정은 API가 조립할 때만 나옵니다. 이 서비스는 예외를 모릅니다.
+플랫폼 API 게이트는 Executor의 `/v1/controls`와 이 서비스의 `POST /v1/controls/report`(`{"source": <출발지 환경 이름>, "target": <목적지 환경 이름>}`, 2026-11-03부터. 그전은 같은 경로의 GET)를 읽습니다(계약 15 9.5). 증거 digest는 `"sha256:"` + 증거 객체(`{verdict, reason, evidence}`)의 정렬 JSON sha256입니다. 통제 예외(스펙 S1 5b)는 목적지 digest에 묶이고, `EXCEPTION`(예외 승인) 판정은 API가 조립할 때만 나옵니다. 이 서비스는 예외를 모릅니다.
 
 ## 실행
 

@@ -94,6 +94,8 @@ spec:
             - {name: BRAVO_REHEARSAL_URL, value: "http://rehearsal.bravo-control.svc:8090"}
             - {name: BRAVO_COLLECTOR_URL, value: "http://collector.bravo-control.svc:8083"}
             - {name: BRAVO_GATE_URL, value: "http://gate.bravo-control.svc:8084"}
+            # The plan evaluation run (POST, write probes, NET-PATHS probe Pods, audit window) measured 30-60 s.
+            - {name: BRAVO_GATE_TIMEOUT_S, value: "150"}
             - {name: BRAVO_CONSOLE_BASE_URL, value: "https://b-free.mangowhois.ai"}
             - {name: BRAVO_CORS_ORIGINS, value: "https://b-free.mangowhois.ai"}
             - {name: BRAVO_GATE_MAX_LAG_BYTES, value: "65536"}

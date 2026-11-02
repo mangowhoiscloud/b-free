@@ -12,6 +12,7 @@
 | `dst-pgb` | 6432 | `t1-dst-pgb.mangowhois.ai` | `secret/envs/platform/cf-link-dst-pgb` |
 | `dst-s3http` | 80 | `t1-dst-s3http.mangowhois.ai`(RGW 평문 수신 80 → Pod 8080) | `secret/envs/platform/cf-link-dst-s3http` |
 | `gke-db` | 5432 | `t1-gke-db.mangowhois.ai`(GKE 관리 Tunnel `t1-gke-mgmt`) | `secret/envs/platform/cf-link-gke-db` |
+| `gke-k8s` | 443 | `t1-gke-k8s.mangowhois.ai`(GKE API, 제어면 `10.30.0.3`) | `secret/envs/platform/cf-link-gke-k8s` |
 
 `dst-s3http`와 `gke-db`는 2026-11-03 01:0x–01:1x KST에 더했습니다. 소비자는 플랫폼 게이트뿐입니다. `dst-s3http`는 OBJ-06의 평문 요청(TLS 전용 버킷 정책이 `AccessDenied`를 내야 함)만, `gke-db`는 GKE chat-db의 DB 질문(DB-*, DR-ARCHIVE)만 씁니다. 두 링크 클라이언트는 Argo CD 동기화 전에 같은 매니페스트로 먼저 적용했습니다.
 
@@ -24,6 +25,7 @@ Service 이름은 임시 링크와 같습니다. 그래서 바꿀 때 소비자(
 | 수집기, 리허설 서비스, Executor | `dst-k8s` | 읽기 전용 · 리허설 · Executor SA 토큰(OpenBao에서 Secret으로) | `kubernetes.default.svc` |
 | 게이트 | `src-k8s` | EKS IAM 토큰(웹 아이덴티티 역할 `gate-ro`, access entry `bravo-gate`) | 실제 EKS 엔드포인트 호스트(수집기와 같은 방식) |
 | 게이트 | `dst-k8s` | SA `kube-system/bravo-gate` 토큰(OpenBao `secret/envs/target-onprem/k8s-gate`) | `kubernetes.default.svc` |
+| 수집기, 게이트 | `gke-k8s` | Google 접근 토큰(WIF: `bravo-cost-reader`, `bravo-gate-ro`) | `kubernetes.default.svc`(클러스터 CA는 container API) |
 | 게이트 | `src-db`, `dst-db`, `gke-db` | DB 역할 `gate_ro`(비밀번호 OpenBao `secret/envs/<env>/gate-db`) | `chat-db-rw.chat.svc`(libpq `hostaddr`로 링크에 붙고 `verify-full`은 DB 이름으로) |
 | 게이트 | `dst-s3`, `dst-s3http` | RGW 앱 키 · 권한 없는 `bravo-gate-other` 키(OpenBao) | `127.0.0.1`(게이트 사이드카 `s3-local`, RGW 인증서 IP SAN) |
 

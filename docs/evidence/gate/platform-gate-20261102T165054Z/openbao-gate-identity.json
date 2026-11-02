@@ -1,0 +1,71 @@
+{
+  "measured_at": "2026-11-03T01:51:39+09:00",
+  "identity": "SA bravo-control/gate (kubectl create token, 10 min), OpenBao Kubernetes auth roles gate-meta / gate-other",
+  "path": "operator port-forward to openbao-0 (the platform NetworkPolicy admits the gate only after the Argo sync of badb7e2)",
+  "target-onprem": {
+    "SEC-SECRET-STORE-READ (store part)": {
+      "verdict": "PASS",
+      "reason": "other_identity_denied",
+      "evidence": {
+        "store": "platform OpenBao",
+        "paths": {
+          "envs/target-onprem/chat-admin": "present",
+          "envs/target-onprem/chat-db": "present"
+        },
+        "other_role": "gate-other",
+        "other_read": {
+          "envs/target-onprem/chat-admin": "http_403",
+          "envs/target-onprem/chat-db": "http_403"
+        }
+      }
+    },
+    "SEC-SECRET-AT-REST (store part)": {
+      "verdict": "PASS",
+      "reason": "secrets_in_openbao",
+      "evidence": {
+        "store": "platform OpenBao",
+        "seal_type": "shamir",
+        "sealed": false,
+        "initialized": true,
+        "paths": {
+          "envs/target-onprem/chat-admin": "present",
+          "envs/target-onprem/chat-db": "present"
+        },
+        "at_rest": "barrier AES-256-GCM, root key under Shamir unseal keys held by the platform"
+      }
+    }
+  },
+  "target-gcp": {
+    "SEC-SECRET-STORE-READ (store part)": {
+      "verdict": "PASS",
+      "reason": "other_identity_denied",
+      "evidence": {
+        "store": "platform OpenBao",
+        "paths": {
+          "envs/target-gcp/chat-admin": "present",
+          "envs/target-gcp/chat-db": "present"
+        },
+        "other_role": "gate-other",
+        "other_read": {
+          "envs/target-gcp/chat-admin": "http_403",
+          "envs/target-gcp/chat-db": "http_403"
+        }
+      }
+    },
+    "SEC-SECRET-AT-REST (store part)": {
+      "verdict": "PASS",
+      "reason": "secrets_in_openbao",
+      "evidence": {
+        "store": "platform OpenBao",
+        "seal_type": "shamir",
+        "sealed": false,
+        "initialized": true,
+        "paths": {
+          "envs/target-gcp/chat-admin": "present",
+          "envs/target-gcp/chat-db": "present"
+        },
+        "at_rest": "barrier AES-256-GCM, root key under Shamir unseal keys held by the platform"
+      }
+    }
+  }
+}
