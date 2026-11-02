@@ -62,7 +62,7 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:be216ca95ca351654baa73f59a681a13bcbe48921f9853e148c7ebee3a95c275 # shift-20261102T185505Z (cutover lane L1: shift.thresholds; over 9253b8b; tree at 1c0094c)
+    digest: sha256:46edd0d19dc909b4d241c2466f2ac4b22b9a9d2d05a9fcb19bcc8e3f40234775 # s2full-20261102T185954Z (S2 lane L2 over L1's be216ca9: tool.denied origin, trial.progress + migration 0010, prior failures name the failed checks; clean worktree at a59d1bb; arm64)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
     digest: sha256:a2d8c7df850fecaa5f76c6e5c54f89515e87c3debeac24eadd0b5cc73b9bf310 # r17 (console lane: SHIFT 10/50/100 + start rules, receipt scope/hash_rule, recorded replay, failback front)
@@ -77,4 +77,4 @@ images:
     digest: sha256:b2732beda7e0802c7e27ed32442ef2d7a240264b1f068d65abcaffa0c06b6526 # shift-20261102T185505Z (cutover lane L1: judge on loadgen series or a new-connection probe, thresholds per stage, durable PgBouncer target, reverse slot at 6a; tree at 1c0094c)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
-    digest: sha256:1e1337fa61e03e7dbbcbf19ab101021ab2abe455e0e28736412fde39f4f6cacd # b7-20261102T144209Z (rehearsal lane: B7 behavioural verification Job for rgw_bucket_policy proposals, verifier_kind behavioral+static_rules; over readyz-20261102T131522Z; arm64)
+    digest: sha256:5c554f5b5b02339ebe30dd072fe8c31e94edb67fe61739bebbf47fa51de8f8d0 # s2full-20261102T184742Z (S2 lane L2: app_migration ESO Job, gate OBJ-01..06 Job, probes origin=probe, phase timings, Hubble drops from Prometheus, platform-path fixes; sources = a59d1bb; measured run 18 in docs/evidence/s2-full; arm64)
