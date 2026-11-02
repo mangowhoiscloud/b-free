@@ -14,18 +14,23 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "리전 클러스터 위치. 예: asia-northeast3"
+  description = "KMS 키링 리전. 클러스터 위치(location)의 리전과 같아야 함"
+  type        = string
+}
+
+variable "location" {
+  description = "클러스터 위치. 존(예: asia-northeast1-b)이면 zonal 제어면, 리전이면 regional 제어면"
   type        = string
 }
 
 variable "kubernetes_version" {
-  description = "최소 K8s minor. release_channel 안에서 이 판 이상을 씀. 모든 환경 공통 1.36"
+  description = "최소 K8s minor. 모든 환경 공통 1.36(bravo-source EKS 1.36, 온프렘 K3s 1.36)"
   type        = string
   default     = "1.36"
 }
 
 variable "release_channel" {
-  description = "GKE 릴리스 채널. 1.36은 2026-11-02 현재 REGULAR에 있고 STABLE에는 2026-11-11 무렵 들어옴(GKE 출시 일정)"
+  description = "GKE 릴리스 채널. 2026-11-02 asia-northeast1 REGULAR 기본판 1.36.4-gke.2046003(get-server-config로 확인)"
   type        = string
   default     = "REGULAR"
 
@@ -33,6 +38,26 @@ variable "release_channel" {
     condition     = contains(["RAPID", "REGULAR", "STABLE"], var.release_channel)
     error_message = "RAPID, REGULAR, STABLE 중 하나입니다."
   }
+}
+
+variable "node_pools" {
+  description = "노드 풀. 키는 풀 이름. C4A(Arm)는 Hyperdisk만 붙으므로 disk_type은 hyperdisk-balanced"
+  type = map(object({
+    machine_type = string
+    zones        = list(string)
+    min_per_zone = number
+    max_per_zone = number
+    disk_type    = optional(string, "hyperdisk-balanced")
+    disk_size_gb = optional(number, 50)
+    # Arm 노드 taint: NONE(모두 Arm인 클러스터) | ARM(x86 풀과 섞을 때)
+    architecture_taint_behavior = optional(string, "NONE")
+    labels                      = optional(map(string), {})
+    taints = optional(list(object({
+      key    = string
+      value  = string
+      effect = string
+    })), [])
+  }))
 }
 
 variable "network_self_link" {
@@ -53,6 +78,12 @@ variable "pod_range_name" {
 variable "service_range_name" {
   description = "network/gcp의 service_range_name"
   type        = string
+}
+
+variable "enable_hubble_relay" {
+  description = "Dataplane V2 관측(관리형 Hubble relay)"
+  type        = bool
+  default     = true
 }
 
 variable "deletion_protection" {

@@ -1,0 +1,55 @@
+{
+  "comment": "T31 tool pins (TECH-STACK-SPEC 2.8). sha256 is of the binary actually executed on the platform runner (operator laptop during the move to EKS; Homebrew builds, so they differ from the upstream release assets). Every run verifies version and sha256 and refuses on mismatch. trivy runs with no secrets, tokens or OIDC in its environment (CVE-2026-33634).",
+  "recorded_at": "2026-11-02T21:05:00+09:00",
+  "tools": {
+    "syft": {
+      "version": "1.55.0",
+      "path": "/opt/homebrew/Cellar/syft/1.55.0/bin/syft",
+      "sha256": "bcee50644b22c754432eab51dd723b995b197aead7fc9760724bebe6ce3c61e2",
+      "version_cmd": ["version", "-o", "json"],
+      "version_key": "version"
+    },
+    "trivy": {
+      "version": "0.76.1",
+      "path": "/opt/homebrew/Cellar/trivy/0.76.1/bin/trivy",
+      "sha256": "b42e7d10db15a07a59ab557682bdb24311607f2e5c4c1bad80b7f7e94344e48b",
+      "version_cmd": ["version", "--format", "json"],
+      "version_key": "Version"
+    },
+    "cosign": {
+      "version": "v3.1.4",
+      "path": "/opt/homebrew/Cellar/cosign/3.1.4/bin/cosign",
+      "sha256": "c15dd19f1c7659a0782efed48e1953eafcb82e87e92f4f291236ea01b96275fa",
+      "version_cmd": ["version", "--json"],
+      "version_key": "gitVersion"
+    },
+    "docker-buildx": {
+      "version": "v0.29.1-desktop.1",
+      "path": "/Applications/Docker.app/Contents/Resources/cli-plugins/docker-buildx",
+      "sha256": "788523acf0989189c8226e5178c4b11d8f3ef11a2ca9982cda3703e3bc45055f",
+      "version_cmd": ["version"],
+      "version_regex": "github.com/docker/buildx (\\S+)"
+    },
+    "skopeo": {
+      "version": "1.24.1",
+      "path": "/opt/homebrew/Cellar/skopeo/1.24.1/bin/skopeo",
+      "sha256": "72886c1d40fb98c1000b5eb837d89598c9868b29c46176afedfbf41afc501635",
+      "version_cmd": ["--version"],
+      "version_regex": "skopeo version (\\S+)"
+    },
+    "kubectl": {
+      "version": "v1.34.1",
+      "path": "/opt/homebrew/Cellar/kubernetes-cli/1.34.1/bin/kubectl",
+      "sha256": "a8d987554c96c991c80a5a5634249368a5665db5aeb06286d21223f1ee740a14",
+      "version_cmd": ["version", "--client", "-o", "json"],
+      "version_key": "clientVersion.gitVersion"
+    },
+    "limactl": {
+      "version": "1.2.1",
+      "path": "/opt/homebrew/Cellar/lima/1.2.1/bin/limactl",
+      "sha256": "fad5ae073f4cc4a9b2b20e0dcaf5450a83042f21f4f6a6cb56142267e4e1695c",
+      "version_cmd": ["--version"],
+      "version_regex": "limactl version (\\S+)"
+    }
+  }
+}

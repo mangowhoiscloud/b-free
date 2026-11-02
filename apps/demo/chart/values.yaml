@@ -95,6 +95,10 @@ service:
 forwardedAllowIps: "127.0.0.1"  # proxies whose X-Forwarded-* headers are trusted (e.g. the ingress/tunnel pod CIDR)
 logLevel: INFO
 extraEnv: []
+# Extra volumes/mounts, e.g. a private CA for an S3-compatible store over TLS (on-prem RGW):
+# mount it and point AWS_CA_BUNDLE (extraEnv) at the file. Same chart on every cloud.
+extraVolumes: []
+extraVolumeMounts: []
 
 resources:
   requests:

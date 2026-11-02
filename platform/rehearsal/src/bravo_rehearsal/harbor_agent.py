@@ -5,7 +5,8 @@ import_path: ``bravo_rehearsal.harbor_agent:RehearsalAgent`` (agent kwarg ``tria
 Harbor calls ``run()`` in the rehearsal service process. The model loop does not run here and
 not in the sandbox: ``run()`` starts the worker process (``python -m bravo_rehearsal.worker`` →
 ``bravo_agents.run_agent``) with an environment built from scratch (Trial token, tool-layer
-URL, evidence URL, ``StateEnvelope``, role, model route settings; no model key, no kubeconfig)
+URL, evidence URL, ``StateEnvelope``, role, model route settings and, for the OpenBao providers, a
+one-use secret_id for the provider's AppRole; no model key, no kubeconfig)
 and waits. The worker acts only through the MCP tool layer, which reaches this Trial's sandbox
 Pod in the Harbor environment with the namespace-bound exec identity. The only output channel
 is ``plan_propose`` (called by the worker, never by the model): the frozen artifact on the
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import json
 import shutil
 import sys
@@ -84,7 +86,8 @@ def trajectory(trial: Trial, version: str) -> Trajectory:
             message=f"{ev['tool']} {'allowed' if ev['allowed'] else 'blocked'} rule={ev['rule']}",
             tool_calls=[ToolCall(tool_call_id=f"{trial.trial_id}-{ev['seq']}", function_name=ev["tool"],
                                  arguments={"args_sha256": ev["args_sha256"]},
-                                 extra={"allowed": ev["allowed"], "rule": ev["rule"], "result": ev["result"]})],
+                                 extra={"allowed": ev["allowed"], "rule": ev["rule"], "result": ev["result"],
+                                        "origin": ev.get("origin", "agent")})],
         )
         for i, ev in enumerate(trial.tool_events, start=1)
     ]
@@ -130,7 +133,12 @@ async def run_worker(binding: harbor_binding.Binding, log_dir: Path) -> WorkerRu
     out, err = out_path.open("wb"), err_path.open("wb")
     proc = None
     try:
-        env = binding.worker_env(config_dir)
+        try:
+            env = binding.worker_env(config_dir)
+            if inspect.isawaitable(env):
+                env = await env  # the service mints the worker's one-use OpenBao secret_id here
+        except LLMUnconfigured as exc:
+            raise AgentRefused("llm_unconfigured") from exc
         trial.phase = "agent_running"
         proc = await asyncio.create_subprocess_exec(sys.executable, "-m", "bravo_rehearsal.worker", env=env,
                                                     cwd=config_dir, stdout=out, stderr=err)

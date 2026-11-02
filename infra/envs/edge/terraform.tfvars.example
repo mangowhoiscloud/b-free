@@ -3,9 +3,20 @@ account_id = "<cloudflare account id>"
 zone_id    = "<zone id>"
 app        = "chat"
 lb_enabled = false # Load Balancing 구독 뒤 true
+lb_environments = ["src", "dst"] # LB pool에 넣을 환경. 요금제 포함 끝점 수 안에서
 active_env = "src" # LB 없을 때 대표 이름이 처음 가리킬 환경
 
 environments = {
   src = { origin_service = "http://bravo-gateway.bravo-edge.svc.cluster.local:80", weight = 1 }
   dst = { origin_service = "http://bravo-gateway.bravo-edge.svc.cluster.local:80", weight = 0 }
 }
+
+# 플랫폼 Access(access.tf). Zero Trust를 켠 뒤 true. 이메일은 실제 terraform.tfvars(gitignore)에만.
+platform_access_enabled      = false
+access_team_name             = "<team>" # https://<team>.cloudflareaccess.com
+platform_access_emails       = ["<operator email>"]
+platform_access_allowed_idps = ["<One-time PIN IdP ID>"]
+
+# D-16 링크(links.tf). 토큰 ID는 keys.sh issue-service-token 출력
+zero_trust_enabled     = false
+link_service_token_ids = {}

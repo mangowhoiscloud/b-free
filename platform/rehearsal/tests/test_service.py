@@ -221,9 +221,17 @@ def test_llm_env_fails_closed_and_passes_route_settings_only() -> None:
     out = sdk_options.llm_env("opus", env)
     assert out == {k: env[k] for k in ("BRAVO_BEDROCK_REGION", "BRAVO_LLM_GATEWAY_URL", "BRAVO_LLM_PROVIDER",
                                        "BRAVO_MODEL_HAIKU", "BRAVO_MODEL_OPUS")}  # no key, no gateway token
-    env2 = {**env, "BRAVO_WORKER_ENV_PASSTHROUGH": "CODEX_HOME, bad name"}
-    env2["CODEX_HOME"] = "/srv/codex"
-    assert sdk_options.llm_env("opus", env2)["CODEX_HOME"] == "/srv/codex"
+    env2 = {**env, "BRAVO_WORKER_ENV_PASSTHROUGH": "CODEX_HOME,HOME", "CODEX_HOME": "/srv/codex", "HOME": "/h"}
+    assert sdk_options.llm_env("opus", env2) == out                      # no passthrough of any other name
+    sub = {"BRAVO_MODEL_OPUS": "claude-opus-5-5", "BRAVO_MODEL_HAIKU": "claude-haiku-5-5",
+           "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat-should-not-pass", "ANTHROPIC_API_KEY": "k"}
+    assert sdk_options.llm_env("opus", sub) == {"BRAVO_MODEL_HAIKU": "claude-haiku-5-5",
+                                                "BRAVO_MODEL_OPUS": "claude-opus-5-5"}  # default claude_subscription
+    assert sdk_options.provider(sub) == "claude_subscription" and sdk_options.vault_approle(sub) == "llm-claude"
+    assert sdk_options.vault_approle({"BRAVO_LLM_PROVIDER": "openai_agents"}) == "llm-openai"
+    assert sdk_options.vault_approle(env) is None                        # gateway: no model credential
+    with pytest.raises(sdk_options.LLMUnconfigured):
+        sdk_options.llm_env("opus", {"BRAVO_LLM_PROVIDER": "codex_chatgpt", "BRAVO_MODEL_OPUS": "m"})  # removed
 
 
 def test_worker_sdk_options_match_13_section_6(tmp_path: Path) -> None:
@@ -385,9 +393,8 @@ def test_role_allowlist_hides_and_blocks_tools(layer: Any) -> None:
     assert call(c, tok, "policy_evaluate", {"proposal": good_proposal()})["blocked"] == "tool_not_in_role_allowlist"
     r = call(c, tok, "plan_propose", {"proposal": good_proposal(trial.trial_id)})  # a governance shape
     assert r["blocked"] == "proposal_rejected" and trial.artifact is None
-    src = call(c, tok, "repo_read", {"path": "source/s3-bucket-policy.json"})
-    assert "chat-attachments" in src["content"]
-    assert call(c, tok, "repo_read", {"path": "../tests/verify.py"})["blocked"] == "path_outside_repo"  # V2
+    # B9: no uploaded snapshot of the customer repo, so nothing to read (never the task template).
+    assert call(c, tok, "repo_read", {"path": "source/s3-bucket-policy.json"})["blocked"] == "repo_unconfigured"
 
 
 def test_plan_propose_freezes_artifact_and_locks_trial(layer: Any) -> None:
@@ -422,37 +429,86 @@ def test_evidence_ingest_takes_trial_token_and_dedups(layer: Any) -> None:
 # environment in tests/test_harbor.py (test_every_environment_method_on_real_cluster).
 
 
-def test_codex_route_and_passthrough_rules() -> None:
-    env = {"BRAVO_LLM_PROVIDER": "codex_chatgpt", "BRAVO_CODEX_MODEL": "gpt-6-luna", "BRAVO_CODEX_EFFORT": "low",
-           "BRAVO_WORKER_ENV_PASSTHROUGH": "CODEX_HOME,OPENAI_API_KEY,HOME", "CODEX_HOME": "/home/op/.codex",
-           "HOME": "/home/op", "OPENAI_API_KEY": "sk-should-not-pass"}
-    out = sdk_options.llm_env("opus", env)
-    assert out == {"BRAVO_CODEX_EFFORT": "low", "BRAVO_CODEX_MODEL": "gpt-6-luna",
-                   "BRAVO_LLM_PROVIDER": "codex_chatgpt", "CODEX_HOME": "/home/op/.codex", "HOME": "/home/op"}
-    with pytest.raises(sdk_options.LLMUnconfigured):
-        sdk_options.llm_env("opus", {"BRAVO_LLM_PROVIDER": "codex_chatgpt"})  # no model
-    with pytest.raises(sdk_options.LLMUnconfigured):
-        sdk_options.llm_env("opus", {"BRAVO_LLM_PROVIDER": "codex_chatgpt", "BRAVO_CODEX_MODEL": "m",
-                                     "BRAVO_CODEX_EFFORT": "maximum"})
+class _FakeBao:
+    """The service's OpenBao identity: mints one secret_id per Trial, reports presence from metadata."""
+
+    def __init__(self, present: str = "ok") -> None:
+        from bravo_rehearsal.server_tools import OpenBaoConfig
+
+        self.cfg = OpenBaoConfig(addr="https://bao.internal:8200", kv_mount="secret", ca_cert="/etc/bravo/bao-ca.crt")
+        self.minted: list[str] = []
+        self.present, self.paths = present, []
+
+    async def mint_secret_id(self, approle: str, ttl: str = "60s") -> tuple[str, str]:
+        self.minted.append(approle)
+        return "role-id-1", f"secret-id-{len(self.minted)}"
+
+    async def secret_present(self, path: str) -> str:
+        self.paths.append(path)
+        return self.present
 
 
-def test_worker_env_keeps_trial_values_over_passthrough(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_worker_env_carries_one_use_delivery_not_the_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from bravo_rehearsal.service import Orchestrator, TrialRequest, new_trial
     from bravo_rehearsal.trials import TrialStore
 
     use_allowlists(tmp_path, "governance")
-    for k, v in {"BRAVO_LLM_PROVIDER": "codex_chatgpt", "BRAVO_CODEX_MODEL": "gpt-6-luna", "CODEX_HOME": "/op/.codex",
-                 "BRAVO_WORKER_ENV_PASSTHROUGH": "CODEX_HOME,BRAVO_TRIAL_TOKEN"}.items():
+    for k, v in {"BRAVO_LLM_PROVIDER": "claude_subscription", "BRAVO_MODEL_OPUS": "claude-opus-5-5",
+                 "BRAVO_MODEL_HAIKU": "claude-haiku-5-5", "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat-leak",
+                 "ANTHROPIC_API_KEY": "sk-ant-leak", "BRAVO_WORKER_ENV_PASSTHROUGH": "BRAVO_TRIAL_TOKEN,HOME"}.items():
         monkeypatch.setenv(k, v)
     s = settings(tmp_path)
-    req = TrialRequest.model_validate(trial_body(task="governance"))
-    trial = new_trial(req, s, "k", "d")
+    trial = new_trial(TrialRequest.model_validate(trial_body(task="governance")), s, "k", "d")
     trial.names = Names.of(trial.plan_id, trial.attempt, trial.trial_id)
-    env = Orchestrator(s, TrialStore())._worker_env(trial, {}, str(tmp_path / "cfg"))
-    assert env["CODEX_HOME"] == "/op/.codex" and env["HOME"] == str(tmp_path / "cfg")
+    bao = _FakeBao()
+    orch = Orchestrator(s, TrialStore(), bao)  # type: ignore[arg-type]
+    env = await orch._worker_env(trial, {}, str(tmp_path / "cfg"))
+    assert bao.minted == ["llm-claude"]                                   # one secret_id per Trial
+    assert env["BRAVO_LLM_BAO_ROLE_ID"] == "role-id-1" and env["BRAVO_LLM_BAO_SECRET_ID"] == "secret-id-1"
+    assert env["BRAVO_BAO_ADDR"] == "https://bao.internal:8200" and env["BRAVO_BAO_CACERT"] == "/etc/bravo/bao-ca.crt"
+    assert env["BRAVO_MODEL_OPUS"] == "claude-opus-5-5" and env["HOME"] == str(tmp_path / "cfg")
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env and "ANTHROPIC_API_KEY" not in env
+    assert "sk-ant" not in json.dumps(env)                                # the token never transits the service
     assert trial_token.verify(KEY, env["BRAVO_TRIAL_TOKEN"]).trial_id == trial.trial_id  # not overridable
     assert env["BRAVO_EVIDENCE_URL"].endswith("/v1/evidence") and "BRAVO_REHEARSAL_TOKEN_KEY" not in env
     assert json.loads(env["BRAVO_TRIAL_ENVELOPE"])["plan_id"] == ENV_PLAN
+    assert set(env) <= {"PATH", "HOME", "BRAVO_LLM_PROVIDER", "BRAVO_MODEL_OPUS", "BRAVO_MODEL_HAIKU",
+                        "BRAVO_BAO_ADDR", "BRAVO_BAO_CACERT", "BRAVO_BAO_KV_MOUNT", "BRAVO_LLM_BAO_ROLE_ID",
+                        "BRAVO_LLM_BAO_SECRET_ID", "BRAVO_TRIAL_TOKEN", "BRAVO_TOOL_LAYER_URL",
+                        "BRAVO_EVIDENCE_URL", "BRAVO_TRIAL_ENVELOPE", "BRAVO_AGENT_ROLE",
+                        "BRAVO_AGENT_ALLOWLIST_DIR"}                       # exact names only
+    with pytest.raises(sdk_options.LLMUnconfigured):
+        await Orchestrator(s, TrialStore(), None)._worker_env(trial, {}, str(tmp_path / "cfg"))  # no OpenBao
+    monkeypatch.setenv("BRAVO_LLM_PROVIDER", "openai_agents")
+    await orch._worker_env(trial, {}, str(tmp_path / "cfg"))
+    assert bao.minted == ["llm-claude", "llm-openai"]
+
+
+async def test_llm_credential_presence_from_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bravo_rehearsal.service import Orchestrator
+    from bravo_rehearsal.trials import TrialStore
+
+    monkeypatch.delenv("BRAVO_LLM_PROVIDER", raising=False)
+    bao = _FakeBao("llm_token_missing")
+    orch = Orchestrator(settings(tmp_path), TrialStore(), bao)  # type: ignore[arg-type]
+    assert await orch.llm_credential() == "llm_token_missing" and bao.paths == ["envs/platform/llm-claude"]
+    bao.present = "ok"
+    assert await orch.llm_credential() == "ok"
+    monkeypatch.setenv("BRAVO_LLM_PROVIDER", "openai_agents")
+    await orch.llm_credential()
+    assert bao.paths[-1] == "envs/platform/llm-openai"
+    monkeypatch.setenv("BRAVO_LLM_PROVIDER", "bedrock_gateway")
+    assert await orch.llm_credential() == "ok"                            # gateway: nothing in the worker
+    monkeypatch.setenv("BRAVO_LLM_PROVIDER", "claude_subscription")
+    assert await Orchestrator(settings(tmp_path), TrialStore(), None).llm_credential() == "openbao_unconfigured"
+
+
+def test_worker_exits_llm_unconfigured_without_openbao_delivery(tmp_path: Path) -> None:
+    clean = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "BRAVO_MODEL_OPUS": "claude-opus-5-5",
+             "BRAVO_MODEL_HAIKU": "claude-haiku-5-5", "BRAVO_AGENT_ROLE": "discovery"}
+    r = subprocess.run([sys.executable, "-m", "bravo_rehearsal.worker"], env=clean, capture_output=True,
+                       text=True, timeout=60, check=False)
+    assert r.returncode == 20 and "llm_unconfigured" in r.stderr
 
 
 async def test_bravo_agents_submit_proposal_against_the_live_tool_layer(tmp_path: Path) -> None:
@@ -503,3 +559,74 @@ async def test_bravo_agents_submit_proposal_against_the_live_tool_layer(tmp_path
     finally:
         server.should_exit = True
         await serving
+
+
+COLLECTOR = Path(__file__).resolve().parents[2] / "collector"
+
+
+def _demo_repo(root: Path) -> Path:
+    (root / "app" / "storage").mkdir(parents=True)
+    (root / "app" / "main.py").write_text("import boto3\ns3 = boto3.client('s3')\n")
+    (root / "app" / "storage" / "policy.json").write_text('{"Statement": []}\n')
+    (root / ".env").write_text("DB_PASSWORD=hunter2hunter2\n")
+    (root / "README.md").write_text("not scanned by the collector\n")
+    (root / "logo.png").write_bytes(b"\x89PNG\0\0binary")
+    return root
+
+
+def _pack_with_collector(repo: Path, out: Path) -> str:
+    py = COLLECTOR / ".venv" / "bin" / "python"
+    if not py.is_file():
+        pytest.skip("collector_unconfigured: platform/collector/.venv not built")
+    env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
+    r = subprocess.run([str(py), "-m", "bravo_rehearsal.snapshot", "pack", "--repo", str(repo), "--out", str(out)],
+                       capture_output=True, text=True, timeout=120, env=env, check=False)
+    assert r.returncode == 0, r.stderr
+    return dict(line.split("=", 1) for line in r.stdout.splitlines())["input_digest"]
+
+
+def test_snapshot_upload_is_bound_to_collector_inventory(tmp_path: Path) -> None:
+    """B9: repo_read serves only a customer repo snapshot whose digest equals the collector's inventory."""
+    use_allowlists(tmp_path, "governance", "discovery")
+    repo = _demo_repo(tmp_path / "repo")
+    digest = _pack_with_collector(repo, tmp_path / "snap.tar.gz")
+    s = settings(tmp_path)
+    app = create_app(s)
+    auth = {"Authorization": "Bearer svc-token"}
+    url = f"/v1/snapshots/t1/{PLAN}"
+    body = (tmp_path / "snap.tar.gz").read_bytes()
+    with TestClient(app) as c:
+        assert c.put(url, content=body, headers={"X-Bravo-Inventory-Digest": digest}).status_code == 401
+        bad = c.put(url, content=body, headers={**auth, "X-Bravo-Inventory-Digest": "0" * 64})
+        assert bad.status_code == 422 and bad.json()["error"] == "snapshot_digest_mismatch"
+        ok = c.put(url, content=body, headers={**auth, "X-Bravo-Inventory-Digest": digest})
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["withheld"] == [".env"] and ok.json()["input_digest"] == digest
+        from bravo_rehearsal.service import TrialRequest, new_trial
+
+        req = TrialRequest.model_validate(trial_body(task="governance", inventory_digest=digest))
+        trial = new_trial(req, s, "k-snap", "d")
+        assert trial.envelope["inputs"]["repo_snapshot"]["input_digest"] == digest
+        trial.names = Names.of(PLAN, 1, trial.trial_id)
+        trial.phase = "agent_running"
+        app.state.store.add(trial)
+        trial.allowlist = allowlist.load("discovery", tmp_path)  # a role that has repo_read
+        tok = trial_token.issue(KEY, claims(trial_id=trial.trial_id, plan_id=PLAN, attempt=1,
+                                            namespace=trial.names.rehearsal_ns))
+        assert "boto3" in call(c, tok, "repo_read", {"path": "app/main.py"})["content"]
+        assert call(c, tok, "repo_read", {"path": ".env"})["blocked"] == "path_outside_repo"  # withheld
+        assert call(c, tok, "repo_read", {"path": "README.md"})["blocked"] == "path_outside_repo"  # not scanned
+        other = TrialRequest.model_validate(trial_body(task="governance", inventory_digest="1" * 64))
+        assert new_trial(other, s, "k-other", "d").repo_snapshot is None  # a different inventory: not bound
+
+
+def test_readyz_reports_each_precondition(tmp_path: Path) -> None:
+    use_allowlists(tmp_path, "governance")
+    with TestClient(create_app(settings(tmp_path))) as c:
+        r = c.get("/readyz")
+    assert r.status_code == 503 and r.json()["ready"] is False
+    checks = r.json()["checks"]
+    assert checks["cluster"] == "cluster_unconfigured" and checks["images"] == "verifier_unconfigured"
+    assert checks["tool_layer"] == "ok" and set(checks) == {"llm", "cluster", "images", "tool_layer", "openbao",
+                                                            "gate", "llm_token"}
+    assert checks["llm_token"] in ("openbao_unconfigured", "ok")          # presence only, never a value

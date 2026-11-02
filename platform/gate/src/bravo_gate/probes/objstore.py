@@ -2,8 +2,18 @@
 
 Only the endpoint and the credential source differ per environment (AWS S3, S3-compatible store, GCS XML API).
 A fixed-key canary object created by the platform must exist: a 404 never counts as a pass, so a missing or
-unverifiable canary makes OBJ-01, OBJ-05 and OBJ-06 UNKNOWN (``canary_missing`` / ``canary_unverified``).
-PUT probes (OBJ-03, OBJ-04 write half) run only when ``write_probes`` is true for that store.
+unverifiable canary makes every denial question (OBJ-01, 02, 03, 05, 06) UNKNOWN (``canary_missing`` /
+``canary_unverified``).
+
+What counts as "denied" (audit A5):
+    PASS only on an explicit authorisation refusal: S3 error code AccessDenied / AllAccessDisabled, or a 403
+    with no body (HEAD). InvalidAccessKeyId, SignatureDoesNotMatch, ExpiredToken and other errors mean the
+    request was never evaluated against the policy, so they are UNKNOWN.
+    OBJ-06 (plain HTTP) passes only on "connection refused" or an AccessDenied over http:// while the same
+    credential reads the canary over https://. Timeouts, resets and DNS errors are UNKNOWN.
+PUT probes (OBJ-03, OBJ-04 write half) run only when ``write_probes`` is true for that store AND the caller
+allows writes (the CLI with ``--write-probes``; never an HTTP GET, audit 48). Every probe key the gate writes is
+deleted again; the cleanup result is part of the evidence.
 """
 
 from __future__ import annotations
@@ -16,7 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 import boto3
 from botocore import UNSIGNED
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError, EndpointConnectionError
+from botocore.exceptions import ClientError, ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError
 
 from ..environments import Credential, ObjectStoreSection
 from ..result import Obs, error_text, failed, passed, unknown
@@ -24,15 +34,16 @@ from ..result import Obs, error_text, failed, passed, unknown
 ANON_PUT_KEY = "_gate/anon-put-probe"
 APP_PUT_KEY = "_gate/app-put-probe"
 APP_PUT_BODY = b"bravo gate app write probe\n"
-DENIED = frozenset({"AccessDenied", "403", "401", "Forbidden", "Unauthorized", "AllAccessDisabled",
-                    "InvalidAccessKeyId", "SignatureDoesNotMatch"})
-MISSING_KEY = frozenset({"NoSuchKey", "404", "NotFound"})
+DENIED = frozenset({"AccessDenied", "AllAccessDisabled"})
+BAD_CREDENTIAL = frozenset({"InvalidAccessKeyId", "SignatureDoesNotMatch", "ExpiredToken", "InvalidToken",
+                            "TokenRefreshRequired", "AuthorizationHeaderMalformed"})
+MISSING_KEY = frozenset({"NoSuchKey", "NotFound"})
 MISSING_BUCKET = frozenset({"NoSuchBucket"})
 
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    kind: str  # ok | denied | missing_key | missing_bucket | error
+    kind: str  # ok | denied | bad_credential | missing_key | missing_bucket | refused | timeout | error
     detail: str
 
 
@@ -40,15 +51,22 @@ def _classify(exc: BaseException) -> Outcome:
     if isinstance(exc, ClientError):
         code = str(exc.response.get("Error", {}).get("Code", ""))
         status = str(exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", ""))
-        if code in DENIED or status in ("401", "403"):
-            return Outcome("denied", f"{status} {code}".strip())
+        detail = f"{status} {code}".strip()
+        if code in DENIED or (code in ("", "403") and status == "403"):
+            return Outcome("denied", detail)  # body code AccessDenied, or HEAD 403 without a body
+        if code in BAD_CREDENTIAL:
+            return Outcome("bad_credential", detail)
         if code in MISSING_BUCKET:
-            return Outcome("missing_bucket", code)
-        if code in MISSING_KEY or status == "404":
-            return Outcome("missing_key", f"{status} {code}".strip())
-        return Outcome("error", f"{status} {code}".strip())
-    if isinstance(exc, EndpointConnectionError | BotoCoreError):
-        return Outcome("error", error_text(exc))
+            return Outcome("missing_bucket", detail)
+        if code in MISSING_KEY or (code in ("", "404") and status == "404"):
+            return Outcome("missing_key", detail)
+        return Outcome("error", detail)
+    if isinstance(exc, ConnectTimeoutError | ReadTimeoutError):
+        return Outcome("timeout", type(exc).__name__)
+    if isinstance(exc, EndpointConnectionError):
+        inner = str(getattr(exc, "kwargs", {}).get("error", ""))  # urllib3 NewConnectionError text
+        if "refused" in f"{exc} {inner}".lower():
+            return Outcome("refused", "connection refused")
     return Outcome("error", error_text(exc))
 
 
@@ -110,9 +128,25 @@ def _client(section: ObjectStoreSection, cred: Credential | None, *, plain_http:
 class ObjectStoreProbe:
     """Runs the OBJ probes once per environment and caches the shared canary check."""
 
-    def __init__(self, section: ObjectStoreSection) -> None:
+    def __init__(self, section: ObjectStoreSection, *, allow_writes: bool = False) -> None:
         self.s = section
+        self.allow_writes = allow_writes
         self._canary: Outcome | None = None
+
+    def _writes_off(self) -> str | None:
+        if not self.s.write_probes:
+            return "write_probe_disabled"
+        if not self.allow_writes:
+            return "write_probe_not_allowed_here"  # HTTP GET never writes; run the CLI with --write-probes
+        return None
+
+    def _cleanup(self, key: str) -> str:
+        """Delete a probe key the gate wrote (app credential). Returns ok | <outcome> for the evidence."""
+        app = _client(self.s, self.s.app_credential) if self.s.app_credential else None
+        if app is None:
+            return "no_app_credential"
+        r = _attempt(lambda: app.delete_object(Bucket=self.s.bucket, Key=key))
+        return "deleted" if r.kind == "ok" else f"{r.kind} {r.detail}"
 
     def _ev(self, **extra: Any) -> dict[str, Any]:
         return {"bucket": self.s.bucket, "endpoint": _endpoint(self.s), **extra}
@@ -120,7 +154,8 @@ class ObjectStoreProbe:
     def canary(self) -> Outcome:
         """HEAD the canary with the app credential: ok = present, missing_key = absent."""
         if self._canary is None:
-            app = _client(self.s, self.s.app_credential) if self.s.app_credential else None
+            cred = self.s.app_credential or self.s.read_credential
+            app = _client(self.s, cred) if cred else None
             if app is None:
                 self._canary = Outcome("unverified", "app_credential_missing")
             else:
@@ -135,72 +170,78 @@ class ObjectStoreProbe:
             return unknown("canary_missing", **self._ev(canary=self.s.canary_key, head=c.detail))
         return unknown("canary_unverified", **self._ev(canary=self.s.canary_key, head=f"{c.kind} {c.detail}"))
 
+    def _denial(self, r: Outcome, ev: dict[str, Any], *, allowed: str, denied: str) -> Obs:
+        """Common verdict for "must be refused" questions (A5, B17)."""
+        if r.kind == "ok":
+            return failed(allowed, **ev)
+        gate = self._canary_gate()
+        if gate is not None:
+            return Obs(gate.verdict, gate.reason, {**gate.evidence, **ev})
+        if r.kind == "denied":
+            return passed(denied, **ev)
+        if r.kind == "bad_credential":
+            return unknown("credential_not_evaluated", **ev)
+        if r.kind == "missing_bucket":
+            return unknown("bucket_missing", **ev)
+        return unknown("probe_error", **ev)
+
     # OBJ-01 unsigned GET of the canary must be denied.
     def obj01(self) -> Obs:
         anon = _client(self.s, None)
         r = _attempt(lambda: anon.get_object(Bucket=self.s.bucket, Key=self.s.canary_key)["Body"].read(0))
         ev = self._ev(request="unsigned GET", key=self.s.canary_key, response=r.detail)
-        if r.kind == "ok":
-            return failed("anonymous_read_allowed", **ev)
-        gate = self._canary_gate()
-        if gate is not None:
-            return Obs(gate.verdict, gate.reason, {**gate.evidence, **ev})
-        if r.kind == "denied":
-            return passed("anonymous_read_denied", **ev)
-        return unknown("probe_error", **ev)
+        return self._denial(r, ev, allowed="anonymous_read_allowed", denied="anonymous_read_denied")
 
-    # OBJ-02 unsigned LIST must be denied.
+    # OBJ-02 unsigned LIST must be denied (canary present: the bucket is the real, non-empty one).
     def obj02(self) -> Obs:
         anon = _client(self.s, None)
         r = _attempt(lambda: anon.list_objects_v2(Bucket=self.s.bucket, MaxKeys=1))
         ev = self._ev(request="unsigned LIST", response=r.detail)
-        if r.kind == "ok":
-            return failed("anonymous_list_allowed", **ev)
-        if r.kind == "denied":
-            return passed("anonymous_list_denied", **ev)
-        if r.kind == "missing_bucket":
-            return unknown("bucket_missing", **ev)
-        return unknown("probe_error", **ev)
+        return self._denial(r, ev, allowed="anonymous_list_allowed", denied="anonymous_list_denied")
 
     # OBJ-03 unsigned PUT must be denied (write probe).
     def obj03(self) -> Obs:
-        if not self.s.write_probes:
-            return unknown("write_probe_disabled", **self._ev(request="unsigned PUT", key=ANON_PUT_KEY))
+        off = self._writes_off()
+        if off:
+            return unknown(off, **self._ev(request="unsigned PUT", key=ANON_PUT_KEY))
         anon = _client(self.s, None)
         r = _attempt(lambda: anon.put_object(Bucket=self.s.bucket, Key=ANON_PUT_KEY, Body=b""))
         ev = self._ev(request="unsigned PUT", key=ANON_PUT_KEY, response=r.detail)
         if r.kind == "ok":
-            return failed("anonymous_write_allowed", written_key=ANON_PUT_KEY, **ev)
-        if r.kind == "denied":
-            return passed("anonymous_write_denied", **ev)
-        return unknown("probe_error", **ev)
+            return failed("anonymous_write_allowed", written_key=ANON_PUT_KEY, cleanup=self._cleanup(ANON_PUT_KEY),
+                          **ev)
+        return self._denial(r, ev, allowed="anonymous_write_allowed", denied="anonymous_write_denied")
 
     # OBJ-04 the app credential can read the canary and write a probe key (control path).
     def obj04(self) -> Obs:
         if self.s.app_credential is None:
             return unknown("app_credential_missing", **self._ev())
-        c = self.canary()
+        app_head = _client(self.s, self.s.app_credential)
+        c = (_attempt(lambda: app_head.head_object(Bucket=self.s.bucket, Key=self.s.canary_key))
+             if app_head is not None else Outcome("unverified", "app_credential_unavailable"))
         ev = self._ev(request="app HEAD canary", key=self.s.canary_key, response=f"{c.kind} {c.detail}")
         if c.kind == "unverified":
             return unknown("app_credential_unavailable", **ev)
         if c.kind == "missing_key":
             return unknown("canary_missing", **ev)
-        if c.kind in ("denied",):
+        if c.kind == "denied":
             return failed("app_read_denied", **ev)
         if c.kind != "ok":
             return unknown("probe_error", **ev)
-        if not self.s.write_probes:
-            return unknown("write_probe_disabled", app_read="ok", **ev)
+        off = self._writes_off()
+        if off:
+            return unknown(off, app_read="ok", **ev)
         app = _client(self.s, self.s.app_credential)
         w = _attempt(lambda: app.put_object(Bucket=self.s.bucket, Key=APP_PUT_KEY, Body=APP_PUT_BODY))
         ev["write"] = {"key": APP_PUT_KEY, "response": f"{w.kind} {w.detail}"}
         if w.kind == "ok":
+            ev["write"]["cleanup"] = self._cleanup(APP_PUT_KEY)
             return passed("app_read_write_allowed", **ev)
         if w.kind == "denied":
             return failed("app_write_denied", **ev)
         return unknown("probe_error", **ev)
 
-    # OBJ-05 a different credential must be denied reading the canary.
+    # OBJ-05 a different credential must be denied reading the canary (a real AccessDenied only).
     def obj05(self) -> Obs:
         if self.s.other_credential is None:
             return unknown("other_credential_missing", **self._ev())
@@ -209,20 +250,14 @@ class ObjectStoreProbe:
             return unknown("other_credential_unavailable", **self._ev())
         r = _attempt(lambda: other.get_object(Bucket=self.s.bucket, Key=self.s.canary_key)["Body"].read(0))
         ev = self._ev(request="other-credential GET", key=self.s.canary_key, response=r.detail)
-        if r.kind == "ok":
-            return failed("other_credential_read_allowed", **ev)
-        gate = self._canary_gate()
-        if gate is not None:
-            return Obs(gate.verdict, gate.reason, {**gate.evidence, **ev})
-        if r.kind == "denied":
-            return passed("other_credential_denied", **ev)
-        return unknown("probe_error", **ev)
+        return self._denial(r, ev, allowed="other_credential_read_allowed", denied="other_credential_denied")
 
     # OBJ-ENC default encryption at rest uses a customer-managed key (ENC-02). Read-only GetBucketEncryption.
     def obj_enc(self) -> Obs:
-        if self.s.app_credential is None:
+        cred = self.s.app_credential or self.s.read_credential
+        if cred is None:
             return unknown("app_credential_missing", **self._ev())
-        app = _client(self.s, self.s.app_credential)
+        app = _client(self.s, cred)
         if app is None:
             return unknown("app_credential_unavailable", **self._ev())
         try:
@@ -242,7 +277,7 @@ class ObjectStoreProbe:
         if any(not k or "alias/aws/" in k for k in kms_keys):
             return failed("aws_managed_key", **ev)
         if self.s.endpoint_url is None:  # AWS: confirm KeyManager with KMS (read-only DescribeKey)
-            sess = _session(self.s.app_credential, self.s.region)
+            sess = _session(cred, self.s.region)
             try:
                 managers = sorted({sess.client("kms", region_name=self.s.region).describe_key(KeyId=k)[
                     "KeyMetadata"]["KeyManager"] for k in kms_keys}) if sess else []
@@ -252,23 +287,29 @@ class ObjectStoreProbe:
                 return failed("aws_managed_key", key_managers=managers, **ev)
         return passed("customer_managed_key", **ev)
 
-    # OBJ-06 plain HTTP must be rejected (connection refused or 403) while HTTPS works for the app.
+    # OBJ-06 plain HTTP must be refused: connection refused, or AccessDenied over http:// while the same
+    # credential reads the canary over https:// (so the refusal is about the transport, not the identity).
     def obj06(self) -> Obs:
         endpoint = _endpoint(self.s)
         if endpoint.startswith("http://"):
             return failed("endpoint_is_plain_http", **self._ev())
         if self.s.app_credential is None:
             return unknown("app_credential_missing", **self._ev())
-        gate = self._canary_gate()
-        if gate is not None:
-            return gate
+        https = _client(self.s, self.s.app_credential)
+        h = (_attempt(lambda: https.head_object(Bucket=self.s.bucket, Key=self.s.canary_key))
+             if https is not None else Outcome("unverified", "app_credential_unavailable"))
+        if h.kind == "missing_key":
+            return unknown("canary_missing", **self._ev(canary=self.s.canary_key, head=h.detail))
+        if h.kind != "ok":
+            return unknown("https_control_failed", **self._ev(head=f"{h.kind} {h.detail}"))
         plain = _client(self.s, self.s.app_credential, plain_http=True)
         r = _attempt(lambda: plain.get_object(Bucket=self.s.bucket, Key=self.s.canary_key)["Body"].read(0))
         ev = self._ev(request="app GET over http://", plain_endpoint=_endpoint(self.s, plain_http=True),
-                      response=r.detail if r.kind != "error" else "connection_failed")
+                      https_head="ok", response=f"{r.kind} {r.detail}")
         if r.kind == "ok":
             return failed("plain_http_accepted", **ev)
-        if r.kind == "denied" or r.kind == "error":
-            # HTTPS read with the same credential succeeded (canary gate), so a refusal is the server's choice.
-            return passed("plain_http_rejected", **ev)
-        return unknown("probe_error", **ev)
+        if r.kind == "refused":
+            return passed("plain_http_connection_refused", **ev)
+        if r.kind == "denied":
+            return passed("plain_http_denied_tls_only", **ev)
+        return unknown("plain_http_inconclusive", **ev)  # timeout, reset, DNS, redirect, other errors

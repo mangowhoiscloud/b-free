@@ -93,7 +93,11 @@ def test_http_api_contract(pg_env) -> None:
     rows = client.get("/v1/controls", params={"source": "src", "target": "dst"}).json()
     assert rows and all(set(r) == {"control_id", "question", "src", "dst"} for r in rows)
     ids = [r["control_id"] for r in rows]
-    assert ids == ["DB-ANON-READ", "DB-AUTH", "DB-TLS", "DB-AUDIT", "DR-ARCHIVE"]
+    from bravo_gate.controls import QUESTIONS
+
+    assert ids == [q.qid for q in QUESTIONS]  # audit B16: every question, configured or not
+    by_id = {r["control_id"]: r for r in rows}
+    assert by_id["OBJ-01"]["src"] == "UNKNOWN" and by_id["NET-PATHS"]["dst"] == "UNKNOWN"
     ctl = client.get("/v1/controls", params={"source": "src", "target": "dst", "level": "control"}).json()
     assert [r["control_id"] for r in ctl] == ["SEC-01", "ENC-01", "AUD-01", "NET-01", "IAM-01", "DR-01"]
     rep = client.get("/v1/controls/report", params={"source": "src", "target": "dst"}).json()
@@ -157,6 +161,19 @@ def test_plain_http_endpoint_fails_obj06_without_network() -> None:
     assert o.verdict == "FAIL" and o.reason == "endpoint_is_plain_http"
 
 
+@pytest.mark.pg
+def test_db_auth_is_unknown_when_app_role_is_missing(pg_pair, monkeypatch: pytest.MonkeyPatch) -> None:
+    plain, _ = pg_pair
+    monkeypatch.setenv("T_SRC_DSN", plain.probe_dsn)
+    monkeypatch.delenv("PGPASSWORD", raising=False)
+    reg = parse_registry({"environments": {"e": {"postgres": {"dsn_env": "T_SRC_DSN", "app_role": "no_such_role",
+                                                              "app_tables": ["messages"]}}}})
+    from bravo_gate.probes.postgres import PostgresProbe
+
+    o = PostgresProbe(reg.get("e").postgres).auth()
+    assert o.verdict == "UNKNOWN" and o.reason == "app_role_missing", o
+
+
 def test_unconfigured_credentials_are_unknown_without_network() -> None:
     sec = parse_registry({"environments": {"e": {"object_store": {"bucket": "attachments"}}}}).get("e").object_store
     p = ObjectStoreProbe(sec)
@@ -192,7 +209,9 @@ def test_aws_s3_read_only_probes() -> None:
     }}}}).get("aws").object_store
     p = ObjectStoreProbe(sec)
     o2 = p.obj02()
-    assert o2.verdict in {"PASS", "FAIL"}, o2  # the unsigned LIST got an answer from S3
+    assert o2.evidence.get("response"), o2  # the unsigned LIST got an answer from S3
+    if p.canary().kind != "ok":  # audit B17: without the canary even a 403 LIST is not a pass
+        assert o2.verdict in {"UNKNOWN", "FAIL"}, o2
     # The platform has not created the canary on AWS (needs approval): never a pass.
     o1 = p.obj01()
     assert o1.verdict in {"UNKNOWN", "FAIL"}

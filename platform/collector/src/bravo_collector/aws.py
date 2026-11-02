@@ -146,7 +146,8 @@ class AwsCollector:
 
         return {
             "metadata": observe(describe),
-            "resource_policy": observe(lambda: _resource_policy(sm, secret_id)),
+            "resource_policy": observe(lambda: _resource_policy(sm, secret_id),
+                                       absent_on=lambda exc: isinstance(exc, _NoPolicy)),
         }
 
     # --- CloudTrail -----------------------------------------------------------------------------------

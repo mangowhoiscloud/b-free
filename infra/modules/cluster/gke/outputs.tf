@@ -31,14 +31,14 @@ output "cni" {
 }
 
 output "node_pools" {
-  description = "Autopilot은 노드 풀을 Google이 관리함"
+  description = "역할별 노드 풀(존, 머신 종류, 아키텍처, taint). cluster/eks와 같은 모양"
   value = {
-    autopilot = {
-      azs            = google_container_cluster.this.node_locations
-      instance_types = []
-      arch           = "managed"
-      desired        = null
-      taints         = []
+    for pool, p in var.node_pools : pool => {
+      azs            = p.zones
+      instance_types = [p.machine_type]
+      arch           = can(regex("^(c4a|t2a|n4a)-", p.machine_type)) ? "arm64" : "amd64"
+      desired        = p.min_per_zone * length(p.zones)
+      taints         = p.taints
     }
   }
 }
@@ -53,7 +53,22 @@ output "addon_delivery" {
   value       = "argocd"
 }
 
+output "location" {
+  description = "클러스터 위치(존 또는 리전)"
+  value       = google_container_cluster.this.location
+}
+
+output "node_service_account" {
+  description = "노드 서비스 계정(최소 권한). 이미지 저장소 읽기 권한을 env가 줌"
+  value       = google_service_account.nodes.email
+}
+
+output "workload_pool" {
+  description = "Workload Identity 풀"
+  value       = "${var.project_id}.svc.id.goog"
+}
+
 output "pd_kms_key_id" {
-  description = "PD 고객 관리 키. landing zone gke overlay의 bravo-db, bravo-general이 씀"
+  description = "PD · Hyperdisk 고객 관리 키. landing zone gke overlay의 bravo-db, bravo-general이 씀"
   value       = google_kms_crypto_key.pd.id
 }

@@ -1,0 +1,11 @@
+# target-onprem: Zero Trust를 켜고 infra/envs/edge 를 apply한 뒤에만 적용. Secret cf-mgmt-tunnel 은 OpenBao
+# secret/envs/target-onprem/cf-mgmt-tunnel(필드 token)에서 파이프로 전달(D-26).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+configMapGenerator:
+  - name: cloudflared-mgmt-config
+    namespace: cf-edge
+    files:
+      - config.yaml

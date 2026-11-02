@@ -1,0 +1,9 @@
+# Rook-Ceph needs privileged pods (OSDs on raw disks, CSI). The only privileged namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rook-ceph
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"

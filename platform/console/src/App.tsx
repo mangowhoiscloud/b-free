@@ -191,7 +191,7 @@ function DependencyPanel({ deps }: { deps: DependencyCounts | null }) {
           ))}
         </ul>
       ) : (
-        <p className="empty">계획 응답에 의존성 목록이 없습니다. ANALYZE는 파일럿 범위 밖입니다.</p>
+        <p className="empty">계획 응답에 의존성 목록이 없습니다. 이 계획은 ANALYZE에 들어가지 않았습니다.</p>
       )}
     </Panel>
   );

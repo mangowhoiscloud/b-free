@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import time
 import uuid
 from collections.abc import Iterator
@@ -59,6 +60,54 @@ def _recv_until(ws: Any, kind: str, pred=lambda m: True, limit: int = 50) -> dic
         if msg["type"] == kind and pred(msg):
             return msg
     raise AssertionError(f"no {kind} message")
+
+
+def _wait_ready(c: TestClient, timeout: float = 10.0) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while True:
+        r = c.get("/readyz")
+        if r.status_code == 200:
+            return r.json()
+        if time.monotonic() > deadline:
+            raise AssertionError(f"not ready: {r.json()}")
+        time.sleep(0.2)
+
+
+def test_readiness_and_live_need_a_real_database_answer(pgb: Stack, tmp_path: Path) -> None:
+    """No DB answer yet: not ready, and the socket says db_ok=false (the page shows "확인 중", not live)."""
+    env = _env(pgb, tmp_path, "AWS")
+    with socket.socket() as s:  # a port with nothing listening: connection refused
+        s.bind(("127.0.0.1", 0))
+        closed = s.getsockname()[1]
+    env["DB_DSN"] = f"host=127.0.0.1 port={closed} dbname=chat user=app_writer"
+    with client(env) as c:
+        r = c.get("/readyz")
+        assert r.status_code == 503 and r.json()["db"] == "not_reached"
+    with client(_env(pgb, tmp_path, "AWS")) as c:
+        doc = _wait_ready(c)
+        assert doc["status"] == "ready" and doc["db_age_s"] < 5 and doc["attachments"] == "off"
+        with c.websocket_connect(f"/ws?room={_room()}") as ws:
+            assert ws.receive_json()["db_ok"] is True
+            assert _recv_until(ws, "status")["db_ok"] is True
+
+
+def test_attachments_not_offered_until_the_store_answers(pgb: Stack, tmp_path: Path) -> None:
+    """A configured but unreachable store: attachments stay off ("unavailable"), uploads get 503."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        closed = s.getsockname()[1]
+    env = _env(pgb, tmp_path, "AWS")
+    env.update({"S3_BUCKET": "unreachable", "S3_ENDPOINT_URL": f"http://127.0.0.1:{closed}",
+                "S3_REGION": "us-east-1", "S3_ADDRESSING_STYLE": "path", "ATTACHMENT_STORE_ID": "store-src",
+                "S3_ACCESS_KEY_ID": "unused-access-key", "S3_SECRET_ACCESS_KEY": "unused-secret-key"})
+    with client(env) as c:
+        assert c.get("/api/config").json()["limits"]["attachments"] is False  # "checking" or "unavailable"
+        deadline = time.monotonic() + 20
+        while c.get("/api/config").json()["limits"]["attachments_state"] != "unavailable":
+            assert time.monotonic() < deadline, "store state never left 'checking'"
+            time.sleep(0.3)
+        r = _put(c, "consult-1", b"x", str(uuid.uuid4()))
+        assert r.status_code == 503 and r.json()["error"] == "attachments_unavailable"
 
 
 def _room() -> str:
@@ -214,7 +263,7 @@ def test_pages_and_qr(pgb: Stack, tmp_path: Path) -> None:
         assert qr.status_code == 200 and qr.text.startswith("<svg") and 'xmlns="http://www.w3.org/2000/svg"' in qr.text
         cfg = c.get("/api/config").json()
         assert cfg["join_url"] == "https://chat.example.test/?room=consult-1"
-        assert c.get("/readyz").status_code == 200
+        _wait_ready(c)
         assert c.get("/qr.svg?room=../../x").status_code == 400
         assert "default-src 'self'" in c.get("/").headers["content-security-policy"]
 
@@ -232,7 +281,7 @@ def test_amazon_s3_read_only() -> None:
         pytest.skip("BRAVO_TEST_AWS_S3_BUCKET not set (source bucket: terraform -chdir=infra/envs/source-aws "
                     "output attachments_bucket) plus AWS credentials allowed by its bucket policy")
     settings = config.load({
-        "APP_ENV_LABEL": "AWS", "DB_DSN": "host=x dbname=chat user=app_writer",
+        "APP_ENV_ID": "aws", "APP_ENV_LABEL": "AWS", "DB_DSN": "host=x dbname=chat user=app_writer",
         "DB_PASSWORD_SOURCE": "env-file", "DB_PASSWORD_FILE": "/dev/null",
         "S3_BUCKET": bucket, "S3_REGION": os.environ.get("BRAVO_TEST_AWS_S3_REGION", ""),
         "S3_ADDRESSING_STYLE": "virtual", "ATTACHMENT_STORE_ID": "src",
@@ -252,7 +301,7 @@ def test_secrets_manager_source() -> None:
     from bravo_demo import secrets as app_secrets
 
     settings = config.load({
-        "APP_ENV_LABEL": "AWS", "DB_DSN": "host=x dbname=chat user=app_writer",
+        "APP_ENV_ID": "aws", "APP_ENV_LABEL": "AWS", "DB_DSN": "host=x dbname=chat user=app_writer",
         "DB_PASSWORD_SOURCE": "aws-secrets-manager", "DB_PASSWORD_SECRET_ID": secret_id,
         "DB_PASSWORD_SECRET_KEY": os.environ.get("BRAVO_TEST_AWS_SECRET_KEY", ""),
         "AWS_REGION": os.environ.get("AWS_REGION", ""),

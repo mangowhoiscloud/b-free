@@ -72,6 +72,8 @@ class PostgresProbe:
                         public[t] = None
                         continue
                     public[t] = conn.execute("SELECT has_table_privilege('public', %s, 'SELECT')", (t,)).fetchone()[0]
+                role_row = (conn.execute("SELECT rolcanlogin FROM pg_roles WHERE rolname = %s",
+                                         (self.s.app_role,)).fetchone() if self.s.app_role else None)
                 arch = conn.execute("SELECT archived_count, last_archived_time, failed_count, last_failed_time "
                                     "FROM pg_stat_archiver").fetchone()
                 ssl_row = conn.execute("SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()").fetchone()
@@ -80,6 +82,7 @@ class PostgresProbe:
                 "archiver": {"archived_count": arch[0], "last_archived": arch[1].isoformat() if arch[1] else None,
                              "failed_count": arch[2], "last_failed": arch[3].isoformat() if arch[3] else None},
                 "probe_session_ssl": {"ssl": ssl_row[0], "version": ssl_row[1]} if ssl_row else None,
+                "app_role": None if role_row is None else {"can_login": bool(role_row[0])},
             }
         except psycopg.Error as exc:
             self._facts_error = error_text(exc)
@@ -113,6 +116,12 @@ class PostgresProbe:
         dsn = self.dsn()
         if not dsn:
             return unknown("db_unreachable", error=f"dsn_env {self.s.dsn_env} is not set")
+        facts = self.facts()
+        if facts is None:
+            return self._no_facts()
+        if facts["app_role"] is None:
+            # A refused login for a role that does not exist proves nothing (audit B17).
+            return unknown("app_role_missing", role=role)
         params = conninfo_to_dict(dsn)
         params.pop("password", None)
         # A path that does not exist: libpq then reads no password file (os.devnull triggers a warning).

@@ -1,0 +1,226 @@
+# Platform API (REST, state machine, approvals; platform/api, BRAVO_MODE=api) and operator MCP
+# (same image, BRAVO_MODE=mcp, D-18). 2 replicas each across AZs (10-cluster-overview 2.1).
+# Login: Cloudflare Access JWT only (ConfigMap platform-access). The JWKS file is kept fresh by the
+# jwks-sync sidecar from the Access certs URL; while Access is not enabled the file stays empty and
+# every request is refused (fail closed). BRAVO_DEV_AUTH=0: no dev tokens, no seeded principals.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api
+  namespace: bravo-control
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: bravo-control
+  labels: {app.kubernetes.io/name: api, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: api}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: api, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+    spec:
+      serviceAccountName: api
+      automountServiceAccountToken: false
+      nodeSelector: {bravo.io/pool: core}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/name: api}}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        - name: jwks-sync
+          image: bravo/api
+          restartPolicy: Always
+          command: ["python", "-c"]
+          args:
+            - |
+              import json, os, time, urllib.request
+              url = os.environ.get("ACCESS_CERTS_URL", "").strip()
+              path = "/var/run/bravo-jwks/jwks.json"
+              while True:
+                  if not url:
+                      print("jwks-sync: Access not enabled (platform-access certs_url empty); JWKS stays empty, logins refused", flush=True)
+                      time.sleep(600); continue
+                  try:
+                      data = json.load(urllib.request.urlopen(url, timeout=10))
+                      keys = {"keys": data.get("keys", [])}
+                      tmp = path + ".tmp"
+                      with open(tmp, "w") as f: json.dump(keys, f)
+                      os.replace(tmp, path)
+                      print(f"jwks-sync: {len(keys['keys'])} keys from {url}", flush=True)
+                  except Exception as exc:
+                      print(f"jwks-sync: fetch failed: {type(exc).__name__}", flush=True)
+                  time.sleep(300)
+          env:
+            - name: ACCESS_CERTS_URL
+              valueFrom: {configMapKeyRef: {name: platform-access, key: certs_url}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 5m, memory: 32Mi}, limits: {memory: 64Mi}}
+          volumeMounts:
+            - {name: jwks, mountPath: /var/run/bravo-jwks}
+      containers:
+        - name: api
+          image: bravo/api
+          env:
+            - {name: BRAVO_MODE, value: api}
+            - {name: PORT, value: "8080"}
+            - {name: OTEL_SERVICE_NAME, value: api}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.bravo-observe.svc:4317"}
+            - {name: OTEL_EXPORTER_OTLP_INSECURE, value: "true"}
+            - {name: BRAVO_JWKS_PATH, value: /var/run/bravo-jwks/jwks.json}
+            - name: BRAVO_JWT_ISSUER
+              valueFrom: {configMapKeyRef: {name: platform-access, key: issuer}}
+            - name: BRAVO_CONSOLE_AUD
+              valueFrom: {configMapKeyRef: {name: platform-access, key: console_aud}}
+            - name: BRAVO_MCP_AUD
+              valueFrom: {configMapKeyRef: {name: platform-access, key: mcp_aud}}
+            - {name: BRAVO_DEV_AUTH, value: "0"}
+            - {name: BRAVO_EXECUTOR_URL, value: "http://executor.bravo-control.svc:8081"}
+            - {name: BRAVO_REHEARSAL_URL, value: "http://rehearsal.bravo-control.svc:8090"}
+            - {name: BRAVO_COLLECTOR_URL, value: "http://collector.bravo-control.svc:8083"}
+            - {name: BRAVO_GATE_URL, value: "http://gate.bravo-control.svc:8084"}
+            - {name: BRAVO_CONSOLE_BASE_URL, value: "https://b-free.mangowhois.ai"}
+            - {name: BRAVO_CORS_ORIGINS, value: "https://b-free.mangowhois.ai"}
+            - {name: BRAVO_GATE_MAX_LAG_BYTES, value: "65536"}
+            - {name: BRAVO_GATE_REQUIRED_CONTROLS, value: "DB-ANON-READ,DB-AUTH"}
+            - name: BRAVO_SSE_TICKET_SECRET
+              valueFrom: {secretKeyRef: {name: platform-api, key: sse_ticket_secret}}
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: platform-db-roles, key: api}}
+            - name: BRAVO_DATABASE_URL
+              value: postgresql://bravo_api:$(DB_PASSWORD)@platform-db-rw.bravo-control.svc:5432/bravo?sslmode=verify-full&sslrootcert=/etc/bravo/pg-ca/ca.crt
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 50m, memory: 160Mi}, limits: {memory: 384Mi}}
+          volumeMounts:
+            - {name: jwks, mountPath: /var/run/bravo-jwks, readOnly: true}
+            - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: jwks, emptyDir: {sizeLimit: 1Mi}}
+        - {name: pg-ca, secret: {secretName: platform-db-ca, items: [{key: ca.crt, path: ca.crt}]}}
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api, namespace: bravo-control, labels: {app.kubernetes.io/name: api}}
+spec:
+  selector: {app.kubernetes.io/name: api}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: api, namespace: bravo-control}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/name: api}}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: operator-mcp, namespace: bravo-control}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator-mcp
+  namespace: bravo-control
+  labels: {app.kubernetes.io/name: operator-mcp, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: operator-mcp}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: operator-mcp, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+    spec:
+      serviceAccountName: operator-mcp
+      automountServiceAccountToken: false
+      nodeSelector: {bravo.io/pool: core}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/name: operator-mcp}}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        - name: jwks-sync
+          image: bravo/api
+          restartPolicy: Always
+          command: ["python", "-c"]
+          args:
+            - |
+              import json, os, time, urllib.request
+              url = os.environ.get("ACCESS_CERTS_URL", "").strip()
+              path = "/var/run/bravo-jwks/jwks.json"
+              while True:
+                  if not url:
+                      print("jwks-sync: Access not enabled (platform-access certs_url empty); JWKS stays empty, logins refused", flush=True)
+                      time.sleep(600); continue
+                  try:
+                      data = json.load(urllib.request.urlopen(url, timeout=10))
+                      keys = {"keys": data.get("keys", [])}
+                      tmp = path + ".tmp"
+                      with open(tmp, "w") as f: json.dump(keys, f)
+                      os.replace(tmp, path)
+                      print(f"jwks-sync: {len(keys['keys'])} keys from {url}", flush=True)
+                  except Exception as exc:
+                      print(f"jwks-sync: fetch failed: {type(exc).__name__}", flush=True)
+                  time.sleep(300)
+          env:
+            - name: ACCESS_CERTS_URL
+              valueFrom: {configMapKeyRef: {name: platform-access, key: certs_url}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 5m, memory: 32Mi}, limits: {memory: 64Mi}}
+          volumeMounts:
+            - {name: jwks, mountPath: /var/run/bravo-jwks}
+      containers:
+        - name: operator-mcp
+          image: bravo/api
+          env:
+            - {name: BRAVO_MODE, value: mcp}
+            - {name: PORT, value: "8082"}
+            - {name: OTEL_SERVICE_NAME, value: operator-mcp}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.bravo-observe.svc:4317"}
+            - {name: OTEL_EXPORTER_OTLP_INSECURE, value: "true"}
+            - {name: BRAVO_JWKS_PATH, value: /var/run/bravo-jwks/jwks.json}
+            - name: BRAVO_JWT_ISSUER
+              valueFrom: {configMapKeyRef: {name: platform-access, key: issuer}}
+            - name: BRAVO_CONSOLE_AUD
+              valueFrom: {configMapKeyRef: {name: platform-access, key: console_aud}}
+            - name: BRAVO_MCP_AUD
+              valueFrom: {configMapKeyRef: {name: platform-access, key: mcp_aud}}
+            - {name: BRAVO_DEV_AUTH, value: "0"}
+            - {name: BRAVO_EXECUTOR_URL, value: "http://executor.bravo-control.svc:8081"}
+            - {name: BRAVO_CONSOLE_BASE_URL, value: "https://b-free.mangowhois.ai"}
+            - {name: BRAVO_GATE_MAX_LAG_BYTES, value: "65536"}
+            - {name: BRAVO_GATE_REQUIRED_CONTROLS, value: "DB-ANON-READ,DB-AUTH"}
+            - {name: BRAVO_MCP_ALLOWED_HOSTS, value: "b-free.mangowhois.ai,operator-mcp.bravo-control.svc:8082"}
+            - {name: BRAVO_MCP_ALLOWED_ORIGINS, value: "https://b-free.mangowhois.ai"}
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: platform-db-roles, key: mcp}}
+            - name: BRAVO_DATABASE_URL
+              value: postgresql://bravo_mcp:$(DB_PASSWORD)@platform-db-rw.bravo-control.svc:5432/bravo?sslmode=verify-full&sslrootcert=/etc/bravo/pg-ca/ca.crt
+          ports: [{name: http, containerPort: 8082}]
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 50m, memory: 160Mi}, limits: {memory: 384Mi}}
+          volumeMounts:
+            - {name: jwks, mountPath: /var/run/bravo-jwks, readOnly: true}
+            - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: jwks, emptyDir: {sizeLimit: 1Mi}}
+        - {name: pg-ca, secret: {secretName: platform-db-ca, items: [{key: ca.crt, path: ca.crt}]}}
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: operator-mcp, namespace: bravo-control, labels: {app.kubernetes.io/name: operator-mcp}}
+spec:
+  selector: {app.kubernetes.io/name: operator-mcp}
+  ports: [{name: http, port: 8082, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: operator-mcp, namespace: bravo-control}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/name: operator-mcp}}}

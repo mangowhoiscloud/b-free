@@ -48,8 +48,10 @@ from . import harbor_binding, harbor_run, harbor_task, task_generator, trial_tok
 from .cluster import Cluster, ClusterError, Names
 from .harbor_env import DefinitionInvalid
 from .mcp_tools import ToolLayer, TrialGuard, build_server
-from .sdk_options import LLMUnconfigured, llm_env
-from .server_tools import ServerTools, ServerToolSettings, ToolBlocked
+from .sdk_options import LLMUnconfigured, llm_env, vault_approle
+from .sdk_options import provider as llm_provider
+from .server_tools import OpenBao, ServerTools, ServerToolSettings, ToolBlocked
+from .snapshot import Snapshot, SnapshotRejected, SnapshotStore
 from .trials import Trial, TrialStore
 
 LOG = logging.getLogger("bravo_rehearsal.service")
@@ -77,6 +79,11 @@ class ServiceSettings:
     budget_usd: float
     idle_s: int
     trials_dir: Path = PACKAGE_ROOT / "runs"
+
+    @property
+    def snapshots_dir(self) -> Path:
+        env = os.environ.get("BRAVO_REHEARSAL_SNAPSHOT_DIR", "").strip()
+        return Path(env).expanduser() if env else self.trials_dir / "snapshots"
 
     @classmethod
     def from_env(cls) -> ServiceSettings:
@@ -116,6 +123,8 @@ class TrialRequest(BaseModel):
     source_env: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     target_env: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     analysis: dict[str, Any] | None = None
+    # Collector inventory digest of the customer repo snapshot to bind (PUT /v1/snapshots first).
+    inventory_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 def load_task(tasks_dir: Path, task: str) -> dict[str, Any] | None:
@@ -135,7 +144,6 @@ def load_task(tasks_dir: Path, task: str) -> dict[str, Any] | None:
         "tests": {p.name: p.read_text(encoding="utf-8") for p in sorted(tests_dir.glob("*.py"))},
         "app_files": {f"/app/{p.relative_to(app_dir).as_posix()}": p.read_text(encoding="utf-8")
                       for p in sorted(app_dir.rglob("*")) if p.is_file()} if app_dir.is_dir() else {},
-        "repo": folder / "environment",
         "version": task_generator.digest(folder),
     }
 
@@ -147,7 +155,8 @@ def envelope_plan_id(plan_id: str) -> str:
 
 
 def build_envelope(req: TrialRequest, trial_id: str, deadline: float, budget_usd: float,
-                   al: allowlist_mod.Allowlist, instruction: str | None) -> dict[str, Any]:
+                   al: allowlist_mod.Allowlist, instruction: str | None,
+                   snapshot: Snapshot | None = None) -> dict[str, Any]:
     """``bravo_agents.StateEnvelope`` as JSON. The approved scope is the role's allowlist, never wider."""
     spec = al.spec
     return {
@@ -159,10 +168,19 @@ def build_envelope(req: TrialRequest, trial_id: str, deadline: float, budget_usd
                            "sandbox_ops": list(spec.sandbox.ops) if spec else [],
                            "checks": list(spec.sandbox.checks) if spec else []},
         "prior_failures": req.prior_failures, "evidence": req.evidence,
-        "inputs": {k: v for k, v in {"instruction": instruction, "source_env": req.source_env,
-                                     "target_env": req.target_env, "analysis": req.analysis}.items()
-                   if v is not None},
+        "inputs": {k: v for k, v in {
+            "instruction": instruction, "source_env": req.source_env, "target_env": req.target_env,
+            "analysis": req.analysis,
+            "repo_snapshot": {k2: snapshot.manifest.get(k2) for k2 in ("input_digest", "files", "withheld")}
+            if snapshot else None}.items() if v is not None},
     }
+
+
+def expected_for(trial: Trial) -> dict[str, Any]:
+    """What the private verifier binds the proposal to: the Trial's own envelope, never the proposal."""
+    env = trial.envelope
+    return {"role": trial.role, "plan_id": env.get("plan_id"), "trial_id": trial.trial_id, "attempt": trial.attempt,
+            "evidence_ids": sorted(str(e.get("id")) for e in env.get("evidence") or [])}
 
 
 def envelope_problem(envelope: dict[str, Any]) -> str | None:
@@ -182,19 +200,22 @@ def new_trial(req: TrialRequest, settings: ServiceSettings, idem_key: str, reque
     deadline = time.time() + settings.trial_deadline_s
     al = allowlist_mod.load(req.role, settings.allowlists_dir)
     task = load_task(settings.tasks_dir, req.task)
+    snapshot = SnapshotStore(settings.snapshots_dir).get(req.tenant_id, req.plan_id, req.inventory_digest)
     return Trial(
         trial_id=trial_id, tenant_id=req.tenant_id, plan_id=req.plan_id,
         rehearsal_id=req.rehearsal_id, attempt=req.attempt, max_attempts=req.max_attempts, task=req.task,
         role=req.role, idem_key=idem_key, request_digest=request_digest, deadline=deadline, allowlist=al,
         envelope=build_envelope(req, trial_id, deadline, settings.budget_usd, al,
-                                task["instruction"] if task else None),
+                                task["instruction"] if task else None, snapshot),
+        repo_snapshot=str(snapshot.root) if snapshot else None,
     )
 
 
 class Orchestrator:
-    def __init__(self, settings: ServiceSettings, store: TrialStore) -> None:
+    def __init__(self, settings: ServiceSettings, store: TrialStore, bao: OpenBao | None = None) -> None:
         self.s = settings
         self.store = store
+        self.bao = bao  # the service's OpenBao identity: LLM credential presence and one-use worker secret_ids
         self.cluster = Cluster(settings.kubeconfig, settings.kube_context) if settings.kubeconfig else None
         self._tasks: set[asyncio.Task[None]] = set()
 
@@ -230,6 +251,21 @@ class Orchestrator:
                 missing.append(problem)
         return missing
 
+    async def llm_credential(self) -> str:
+        """``ok`` or why a worker could not get its model credential now. Presence from KV metadata only:
+        the service never reads the token (the worker does, with a one-use AppRole secret_id)."""
+        try:
+            from bravo_agents.llm_secret import LLM_SECRETS
+
+            spec = LLM_SECRETS.get(llm_provider())
+        except (ImportError, LLMUnconfigured):
+            return "llm_unconfigured"
+        if spec is None:
+            return "ok"  # gateway providers: no model credential in the worker
+        if self.bao is None:
+            return "openbao_unconfigured"
+        return await self.bao.secret_present(spec.path)
+
     def start(self, trial: Trial) -> None:
         t = asyncio.create_task(self.run(trial), name=f"trial-{trial.trial_id}")
         self._tasks.add(t)
@@ -256,7 +292,10 @@ class Orchestrator:
             await self.cluster.reachable()
             trials_dir = self.s.trials_dir.resolve()
             trials_dir.mkdir(parents=True, exist_ok=True)
-            task_dir = harbor_task.materialize(task["folder"], trials_dir / f"{trial.trial_id}.task")
+            task_dir = harbor_task.materialize(task["folder"], trials_dir / f"{trial.trial_id}.task",
+                                               expected_for(trial),
+                                               Path(trial.repo_snapshot) if trial.repo_snapshot else None)
+            trial.verifier_kind = str(harbor_task.task_meta(task_dir).get("verifier_kind") or "unknown")
             cfg = harbor_run.trial_config(
                 trial, task_dir, trials_dir, kubeconfig=self.s.kubeconfig, kube_context=self.s.kube_context,
                 sandbox_image=str(self.s.sandbox_image), verifier_image=str(self.s.verifier_image),
@@ -285,9 +324,24 @@ class Orchestrator:
             trial.locked = True
             harbor_binding.release(trial.trial_id)
 
-    def _worker_env(self, trial: Trial, task: dict[str, Any], config_dir: str) -> dict[str, str]:
-        """07 7 / 13 6: built from scratch. Route settings and the Trial token only; no model key."""
+    async def _worker_env(self, trial: Trial, task: dict[str, Any], config_dir: str) -> dict[str, str]:
+        """07 7 / 13 6: built from scratch, exact names only. Route settings, the Trial token and, for the
+        OpenBao providers, one secret_id (60 s, 1 use) for the provider's AppRole; never the model credential."""
         assert self.s.token_key is not None and trial.names is not None
+        route = llm_env(trial.allowlist.model_tier)
+        delivery: dict[str, str] = {}
+        approle = vault_approle(route)
+        if approle is not None:
+            # Where the worker logs in (the service's own OpenBao settings, not secrets) and one secret_id.
+            if self.bao is None or not self.bao.cfg.addr:
+                raise LLMUnconfigured("openbao_unconfigured")
+            try:
+                role_id, secret_id = await self.bao.mint_secret_id(approle)
+            except ToolBlocked as exc:
+                raise LLMUnconfigured(exc.reason) from exc
+            delivery = {"BRAVO_BAO_ADDR": self.bao.cfg.addr, "BRAVO_BAO_KV_MOUNT": self.bao.cfg.kv_mount,
+                        **({"BRAVO_BAO_CACERT": self.bao.cfg.ca_cert} if self.bao.cfg.ca_cert else {}),
+                        "BRAVO_LLM_BAO_ROLE_ID": role_id, "BRAVO_LLM_BAO_SECRET_ID": secret_id}
         token = trial_token.issue(self.s.token_key, trial_token.TrialClaims(
             trial_id=trial.trial_id, tenant_id=trial.tenant_id, plan_id=trial.plan_id, attempt=trial.attempt,
             namespace=trial.names.rehearsal_ns, ops=tuple(sorted(trial.allowlist.ops)),
@@ -295,9 +349,8 @@ class Orchestrator:
         return {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": config_dir,
-            # Route settings and passthrough names (e.g. CODEX_HOME or HOME for codex_chatgpt) may
-            # replace the two defaults above; the Trial values below are always the service's own.
-            **llm_env(trial.allowlist.model_tier),
+            **route,
+            **delivery,
             "BRAVO_TRIAL_TOKEN": token,
             "BRAVO_TOOL_LAYER_URL": f"{self.s.tool_layer_url}/mcp",
             "BRAVO_EVIDENCE_URL": f"{self.s.tool_layer_url}/v1/evidence",
@@ -311,13 +364,13 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
     settings = settings or ServiceSettings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     store = TrialStore()
-    orch = Orchestrator(settings, store)
+    server_tools = ServerTools(ServerToolSettings.from_env(settings.trials_dir))
+    orch = Orchestrator(settings, store, server_tools.bao)
 
     def repo_root(trial: Trial) -> Path | None:
-        task = load_task(settings.tasks_dir, trial.task)
-        return task["repo"] if task else None
+        """Only an uploaded snapshot of the customer repository; never the task template (B9)."""
+        return Path(trial.repo_snapshot) if trial.repo_snapshot else None
 
-    server_tools = ServerTools(ServerToolSettings.from_env(settings.trials_dir))
     layer = ToolLayer(store, orch.cluster, repo_root, server_tools)
     manager = StreamableHTTPSessionManager(app=build_server(layer), stateless=True, json_response=True)
 
@@ -351,6 +404,35 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
     async def healthz() -> dict[str, Any]:
         return {"status": "ok"}
 
+    @app.get("/readyz")
+    async def readyz() -> Any:
+        """Preconditions for running a Trial now (audit 35). Reasons only, never values."""
+        checks: dict[str, str] = {}
+        try:
+            llm_env("opus")
+            checks["llm"] = "ok"
+        except LLMUnconfigured:
+            checks["llm"] = "llm_unconfigured"
+        if orch.cluster is None:
+            checks["cluster"] = "cluster_unconfigured"
+        else:
+            try:
+                await asyncio.wait_for(orch.cluster.reachable(), 5)
+                checks["cluster"] = "ok"
+            except (ClusterError, TimeoutError) as exc:
+                checks["cluster"] = getattr(exc, "reason", "cluster_unreachable")
+        images_ok = all(img and _digest_pinned(img) for img in (settings.sandbox_image, settings.verifier_image))
+        checks["images"] = "ok" if images_ok else "verifier_unconfigured"
+        checks["tool_layer"] = "ok" if settings.token_key and settings.tool_layer_url else "tool_layer_unconfigured"
+        bao = server_tools.bao
+        checks["openbao"] = ("ok" if bao.logged_in else "openbao_unconfigured" if not bao.configured
+                             else "openbao_not_logged_in")
+        checks["gate"] = "ok" if server_tools.s.gate_url else "gate_unconfigured"
+        # Whether the model credential is stored in OpenBao (KV metadata only, never the value).
+        checks["llm_token"] = await orch.llm_credential()
+        ready = all(v == "ok" for v in checks.values())
+        return JSONResponse({"ready": ready, "checks": checks}, status_code=200 if ready else 503)
+
     @app.post("/v1/evidence", status_code=202)
     async def evidence(request: Request, authorization: str | None = Header(default=None)) -> Any:
         """Worker hook events (``bravo_agents.hooks``). Not authoritative: the tool layer's record is."""
@@ -375,6 +457,24 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
             return JSONResponse({"status": "duplicate"}, status_code=409)
         return {"status": "accepted"}
 
+    @app.put("/v1/snapshots/{tenant_id}/{plan_id}")
+    async def put_snapshot(tenant_id: str, plan_id: str, request: Request,
+                           authorization: str | None = Header(default=None),
+                           inventory_digest: str | None = Header(default=None,
+                                                                 alias="X-Bravo-Inventory-Digest")) -> Any:
+        """Customer repo snapshot for repo_read and /src, bound to the collector inventory digest."""
+        if not caller_ok(authorization):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        if not inventory_digest:
+            return JSONResponse({"error": "inventory_digest_missing"}, status_code=422)
+        body = await request.body()
+        try:
+            manifest = await asyncio.to_thread(SnapshotStore(settings.snapshots_dir).ingest, tenant_id, plan_id,
+                                               body, inventory_digest)
+        except SnapshotRejected as exc:
+            return JSONResponse({"error": exc.reason}, status_code=422)
+        return manifest
+
     @app.post("/v1/trials", status_code=202)
     async def start(request: Request, idempotency_key: str = Header(alias="Idempotency-Key"),
                     authorization: str | None = Header(default=None)) -> Any:
@@ -391,6 +491,10 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
                 return JSONResponse({"error": "idempotency_key_reuse"}, status_code=409)
             return {"trial_id": existing.trial_id, "phase": existing.phase}
         missing = orch.preconditions(req)
+        if "llm_unconfigured" not in missing:
+            credential = await orch.llm_credential()
+            if credential != "ok":
+                missing.insert(0, credential)
         if missing:
             return JSONResponse({"error": missing[0], "missing": missing}, status_code=503)
         trial = new_trial(req, settings, idempotency_key, digest)

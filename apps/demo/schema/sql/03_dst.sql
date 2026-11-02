@@ -12,6 +12,12 @@ SELECT pg_create_logical_replication_slot('bravo_rev_sub', 'pgoutput');
 -- Active object store for attachment rows written on this side (D-04).
 INSERT INTO attachment_store (id, active_store) VALUES (1, :'attachment_store_id');
 
--- Planted regression for the first gate run (CONTRACT.md 3).
--- deploy/pilot/fix-dst-grant.sql revokes it.
+-- 심은 시나리오 (planted demo regression, CONTRACT.md 3): only with BRAVO_PLANT_REGRESSION=1.
+-- It gives the first gate run something real to BLOCK on (DB-ANON-READ); it is not part of the
+-- schema. deploy/pilot/fix-dst-grant.sql revokes it. Default (0): not planted.
+\if :plant_regression
+\echo 'bravo-init: 심은 시나리오 적용: GRANT SELECT ON messages TO PUBLIC (BRAVO_PLANT_REGRESSION=1)'
 GRANT SELECT ON messages TO PUBLIC;
+\else
+\echo 'bravo-init: 심은 시나리오 없음 (BRAVO_PLANT_REGRESSION unset or 0)'
+\endif

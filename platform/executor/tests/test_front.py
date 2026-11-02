@@ -19,7 +19,7 @@ from bravo_executor.vault import VaultConfig
 
 CFG = FrontConfig.from_env(
     {
-        "BRAVO_FRONT_APP": "b-free",
+        "BRAVO_FRONT_APP": "b-free-chat",
         "BRAVO_FRONT_ENV_IDS": "src=aws,dst=onprem",
         "BRAVO_FRONT_MIN_SAMPLES": "10",
         "BRAVO_FRONT_MAX_ERROR_RATE": "0.05",
@@ -29,7 +29,7 @@ CFG = FrontConfig.from_env(
 
 
 def test_config_names_follow_the_edge_module() -> None:
-    assert CFG.tunnel_name("dst") == "bravo-b-free-dst"
+    assert CFG.tunnel_name("dst") == "bravo-b-free-chat-dst"
     assert CFG.other_env("dst") == "src" and CFG.env_ids == {"src": "aws", "dst": "onprem"}
     assert CFG.lb_enabled is False
 
@@ -113,3 +113,14 @@ def test_vault_config_never_shows_credentials() -> None:
         {"BRAVO_BAO_ADDR": "https://127.0.0.1:8200", "BRAVO_BAO_ROLE_ID": "ROLE-XYZ", "BRAVO_BAO_SECRET_ID": "SID-XYZ"}
     )
     assert "ROLE-XYZ" not in repr(cfg) and "SID-XYZ" not in repr(cfg)
+
+
+def test_platform_front_is_never_switched() -> None:
+    import pytest
+
+    from bravo_executor.front import FrontConfig
+
+    with pytest.raises(ValueError):
+        FrontConfig.from_env({"BRAVO_FRONT_APP": "b-free", "BRAVO_FRONT_ENV_IDS": "src=aws,dst=onprem"})
+    cfg = FrontConfig.from_env({"BRAVO_FRONT_APP": "b-free-chat", "BRAVO_FRONT_ENV_IDS": "src=aws,dst=onprem"})
+    assert cfg.tunnel_name("dst") == "bravo-b-free-chat-dst"

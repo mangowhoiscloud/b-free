@@ -1,0 +1,58 @@
+# Gate canary object (platform/gate): s3://<attachments bucket>/_gate/canary, body "bravo-gate-canary v1".
+# The strong bucket policy lets only the app role touch objects, so this one-shot Job runs as the app
+# identity: service account chat/chat-app (EKS Pod Identity), the demo app image (boto3) pinned by digest.
+# It PUTs the object, then HEADs it with the same credentials and prints status, size, SSE and key id.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gate-canary
+  namespace: chat
+  labels: {app.kubernetes.io/name: gate-canary, app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: gate-canary}
+    spec:
+      serviceAccountName: chat-app
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: put
+          image: ${DEMO_IMAGE_REPO}@${DEMO_IMAGE_DIGEST}
+          command:
+            - python
+            - -c
+            - |
+              import json, os, boto3
+              b, k, body = os.environ["BUCKET"], "_gate/canary", b"bravo-gate-canary v1"
+              s3 = boto3.client("s3", region_name=os.environ["REGION"])
+              who = boto3.client("sts", region_name=os.environ["REGION"]).get_caller_identity()["Arn"]
+              put = s3.put_object(Bucket=b, Key=k, Body=body, ContentType="text/plain")
+              head = s3.head_object(Bucket=b, Key=k)
+              print(json.dumps({"identity": who, "bucket": b, "key": k,
+                "put_status": put["ResponseMetadata"]["HTTPStatusCode"], "version_id": put.get("VersionId"),
+                "head_status": head["ResponseMetadata"]["HTTPStatusCode"], "size": head["ContentLength"],
+                "etag": head["ETag"], "sse": head.get("ServerSideEncryption"), "kms_key": head.get("SSEKMSKeyId")}))
+          env:
+            - {name: BUCKET, value: "${ATTACH_BUCKET}"}
+            - {name: REGION, value: "${AWS_REGION}"}
+            - {name: HOME, value: /tmp}
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 192Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 16Mi}

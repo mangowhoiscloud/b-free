@@ -12,7 +12,7 @@
 | 목적지 K8s | 온프렘은 K3s(CIS 강화 가이드 플래그). Lima VM 2대(server 1, agent 1). 팀 리드 결정(2026-11-02)으로 RKE2를 뺌. 스펙 §7.2(RKE2 CIS)와 다르므로 편차 등록이 필요함(별도 정리 작업) | 변경(팀 리드). 스펙은 RKE2 | §7.2, T2, `09-cni-csi.md` |
 | 출발지 K8s | EKS | 고정 | §7.2, T6 |
 | 플랫폼 K8s | EKS(관리형 제어면, 3 AZ). 관리형 노드 그룹은 역할별로 둠: core는 3 AZ, agents는 taint `pool=agents:NoSchedule`. 팀 리드 결정(2026-11-02). 스펙 §7.2(EC2 + RKE2)와 다름 | 변경(팀 리드). 스펙은 EC2 + RKE2 | §7.2, T7, `09-cni-csi.md` |
-| K8s 판 | 모든 환경 1.35. EKS 1.35, GKE STABLE 채널 1.35, K3s v1.35.9+k3s1. CNPG 1.30은 1.34–1.36, Istio 1.31은 1.32–1.37을 지원하고, kube-bench 자동 대응표는 1.35까지임. GKE STABLE에 1.36이 아직 없음(2026-11-02 조회) | 제안 | `09-cni-csi.md` 3절 |
+| K8s 판 | 모든 환경 1.36. EKS 1.36(`bravo-source`가 1.36으로 생성됨, 내릴 수 없음), GKE REGULAR 채널 1.36, K3s v1.36.5+k3s1. CNPG 1.30은 1.34–1.36, Istio 1.31은 1.32–1.37을 지원. kube-bench 자동 대응표는 1.35까지라 벤치마크 이름을 명시함(2026-11-02 조회) | 실무 결정, 팀장 확인 대기(`TECH-STACK-SPEC.md` 3절 7번, ADR 0004) | `09-cni-csi.md` 3절 |
 | 노드 아키텍처 | arm64로 통일. GCP에서 안 되면 멀티 아키텍처 이미지 | 미정(인프라 · CI) | §12 |
 | GCP 목적지 | GKE Autopilot(지역형). Dataplane V2, PD CSI, Workload Identity. Autopilot이 요구를 깨면 Standard 지역형. validate만 함 | 제안(D-01), 팀 리드 결정 | `09-cni-csi.md` |
 

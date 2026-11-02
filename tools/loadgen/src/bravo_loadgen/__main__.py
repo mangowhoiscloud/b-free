@@ -79,7 +79,7 @@ async def _main(args: argparse.Namespace) -> int:
     if args.verify:
         keys = [k for k, _ in result.acked]
         counts = await count_keys(args.verify_dsn or args.dsn, keys)
-        nfr2 = evaluate_nfr2(keys, counts, result.stats.failed)
+        nfr2 = evaluate_nfr2(keys, counts, result.stats.failed, result.stats.sent)
     print(json.dumps({"summary": result.stats.summary(), "nfr2": None if nfr2 is None else nfr2.as_dict()}))
     sys.stdout.flush()
     if nfr2 is not None:

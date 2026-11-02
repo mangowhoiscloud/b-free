@@ -298,6 +298,8 @@ def test_agent_template_verifier_grades_frozen_artifact_and_binds_digest(tmp_pat
     assert cfg.verifier.environment is None and cfg.artifacts == []  # tests are uploaded; nothing from the sandbox
     assert json.loads((dest / "tests" / "expected.json").read_text())["trial_id"] == TRIAL
     assert "/out/proposal.json" in (dest / "tests" / "test.sh").read_text()
+    assert harbor_task.task_meta(dest)["verifier_kind"] == "static_rules"
+    assert not (dest / "environment" / "source").exists()  # B9: no template sample stands in for the customer repo
     art = good_artifact()
     reward, binding, _ = _grade_agent_template(tmp_path / "good", art)
     assert reward == "1" and binding["artifact_digest"] == proposal.digest(art)
@@ -386,11 +388,25 @@ def test_reward_bound_to_artifact_digest_and_verifier_image(tmp_path: Path) -> N
     accept(trial, binding, vdir)
     assert (trial.verdict, trial.reason) == ("INFRA_ERROR", "verifier_image_mismatch")
 
+    # Side-loaded image: the status shows another repo digest; the node's record for that image names the pin.
+    trial, binding, vdir = bound_trial(tmp_path / "c")
+    side = "docker.io/library/import-2026-11-02@sha256:" + "d" * 64
+    binding.verifier = {**(binding.verifier or {}), "image_id": side,
+                        "image_names": [side, "docker.io/library/python@sha256:" + "b" * 64]}
+    accept(trial, binding, vdir)
+    assert trial.verdict == "PASS"
+    trial, binding, vdir = bound_trial(tmp_path / "d")
+    binding.verifier = {**(binding.verifier or {}), "image_id": side, "image_names": [side]}
+    accept(trial, binding, vdir)
+    assert trial.reason == "verifier_image_mismatch"
+
 
 def test_accept_pass_fail_and_failures(tmp_path: Path) -> None:
     trial, binding, vdir = bound_trial(tmp_path)
+    trial.verifier_kind = harbor_task.STATIC_RULES
     accept(trial, binding, vdir)
     assert trial.verdict == "PASS" and trial.verifier and trial.verifier["pod_uid"] == "uid-1"
+    assert trial.verifier["verifier_kind"] == "static_rules"  # B7: a PASS says what ran
     accept(trial, binding, vdir, rewards={"reward": 0})  # verdict is set once (CAS)
     assert trial.verdict == "PASS"
 
@@ -508,11 +524,20 @@ def cluster_env(tmp_path: Path, trial_id: str, session: str = "t__env") -> Rehea
 @pytest.mark.cluster
 @pytest.mark.skipif(cluster_reason() is not None, reason=str(cluster_reason()))
 async def test_every_environment_method_on_real_cluster(tmp_path: Path) -> None:  # pragma: no cover - needs K3s
-    env = cluster_env(tmp_path, f"t-{time.time_ns()}")
+    trial_id = f"t-{time.time_ns()}"
+    env = cluster_env(tmp_path, trial_id)
+    trial = make_trial(tmp_path, trial_id=trial_id)
+    harbor_binding.register(harbor_binding.Binding(trial=trial, worker_env=lambda _d: {}))
     try:
         await env.start(force_build=False)  # namespace, baseline, sandbox, isolation check, /app seed
+        iso = trial.isolation[env.namespace]
+        egress = [c for c in iso["checks"] if c["check"] == "egress"]
+        assert len(egress) == 2 and all(c["blocked"] and c["error"] for c in egress), iso  # recorded, not assumed
+        assert any(c["check"] == "privileged_pod_admission" and not c["admitted"] for c in iso["checks"])
+        out = Path(os.environ.get("BRAVO_REHEARSAL_EVIDENCE_OUT", str(tmp_path))) / f"isolation-{trial_id}.json"
+        out.write_text(json.dumps({"namespace": env.namespace, **iso}, indent=2))
         r = await env.exec("cat policy.json && echo \"$X\"", cwd="/app", env={"X": "y"})
-        assert (r.return_code, r.stdout) == (0, "{}\ny\n")
+        assert (r.return_code, r.stdout) == (0, "{}y\n")  # policy.json has no trailing newline
         assert (await env.exec("sleep 5", timeout_sec=1)).return_code == 124
         assert (await env.exec("id -u")).stdout.strip() == "65532"  # user=root is not honoured
         src = tmp_path / "up"
@@ -528,11 +553,13 @@ async def test_every_environment_method_on_real_cluster(tmp_path: Path) -> None:
         assert env.sandbox.pod_uid
     finally:
         await env.stop(delete=True)
+        harbor_binding.release(trial_id)
     from kubernetes import client as k8s
     from kubernetes import config as k8s_config
     from kubernetes.client.rest import ApiException
 
-    core = k8s.CoreV1Api(k8s_config.new_client_from_config(config_file=os.environ["BRAVO_REHEARSAL_KUBECONFIG"]))
+    core = k8s.CoreV1Api(k8s_config.new_client_from_config(config_file=os.environ["BRAVO_REHEARSAL_KUBECONFIG"],
+                                                           context=os.environ.get("BRAVO_REHEARSAL_KUBE_CONTEXT")))
     with pytest.raises(ApiException):
         core.read_namespace(env.namespace)  # V6: nothing left
 
@@ -576,7 +603,7 @@ async def test_separate_verifier_ignores_preseeded_reward_on_real_cluster(tmp_pa
     harbor_run.accept(trial, binding, exception=None, verifier_mode="separate", rewards=result.rewards,
                       verifier_dir=verifier_env.trial_paths.verifier_dir,
                       verifier_image=os.environ["BRAVO_REHEARSAL_VERIFIER_IMAGE"], task_version="v1")
-    assert trial.verdict == "FAIL"
+    assert trial.verdict == "FAIL", (trial.reason, binding.verifier)
 
 
 async def test_harbor_builds_separate_verifier_in_verify_namespace(tmp_path: Path) -> None:

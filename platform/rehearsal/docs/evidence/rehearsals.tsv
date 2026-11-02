@@ -1,1 +1,2 @@
 date	run_id	task	task_sha256	quadrant	backend	harbor_version	verdict	reward	phase_seconds	run_path	note
+2026-11-02	t-66957fd405924635a1440da0f8375ea1	governance	01a3399d669803efd60b589b8f91de437549df613eb41c54bb97e05ea6622852	ANALYZE	harbor:bravo-k8s-namespace	0.25.0	INFRA_ERROR	None	7	/Users/mango/workspace/softbank2026 hackathon/bravo-platform/platform/rehearsal/runs/t-66957fd405924635a1440da0f8375ea1	k8s_409; verifier_kind=static_rules

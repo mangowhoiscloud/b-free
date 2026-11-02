@@ -1,0 +1,37 @@
+# Cilium 1.20.4 on EKS source-aws in AWS VPC CNI chaining mode (TECH-STACK-SPEC: Cilium + Hubble everywhere).
+# VPC CNI keeps ENI IPAM and routing; Cilium attaches eBPF to the same veth for policy, service LB and Hubble.
+# The vpc-cni add-on runs with enableNetworkPolicy=false (infra/modules/cluster/eks/addons.tf) so there is
+# one policy engine. Source: Cilium docs "AWS VPC CNI plugin" (v1.20.4 tree, read 2026-11-02).
+#   install.sh <ctx> cilium   (k8sServiceHost is passed from the cluster endpoint, not kept here)
+cni:
+  chainingMode: aws-cni
+  exclusive: false
+enableIPv4Masquerade: false
+routingMode: native
+
+# Gateway API needs the eBPF kube-proxy replacement: with "false" cilium-operator logs
+# "Gateway API support requires kube-proxy-replacement enabled" and never accepts the GatewayClass
+# (checked on this cluster 2026-11-02). The EKS kube-proxy add-on stays installed; Cilium serves Services
+# first (socket LB, BPF), so kube-proxy rules only matter for pods Cilium does not manage.
+# k8sServiceHost: the EKS API endpoint (public for the operator /32 + private), so the agent never needs
+# a Service VIP to reach the API server.
+kubeProxyReplacement: "true"
+k8sServicePort: 443
+
+# Gateway API (Envoy). Gateways use the parameterised class bravo-cilium (gateway.yaml, Service type NodePort): no LoadBalancer
+# Service, so EKS never creates an ELB. CRDs: Gateway API v1.6.3 standard (Cilium 1.20 docs conf.py).
+gatewayAPI:
+  enabled: true
+  gatewayClass:
+    create: "true"
+
+# Single app node (small preset): one operator replica, otherwise the second stays Pending (anti-affinity).
+operator:
+  replicas: 1
+
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: false

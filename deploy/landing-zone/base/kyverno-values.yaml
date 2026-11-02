@@ -1,0 +1,9 @@
+# Kyverno on a customer cluster: one replica each (demo size), same chart on every cluster.
+admissionController:
+  replicas: 1
+backgroundController:
+  replicas: 1
+cleanupController:
+  replicas: 1
+reportsController:
+  replicas: 1

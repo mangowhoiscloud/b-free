@@ -1,0 +1,27 @@
+{
+  "key_ref": "hashivault://bravo-supply-chain",
+  "ref": "127.0.0.1:5055/bravo/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f",
+  "signing_config": "signing-config.json",
+  "tlog": "none (no Rekor/TSA in signing config)",
+  "annotations": {
+    "bravo.dev/change-id": "3e24d0f4-06ba-416b-be5b-eb8d1206905a",
+    "bravo.dev/approval-id": "None",
+    "bravo.dev/target": "target-onprem"
+  },
+  "verify": {
+    "verified": true,
+    "signatures": 1,
+    "signed_digest": "sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f",
+    "public_key": "bravo-supply-chain.pub",
+    "checks": "cosign claims + key (tlog ignored: signatures are not uploaded to a public log)",
+    "stderr": "ion for 127.0.0.1:5055/bravo/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f --\nThe following checks were performed on each of these signatures:\n  - The specified annotations were verified.\n  - The cosign claims were validated\n  - Existence of the claims in the transparency log was verified offline\n  - The signatures were verified against the specified public key"
+  },
+  "staging": {
+    "address": "127.0.0.1:5055",
+    "image": "docker.io/library/registry:3@sha256:d4032d4cc323c1731c707931ecada07a53076eac38e3b61ae57533f170f2c6c3",
+    "label": "platform staging registry (CNCF distribution 3.1.2, operator laptop, bound to 127.0.0.1 only). Holds the candidate image and its cosign signature; not a destination.",
+    "ref": "127.0.0.1:5055/bravo/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f",
+    "tag": "change-3e24d0f4-06b",
+    "registry_digest": "sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f"
+  }
+}

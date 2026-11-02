@@ -251,6 +251,13 @@ class OpenBao:
         return f"OpenBao(addr={self.cfg.addr!r}, logged_in={self._token is not None})"
 
     @property
+    def logged_in(self) -> bool:
+        """A usable identity right now (an AppRole/Kubernetes token, or a token file to read)."""
+        if self._token and self._token_exp - time.time() > 30:
+            return True
+        return self.cfg.token_file is not None and self.cfg.token_file.is_file()
+
+    @property
     def configured(self) -> bool:
         return bool(self.cfg.addr and (self._role_id or self._token or self.cfg.token_file or self.cfg.k8s_role))
 
@@ -322,6 +329,28 @@ class OpenBao:
             raise ToolBlocked("openbao_denied")
         return self._accept(r.json().get("auth") or {})
 
+    async def mint_secret_id(self, approle: str, ttl: str = "60s") -> tuple[str, str]:
+        """One single-use secret_id (and the role_id) for another AppRole, e.g. ``llm-claude`` for the worker's
+        model credential. Needs ``update`` on ``auth/approle/role/<approle>/secret-id`` in this service's policy.
+        The service never reads the credential the worker will fetch with it."""
+        if not self.cfg.addr:
+            raise ToolBlocked("openbao_unconfigured")
+        try:
+            async with self._client() as http:
+                token = await self._current_token(http)
+                headers = {"X-Vault-Token": token}
+                r1 = await http.get(f"/v1/auth/approle/role/{approle}/role-id", headers=headers)
+                r2 = await http.post(f"/v1/auth/approle/role/{approle}/secret-id", headers=headers,
+                                     json={"ttl": ttl, "num_uses": 1})
+        except httpx.HTTPError as exc:
+            raise ToolBlocked("openbao_unreachable") from exc
+        if r1.status_code in (401, 403) or r2.status_code in (401, 403):
+            raise ToolBlocked("openbao_denied")
+        if r1.status_code != 200 or r2.status_code != 200:
+            raise ToolBlocked("approle_missing" if 404 in (r1.status_code, r2.status_code)
+                              else f"openbao_status_{r2.status_code}")
+        return str(r1.json()["data"]["role_id"]), str(r2.json()["data"]["secret_id"])
+
     async def read(self, path: str) -> dict[str, str]:
         if not self.cfg.addr:
             raise ToolBlocked("openbao_unconfigured")
@@ -340,6 +369,36 @@ class OpenBao:
             raise ToolBlocked(f"openbao_status_{r.status_code}")
         data = ((r.json().get("data") or {}).get("data")) or {}
         return {str(k): str(v) for k, v in data.items()}
+
+    async def secret_present(self, path: str) -> str:
+        """Presence of a KV v2 secret from its metadata only (the service never reads the value).
+
+        ``ok``: a live current version. Otherwise the reason: ``llm_token_missing`` (no secret, or the
+        current version deleted or destroyed), ``openbao_unconfigured``, ``openbao_denied`` (policy),
+        ``openbao_unreachable``.
+        """
+        if not self.cfg.addr:
+            return "openbao_unconfigured"
+        try:
+            async with self._client() as http:
+                token = await self._current_token(http)
+                r = await http.get(f"/v1/{self.cfg.kv_mount}/metadata/{path.strip('/')}",
+                                   headers={"X-Vault-Token": token})
+        except ToolBlocked as exc:
+            return exc.reason
+        except httpx.HTTPError:
+            return "openbao_unreachable"
+        if r.status_code == 404:
+            return "llm_token_missing"
+        if r.status_code in (401, 403):
+            return "openbao_denied"
+        if r.status_code != 200:
+            return f"openbao_status_{r.status_code}"
+        meta = r.json().get("data") or {}
+        current = (meta.get("versions") or {}).get(str(meta.get("current_version") or 0)) or {}
+        if not current or current.get("destroyed") or current.get("deletion_time"):
+            return "llm_token_missing"
+        return "ok"
 
 
 # Tools -------------------------------------------------------------------------------------------

@@ -81,10 +81,14 @@ COMMENT_PREFIXES: dict[str, tuple[str, ...]] = {
 }
 
 _MASKS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # URL userinfo password: postgresql://user:<secret>@host
     (re.compile(r"(://[^/:@\s'\"]*:)[^@\s'\"]+@"), r"\1***@"),
-    (re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key(?:[_-]?id)?|"
-                r"secret[_-]?access[_-]?key)(\s*[=:]\s*['\"]?)(?![%${<*])[^\s'\",;)}]+"), r"\1\2***"),
+    # key = value / key: value / "key": "value", where the key contains a secret word anywhere:
+    # DB_PASSWORD=, aws_secret_access_key =, "password": "...", api_key:, SESSION_TOKEN= (audit B18)
+    (re.compile(r"(?i)([A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|credential)"
+                r"[A-Za-z0-9_]*)(['\"]?\s*[=:]\s*['\"]?)(?![%${<*])[^\s'\",;)}]+"), r"\1\2***"),
     (re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b"), r"\1****************"),
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*"), "-----BEGIN PRIVATE KEY----- ***"),
 )
 
 
@@ -110,6 +114,7 @@ class InventoryReport(BaseModel):
     input_digest: str = Field(description="sha256 over (relative path, file sha256) of every scanned file")
     files_scanned: int
     files_skipped: int
+    skipped: list[dict[str, str]] = Field(default_factory=list, description="candidate files not read, with reason")
     summary: dict[str, int]
     findings: list[Finding]
     unclassified: list[Finding]
@@ -154,18 +159,25 @@ class _Collector:
         fid = digest[:16]
         if fid in self.items:
             return
+        hardcoded = rule.literal and self.fclass in CODE_CLASSES
+        tier, reason = rule.tier, rule.reason
+        if hardcoded and rule.kind == "dsn_literal":
+            # A DSN literal in code cannot change per environment without editing the code (audit 37).
+            tier = Tier.CODE_CHANGE
+            reason = (rule.reason + " The literal sits in code, so moving it needs a code change"
+                      " (read it from configuration).")
         self.items[fid] = Finding(
             id=fid,
             rule_id=rule.rule_id,
-            tier=rule.tier.value,
-            tier_code=TIER_CODE[rule.tier],
+            tier=tier.value,
+            tier_code=TIER_CODE[tier],
             service=service if rule.service == "*" else rule.service,
             kind=rule.kind,
             file=self.relpath,
             line=lineno,
             evidence=_evidence(text),
-            reason=rule.reason,
-            hardcoded=rule.literal and self.fclass in CODE_CLASSES,
+            reason=reason,
+            hardcoded=hardcoded,
         )
 
 
@@ -408,7 +420,8 @@ def scan(root: Path, label: str | None = None) -> InventoryReport:
         raise NotADirectoryError(f"inventory root is not a directory: {root.name or root}")
     root = root.resolve()
     findings: list[Finding] = []
-    scanned = skipped = 0
+    scanned = 0
+    skipped_files: list[dict[str, str]] = []  # audit 37: every skipped candidate file is listed with a reason
     digest = hashlib.sha256()
     for path, rel in _walk(root):
         fclass = file_class(rel)
@@ -416,19 +429,19 @@ def scan(root: Path, label: str | None = None) -> InventoryReport:
             continue
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
-                skipped += 1
+                skipped_files.append({"file": str(rel), "reason": f"larger than {MAX_FILE_BYTES} bytes"})
                 continue
             raw = path.read_bytes()
-        except OSError:
-            skipped += 1
+        except OSError as exc:
+            skipped_files.append({"file": str(rel), "reason": f"unreadable: {type(exc).__name__}"})
             continue
         if b"\0" in raw[:8192]:
-            skipped += 1
+            skipped_files.append({"file": str(rel), "reason": "binary (NUL byte)"})
             continue
         try:
             source = raw.decode("utf-8")
         except UnicodeDecodeError:
-            skipped += 1
+            skipped_files.append({"file": str(rel), "reason": "not UTF-8"})
             continue
         scanned += 1
         digest.update(f"{rel}\0{hashlib.sha256(raw).hexdigest()}\n".encode())
@@ -455,7 +468,8 @@ def scan(root: Path, label: str | None = None) -> InventoryReport:
         root=label if label is not None else root.name,
         input_digest=digest.hexdigest(),
         files_scanned=scanned,
-        files_skipped=skipped,
+        files_skipped=len(skipped_files),
+        skipped=sorted(skipped_files, key=lambda s: s["file"]),
         summary=summary,
         findings=classified,
         unclassified=unclassified,

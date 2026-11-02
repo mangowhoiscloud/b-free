@@ -5,6 +5,7 @@ Secrets are listed as PartialObjectMetadataList, so the API server never sends s
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -18,6 +19,27 @@ SYSTEM_NAMESPACES = frozenset({"kube-system", "kube-public", "kube-node-lease"})
 PSA_PREFIX = "pod-security.kubernetes.io/"
 IRSA_ANNOTATION = "eks.amazonaws.com/role-arn"
 PARTIAL_METADATA_LIST = "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
+
+
+def list_secret_metadata(api: ApiClient, ns: str, timeout_s: float = 15.0) -> dict[str, Any]:
+    """GET the namespace's Secrets as PartialObjectMetadataList (kubernetes client >= 31 call_api shape).
+
+    The server returns metadata only, so Secret values never reach this process. The raw body is parsed
+    here and nothing else of the response is kept.
+    """
+    method, url, headers, body, post = api.param_serialize(
+        method="GET",
+        resource_path="/api/v1/namespaces/{namespace}/secrets",
+        path_params={"namespace": ns},
+        header_params={"Accept": PARTIAL_METADATA_LIST},
+        auth_settings=["BearerToken"],
+    )
+    resp = api.call_api(method, url, header_params=headers, body=body, post_params=post,
+                        _request_timeout=timeout_s)
+    raw = resp.read()
+    if resp.status != 200:
+        raise RuntimeError(f"secrets metadata list HTTP {resp.status} {resp.reason}")
+    return json.loads(raw)
 
 # Verbs and resources this module needs (README, ClusterRole).
 READ_ONLY_RULES: tuple[tuple[str, str, str], ...] = (
@@ -140,16 +162,11 @@ class KubernetesCollector:
         """Names and metadata only. The request asks for PartialObjectMetadataList; values never arrive."""
 
         def call() -> list[dict[str, Any]]:
-            api = self.api()
-            resp = api.call_api(
-                f"/api/v1/namespaces/{ns}/secrets", "GET",
-                header_params={"Accept": PARTIAL_METADATA_LIST},
-                auth_settings=["BearerToken"], response_type="object", _return_http_data_only=True,
-            )
+            resp = list_secret_metadata(self.api(), ns)
             if not isinstance(resp, dict) or resp.get("kind") != "PartialObjectMetadataList":
                 raise RuntimeError("server did not return PartialObjectMetadataList; refusing to read secrets")
             out = []
-            for item in resp.get("items", []):
+            for item in resp.get("items") or []:
                 md = item.get("metadata", {})
                 labels = md.get("labels") or {}
                 out.append({

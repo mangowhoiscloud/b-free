@@ -1,0 +1,43 @@
+# Cilium 1.20.4 on the platform EKS: AWS VPC CNI chaining (TECH-STACK-SPEC 1, D-21, 09-cni-csi.md).
+# VPC CNI keeps ENI/IPAM (its own policy agent is off: modules/cluster/eks network_policy_engine = cilium).
+# Cilium attaches eBPF to the same veth for NetworkPolicy enforcement, Hubble flow records and the
+# Gateway API (Envoy) that serves the platform front b-free.mangowhois.ai (CLOUD-E2E-CONTRACT.md 3).
+# Values from the Cilium doc "AWS VPC CNI plugin" (1.20) + Gateway API prerequisites (kubeProxyReplacement=true).
+cni:
+  chainingMode: aws-cni
+  exclusive: false
+routingMode: native
+enableIPv4Masquerade: false
+endpointRoutes:
+  enabled: true
+# Gateway API needs the eBPF service handling. kube-proxy (EKS add-on) stays for host-network traffic it already owns.
+kubeProxyReplacement: true
+k8sServiceHost: 740034817D4CBEB21ECA3E177CF826F9.gr7.ap-northeast-2.eks.amazonaws.com
+k8sServicePort: 443
+gatewayAPI:
+  enabled: true
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+    replicas: 1
+    nodeSelector:
+      bravo.io/pool: core
+  ui:
+    enabled: false
+operator:
+  replicas: 1
+  nodeSelector:
+    bravo.io/pool: core
+# Agents run on every node, including the tainted agents pool.
+tolerations:
+  - operator: Exists
+resources:
+  requests:
+    cpu: 50m
+    memory: 192Mi
+envoy:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi

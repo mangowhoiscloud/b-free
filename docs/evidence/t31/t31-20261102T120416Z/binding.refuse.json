@@ -1,0 +1,13 @@
+{
+  "change_id": "3e24d0f4-06ba-416b-be5b-eb8d1206905a",
+  "role": "app_migration",
+  "target_environment": "target-onprem",
+  "artifact": null,
+  "provenance": "Refusal check (real run): the approval binding names sha256:92592b87 (the image on-prem ran before), but this change prepared sha256:a9f7b866. Expected: refused before anything is signed, imported or deployed.",
+  "approval": {
+    "approval_id": null,
+    "image_digest": "sha256:92592b8710154fea9ec17d46a8137faa49202e39a2a781068295c791a4238bf9",
+    "diff_digest": null,
+    "policy_diff_digest": null
+  }
+}

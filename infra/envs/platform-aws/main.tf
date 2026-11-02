@@ -13,12 +13,17 @@ data "aws_availability_zones" "this" {
 locals {
   azs = slice(sort(data.aws_availability_zones.this.names), 0, 3)
 
+  # 가장 작은 크기(2026-11-02 류지환 지시 "가장 작은 노드"): core는 t4g.large.
+  # t4g.medium은 VPC CNI 기본(접두사 위임 없음)에서 노드당 Pod 17개라 플랫폼 Pod(약 45개)를 3대에 담지 못하고,
+  # 접두사 위임(노드당 110)을 켜면 AL2023 kube-reserved가 11 MiB × 110 + 255 MiB ≈ 1.4 GiB라 할당 가능 메모리가 노드당 약 2.3 GiB로 줄어듦.
+  # agents는 에이전트 Pod 전용(taint)이라 데몬셋과 Trial 하나를 담는 t4g.small.
   presets = {
     small = {
       core_instance   = ["t4g.large"]
       core_max_per_az = 2
-      agent_instance  = ["t4g.large"]
+      agent_instance  = ["t4g.small"]
       agent_max       = 2
+      disk_gib        = 20
       storage_quota   = "100Gi"
     }
     medium = {
@@ -26,6 +31,7 @@ locals {
       core_max_per_az = 3
       agent_instance  = ["t4g.xlarge"]
       agent_max       = 4
+      disk_gib        = 40
       storage_quota   = "300Gi"
     }
   }
@@ -38,6 +44,7 @@ locals {
       min_per_az     = 1
       desired_per_az = 1
       max_per_az     = local.preset.core_max_per_az
+      disk_gib       = local.preset.disk_gib
     }
     agents = {
       instance_types = local.preset.agent_instance
@@ -45,6 +52,7 @@ locals {
       min_per_az     = 1
       desired_per_az = 1
       max_per_az     = local.preset.agent_max
+      disk_gib       = local.preset.disk_gib
       taints = [{
         key    = "pool"
         value  = "agents"
@@ -55,7 +63,6 @@ locals {
 
   # 비밀이 없는 kubeconfig. .terraform/ 아래라 Git에 올라가지 않음.
   kubeconfig_path = "${abspath(path.root)}/.terraform/bravo/kubeconfig"
-  gitops_dir      = "${abspath(path.root)}/gitops"
 
   tags = merge(var.tags, {
     component  = "platform"
@@ -85,27 +92,13 @@ module "cluster" {
   service_cidr       = "10.63.0.0/16"
   node_pools         = local.node_pools
   kubeconfig_path    = local.kubeconfig_path
+  # 첫 설치 동안만 운영자 IP 하나(/32)에 공개 엔드포인트를 엶. 설치가 끝나면 비움(14-provisioning-scenarios.md 1절 3).
+  bootstrap_public_cidrs = var.bootstrap_public_cidrs
+  admin_principal_arns   = var.admin_principal_arns
   # 시작 템플릿의 tag_specifications에는 provider default_tags가 붙지 않음. NFR-8 component 태그를 직접 넘김.
   tags = local.tags
 }
 
-# 고객 클러스터와 같은 landing zone 묶음(deploy/landing-zone). eks overlay는 EBS 기반 StorageClass,
-# Cilium chaining 값, 노드 선택만 다름. Argo CD Application 파일만 쓰고 클러스터에 적용하지 않음.
-module "landing_zone" {
-  source = "../../modules/landing_zone"
-
-  provider_kind = module.cluster.storage_platform
-  delivery      = module.cluster.addon_delivery
-  argocd = {
-    repo_url        = var.gitops_repo_url
-    target_revision = "main"
-    path            = "infra/envs/platform-aws/gitops"
-  }
-  output_dir = local.gitops_dir
-  vars = {
-    cluster_name  = module.cluster.name
-    region        = var.region
-    kms_key_arn   = module.cluster.ebs_kms_key_arn
-    storage_quota = local.preset.storage_quota
-  }
-}
+# 플랫폼 묶음(Cilium chaining, Argo CD, CNPG, OpenBao, 관측, 플랫폼 서비스)은 Terraform이 아니라
+# deploy/platform/ 을 Argo CD가 당겨 와서 설치함(D-16, 14-provisioning-scenarios.md 1절 4–5).
+# modules/landing_zone 은 아직 없어서 여기서 부르지 않음(source-aws 의 landing_zone.tf.off 와 같은 상태).

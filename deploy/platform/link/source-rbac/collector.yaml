@@ -1,0 +1,27 @@
+# Applied to the SOURCE cluster (bravo-source). The platform collector's EKS Pod Identity role gets the
+# group bravo-collector through an access entry (infra/envs/platform-aws links.tf). Read-only: exactly the
+# get/list calls of platform/collector clusters.py READ_ONLY_RULES. No Secret access (not even metadata).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bravo-collector-read
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+rules:
+  - apiGroups: [""]
+    resources: [nodes, namespaces, pods]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bravo-collector-read
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: bravo-collector-read}
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: Group, name: bravo-collector}

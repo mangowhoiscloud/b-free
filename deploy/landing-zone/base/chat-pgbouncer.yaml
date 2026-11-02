@@ -1,0 +1,161 @@
+# PgBouncer chat-pgbouncer (CLOUD-E2E-CONTRACT §9). The Executor switches the target with
+# pods/exec: cp /etc/pgbouncer/targets/target-<side>.ini /run/pgbouncer/active.ini, then RELOAD.
+# Targets come from the overlay ConfigMap chat-pgbouncer-targets (directory mount, no subPath).
+# Passwords: Secret chat-pgbouncer-auth (keys app_writer, pgb_admin, pgb_stats), created by the
+# platform from OpenBao secret/envs/<env>/chat-db through a pipe.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-pgbouncer-config
+  namespace: chat
+data:
+  pgbouncer.ini: |
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    unix_socket_dir =
+    auth_type = scram-sha-256
+    auth_file = /run/pgbouncer-auth/userlist.txt
+    pool_mode = transaction
+    max_client_conn = 200
+    default_pool_size = 10
+    reserve_pool_size = 0
+    max_prepared_statements = 0
+    admin_users = pgb_admin
+    stats_users = pgb_stats
+    query_wait_timeout = 8
+    server_connect_timeout = 5
+    server_login_retry = 1
+    ignore_startup_parameters = extra_float_digits,options
+    log_connections = 0
+    log_disconnections = 0
+    log_pooler_errors = 1
+    %include /run/pgbouncer/active.ini
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-pgbouncer
+  namespace: chat
+  labels: {app.kubernetes.io/name: chat-pgbouncer}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: chat-pgbouncer}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: chat-pgbouncer}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10070
+        runAsGroup: 10070
+        fsGroup: 10070
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        # Default selection: target-src.ini (source DB; on the destination that is the link).
+        # userlist.txt is rendered from the Secret keys into a memory volume (mode 600).
+        - name: select-default
+          image: ${PGBOUNCER_IMAGE}
+          imagePullPolicy: ${IMAGE_PULL_POLICY}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              cp /etc/pgbouncer/targets/target-src.ini /run/pgbouncer/active.ini
+              umask 077
+              for u in app_writer pgb_admin pgb_stats; do
+                pw="$(cat "/var/run/bravo/pgbouncer/$u")"
+                case "$pw" in *'"'*) echo "password for $u contains a quote" >&2; exit 1 ;; esac
+                printf '"%s" "%s"\n' "$u" "$pw"
+              done > /run/pgbouncer-auth/userlist.txt
+              echo "selected target-src.ini; userlist rendered (3 users)"
+          securityContext: &csc
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: targets, mountPath: /etc/pgbouncer/targets, readOnly: true}
+            - {name: active, mountPath: /run/pgbouncer}
+            - {name: auth, mountPath: /run/pgbouncer-auth}
+            - {name: auth-src, mountPath: /var/run/bravo/pgbouncer, readOnly: true}
+      containers:
+        - name: pgbouncer
+          image: ${PGBOUNCER_IMAGE}
+          imagePullPolicy: ${IMAGE_PULL_POLICY}
+          env:
+            - {name: PGBOUNCER_INI, value: /etc/pgbouncer/main/pgbouncer.ini}
+          ports:
+            - {name: pgbouncer, containerPort: 6432}
+          readinessProbe:
+            tcpSocket: {port: pgbouncer}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: pgbouncer}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext: *csc
+          volumeMounts:
+            - {name: main, mountPath: /etc/pgbouncer/main, readOnly: true}
+            - {name: targets, mountPath: /etc/pgbouncer/targets, readOnly: true}
+            - {name: active, mountPath: /run/pgbouncer}
+            - {name: auth, mountPath: /run/pgbouncer-auth, readOnly: true}
+      volumes:
+        - name: main
+          configMap: {name: chat-pgbouncer-config}
+        - name: targets
+          configMap: {name: chat-pgbouncer-targets}
+        - name: active
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        - name: auth
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        - name: auth-src
+          secret: {secretName: chat-pgbouncer-auth, defaultMode: 0400}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-pgbouncer
+  namespace: chat
+spec:
+  selector: {app.kubernetes.io/name: chat-pgbouncer}
+  ports:
+    - {name: pgbouncer, port: 6432, targetPort: pgbouncer}
+---
+# Executor (laptop, platform side) needs only these in ns chat (CLOUD-E2E-CONTRACT §9).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bravo-executor
+  namespace: chat
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/exec, pods/portforward]
+    verbs: [create, get]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bravo-executor
+  namespace: chat
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bravo-executor
+  namespace: chat
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: bravo-executor}
+subjects:
+  - {kind: ServiceAccount, name: bravo-executor, namespace: chat}

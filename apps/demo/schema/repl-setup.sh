@@ -10,6 +10,15 @@
 #
 # Required environment: POSTGRES_PASSWORD, REPLICATOR_PASSWORD, SRC_HOST, DST_HOST, DB_PORT,
 #                       CHAT_DB, SYNC_TIMEOUT_S
+#
+# Secrets (D-26): no password is in a command-line argument. The superuser password reaches psql
+# through PGPASSWORD; psql builds the subscription conninfo itself from REPLICATOR_PASSWORD with
+# \getenv. PostgreSQL 16 requires the password inside the conninfo when the subscription owner
+# is not a superuser (executor_ctl owns both subscriptions; `passfile=` is rejected with "Non-
+# superusers must provide a password in the connection string"), so CREATE SUBSCRIPTION carries
+# it once. That session sets log_statement = none and log_min_error_statement = panic, so the
+# statement is never written to the server log, and the stored conninfo (pg_subscription.
+# subconninfo) is readable by superusers only.
 set -Eeuo pipefail
 
 : "${POSTGRES_PASSWORD:?repl-setup: POSTGRES_PASSWORD is required}"
@@ -31,15 +40,25 @@ subscription_exists() {
   [ "$(psql_on "$host" -tAc "SELECT count(*) FROM pg_subscription WHERE subname = '${name}'")" = "1" ]
 }
 
-conninfo_for() {
-  printf 'host=%s port=%s dbname=%s user=replicator password=%s' "$1" "$DB_PORT" "$CHAT_DB" "$REPLICATOR_PASSWORD"
-}
+export REPLICATOR_PASSWORD DB_PORT CHAT_DB
+
+# Runs on the subscriber. Reads REPLICATOR_PASSWORD, DB_PORT and CHAT_DB with \getenv (not argv)
+# and sets :conninfo for the SQL that follows on stdin. Publisher host name: psql -v publisher=...
+QUIET_CONNINFO="$(cat <<'PSQL'
+SET log_statement = none;
+SET log_min_error_statement = panic;
+\getenv repl_password REPLICATOR_PASSWORD
+\getenv db_port DB_PORT
+\getenv chat_db CHAT_DB
+\set conninfo 'host=' :publisher ' port=' :db_port ' dbname=' :chat_db ' user=replicator password=' :repl_password
+PSQL
+)"
 
 if subscription_exists "$DST_HOST" bravo_fwd_sub; then
   echo "repl-setup: bravo_fwd_sub already exists on ${DST_HOST}"
 else
   echo "repl-setup: creating bravo_fwd_sub on ${DST_HOST}"
-  psql_on "$DST_HOST" -v conninfo="$(conninfo_for "$SRC_HOST")" <<'SQL'
+  { printf '%s\n' "$QUIET_CONNINFO"; cat <<'SQL'; } | psql_on "$DST_HOST" -v publisher="$SRC_HOST"
 CREATE SUBSCRIPTION bravo_fwd_sub
   CONNECTION :'conninfo'
   PUBLICATION bravo_fwd
@@ -52,7 +71,7 @@ if subscription_exists "$SRC_HOST" bravo_rev_sub; then
   echo "repl-setup: bravo_rev_sub already exists on ${SRC_HOST}"
 else
   echo "repl-setup: creating disabled bravo_rev_sub on ${SRC_HOST}"
-  psql_on "$SRC_HOST" -v conninfo="$(conninfo_for "$DST_HOST")" <<'SQL'
+  { printf '%s\n' "$QUIET_CONNINFO"; cat <<'SQL'; } | psql_on "$SRC_HOST" -v publisher="$DST_HOST"
 CREATE SUBSCRIPTION bravo_rev_sub
   CONNECTION :'conninfo'
   PUBLICATION bravo_rev

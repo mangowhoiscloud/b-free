@@ -1,0 +1,30 @@
+# Same class names on every environment (09-cni-csi.md, D-21). GKE adapter: PD CSI driver.
+# C4A (Arm) nodes attach Hyperdisk only, so the disk type is hyperdisk-balanced (not pd-balanced).
+# Customer-managed key from infra/envs/target-gcp (output pd_kms_key_id).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-db
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+  disk-encryption-kms-key: ${PD_KMS_KEY}
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-general
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+  disk-encryption-kms-key: ${PD_KMS_KEY}
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

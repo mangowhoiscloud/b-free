@@ -1,0 +1,5 @@
+src/db/fence|FENCE_EPOCH|CONFIRMED_APPLIED
+dst/db/fence|FENCE_EPOCH|CONFIRMED_APPLIED
+src/db/attachment_store|FREEZE|CONFIRMED_APPLIED
+dst/db/attachment_store|FREEZE|CONFIRMED_APPLIED
+pgbouncer/0|PAUSE|IN_FLIGHT

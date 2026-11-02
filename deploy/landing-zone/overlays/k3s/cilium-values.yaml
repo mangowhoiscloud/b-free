@@ -1,0 +1,24 @@
+# Cilium on K3s (11-landing-zone §3): VXLAN overlay, kube-proxy replacement (needed by the
+# Cilium Gateway API implementation), Hubble flow records. k8sServiceHost is the server VM's
+# user-v2 address and is passed by install.sh (--set), because K3s runs without kube-proxy.
+k8sServicePort: 6443
+kubeProxyReplacement: true
+routingMode: tunnel
+tunnelProtocol: vxlan
+ipam:
+  mode: kubernetes          # K3s allocates node podCIDRs from 10.42.0.0/16
+bpf:
+  masquerade: true
+operator:
+  replicas: 1
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: false
+gatewayAPI:
+  enabled: true
+envoy:
+  enabled: true
+policyEnforcementMode: default

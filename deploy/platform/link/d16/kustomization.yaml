@@ -1,0 +1,8 @@
+# D-16 링크(플랫폼 쪽 소비자). Zero Trust를 켜고 infra/envs/edge 의 zero_trust_enabled = true 를 apply한 뒤에만 적용.
+# Secret cf-link-<env>-<svc>(client_id, client_secret)는 Git에 없음. 플랫폼 OpenBao에서 파이프로 전달(D-26).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - links.yaml
+  - networkpolicy.yaml

@@ -49,7 +49,9 @@ Python 3.12, FastAPI · uvicorn(WebSocket), psycopg 3, boto3. 기반 오픈소�
 | 첨부 D-04 | `att/<sha256>` 키, `If-None-Match: *`로 덮어쓰지 않음 → 다시 읽어 SHA-256 확인 → 행 commit. 트리거가 동결(`ZB001`) · 저장소 불일치(`ZB002`)를 거부하면 HTTP 423 → 화면 "첨부 일시 중지". 같은 키로 다시 시도. presigned · multipart 없음, 5 MiB 상한(DB CHECK와 앱) | `test_schema.py` 12개(DB 강제). `test_attachment_*`는 RGW가 주어질 때만 |
 | 비밀번호 | `DB_PASSWORD_SOURCE=aws-secrets-manager`이면 시작 때 Secrets Manager SDK 직접 호출(S2 재료). `env-file`이면 마운트한 파일(고친 뒤 모드) | Secrets Manager 시험은 실제 비밀이 있어야 하므로 건너뜀(`BRAVO_TEST_AWS_SECRET_ID`) |
 | 쓰기 차단 스위치(스펙 r2 §8.10, 컷오버 2단계) | 관리 포트 8081과 ClusterIP Service `chat-admin`(앱 Service와 분리, 터널에 없음). `GET /admin/writes` → `{"blocked", "since"}`, `PUT /admin/writes {"blocked": true\|false}`. 켜면 새 업무 쓰기(HTTP 503 + `Retry-After`, WebSocket `nack` `writes_blocked` + `status: 503`)를 거절하고 읽기는 그대로. 상태는 쓰기 DB의 `write_block` 행(환경 ID마다, 발행 안 함)이라 모든 레플리카가 같은 값을 봄. 쓰기는 자기 트랜잭션에서 `FOR SHARE`로 확인하고, 스위치는 `LOCK TABLE ... IN EXCLUSIVE MODE` 뒤 바꾸므로 PUT이 돌아온 뒤에는 옛 상태로 commit되는 쓰기가 없음. Bearer 토큰은 Secret `chat-admin`의 `token`(플랫폼이 OpenBao에서 전달), 없거나 32자 미만이면 관리 API가 모두 거절(fail closed). 브라우저는 `Retry-After` 뒤 같은 멱등 키로 다시 보내고, 8초를 넘으면 재시도 안내 | `test_write_block.py` 6개(실제 앱 프로세스 · PgBouncer · PostgreSQL) |
-| QR, 접속 환경, `live` | `/join`에 QR(`APP_PUBLIC_URL` 기준), 머리에 "연결된 곳: AWS/온프렘/GCP"와 `live` 배지. 환경이 바뀌면 안내 문구. 한국어 기본, 일본어 전환 | `test_pages_and_qr` |
+| QR, 접속 환경, `live` | `/join`에 QR(`APP_PUBLIC_URL` 기준), 머리에 "연결된 곳: AWS/온프렘/GCP"와 `live` 배지. `live`는 서버가 쓰기 DB를 실제로 읽은 뒤(`db_ok`)에만 켜지고, 그전에는 "확인 중"입니다. 환경이 바뀌면 안내 문구. 한국어 기본, 일본어 전환. `APP_ENV_ID`는 필수(기본값 없음) | `test_pages_and_qr`, `test_readiness_and_live_need_a_real_database_answer` |
+| 준비 상태(`/readyz`) | 프로세스가 PgBouncer로 쓰기 DB를 한 번 이상 읽었고, 마지막 성공이 `READY_DB_STALE_S`(30초) 안일 때만 200. 쓰기 정지(수 초)보다 길게 잡아 PAUSE 때 모든 Pod가 한꺼번에 빠지지 않게 함. DB가 30초 넘게 응답하지 않으면 503 | 같은 시험 |
+| 첨부 가능 표시 | `ObjectStore.ping()`(HeadBucket)이 실제로 성공한 뒤에만 첨부를 알리고(`attachments_state`: `off` · `checking` · `ok` · `unavailable`), 15초마다 다시 확인. 실패하면 첨부 단추를 끄고 업로드는 503 `attachments_unavailable` | `test_attachments_not_offered_until_the_store_answers`(응답 없는 실제 주소) |
 
 ### 실행
 
@@ -81,7 +83,25 @@ docker compose -p bravo-pilot --env-file .env --env-file ../../apps/demo/pilot-a
 - 버킷 값이 비면 그 인스턴스는 첨부를 끄고(첨부 단추 숨김) 채팅만 합니다.
 - 첨부를 쓰려면 채팅 DB가 이 스키마(2026-11-02 19:10 이후)로 만들어져 있어야 합니다(`scripts/reset_data_plane.sh`). 각 DB의 `attachment_store.active_store`는 기본으로 `src`, `dst`이고, 앱의 `ATTACHMENT_STORE_ID`와 같아야 합니다. 그래서 컷오버 전에는 AWS 앱만, 뒤에는 온프렘 앱만 첨부를 받습니다.
 
-쿠버네티스(K3s · EKS · GKE)는 `chart/`를 그대로 씁니다. 다른 것은 값뿐입니다(`chart/ci/*-values.yaml`). 이미지는 digest로만 받습니다.
+쿠버네티스(K3s · EKS · GKE)는 `chart/`를 그대로 씁니다. 다른 것은 값뿐입니다. `chart/ci/*-values.yaml`은 렌더링 시험용 **예시 값**이고, 파일 머리와 값마다 `EXAMPLE` 표시가 있습니다(`*.example.invalid`, 0으로 채운 digest, 계정 `000000000000`). 배포 값은 `scripts/render-values.sh`가 실제 출처에서 만듭니다. 이미지는 digest로만 받습니다.
+
+```bash
+# 출발지 EKS: 버킷 · 리전 · Secrets Manager ARN은 terraform output(읽기 전용)에서, 이미지는 올린 ECR 참조로
+apps/demo/scripts/render-values.sh eks --image-repository <ECR 저장소> --image-digest sha256:... \
+  --public-url https://<앞단 이름>
+# 온프렘 K3s: RGW 엔드포인트 · 버킷은 infra/envs/target-onprem 출력이 생기면 자동, 그전에는 인자로
+apps/demo/scripts/render-values.sh onprem --image-repository <가져온 이름> --image-digest sha256:... \
+  --public-url https://<앞단 이름> --s3-endpoint <RGW 주소> --s3-bucket <버킷>
+helm upgrade --install chat apps/demo/chart -n chat -f apps/demo/chart/values-<eks|onprem>.generated.yaml
+```
+
+값이 없으면 스크립트가 멈춥니다(추측으로 채우지 않음). 만든 파일(`values-*.generated.yaml`)은 저장소에 올리지 않습니다.
+
+### 스키마 초기화와 비밀(D-26)
+
+- `schema/00-bravo-init.sh`는 비밀번호를 psql 인자나 SQL에 넣지 않습니다. 비밀번호마다 클라이언트 쪽에서 SCRAM-SHA-256 검증자(4096회, 16바이트 무작위 salt)를 만들어 환경 변수로 넘기고, `02_roles.sql`이 `\getenv`로 읽습니다. 서버는 검증자만 받습니다.
+- `schema/repl-setup.sh`는 복제 비밀번호를 인자로 넘기지 않고 psql 안에서 `\getenv`로 conninfo를 만듭니다. PostgreSQL 16은 구독 소유자가 슈퍼유저가 아니면(`executor_ctl`) conninfo 안에 비밀번호를 요구하므로(`passfile=`은 거부됨), `CREATE SUBSCRIPTION` 한 문장에는 들어갑니다. 그 세션은 `log_statement = none`, `log_min_error_statement = panic`으로 서버 로그에 문장을 남기지 않고, 저장된 conninfo는 슈퍼유저만 읽습니다.
+- **심은 시나리오**(게이트 1차 BLOCK 재료, 목적지 `GRANT SELECT ON messages TO PUBLIC`)는 기본으로 넣지 않습니다. `BRAVO_PLANT_REGRESSION=1`일 때만 `03_dst.sql`이 넣고, 초기화 로그에 "심은 시나리오 적용"을 남깁니다. 파일럿에서 이 장면을 쓰려면 `dst-db` 환경에 `BRAVO_PLANT_REGRESSION: "1"`을 넣어야 합니다.
 
 ### 쓰기 차단 스위치 쓰는 법
 
@@ -100,7 +120,8 @@ curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 | 변수 | 뜻 |
 |---|---|
-| `APP_ENV_ID`, `APP_ENV_LABEL`, `APP_ENV_LABEL_JA` | 환경 ID(`aws`, `onprem`, `gcp`)와 화면 표시 |
+| `APP_ENV_ID`(필수), `APP_ENV_LABEL`(필수), `APP_ENV_LABEL_JA` | 환경 ID(`aws`, `onprem`, `gcp`)와 화면 표시. 기본값 없음 |
+| `READY_DB_STALE_S`(30) | 마지막 DB 읽기 성공이 이보다 오래되면 `/readyz` 503 |
 | `APP_PUBLIC_URL` | QR이 가리킬 주소. 비우면 요청 주소 |
 | `DB_DSN` | 비밀번호 없는 libpq DSN(PgBouncer). 비밀번호가 들어 있으면 시작을 거부 |
 | `DB_PASSWORD_SOURCE` | `aws-secrets-manager` 또는 `env-file` |

@@ -31,8 +31,10 @@ def client(pg_server, tmp_path, monkeypatch):
 def test_environments_and_snapshot(client, pg_server):
     r = client.get("/v1/environments")
     assert r.status_code == 200
-    assert r.json() == {"environments": [{"environment_id": "pilot-src", "display_name": "test source",
-                                          "sources": ["postgres"]}]}
+    body = r.json()
+    assert body["environments"] == [{"environment_id": "pilot-src", "display_name": "test source",
+                                     "sources": ["postgres"]}]
+    assert set(body["credential_source"]) == {"label", "temporary_pilot_path"}
     r = client.get("/v1/environments/pilot-src/snapshot", params={"sources": "postgres"})
     assert r.status_code == 200
     body = r.json()

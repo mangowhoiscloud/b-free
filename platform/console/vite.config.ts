@@ -8,10 +8,7 @@ export default defineConfig(({ mode }) => {
   const upstreams: Record<string, string> = {
     collector: env.BRAVO_COLLECTOR_UPSTREAM ?? 'http://localhost:8083',
     gate: env.BRAVO_GATE_UPSTREAM ?? 'http://localhost:8084',
-    executor: env.BRAVO_EXECUTOR_UPSTREAM ?? 'http://localhost:8081',
     prometheus: env.BRAVO_PROMETHEUS_UPSTREAM ?? 'http://localhost:9090',
-    'app-src': env.BRAVO_APP_SRC_UPSTREAM ?? 'http://localhost:8090',
-    'app-dst': env.BRAVO_APP_DST_UPSTREAM ?? 'http://localhost:8091',
   };
   const proxy = Object.fromEntries(
     Object.entries(upstreams).map(([name, target]) => [

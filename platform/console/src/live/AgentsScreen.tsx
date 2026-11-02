@@ -2,8 +2,7 @@
  * 에이전트 실시간: role-split agents from the open plan's SSE stream
  * (trial.started / trial.proposed / tool.denied / trial.verdict / analysis.done).
  */
-import { Grid } from '@astryxdesign/core/Grid';
-import { HStack, VStack } from '@astryxdesign/core/Stack';
+import { HStack } from '@astryxdesign/core/Stack';
 import { Text } from '@astryxdesign/core/Text';
 import type { StreamStatus } from '../api/client';
 import type { PlanEvent } from '../api/types';
@@ -49,33 +48,26 @@ export function AgentsScreen({ planId, events, status, detail }: { planId: strin
       lead="역할별 에이전트의 상태 · 도구 호출 판정 · 제안 · Harbor 샌드박스 시험 결과를 계획 이벤트 흐름(SSE)으로 봅니다."
       aside={<StreamBadge status={status} detail={detail} />}
     >
-      <Grid columns={{ minWidth: 220 }} gap={3}>
-        {AGENT_ROLES.map((role) => {
-          const mine = trials.filter((t) => t.role === role);
-          const last = mine[0];
-          const proposals = mine.filter((t) => t.digest).length;
-          const deniedN = mine.reduce((a, t) => a + t.denied.length, 0);
-          return (
-            <Block key={role} title={ROLE_LABEL[role]} meta={last ? verdictTag(last) : <Tag variant="neutral" label="기록 없음" />}>
-              {last ? (
-                <VStack gap={1}>
-                  <Text type="supporting">
-                    시도 {last.attempt ?? '—'} · {last.task ?? '과제 없음'}
-                  </Text>
-                  <Text type="supporting" color="secondary">
-                    제안 {proposals} · 거부된 도구 호출 {deniedN} · 마지막 {fmtTime(last.updatedAt)}
-                  </Text>
-                </VStack>
-              ) : (
-                <Text type="supporting" color="secondary">
-                  이 계획에서 이 역할의 시험 이벤트가 아직 없습니다.
-                </Text>
-              )}
-            </Block>
-          );
-        })}
-      </Grid>
-      <Block title="도구 호출 · 허용 목록 판정" meta={<Tag variant="neutral" label={`거부 ${denied.length}`} />}>
+      <Block title="역할별 에이전트">
+        <DataTable
+          rows={AGENT_ROLES.map((role) => {
+            const mine = trials.filter((t) => t.role === role);
+            return { role, last: mine[0] ?? null, proposals: mine.filter((t) => t.digest).length, denied: mine.reduce((a, t) => a + t.denied.length, 0), n: mine.length };
+          })}
+          rowKey={(r) => r.role}
+          empty="—"
+          cols={[
+            { key: 'r', header: '역할', weight: 2, render: (r) => ROLE_LABEL[r.role] },
+            { key: 's', header: '상태', weight: 2, render: (r) => (r.last ? verdictTag(r.last) : <span className="foot">이 계획에 시험 이벤트 없음</span>) },
+            { key: 'task', header: '과제', weight: 2, render: (r) => <span className="mono">{r.last?.task ?? '—'}</span> },
+            { key: 'n', header: '시험', numeric: true, render: (r) => `${r.n}회` },
+            { key: 'p', header: '제안', numeric: true, render: (r) => `${r.proposals}건` },
+            { key: 'd', header: '거부된 호출', numeric: true, render: (r) => `${r.denied}건` },
+            { key: 't', header: '마지막', numeric: true, render: (r) => (r.last ? fmtTime(r.last.updatedAt) : '—') },
+          ]}
+        />
+      </Block>
+      <Block title={`도구 호출 · 허용 목록 판정 (거부 ${denied.length}건)`}>
         <DataTable
           rows={denied.slice().reverse()}
           rowKey={(d) => d.eventId}
@@ -88,11 +80,11 @@ export function AgentsScreen({ planId, events, status, detail }: { planId: strin
             { key: 'rule', header: '규칙', weight: 2, render: (d) => <span className="mono">{d.rule ?? '—'}</span> },
           ]}
         />
-        <Text type="supporting" color="secondary" as="p">
+        <p className="foot">
           허용된 호출은 연결 안 됨 · 이유: API는 거부만 <span className="mono">tool.denied</span> 이벤트로 내보냅니다. 허용 기록은 rehearsal 서비스 <span className="mono">GET /v1/trials/{'{id}'}</span>에 있고 서비스 토큰이 필요해 브라우저에서 읽지 않습니다.
-        </Text>
+        </p>
       </Block>
-      <Block title="Harbor 샌드박스 시험 · 검증기 결과" meta={<Tag variant="neutral" label={`시험 ${trials.length}`} />}>
+      <Block title={`Harbor 샌드박스 시험 · 검증기 결과 (${trials.length}건)`}>
         <DataTable
           rows={trials}
           rowKey={(t) => t.rehearsalId}

@@ -1,0 +1,43 @@
+# Demo app on the GKE landing zone (release "chat", ns "chat", chart apps/demo/chart).
+# Same chart and same digest as the source; only these values differ (D-23).
+image:
+  repository: ${IMAGE_REGISTRY}/${DEMO_IMAGE_NAME}
+  digest: "${DEMO_DIGEST}"
+replicaCount: 2
+environment: {id: gcp, label: GCP, labelJa: GCP}
+publicUrl: https://${PUBLIC_HOSTNAME}
+db:
+  dsnSecret: {name: bravo-demo-db, key: dsn}
+  passwordSource: env-file
+  passwordSecret: {name: bravo-demo-db, key: password}
+attachments:
+  enabled: true
+  storeId: gcp
+  s3:
+    bucket: ${ATTACH_BUCKET}
+    endpointUrl: https://storage.googleapis.com
+    region: auto
+    addressingStyle: path
+    credentialsSecret: {name: bravo-demo-gcs-hmac}
+otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}
+admin:
+  tokenSecret: {name: chat-admin, key: token}
+networkPolicy:
+  enabled: true
+  ingress:
+    # GKE Gateway proxies (proxy-only subnet) and Google health checkers reach the pods via NEG.
+    - from:
+        - ipBlock: {cidr: ${PROXY_ONLY_CIDR}}
+        - ipBlock: {cidr: 35.191.0.0/16}
+        - ipBlock: {cidr: 130.211.0.0/22}
+      ports: [{port: 8000, protocol: TCP}]
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: chat-pgbouncer}}}]
+      ports: [{port: 6432, protocol: TCP}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: otel-agent}}}]
+      ports: [{port: 4317, protocol: TCP}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    # Cloud Storage XML API, TLS only (no port 80)
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]
+      ports: [{port: 443, protocol: TCP}]

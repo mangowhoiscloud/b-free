@@ -2,8 +2,9 @@
 
 Started by ``harbor_agent.RehearsalAgent`` with an environment built from scratch: the Trial
 token, the tool-layer URL, the evidence URL, the state envelope (``bravo_agents.StateEnvelope``),
-the role, the allowlist directory and the model route settings (no model key, no kubeconfig,
-no cloud or DB credentials). The loop is ``bravo_agents.run_agent(role, envelope, mcp_url,
+the role, the allowlist directory, the model route settings and, for ``claude_subscription`` /
+``openai_agents``, a one-use OpenBao secret_id (no model key, no kubeconfig, no cloud or DB
+credentials). The loop is ``bravo_agents.run_agent(role, envelope, mcp_url,
 trial_token)``; it validates its structured output and submits it with ``plan_propose``. Its
 return value is not the artifact: the server-side ``plan_propose`` record is. Exit codes map to
 Trial reasons; for 23 the last stderr line is ``agent_error:<code>`` (``AgentRunError.code``):
@@ -38,7 +39,14 @@ def main() -> int:
     except AgentRunError:
         tier = "opus"  # the allowlist problem is reported by run_agent; the model route is checked first
     try:
-        check_route(tier, os.environ)  # fail closed before anything else: never run without a model route
+        # Fail closed before anything else: never run without a model route and, for the OpenBao
+        # providers, the one-use credential delivery (bravo_agents.llm_secret reads it at run time).
+        check_route(tier, os.environ)
+        from bravo_agents.llm import provider_name
+        from bravo_agents.llm_secret import delivery_problem
+
+        if delivery_problem(provider_name(os.environ), os.environ):
+            raise LLMUnconfigured("openbao_delivery_missing")
     except LLMUnconfigured:
         print("llm_unconfigured", file=sys.stderr)
         return 20

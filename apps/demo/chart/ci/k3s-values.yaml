@@ -1,7 +1,11 @@
-# Destination on-prem (K3s landing zone, release "chat" in ns "chat"): password from a Secret, Rook-Ceph RGW.
-image: {repository: ghcr.io/example/bravo-demo, digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"}
+# EXAMPLE VALUES - render tests only (helm lint / kubeconform). Not for deployment.
+# Destination on-prem (K3s landing zone, release "chat" in ns "chat"). Every value marked
+# "EXAMPLE" is a placeholder. Real values: apps/demo/scripts/render-values.sh onprem ...
+image:
+  repository: registry.example.invalid/bravo-demo   # EXAMPLE (real: the name the image tar was imported under)
+  digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"   # EXAMPLE (real: the imported image digest)
 environment: {id: onprem, label: 온프렘, labelJa: オンプレ}
-publicUrl: https://chat.example.test
+publicUrl: https://chat.example.invalid   # EXAMPLE (real: the edge hostname)
 db:
   dsnSecret: {name: bravo-demo-db, key: dsn}
   passwordSource: env-file
@@ -9,8 +13,8 @@ db:
 attachments:
   storeId: dst
   s3:
-    bucket: bravo-demo-attachments
-    endpointUrl: http://rook-ceph-rgw-bravo.rook-ceph.svc
+    bucket: example-attachments-bucket   # EXAMPLE (real: infra/envs/target-onprem output)
+    endpointUrl: http://rgw.example.invalid   # EXAMPLE (real: the Rook-Ceph RGW Service)
     region: us-east-1
     addressingStyle: path
     credentialsSecret: {name: bravo-demo-s3}
@@ -20,7 +24,7 @@ networkPolicy:
     - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cf-edge}}}]
       ports: [{port: 8000, protocol: TCP}]
   egress:
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-data}}}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: chat}}}]
       ports: [{port: 6432, protocol: TCP}]
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: rook-ceph}}}]
       ports: [{port: 80, protocol: TCP}]
@@ -28,7 +32,7 @@ networkPolicy:
       ports: [{port: 4317, protocol: TCP}]
     - to: [{namespaceSelector: {}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
-otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}
+otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}   # EXAMPLE
 # Write-block switch: Service chat-admin:8081 (release "chat"), token from Secret chat-admin/token
 # that the platform creates from OpenBao secret/envs/<env>/chat-admin. Not routed by the tunnel.
 admin:

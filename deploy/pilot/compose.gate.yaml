@@ -9,6 +9,11 @@
 #   BRAVO_PILOT_NETWORK           pilot network name (default bravo-pilot_default, from compose project bravo-pilot)
 #   BRAVO_AWS_CONFIG_DIR_HOST     host AWS config dir mounted read-only into the collector only (default ~/.aws);
 #                                 used for EKS DescribeCluster + the EKS bearer token of GET /v1/clusters.
+#                                 TEMPORARY PILOT PATH: this puts the operator's long-lived keys in a platform
+#                                 container, which NFR-6 and D-26 forbid. It stays only until the platform runs on
+#                                 EKS with Pod Identity. The collector labels itself (BRAVO_CREDENTIAL_SOURCE ->
+#                                 credential_source in /v1/environments and /v1/clusters) and withholds any
+#                                 response or log line that contains credential material (bravo_collector.redact).
 #   AWS_PROFILE                   optional; passed through to the collector when set in the shell
 # The gate gets no AWS or Kubernetes credentials here: questions that need them answer UNKNOWN (fail closed).
 # On the target platform the services use Pod Identity and a read-only ServiceAccount instead (NFR-6).
@@ -40,6 +45,7 @@ services:
       AWS_SHARED_CREDENTIALS_FILE: /etc/bravo/aws/credentials
       AWS_CONFIG_FILE: /etc/bravo/aws/config
       AWS_PROFILE:
+      BRAVO_CREDENTIAL_SOURCE: "임시 파일럿 경로: 운영자 ~/.aws 읽기 전용 마운트(NFR-6 · D-26 예외). EKS Pod Identity로 옮기면 제거"
     volumes:
       - ${BRAVO_ENVIRONMENTS_FILE_HOST:?set BRAVO_ENVIRONMENTS_FILE_HOST}:/etc/bravo/environments.yaml:ro
       - ${BRAVO_INVENTORY_ROOT_HOST:-../../apps/demo}:/srv/app:ro

@@ -13,10 +13,8 @@ interface Lookup { name: string; status: number | null; answers: { type: number 
 const TYPE: Record<number, string> = { 1: 'A', 5: 'CNAME', 28: 'AAAA' };
 
 export function EdgeBlock() {
-  const { publicFrontHost, dohUrl } = useConfig();
-  const base = publicFrontHost.split('.')[0] ?? publicFrontHost;
-  const zone = publicFrontHost.slice(base.length + 1);
-  const names = [publicFrontHost, `${base}-src.${zone}`, `${base}-dst.${zone}`];
+  const { publicFrontHost, dohUrl, appEnvs } = useConfig();
+  const names = [publicFrontHost, ...appEnvs.map((e) => e.host)];
   const q = useQuery({
     queryKey: ['doh', dohUrl, ...names],
     enabled: Boolean(dohUrl),
@@ -35,7 +33,7 @@ export function EdgeBlock() {
       ),
   });
   return (
-    <Block title="앞단 · 공개 주소" meta={<Fresh at={q.dataUpdatedAt} label="DNS 확인" />}>
+    <Block title="앞단 · 데모 앱 공개 이름" meta={<Fresh at={q.dataUpdatedAt} label="DNS 확인" />}>
       {!dohUrl ? (
         <NotConnected endpoint="DNS-over-HTTPS" reason="BRAVO_DOH_URL이 비어 있어 이름 확인을 하지 않습니다" />
       ) : (
@@ -65,7 +63,7 @@ export function EdgeBlock() {
         />
       )}
       <Text type="supporting" color="secondary" as="p">
-        출처: 공개 DNS-over-HTTPS <span className="mono">{dohUrl ?? '—'}</span>. 대표 이름은 LB 구독 전까지 활성 환경 터널을 가리키는 CNAME 하나입니다(CLOUD-E2E-CONTRACT §6).
+        출처: 공개 DNS-over-HTTPS <span className="mono">{dohUrl ?? '—'}</span>. 대표 이름은 LB 구독 전까지 활성 환경 터널을 가리키는 CNAME 하나입니다. 우리 플랫폼은 b-free입니다(CLOUD-E2E-CONTRACT §6).
       </Text>
       <DataTable
         rows={[
@@ -80,17 +78,6 @@ export function EdgeBlock() {
           { key: 'v', header: '상태', render: (r) => <Tag variant={r.v === 'LB 구독 필요' ? 'warning' : 'neutral'} label={r.v} /> },
           { key: 'w', header: '이유', weight: 4, render: (r) => <Text type="supporting" color="secondary">{r.why}</Text> },
         ]}
-      />
-    </Block>
-  );
-}
-
-export function WriteSwitchBlock() {
-  return (
-    <Block title="쓰기 차단 스위치" meta={<Tag variant="neutral" label="연결 안 됨" />}>
-      <NotConnected
-        endpoint="GET /admin/writes (플랫폼 경유, 앱 관리 포트 8081 · Service chat-admin)"
-        reason="플랫폼에 이 상태를 읽어 주는 읽기 전용 경로가 아직 없습니다. 관리 포트는 Bearer 토큰(OpenBao secret/envs/<env>/chat-admin)이 필요해 브라우저가 직접 읽지 않고 토큰도 화면에 두지 않습니다(D-26)"
       />
     </Block>
   );

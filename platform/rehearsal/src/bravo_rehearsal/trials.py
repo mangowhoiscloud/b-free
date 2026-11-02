@@ -51,11 +51,14 @@ class Trial:
     verifier: dict[str, Any] | None = None
     tool_events: list[dict[str, Any]] = field(default_factory=list)
     hook_events: list[dict[str, Any]] = field(default_factory=list)  # worker-reported, not authoritative
+    isolation: dict[str, Any] = field(default_factory=dict)  # per namespace: T3 checks as they ran
     leftovers: list[str] = field(default_factory=list)
     names: Names | None = None
     box: Sandbox | None = None
     locked: bool = False
     harbor_trial_dir: str | None = None
+    repo_snapshot: str | None = None  # uploaded customer repo snapshot (snapshot.SnapshotStore), if any
+    verifier_kind: str | None = None  # what the verifier did (harbor_task.STATIC_RULES today)
     proposed: asyncio.Event = field(default_factory=asyncio.Event)
     created_at: str = field(default_factory=now_iso)
 
@@ -76,6 +79,15 @@ class Trial:
         if len(self.tool_events) < MAX_EVENTS:
             self.tool_events.append(ev)
         return ev
+
+    def mark_last(self, tool: str, args: Any, origin: str) -> int | None:
+        """Label the latest event for (tool, args) with its origin (e.g. a demo probe), so the record says who called."""
+        sha = hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode()).hexdigest()
+        for ev in reversed(self.tool_events):
+            if ev["tool"] == tool and ev["args_sha256"] == sha and "origin" not in ev:
+                ev["origin"] = origin
+                return int(ev["seq"])
+        return None
 
     def add_hook_event(self, event: dict[str, Any]) -> bool:
         """Store one worker hook event once per ``seq`` (bounded). Hook input is hashed, not stored."""
@@ -114,9 +126,11 @@ class Trial:
             "verifier": self.verifier,
             "tool_events": self.tool_events,
             "hook_events": self.hook_events,
+            "isolation": self.isolation,
             "namespaces": [self.names.rehearsal_ns, self.names.verify_ns] if self.names else [],
             "leftovers": self.leftovers,
             "harbor_trial_dir": self.harbor_trial_dir,
+            "verifier_kind": self.verifier_kind,
             "created_at": self.created_at,
         }
 

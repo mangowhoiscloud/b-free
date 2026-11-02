@@ -2,7 +2,7 @@
 
 Team Bravo의 클라우드 출구전략 플랫폼입니다(SoftBank Hackathon 2026 본선). 가동 중인 서비스를 한 고객 클러스터에서 다른 고객 클러스터로 옮깁니다. 옮기기 전에는 목적지의 보안 통제가 원본과 같은지 비교하고, 옮기는 동안에는 데이터 유실과 중복이 없음을 증명합니다. 문제가 생기면 그사이 쓴 데이터까지 들고 되돌립니다.
 
-**상태(2026-11-02).** 구현 전입니다. 문서와 폴더 구조만 있습니다. 예외는 `platform/rehearsal/`이며, 리허설 프로토타입의 코드와 시험이 들어 있습니다.
+**상태(2026-11-02 20:45 KST).** 플랫폼 서비스(`platform/*`), 데모 앱(`apps/demo/`), Terraform(`infra/`)의 코드와 시험이 있습니다. 실제 대상은 출발지 EKS `bravo-source`(가동), 플랫폼 EKS `bravo-platform`(생성 중), 온프렘 K3s(Lima, 노드 기동 중), GKE(생성 중)입니다. 이 환경들에서 낸 이전 실행 기록은 아직 없습니다. 노트북 Compose 파일럿은 내렸고, 그 측정은 "파일럿(노트북) 기록"입니다(`docs/evidence/pilot-notebook/`). 단계별 상태는 `docs/architecture/14-provisioning-scenarios.md`, 데모 장면별 상태는 `docs/demo/SCRIPT.md`에 있습니다(감사 24).
 
 ## 깊이 하나
 
@@ -20,8 +20,8 @@ Team Bravo의 클라우드 출구전략 플랫폼입니다(SoftBank Hackathon 20
 |---|---|---|---|---|
 | `platform-aws` | 중앙 제어(본부) | AWS 서울 3-AZ, VPC ② | Amazon EKS(제어면은 AWS 관리). 관리형 노드 그룹 core 3대(AZ마다 1) + agents 1대(taint) | 스펙 §7.2(EC2 단일 노드)와 다름. 결정 D-21 |
 | `source-aws` | 고객 앱 출발지 | AWS 서울, VPC ① | EKS, CNPG, PgBouncer, ESO. 앱이 S3 · Secrets Manager · KMS를 직접 씀 | §7.2, T6 |
-| `target-onprem` | 고객 앱 목적지 | 온프렘 장비의 Lima VM 2대(Ubuntu) | K3s(CIS 하드닝 설정), CNPG, PgBouncer, OpenBao, ESO, S3 호환 저장소(후보 Rook-Ceph RGW · RBD, 제안 D-22, 검증 중) | §7.2, T2, T9. 결정 D-21, D-23 |
-| `target-gcp` | 두 번째 목적지 | GCP 서울 | GKE(Autopilot 우선). 온프렘과 같은 랜딩 존. 실제 컷오버 1회 뒤에만 세움 | 제안 D-01, 결정 D-21, D-23 |
+| `target-onprem` | 고객 앱 목적지 | 온프렘 장비의 Lima VM 2대(Ubuntu) | K3s(CIS 하드닝 설정), CNPG, PgBouncer, ESO(값은 플랫폼 OpenBao, D-26), Rook-Ceph RGW(객체, D-22). 블록 저장은 결정 전(임시 local-path) | §7.2, T2, T9. 결정 D-21, D-22, D-23, D-26 |
+| `target-gcp` | 두 번째 목적지 | GCP, 프로젝트 `b-free-target-20261102` | GKE(Dataplane V2). 온프렘과 같은 계약의 랜딩 존, 객체 저장은 Cloud Storage(D-22). 팀장 지시로 데모 목적지에 넣음(2026-11-02, 원래 제안 D-01은 "컷오버 1회 뒤") | D-01, 결정 D-21, D-23 |
 
 이전 경로는 넷입니다. AWS에서 온프렘(P0, 데모), 온프렘에서 AWS로 되돌리기(P0), AWS에서 GCP(P2), 리전 이전(설계 문서에만, 제안 D-07)입니다. 자세한 것은 [docs/architecture/03-migration.md](docs/architecture/03-migration.md)에 있습니다.
 
@@ -65,7 +65,7 @@ bravo-platform/
 ├── deploy/                # 클러스터 안 배포 매니페스트
 ├── tests/e2e/             # 시나리오 S1–S4 인수 시험
 ├── scripts/               # 저장소 검사 스크립트
-└── .github/workflows/     # 빌드, OIDC 배포, 검사
+└── .github/workflows/     # ci.yaml, images.yaml, platform-images.yml(빌드, 이미지, 검사)
 ```
 
 ## 명령
@@ -74,5 +74,7 @@ bravo-platform/
 |---|---|
 | 문서 검사 | `make check` |
 | 리허설 프로토타입 시험 | `make -C platform/rehearsal check` |
+| 데모 시작 상태로 되돌리기(계획만) | `deploy/scripts/reset-demo.sh --dry-run` |
+| 데모 각본과 통합 점검 | `docs/demo/SCRIPT.md`, `docs/demo/INTEGRATION-CHECK.md` |
 
-클라우드 자원을 만드는 명령은 아직 없습니다. 만들 때는 팀 승인 뒤 `infra/envs/<환경>/`에서 실행합니다.
+클라우드 자원은 `infra/envs/<환경>/`의 Terraform으로 만들고 지웁니다. `apply`와 `destroy`는 팀 승인 뒤에만 합니다.

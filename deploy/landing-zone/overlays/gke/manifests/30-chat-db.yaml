@@ -1,0 +1,34 @@
+# CNPG Cluster chat-db (CLOUD-E2E-CONTRACT §3, §9): PostgreSQL 16, wal_level=logical,
+# max_slot_wal_keep_size set, max_replication_slots >= 10, Service chat-db-rw:5432.
+# No superuser Secret (enableSuperuserAccess: false). The database owner password comes from OpenBao (ESO).
+# The chat schema (apps/demo/schema/sql 01 -> 02 -> 03_dst) is applied by the platform at bring-up.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: chat-db
+  namespace: chat
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+spec:
+  instances: 1
+  imageName: ${PG_IMAGE}
+  enableSuperuserAccess: false
+  storage:
+    storageClass: bravo-db
+    size: 10Gi
+  postgresql:
+    parameters:
+      wal_level: logical
+      max_replication_slots: "10"
+      max_wal_senders: "10"
+      max_slot_wal_keep_size: "2GB"
+      password_encryption: scram-sha-256
+  bootstrap:
+    initdb:
+      database: chat
+      owner: chat_dbo
+      secret:
+        name: chat-db-owner
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}

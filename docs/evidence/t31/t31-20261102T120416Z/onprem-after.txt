@@ -1,0 +1,2 @@
+chat-bravo-demo-67ff957b8f-2tchw bravo-onprem-agent true bravo.local/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f
+chat-bravo-demo-67ff957b8f-w88zq bravo-onprem-agent true bravo.local/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f

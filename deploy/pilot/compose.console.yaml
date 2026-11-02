@@ -8,11 +8,10 @@
 # Live screens read other pilot services through the console's own read-only GET proxy
 # (/svc/<name>/, docker/40-bravo-config.sh). Optional overrides, defaults in brackets:
 #   CONSOLE_COLLECTOR_UPSTREAM [http://collector:8083]  CONSOLE_GATE_UPSTREAM [http://gate:8084]
-#   CONSOLE_EXECUTOR_UPSTREAM [http://executor:8081]    CONSOLE_PROMETHEUS_UPSTREAM [http://prometheus:9090]
-#   CONSOLE_APP_SRC_UPSTREAM [http://app-src:8000]      CONSOLE_APP_DST_UPSTREAM [http://app-dst:8000]
-#   CONSOLE_GRAFANA_URL [http://localhost:3300]          CONSOLE_PROMETHEUS_URL [http://localhost:9090]
-#   CONSOLE_TEMPO_URL [empty: Tempo opens through Grafana Explore]
-#   CONSOLE_PUBLIC_FRONT_HOST [b-free.mangowhois.ai]
+#   CONSOLE_PROMETHEUS_UPSTREAM [http://prometheus:9090]
+#   CONSOLE_GRAFANA_URL, CONSOLE_PROMETHEUS_URL, CONSOLE_TEMPO_URL [empty: shown as 연결 안 됨]
+#   CONSOLE_PUBLIC_FRONT_HOST [b-free-chat.mangowhois.ai]  customer demo app name (b-free is the platform)
+#   CONSOLE_APP_ENVS [bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai]
 #   CONSOLE_DOH_URL [https://cloudflare-dns.com/dns-query]  public DNS-over-HTTPS (JSON) for the edge-name check
 services:
   console:
@@ -23,14 +22,12 @@ services:
       BRAVO_API_BASE: ${CONSOLE_API_BASE:?set CONSOLE_API_BASE}
       BRAVO_COLLECTOR_UPSTREAM: ${CONSOLE_COLLECTOR_UPSTREAM:-http://collector:8083}
       BRAVO_GATE_UPSTREAM: ${CONSOLE_GATE_UPSTREAM:-http://gate:8084}
-      BRAVO_EXECUTOR_UPSTREAM: ${CONSOLE_EXECUTOR_UPSTREAM:-http://executor:8081}
       BRAVO_PROMETHEUS_UPSTREAM: ${CONSOLE_PROMETHEUS_UPSTREAM:-http://prometheus:9090}
-      BRAVO_APP_SRC_UPSTREAM: ${CONSOLE_APP_SRC_UPSTREAM:-http://app-src:8000}
-      BRAVO_APP_DST_UPSTREAM: ${CONSOLE_APP_DST_UPSTREAM:-http://app-dst:8000}
-      BRAVO_GRAFANA_URL: ${CONSOLE_GRAFANA_URL:-http://localhost:3300}
-      BRAVO_PROMETHEUS_URL: ${CONSOLE_PROMETHEUS_URL:-http://localhost:9090}
+      BRAVO_GRAFANA_URL: ${CONSOLE_GRAFANA_URL:-}
+      BRAVO_PROMETHEUS_URL: ${CONSOLE_PROMETHEUS_URL:-}
       BRAVO_TEMPO_URL: ${CONSOLE_TEMPO_URL:-}
-      BRAVO_PUBLIC_FRONT_HOST: ${CONSOLE_PUBLIC_FRONT_HOST:-b-free.mangowhois.ai}
+      BRAVO_PUBLIC_FRONT_HOST: ${CONSOLE_PUBLIC_FRONT_HOST:-b-free-chat.mangowhois.ai}
+      BRAVO_APP_ENVS: ${CONSOLE_APP_ENVS:-bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai}
       BRAVO_DOH_URL: ${CONSOLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
     ports:
       - "${CONSOLE_HOST_PORT:?set CONSOLE_HOST_PORT}:8080"

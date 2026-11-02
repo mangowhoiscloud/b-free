@@ -1,0 +1,461 @@
+# Images: build → SBOM → vulnerability scan → push to GHCR by digest (§8.8).
+#
+# Flow per image (one matrix leg per image, legs are independent):
+#   plan   decides which images to build (path-filtered on push to main; input on workflow_dispatch).
+#   build  BuildKit → OCI archive on disk. No registry, no login. permissions: contents: read.
+#          Runs natively on ubuntu-24.04-arm: every cluster is arm64 (EKS t4g, Lima on Apple silicon;
+#          docs/architecture/01-environments.md, 06-tech-stack.md "노드 아키텍처: arm64로 통일").
+#          The image digest is computed here and becomes a job output. Later jobs cannot change it.
+#   scan   syft SBOM (SPDX JSON) + trivy scan of that archive. permissions: {} — no secrets, no OIDC,
+#          no registry login, no repository checkout (CVE-2026-33634, see the scan job).
+#   push   only if the scan job reported the same digest: skopeo copies the archive to
+#          ghcr.io/mangowhoiscloud/b-free/<image> with --preserve-digests, then reads the manifest back
+#          by digest. permissions: packages: write (GITHUB_TOKEN only). Runs on refs/heads/main only;
+#          a workflow_dispatch from another branch builds and scans but does not push.
+#   report one table of image → digest, plus digests.json as an artifact.
+# A failed build or scan therefore never publishes, and the pushed digest is the scanned digest.
+#
+# The output is the digest (job outputs, job summary, digests.json, evidence-<image> artifacts).
+# The tag `sha-<commit>` exists for humans only. Nothing deploys by tag (§8.8, AGENTS.md).
+#
+# No signing in CI: no cosign, no Sigstore keyless, no `id-token: write` anywhere in this workflow.
+# Signing stays with the platform: when it pulls an approved digest it signs with OpenBao transit
+# (hashivault://) per deploy/CLOUD-E2E-CONTRACT.md 8 (T31).
+#
+# Credentials: GITHUB_TOKEN only, least privilege per job. No repository secrets, no PATs.
+# Every action is pinned by full commit SHA (tag in the trailing comment); trivy, syft and BuildKit
+# are pinned by version + sha256 / digest.
+name: images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      images:
+        description: "Comma-separated image names (see the catalog in the plan job), or 'all'"
+        required: true
+        default: all
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PLATFORM: linux/arm64
+  IMAGE_PREFIX: ghcr.io/mangowhoiscloud/b-free
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
+    steps:
+      - name: Check out (full history, to diff against the push's base commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select images
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          WANT: ${{ inputs.images }}
+        run: |
+          set -euo pipefail
+          # Image catalog. name → ghcr.io/mangowhoiscloud/b-free/<name>. `watch` is a regex over changed
+          # paths. Service images watch their whole build context. The five agent sandbox images share
+          # the platform/agent context, so each watches only what its Dockerfile reads (images/<n>/,
+          # images/common/harden-debian.sh, templates/bravo-app/ for ci-agent); widen it if a Dockerfile
+          # starts copying more. `rehearsal` builds from platform/ (platform/rehearsal/Dockerfile.dockerignore
+          # limits it to rehearsal/ and agent/{pyproject.toml,src,allowlists,harbor}). `link-relay` is the
+          # optional relay image in tools/link/Dockerfile. Not here on purpose: platform/agent/harbor/*/environment/Dockerfile
+          # (one-line FROM <sandbox image digest> references) and the Harbor task template under
+          # platform/rehearsal/tasks/ (test fixture, unpinned base).
+          catalog=$(cat <<'JSON'
+          [
+            {"name": "api",       "context": "platform/api",       "file": "platform/api/Dockerfile",       "watch": "^platform/api/"},
+            {"name": "gate",      "context": "platform/gate",      "file": "platform/gate/Dockerfile",      "watch": "^platform/gate/"},
+            {"name": "collector", "context": "platform/collector", "file": "platform/collector/Dockerfile", "watch": "^platform/collector/"},
+            {"name": "executor",  "context": "platform/executor",  "file": "platform/executor/Dockerfile",  "watch": "^platform/executor/"},
+            {"name": "console",   "context": "platform/console",   "file": "platform/console/Dockerfile",   "watch": "^platform/console/"},
+            {"name": "demo",      "context": "apps/demo",          "file": "apps/demo/Dockerfile",          "watch": "^apps/demo/"},
+            {"name": "rehearsal", "context": "platform",           "file": "platform/rehearsal/Dockerfile", "watch": "^platform/(rehearsal/|agent/(pyproject[.]toml$|src/|allowlists/|harbor/))"},
+            {"name": "loadgen",   "context": "tools/loadgen",      "file": "tools/loadgen/Dockerfile",      "watch": "^tools/loadgen/"},
+            {"name": "link-relay", "context": "tools/link",        "file": "tools/link/Dockerfile",         "watch": "^tools/link/"},
+            {"name": "pgbouncer", "context": "deploy/pilot/pgbouncer", "file": "deploy/pilot/pgbouncer/Dockerfile", "watch": "^deploy/pilot/pgbouncer/"},
+            {"name": "agent-sandbox-discovery-agent",     "context": "platform/agent", "file": "platform/agent/images/discovery-agent/Dockerfile",     "watch": "^platform/agent/images/discovery-agent/"},
+            {"name": "agent-sandbox-governance-agent",    "context": "platform/agent", "file": "platform/agent/images/governance-agent/Dockerfile",    "watch": "^platform/agent/images/governance-agent/"},
+            {"name": "agent-sandbox-app-migration-agent", "context": "platform/agent", "file": "platform/agent/images/app-migration-agent/Dockerfile", "watch": "^platform/agent/images/(app-migration-agent|common)/"},
+            {"name": "agent-sandbox-db-agent",            "context": "platform/agent", "file": "platform/agent/images/db-agent/Dockerfile",            "watch": "^platform/agent/images/(db-agent|common)/"},
+            {"name": "agent-sandbox-ci-agent",            "context": "platform/agent", "file": "platform/agent/images/ci-agent/Dockerfile",            "watch": "^platform/agent/(images/(ci-agent|common)/|templates/bravo-app/)"}
+          ]
+          JSON
+          )
+          # Every catalog name must also be listed under `outputs: &per-image-outputs` in the build job.
+
+          case "$EVENT" in
+            workflow_dispatch)
+              if [ "${WANT:-all}" = all ]; then
+                selected=$(jq -c . <<<"$catalog")
+              else
+                want=$(tr ',' '\n' <<<"$WANT" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' || true)
+                unknown=$(grep -vxF -f <(jq -r '.[].name' <<<"$catalog") <<<"$want" || true)
+                if [ -n "$unknown" ]; then echo "::error::unknown image name(s): $(paste -sd, - <<<"$unknown")"; exit 1; fi
+                selected=$(jq -c --arg want "$want" '($want | split("\n")) as $w | [.[] | select(.name as $n | $w | any(. == $n))]' <<<"$catalog")
+              fi
+              ;;
+            push)
+              if [[ "$BEFORE" =~ ^[0-9a-f]{40}$ ]] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+                  && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+                changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+              else
+                echo "::notice::no usable base commit ('$BEFORE'); selecting every image"
+                changed=ALL
+              fi
+              if [ "$changed" = ALL ] || grep -qx '.github/workflows/images.yaml' <<<"$changed"; then
+                selected=$(jq -c . <<<"$catalog")
+              else
+                selected=$(jq -c --arg changed "$changed" '($changed | split("\n")) as $c | [.[] | select(.watch as $re | $c | any(test($re)))]' <<<"$catalog")
+              fi
+              ;;
+            *) echo "::error::unexpected event $EVENT"; exit 1 ;;
+          esac
+
+          # Drop images whose Dockerfile is not in this commit (e.g. a service not merged yet).
+          matrix='[]'
+          while IFS= read -r entry; do
+            file=$(jq -r .file <<<"$entry")
+            if [ -f "$file" ]; then
+              matrix=$(jq -c --argjson e "$entry" '. + [$e | {name, context, file}]' <<<"$matrix")
+            else
+              echo "::warning::$(jq -r .name <<<"$entry"): $file is not in this commit; skipped"
+            fi
+          done < <(jq -c '.[]' <<<"$selected")
+
+          count=$(jq length <<<"$matrix")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          { echo "### Images selected: $count"; echo; jq -r '.[] | "- `\(.name)` ← `\(.file)`"' <<<"$matrix"; } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build (${{ matrix.image.name }})
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    strategy: &per-image-matrix
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # One output per image: each leg sets only its own key and the runner drops empty outputs, so the
+    # legs do not overwrite each other. The same keys are reused by scan and push (step id `out`).
+    outputs: &per-image-outputs
+      api: ${{ steps.out.outputs.api }}
+      gate: ${{ steps.out.outputs.gate }}
+      collector: ${{ steps.out.outputs.collector }}
+      executor: ${{ steps.out.outputs.executor }}
+      console: ${{ steps.out.outputs.console }}
+      demo: ${{ steps.out.outputs.demo }}
+      rehearsal: ${{ steps.out.outputs.rehearsal }}
+      loadgen: ${{ steps.out.outputs.loadgen }}
+      link-relay: ${{ steps.out.outputs.link-relay }}
+      pgbouncer: ${{ steps.out.outputs.pgbouncer }}
+      agent-sandbox-discovery-agent: ${{ steps.out.outputs.agent-sandbox-discovery-agent }}
+      agent-sandbox-governance-agent: ${{ steps.out.outputs.agent-sandbox-governance-agent }}
+      agent-sandbox-app-migration-agent: ${{ steps.out.outputs.agent-sandbox-app-migration-agent }}
+      agent-sandbox-db-agent: ${{ steps.out.outputs.agent-sandbox-db-agent }}
+      agent-sandbox-ci-agent: ${{ steps.out.outputs.agent-sandbox-ci-agent }}
+    env:
+      NAME: ${{ matrix.image.name }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Buildx (docker-container driver, BuildKit pinned by digest)
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # moby/buildkit v0.34.1 (2026-10-20), multi-arch index digest.
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Build OCI archive (no push)
+        env:
+          CONTEXT: ${{ matrix.image.context }}
+          FILE: ${{ matrix.image.file }}
+        run: |
+          set -euo pipefail
+          # Single platform, no BuildKit attestations: the archive holds exactly one OCI image
+          # manifest, and that manifest's digest is the image digest everywhere after this step.
+          docker buildx build \
+            --progress plain \
+            --platform "$PLATFORM" \
+            --file "$FILE" \
+            --provenance=false --sbom=false \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --metadata-file "$RUNNER_TEMP/$NAME.build.json" \
+            --output "type=oci,dest=$RUNNER_TEMP/$NAME.oci.tar" \
+            "$CONTEXT"
+      - &unpack
+        name: Unpack OCI archive and check its digest
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/oci/$NAME"
+          rm -rf "$dir" && mkdir -p "$dir"
+          tar -xf "$RUNNER_TEMP/$NAME.oci.tar" -C "$dir"
+          n=$(jq '.manifests | length' "$dir/index.json")
+          type=$(jq -r '.manifests[0].mediaType' "$dir/index.json")
+          digest=$(jq -r '.manifests[0].digest' "$dir/index.json")
+          if [ "$n" != 1 ] || [ "$type" != application/vnd.oci.image.manifest.v1+json ] || [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::$NAME: expected one OCI image manifest in index.json (found $n, $type)"; exit 1
+          fi
+          blob=$(sha256sum "$dir/blobs/sha256/${digest#sha256:}" | cut -d' ' -f1)
+          if [ "sha256:$blob" != "$digest" ]; then echo "::error::$NAME: manifest blob does not hash to $digest"; exit 1; fi
+          if [ "$GITHUB_JOB" != build ] && [ "$digest" != "${EXPECTED:-}" ]; then
+            echo "::error::$NAME: archive digest $digest is not the digest the build job produced (${EXPECTED:-none})"; exit 1
+          fi
+          echo "DIGEST=$digest" >> "$GITHUB_ENV"
+          echo "OCI_DIR=$dir" >> "$GITHUB_ENV"
+      - name: Publish the digest
+        id: out
+        run: |
+          set -euo pipefail
+          meta=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/$NAME.build.json")
+          if [ "$meta" != "$DIGEST" ]; then echo "::error::$NAME: BuildKit reports $meta, archive has $DIGEST"; exit 1; fi
+          echo "$NAME=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "- \`$NAME\` built for $PLATFORM: \`$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload OCI archive (consumed by scan and push)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: oci-${{ matrix.image.name }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.image.name }}.oci.tar
+            ${{ runner.temp }}/${{ matrix.image.name }}.build.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  # SBOM and vulnerability scan. CVE-2026-33634 (GHSA-69fq-xp46-6x23): on 2026-03-19 a malicious
+  # trivy v0.69.4 was released and the tags of aquasecurity/trivy-action and setup-trivy were
+  # force-pushed to an infostealer that dumped Runner.Worker memory for secrets. Therefore:
+  # - This job has `permissions: {}`, gets no secrets, no OIDC token, no registry login, and does not
+  #   check out the repository. The archive comes from the build job's artifact.
+  # - trivy-action / setup-trivy are not used. trivy is the v0.76.1 release binary (2026-10-21,
+  #   GitHub immutable release, after the fix: first patched trivy-action 0.35.0 / setup-trivy 0.2.6),
+  #   verified against a pinned sha256. The same version and sha256 are pinned in
+  #   platform/agent/images/ci-agent/Dockerfile and tools/toolchain/check.sh (trivy 0.76).
+  #   syft v1.55.0 (2026-10-19, immutable release) is pinned the same way.
+  #   When these pins were chosen (2026-11-02) the sha256 matched three sources: the release
+  #   checksums file, the GitHub release asset digest, and the ci-agent Dockerfile; and the checksums
+  #   files' Sigstore bundles verified with cosign verify-blob (signers: aquasecurity/trivy
+  #   reusable-release.yaml@refs/tags/v0.76.1, anchore/syft release.yaml@refs/heads/main).
+  # - The scan reports its digest only after the policy gate passes; push requires that digest.
+  #
+  # Failure policy: fail on any CRITICAL vulnerability that has a fixed version
+  # (`--severity CRITICAL --ignore-unfixed`). A fixed CRITICAL is actionable (bump the base digest or
+  # the dependency). Everything else — HIGH, MEDIUM, LOW, and CRITICAL without a fix — is reported in
+  # the job summary and the evidence artifact but does not block. No ignore file is used; an exception
+  # list (.trivyignore.yaml with expiry dates) would be a team decision.
+  scan:
+    name: sbom + scan (${{ matrix.image.name }})
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    runs-on: ubuntu-24.04
+    permissions: {}
+    timeout-minutes: 20
+    strategy: *per-image-matrix
+    outputs: *per-image-outputs
+    env:
+      NAME: ${{ matrix.image.name }}
+      EXPECTED: ${{ needs.build.outputs[matrix.image.name] }}
+      SYFT_VERSION: 1.55.0
+      SYFT_SHA256: bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d # syft_1.55.0_linux_amd64.tar.gz
+      TRIVY_VERSION: 0.76.1
+      TRIVY_SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0 # trivy_0.76.1_Linux-64bit.tar.gz
+      SYFT_CHECK_FOR_APP_UPDATE: "false"
+      TRIVY_DISABLE_TELEMETRY: "true"
+      TRIVY_SKIP_VERSION_CHECK: "true"
+      TRIVY_NO_PROGRESS: "true"
+    steps:
+      - name: Require a build digest for this image
+        run: |
+          if [ -z "$EXPECTED" ]; then echo "::error::$NAME: the build job produced no digest"; exit 1; fi
+      - name: Download OCI archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: oci-${{ matrix.image.name }}
+          path: ${{ runner.temp }}
+      - *unpack
+      - name: Install syft and trivy (pinned version + sha256)
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          fetch() {  # fetch <binary> <url> <sha256>
+            curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$RUNNER_TEMP/$1.tar.gz" "$2"
+            echo "$3  $RUNNER_TEMP/$1.tar.gz" | sha256sum --check --strict -
+            tar -xzf "$RUNNER_TEMP/$1.tar.gz" -C "$bin" "$1"
+          }
+          fetch syft "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" "$SYFT_SHA256"
+          fetch trivy "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "$TRIVY_SHA256"
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/syft" version | grep -E '^Version'
+          "$bin/trivy" --version | head -1
+      - name: SBOM (syft, SPDX JSON)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/evidence"
+          syft scan "oci-dir:$OCI_DIR" \
+            --source-name "$IMAGE_PREFIX/$NAME" --source-version "$DIGEST" \
+            -o "spdx-json=$RUNNER_TEMP/evidence/$NAME.spdx.json"
+          echo "$IMAGE_PREFIX/$NAME@$DIGEST" > "$RUNNER_TEMP/evidence/$NAME.digest"
+      - name: Vulnerability report (trivy, all severities)
+        run: |
+          set -euo pipefail
+          # Downloads trivy-db anonymously from trivy's default repositories; no credentials.
+          trivy image --input "$OCI_DIR" --scanners vuln --format json --output "$RUNNER_TEMP/evidence/$NAME.trivy.json"
+          trivy convert --format table --output "$RUNNER_TEMP/evidence/$NAME.trivy.txt" "$RUNNER_TEMP/evidence/$NAME.trivy.json"
+      - name: Policy gate (fail on CRITICAL with a fix available)
+        run: |
+          trivy image --input "$OCI_DIR" --scanners vuln --skip-db-update \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 --format table
+      - name: Report the scanned digest
+        id: out
+        run: echo "$NAME=$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Summary
+        if: always()
+        run: |
+          report="$RUNNER_TEMP/evidence/$NAME.trivy.json"
+          {
+            echo "### \`$NAME\` scan"
+            echo
+            echo "- digest: \`${DIGEST:-unknown}\`"
+            echo "- gate (CRITICAL with fix): ${{ steps.out.outcome == 'success' && 'passed' || 'FAILED' }}"
+            if [ -f "$report" ]; then
+              echo
+              echo "| severity | total | fix available |"
+              echo "|---|---|---|"
+              jq -r '[.Results[]?.Vulnerabilities[]?] as $v
+                | ["CRITICAL","HIGH","MEDIUM","LOW","UNKNOWN"][] as $s
+                | "| \($s) | \([$v[] | select(.Severity == $s)] | length) | \([$v[] | select(.Severity == $s and (.FixedVersion // "") != "")] | length) |"' "$report"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload evidence (SBOM, trivy JSON + table, digest)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evidence-${{ matrix.image.name }}
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  push:
+    name: push (${{ matrix.image.name }})
+    needs: [plan, build, scan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    timeout-minutes: 15
+    strategy: *per-image-matrix
+    outputs: *per-image-outputs
+    env:
+      NAME: ${{ matrix.image.name }}
+      EXPECTED: ${{ needs.build.outputs[matrix.image.name] }}
+      SCANNED: ${{ needs.scan.outputs[matrix.image.name] }}
+    steps:
+      - name: Require build and passed scan of the same digest
+        run: |
+          if [ -z "$EXPECTED" ]; then echo "::error::$NAME: the build job produced no digest"; exit 1; fi
+          if [ "$SCANNED" != "$EXPECTED" ]; then
+            echo "::error::$NAME: scan did not pass for $EXPECTED (scan reported '${SCANNED:-nothing}')"; exit 1
+          fi
+      - name: Download OCI archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: oci-${{ matrix.image.name }}
+          path: ${{ runner.temp }}
+      - *unpack
+      - name: Log in to GHCR (GITHUB_TOKEN, skopeo auth file)
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "AUTHFILE=$RUNNER_TEMP/ghcr-auth.json" >> "$GITHUB_ENV"
+          skopeo login --authfile "$RUNNER_TEMP/ghcr-auth.json" --username "$GITHUB_ACTOR" --password-stdin ghcr.io <<<"$GHCR_TOKEN"
+      - name: Push by digest and read it back
+        id: out
+        run: |
+          set -euo pipefail
+          repo="$IMAGE_PREFIX/$NAME"
+          # --preserve-digests: fail rather than rewrite the manifest, so the registry digest is the
+          # built and scanned digest. The tag is for humans; consumers use $repo@$DIGEST.
+          skopeo copy --authfile "$AUTHFILE" --retry-times 3 --preserve-digests \
+            --digestfile "$RUNNER_TEMP/pushed.digest" \
+            "oci:$OCI_DIR" "docker://$repo:sha-$GITHUB_SHA"
+          pushed=$(cat "$RUNNER_TEMP/pushed.digest")
+          if [ "$pushed" != "$DIGEST" ]; then echo "::error::$NAME: registry digest $pushed != built $DIGEST"; exit 1; fi
+          remote=$(skopeo inspect --authfile "$AUTHFILE" --retry-times 3 --raw "docker://$repo@$DIGEST" | sha256sum | cut -d' ' -f1)
+          if [ "sha256:$remote" != "$DIGEST" ]; then echo "::error::$NAME: manifest read back from GHCR hashes to sha256:$remote"; exit 1; fi
+          echo "$NAME=$repo@$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "- \`$NAME\` → \`$repo@$DIGEST\` (tag \`sha-$GITHUB_SHA\` for humans)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Log out of GHCR
+        if: always()
+        run: |
+          skopeo logout --authfile "$RUNNER_TEMP/ghcr-auth.json" ghcr.io || true
+          rm -f "$RUNNER_TEMP/ghcr-auth.json"
+
+  report:
+    name: digests
+    needs: [plan, build, scan, push]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    runs-on: ubuntu-24.04
+    permissions: {}
+    timeout-minutes: 5
+    steps:
+      - name: Digest table and digests.json
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+          BUILT: ${{ toJSON(needs.build.outputs) }}
+          SCANNED: ${{ toJSON(needs.scan.outputs) }}
+          PUSHED: ${{ toJSON(needs.push.outputs) }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/digests"
+          jq -n --argjson m "$MATRIX" --argjson b "$BUILT" --argjson s "$SCANNED" --argjson p "$PUSHED" \
+            --arg commit "$GITHUB_SHA" --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg platform "$PLATFORM" --arg prefix "$IMAGE_PREFIX" \
+            '{commit: $commit, run: $run, platform: $platform,
+              images: [$m[] | .name as $n | {name: $n, repository: "\($prefix)/\($n)",
+                digest: ($b[$n] // null), scan_passed: (($s[$n] // "") != "" and $s[$n] == $b[$n]),
+                pushed: ($p[$n] // null)}]}' > "$RUNNER_TEMP/digests/digests.json"
+          {
+            echo "### Image digests for \`$GITHUB_SHA\` ($PLATFORM)"
+            echo
+            echo "| image | digest | scan | pushed reference |"
+            echo "|---|---|---|---|"
+            jq -r '.images[] | "| `\(.name)` | `\(.digest // "build failed")` | \(if .scan_passed then "passed" else "not passed" end) | \(if .pushed then "`\(.pushed)`" else "not pushed" end) |"' "$RUNNER_TEMP/digests/digests.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/digests/digests.json"
+      - name: Upload digests.json
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests
+          path: ${{ runner.temp }}/digests/digests.json
+          if-no-files-found: error
+          retention-days: 90

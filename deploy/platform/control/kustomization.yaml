@@ -1,0 +1,44 @@
+# Platform services on the platform EKS (bravo-control). Images: platform ECR by digest (§8.8, T7),
+# the same arm64 images the laptop pilot ran (tags pilot-<image id>), pushed 2026-11-02.
+# Render with: kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/platform/control
+# (the executor migrations ConfigMap reads platform/executor/migrations, outside this directory).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bravo-control
+resources:
+  - namespace.yaml
+  - access.yaml
+  - platform-db.yaml
+  - migrate-job.yaml
+  - api.yaml
+  - console.yaml
+  - services.yaml
+  - executor.yaml
+  - networkpolicy.yaml
+configMapGenerator:
+  - name: environments
+    files:
+      - environments.yaml=config/environments.yaml
+  - name: executor-migrations
+    files:
+      - ../../../platform/executor/migrations/0001_resource_locks.sql
+      - ../../../platform/executor/migrations/0002_attachment_copies.sql
+images:
+  - name: bravo/api
+    newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
+    digest: sha256:72de53c66bb0ea7438d4fe8a760b15943ea8c7b77f4be9a6e70ddc5648636308
+  - name: bravo/console
+    newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
+    digest: sha256:9925d1a8d5f105d90552460f2059c704d880a68f11ec521a7d9bf8042b37f599
+  - name: bravo/gate
+    newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
+    digest: sha256:bf7f65bb554a902b55d82b0ed37838a3c1d1fefb33f031c79a6ff14e1f97738e
+  - name: bravo/collector
+    newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
+    digest: sha256:f0f950b630c9557531d4187da3fad784c7f4bf11d346413ae8615828b797a113
+  - name: bravo/executor
+    newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
+    digest: sha256:250ec522b53a2a61c267986c16ed9fb3a2b8ba0f20cf6269d4c2b1daa94fad3f
+  - name: bravo/rehearsal
+    newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
+    digest: sha256:208ed7b29adee018cf82a82ea6672311b38a02930c5bcd8f344487d44f1c0eab

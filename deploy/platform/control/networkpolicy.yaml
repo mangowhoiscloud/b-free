@@ -1,0 +1,88 @@
+# bravo-control: deny ingress by default, then allow only the paths the services use (Cilium enforces;
+# VPC CNI's own policy agent is off).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: bravo-control}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: platform-db, namespace: bravo-control}
+spec:
+  podSelector: {matchLabels: {cnpg.io/cluster: platform-db}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {cnpg.io/cluster: platform-db}}
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [api, operator-mcp, executor, platform-db-migrate]}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: executor, namespace: bravo-control}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: executor}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [api, operator-mcp, console]}
+      ports: [{port: 8081}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: collector-gate, namespace: bravo-control}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [collector, gate]}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [api, operator-mcp, console, rehearsal]}
+      ports: [{port: 8083}, {port: 8084}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: rehearsal, namespace: bravo-control}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: rehearsal}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: api}}
+      ports: [{port: 8090}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: api-mcp-internal, namespace: bravo-control}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [api, operator-mcp]}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: console}}
+---
+# Front: only the Gateway proxies (Envoy Gateway pods in bravo-edge) reach console 8080, api 8080, operator-mcp 8082.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: front-from-gateway, namespace: bravo-control}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [console, api, operator-mcp]}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-edge}}
+          podSelector: {matchLabels: {gateway.envoyproxy.io/owning-gateway-name: bravo-gateway}}
+      ports: [{port: 8080}, {port: 8082}]

@@ -1,0 +1,17 @@
+run	시각_KST	시나리오	컷오버	쓰기정지_ms	단계합_ms	영수증	NFR-2(부하)	되돌리기	되돌리기_ms	S4-AC1	채팅트래픽	판정	이유
+smoke-20261102T184047	2026-11-02 18:40:47	match	DONE	101	122	MATCH	ok acked=800 lost=0 dup=0					PASS	
+smoke-20261102T184416	2026-11-02 18:44:16	mismatch	ABORT_PRE_WRITE		61	MISMATCH	ok acked=800 lost=0 dup=0					PASS	기대한 ABORT_PRE_WRITE
+smoke-20261102T184633	2026-11-02 18:46:33	match	DONE	105	122	MATCH	ok acked=800 lost=0 dup=0					PASS	
+smoke-20261102T191253	2026-11-02 19:12:53	roundtrip	DONE	76	102	MATCH	ok acked=800 lost=0 dup=0	DONE/MATCH	56	다름 dst=314 src=599		FAIL	S4-AC1 행 수 · 해시 다름
+smoke-20261102T191406	2026-11-02 19:14:06	roundtrip	DONE	139	169	MATCH	ok acked=800 lost=0 dup=0	DONE/MATCH	45	같음 dst=315 src=315		PASS	
+smoke-20261102T192514	2026-11-02 19:25:14	roundtrip	DONE	80	97	MATCH	ok acked=800 lost=0 dup=0	DONE/MATCH	52	같음 dst=314 src=314		PASS	
+smoke-20261102T192634	2026-11-02 19:26:34	mismatch	ABORT_PRE_WRITE		66	MISMATCH	ok acked=800 lost=0 dup=0					PASS	기대한 ABORT_PRE_WRITE
+smoke-20261102T194436	2026-11-02 19:44:36	match+채팅	DONE	92	120	MATCH					빈 파일	FAIL	부하 요약(loadgen-summary.json) 없음; demo-traffic.json 빈 파일
+smoke-20261102T194530	2026-11-02 19:45:30	roundtrip	DONE	87	111	MATCH	ok acked=800 lost=0 dup=0	DONE/MATCH	49	같음 dst=496 src=496	sent=400 acked=400 lost=0	PASS	
+smoke-20261102T194650	2026-11-02 19:46:50	mismatch	ABORT_PRE_WRITE		82	MISMATCH	ok acked=800 lost=0 dup=0					PASS	기대한 ABORT_PRE_WRITE
+smoke-20261102T203049	2026-11-02 20:30:49	roundtrip	DONE	94	113	MATCH	ok acked=800 lost=0 dup=0	DONE/MATCH	70	같음 dst=495 src=495	sent=400 acked=400 lost=0	PASS	
+contract-20261102T191626	2026-11-02 19:16:26	contract E1-E6										FAIL	불완전: e4.txt만 있음
+contract-20261102T192340	2026-11-02 19:23:40	contract E1-E6										보류	출력만 있고 시험별 판정 기록 없음. 감사 B12(E5 구조상 늘 통과) · B13(RESUME 실패 무시, 효과 기록을 스크립트가 씀)
+contract-20261102T192406	2026-11-02 19:24:06	contract E1-E6										보류	출력만 있고 시험별 판정 기록 없음. 감사 B12(E5 구조상 늘 통과) · B13(RESUME 실패 무시, 효과 기록을 스크립트가 씀)
+contract-20261102T192448	2026-11-02 19:24:48	contract E1-E6										보류	출력만 있고 시험별 판정 기록 없음. 감사 B12(E5 구조상 늘 통과) · B13(RESUME 실패 무시, 효과 기록을 스크립트가 씀)
+contract-20261102T194759	2026-11-02 19:47:59	contract E1-E6										보류	출력만 있고 시험별 판정 기록 없음. 감사 B12(E5 구조상 늘 통과) · B13(RESUME 실패 무시, 효과 기록을 스크립트가 씀)

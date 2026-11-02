@@ -1,0 +1,30 @@
+# CNPG Cluster chat-db (CLOUD-E2E-CONTRACT §3, §9): PostgreSQL 16, logical decoding for the
+# cutover engine. CNPG generates the owner (chat-db-app) and superuser (chat-db-superuser) Secrets.
+# Roles app_writer/replicator/executor_* come from apps/demo/schema/sql with passwords from the
+# platform OpenBao (secret/envs/<env>/chat-db), applied by the data path, not by this manifest.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: chat-db
+  namespace: chat
+spec:
+  instances: 1
+  imageName: ${PG_IMAGE}
+  enableSuperuserAccess: true
+  bootstrap:
+    initdb:
+      database: chat
+      owner: app
+  postgresql:
+    parameters:
+      wal_level: logical
+      max_replication_slots: "10"
+      max_wal_senders: "10"
+      max_slot_wal_keep_size: 2GB
+      password_encryption: scram-sha-256
+  storage:
+    storageClass: bravo-db
+    size: 5Gi
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}

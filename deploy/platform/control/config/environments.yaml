@@ -1,0 +1,21 @@
+# Environment registry for the collector and the gate on the platform EKS (FR-1, FR-12).
+# References only, never secret values (platform/collector/src/bravo_collector/environments.py).
+# source-aws: EKS endpoint + token from the collector's EKS Pod Identity role (infra/envs/platform-aws
+#   pod_identity.tf); K8s read rights from the access entry group bravo-collector (links.tf) bound to the
+#   read-only ClusterRole in deploy/platform/link/source-rbac. Path: platform NAT -> source EKS public
+#   endpoint allowlist = 임시 링크(D-16 전).
+# target-onprem: K3s API through the platform relay onprem-k8s.bravo-link.svc (bravo-link reverse, dialled
+#   out from the laptop that hosts the Lima VMs). Kubeconfig comes from Secret onprem-kubeconfig when the
+#   on-prem lane delivers a read-only credential; until then the collector answers "not configured".
+environments:
+  source-aws:
+    display_name: "출발지 · Amazon EKS (bravo-source)"
+    kubernetes:
+      provider: eks
+      eks_cluster_name: bravo-source
+      aws_region: ap-northeast-2
+  target-onprem:
+    display_name: "목적지 · 온프렘 K3s (Lima)"
+    kubernetes:
+      provider: k3s
+      kubeconfig_env: BRAVO_ONPREM_KUBECONFIG

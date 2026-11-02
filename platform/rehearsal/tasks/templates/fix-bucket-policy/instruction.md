@@ -1,4 +1,6 @@
-# fix-bucket-policy
+# fix-bucket-policy(준비 중)
+
+> 준비 중인 옛 템플릿입니다. 이 지시문의 도구 설명(ConfigMap apply, 모델의 `plan_propose`)은 지금 도구 계층과 맞지 않습니다. 어떤 역할도 kubectl을 받지 않고, 제출은 워커가 합니다. 리허설은 `governance` task를 씁니다.
 
 ## 목표
 

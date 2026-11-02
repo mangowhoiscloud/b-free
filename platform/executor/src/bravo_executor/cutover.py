@@ -41,10 +41,12 @@ from psycopg import AsyncConnection
 from .attachment_copy import AttachmentCopier
 from .chatdb import DIGEST_TABLES, SEQUENCES, ChatDb, connect, wait_until
 from .config import Resources, Settings
+from .entry import WriteBlockClient
 from .fence import read_fence
 from .hashing import HASH_RULE, TableDigest
 from .ledger import Ledger, ResourceBusy, RunStatus
-from .pgbouncer import PgBouncerAdmin, read_database_target, rewrite_database_target, write_ini_atomically
+from .pgbouncer import PgBouncerAdmin
+from .pools import PoolSpec, host_of
 from .stages import EffectRunner, Observation, StageRecorder, StepFailed, error_evidence
 
 CUTOVER = "cutover"
@@ -59,13 +61,15 @@ class CutoverRequest:
     approval_id: str
     write_pause_budget_ms: int
     kind: str = CUTOVER
+    approval: dict[str, Any] = field(default_factory=dict)  # verified record (approvals.py)
 
 
 @dataclass(slots=True)
 class Applied:
     """External changes this run issued (confirmed or not). Drives ABORT_PRE_WRITE restoration."""
 
-    paused: bool = False
+    paused_pools: list[str] = field(default_factory=list)
+    blocked_entries: list[str] = field(default_factory=list)
     writer_login_closed: str | None = None
     writer_insert_revoked: str | None = None
     subs_disabled: list[tuple[str, str]] = field(default_factory=list)
@@ -81,13 +85,6 @@ class RunOutcome:
     reason: str | None = None
 
 
-def _target_host(target: str) -> str | None:
-    for part in target.split():
-        if part.startswith("host="):
-            return part.split("=", 1)[1]
-    return None
-
-
 def instance_owner() -> str:
     return f"{socket.gethostname()}:{os.getpid()}"
 
@@ -95,12 +92,13 @@ def instance_owner() -> str:
 class Sides:
     """Open control sessions for one run."""
 
-    def __init__(self, src: ChatDb, dst: ChatDb, admin: PgBouncerAdmin) -> None:
+    def __init__(self, src: ChatDb, dst: ChatDb, pools: list[tuple[PoolSpec, PgBouncerAdmin]]) -> None:
         self.db = {"src": src, "dst": dst}
-        self.admin = admin
+        self.pools = pools
+        self.identity: dict[str, str] = {}  # side -> pg_postmaster_start_time() (identifies the server)
 
     async def close(self) -> None:
-        for closer in (*self.db.values(), self.admin):
+        for closer in (*self.db.values(), *(admin for _, admin in self.pools)):
             try:
                 await closer.close()
             except Exception:  # noqa: BLE001, S110 - best-effort close of a control session
@@ -152,6 +150,7 @@ class CutoverRunner:
 
         try:
             async with rec.stage(name("1_preflight", "1_preflight")) as st:
+                st.detail["approval"] = req.approval
                 st.detail.update({"approval_id": req.approval_id, "write_pause_budget_ms": req.write_pause_budget_ms,
                                   "direction": req.kind})
                 try:
@@ -161,10 +160,12 @@ class CutoverRunner:
                 except ResourceBusy as exc:
                     raise StepFailed("RESOURCE_BUSY", {"held": exc.held}) from exc
                 st.detail["locks"] = len(Resources.lock_set(s))
+                if s.link_label:
+                    st.detail["link"] = s.link_label
                 sides = Sides(
                     ChatDb(await connect(s.src_dsn), "src"),
                     ChatDb(await connect(s.dst_dsn), "dst"),
-                    await PgBouncerAdmin.connect(s.pgb_admin_dsn),
+                    [(pool, await PgBouncerAdmin.connect(pool.admin_dsn)) for pool in s.pools],
                 )
                 await self._preflight(req, st.detail, sides, origin, target)
                 for side in ("src", "dst"):
@@ -175,14 +176,17 @@ class CutoverRunner:
                 # Final delta copy under freeze, before the write stop (does not extend write_pause_ms).
                 st.detail["objects"] = await self._copy_objects(sides.db[origin], origin, target)
 
-            async with rec.stage(name("2_3_pause", "2_pause")) as st:
+            async with rec.stage(name("2_block_writes", "2_block_writes")) as st:
                 long_tx = await sides.db[origin].long_transactions(s.app_role, s.long_tx_max_s)
                 st.detail["long_transactions"] = long_tx
                 if long_tx:
                     raise StepFailed("LONG_TRANSACTION", {"count": long_tx})
+                # Write pause (NFR-1) starts right before the first write restriction.
                 pause_start_ns = self._clock_ns()
-                applied.paused = True
-                await self._pause(fx, sides.admin)
+                st.detail["entries"] = await self._block_entries(fx, applied)
+
+            async with rec.stage(name("3_pause", "2_pause")) as st:
+                st.detail["pools"] = await self._pause(fx, sides, applied)
 
             async with rec.stage(name("4_fence_src", "2_fence_dst")) as st:
                 await self._close_writer(req, fx, sides.db[origin], applied, st.detail)
@@ -195,7 +199,7 @@ class CutoverRunner:
                 )
                 st.detail["verdict"] = receipt["verdict"]
                 st.detail["receipt_id"] = receipt["receipt_id"]
-                if receipt["verdict"] != "MATCH":
+                if receipt["verdict"] not in ("MATCH", "MATCH_PARTIAL"):
                     raise StepFailed("RECEIPT_MISMATCH", {"receipt_id": receipt["receipt_id"]})
                 elapsed_ms = (self._clock_ns() - pause_start_ns) // 1_000_000
                 if elapsed_ms > req.write_pause_budget_ms:
@@ -221,12 +225,13 @@ class CutoverRunner:
 
             async with rec.stage(name("7_reconnect", "6_reconnect")) as st:
                 await self._open_writer(req, fx, sides.db[target])
-                await self._retarget_pool(fx, sides.admin, target, st.detail)
-                applied.paused = False
+                st.detail["pools"] = await self._retarget_pools(fx, sides, target)
+                applied.paused_pools.clear()
 
             async with rec.stage(name("8_confirm_write", "7_confirm_write")) as st:
-                ack_ns = await self._confirm_write(req, fx, sides.db[target], target, st.detail)
-                write_pause_ms = (ack_ns - pause_start_ns) // 1_000_000
+                ack_ns = await self._confirm_write(req, fx, sides, target, st.detail)
+                open_ns = await self._open_entries(fx, st.detail)
+                write_pause_ms = (max(ack_ns, open_ns) - pause_start_ns) // 1_000_000
                 st.detail["write_pause_ms"] = write_pause_ms
                 await self._switch_attachments(req, fx, sides.db[target], st.detail)
                 st.detail["attachment_freeze_ms"] = (self._clock_ns() - freeze_ns) // 1_000_000
@@ -272,8 +277,50 @@ class CutoverRunner:
             standby = await dst.subscription(s.fwd_sub)
         writer_origin = await sides.db[origin].writer_state(s.app_role)
         writer_target = await sides.db[target].writer_state(s.app_role)
-        pool = await sides.admin.database(s.pgb_db_name)
-        ini_target = read_database_target(s.pgb_ini_path.read_text(encoding="utf-8"), s.pgb_db_name)
+        for side in ("src", "dst"):
+            cur = await sides.db[side].conn.execute("SELECT pg_postmaster_start_time()::text")
+            row = await cur.fetchone()
+            sides.identity[side] = str(row[0]) if row else ""
+        pools: dict[str, Any] = {}
+        pool_problems: list[str] = []
+        for pool, admin in sides.pools:
+            row = await admin.database(pool.db_name)
+            try:
+                files = await pool.switch.preflight()
+                active = await pool.switch.current_side()
+                origin_host = host_of(await pool.switch.target_line(origin))
+                target_host = host_of(await pool.switch.target_line(target))
+            except Exception as exc:  # noqa: BLE001 - reported as a preflight failure with its reason
+                pools[pool.name] = {"switch": pool.switch.describe(), "error": error_evidence(exc)}
+                pool_problems.append(f"POOL_{pool.name}_SWITCH_UNREADABLE")
+                continue
+            pools[pool.name] = {
+                "switch": pool.switch.describe(), "files": files, "active_side": active,
+                "host": None if row is None else row.get("host"),
+                "paused": None if row is None else row.get("paused"),
+                "origin_host": origin_host, "target_host": target_host,
+            }
+            if row is None or row.get("host") != origin_host:
+                pool_problems.append(f"POOL_{pool.name}_NOT_ON_ORIGIN")
+            if row is not None and int(row.get("paused", 0)) == 1:
+                pool_problems.append(f"POOL_{pool.name}_ALREADY_PAUSED")
+            if active != origin:
+                pool_problems.append(f"POOL_{pool.name}_ACTIVE_FILE_NOT_ORIGIN")
+            if not target_host:
+                pool_problems.append(f"POOL_{pool.name}_NO_TARGET_FILE")
+        entries: dict[str, Any] = {}
+        for entry in s.entries:
+            try:
+                entries[entry.name] = await WriteBlockClient(entry).get()
+            except Exception as exc:  # noqa: BLE001
+                entries[entry.name] = {"error": error_evidence(exc)}
+                pool_problems.append(f"ENTRY_{entry.name}_UNREACHABLE")
+                continue
+            # Already blocked (an operator or a fault) is allowed: this run does not block it again,
+            # so ABORT does not open it either.
+        detail["pools"] = pools
+        detail["entries"] = entries if s.entries else "none configured"
+        detail["server_identity"] = dict(sides.identity)
         att_origin = await sides.db[origin].attachment_store()
         att_target = await sides.db[target].attachment_store()
         detail["attachment_store"] = {origin: att_origin, target: att_target}
@@ -285,9 +332,6 @@ class CutoverRunner:
                 "standby_subscription": standby.as_dict(),
                 f"{origin}_writer": writer_origin,
                 f"{target}_writer": writer_target,
-                "pool_host": None if pool is None else pool.get("host"),
-                "pool_paused": None if pool is None else pool.get("paused"),
-                "ini_target_is_origin": ini_target == s.pgb_target(origin),
             }
         )
         checks = {
@@ -298,15 +342,13 @@ class CutoverRunner:
             "STANDBY_SUBSCRIPTION_NOT_READY": (not standby.exists or standby.enabled) if cutover else standby.enabled,
             "ORIGIN_WRITER_NOT_OPEN": writer_origin.get("login") is not True or writer_origin.get("insert") is not True,
             "TARGET_WRITER_NOT_CLOSED": writer_target.get("login") is not False,
-            "POOL_NOT_ON_ORIGIN": pool is None or pool.get("host") != _target_host(s.pgb_target(origin)),
-            "POOL_ALREADY_PAUSED": pool is not None and int(pool.get("paused", 0)) == 1,
-            "INI_NOT_ON_ORIGIN": ini_target != s.pgb_target(origin),
+            "IDENTICAL_SERVERS": sides.identity.get("src") == sides.identity.get("dst"),
             # D-04: attachments are written on the origin's active store and not frozen yet.
             "ORIGIN_ATTACHMENT_STORE_NOT_ACTIVE": att_origin is None or att_origin["frozen"]
             or att_origin["active_store"] != s.store_id(origin),
             "TARGET_ATTACHMENT_STORE_MISSING": att_target is None,
         }
-        failed = [code for code, bad in checks.items() if bad]
+        failed = [code for code, bad in checks.items() if bad] + pool_problems
         if failed:
             raise StepFailed("PREFLIGHT_FAILED", {"failed": failed})
 
@@ -371,19 +413,74 @@ class CutoverRunner:
         evidence = await fx.apply(Resources.attachment_store(db.side), "SWITCH_AND_UNFREEZE", call, observe)
         detail["attachment_store"] = evidence["observed"]["store"]
 
-    async def _pause(self, fx: EffectRunner, admin: PgBouncerAdmin) -> None:
+    async def _pause(self, fx: EffectRunner, sides: Sides, applied: Applied) -> dict[str, Any]:
+        """PAUSE every pool in parallel (03 4.2 step 3)."""
         s = self._s
 
-        async def call() -> dict[str, Any]:
-            await asyncio.wait_for(admin.command("PAUSE", s.pgb_db_name), s.pause_timeout_s)
-            return {}
+        async def one(pool: PoolSpec, admin: PgBouncerAdmin) -> dict[str, Any]:
+            applied.paused_pools.append(pool.name)
 
-        async def observe() -> Observation:
-            row = await admin.database(s.pgb_db_name)
-            paused = row is not None and int(row.get("paused", 0)) == 1
-            return paused, {"paused": None if row is None else row.get("paused")}
+            async def call() -> dict[str, Any]:
+                await asyncio.wait_for(admin.command("PAUSE", pool.db_name), s.pause_timeout_s)
+                return {}
 
-        await fx.apply(Resources.PGBOUNCER, "PAUSE", call, observe)
+            async def observe() -> Observation:
+                row = await admin.database(pool.db_name)
+                paused = row is not None and int(row.get("paused", 0)) == 1
+                return paused, {"paused": None if row is None else row.get("paused")}
+
+            return await fx.apply(pool.resource, "PAUSE", call, observe)
+
+        results = await asyncio.gather(*(one(p, a) for p, a in sides.pools), return_exceptions=True)
+        for r in results:
+            if isinstance(r, BaseException):
+                raise r
+        return {p.name: r for (p, _), r in zip(sides.pools, results, strict=True)}
+
+    async def _block_entries(self, fx: EffectRunner, applied: Applied) -> dict[str, Any] | str:
+        """Step 2: block new business writes at every entry (each app environment's switch)."""
+        if not self._s.entries:
+            return "none configured"
+        out: dict[str, Any] = {}
+        for entry in self._s.entries:
+            client = WriteBlockClient(entry)
+            before = await client.get()
+            if before["blocked"]:
+                out[entry.name] = {"already_blocked": True, **before}
+                continue
+            applied.blocked_entries.append(entry.name)
+
+            async def call(client: WriteBlockClient = client) -> dict[str, Any]:
+                return {"response": await client.set(True)}
+
+            async def observe(client: WriteBlockClient = client) -> Observation:
+                state = await client.get()
+                return state["blocked"] is True, state
+
+            out[entry.name] = await fx.apply(entry.resource, "BLOCK", call, observe)
+        return out
+
+    async def _open_entries(self, fx: EffectRunner, detail: dict[str, Any]) -> int:
+        """Open writes on the target DB: unblock every entry whose row there is blocked.
+        Returns the monotonic time when the last entry was confirmed open."""
+        out: dict[str, Any] = {}
+        for entry in self._s.entries:
+            client = WriteBlockClient(entry)
+            state = await client.get()
+            if not state["blocked"]:
+                out[entry.name] = {"already_open_on_target": True, **state}
+                continue
+
+            async def call(client: WriteBlockClient = client) -> dict[str, Any]:
+                return {"response": await client.set(False)}
+
+            async def observe(client: WriteBlockClient = client) -> Observation:
+                now = await client.get()
+                return now["blocked"] is False, now
+
+            out[entry.name] = await fx.apply(entry.resource, "UNBLOCK", call, observe)
+        detail["entries_open"] = out if self._s.entries else "none configured"
+        return self._clock_ns()
 
     async def _close_writer(
         self, req: CutoverRequest, fx: EffectRunner, db: ChatDb, applied: Applied, detail: dict[str, Any]
@@ -520,8 +617,14 @@ class CutoverRunner:
             )
 
         objects = await self._copy_objects(origin, origin.side, target.side)
-        objects_ok = objects["verdict"] in ("MATCH", "NOT_CHECKED")
-        verdict = "MATCH" if tables_match and seq_match and objects_ok else "MISMATCH"
+        # MATCH only when everything was compared. Objects not checked (no stores configured) gives
+        # MATCH_PARTIAL: the DB part matched, the object part is visibly unverified (audit B10).
+        if not (tables_match and seq_match) or objects["verdict"] == "MISMATCH":
+            verdict = "MISMATCH"
+        elif objects["verdict"] == "NOT_CHECKED":
+            verdict = "MATCH_PARTIAL"
+        else:
+            verdict = "MATCH"
         body: dict[str, Any] = {
             "receipt_id": str(uuid.uuid4()),
             "run_id": str(req.run_id),
@@ -544,6 +647,11 @@ class CutoverRunner:
             "write_pause_ms_at_verdict": (self._clock_ns() - pause_start_ns) // 1_000_000,
             "stages_ms_at_verdict": dict(rec.timings_ms),
             "verdict": verdict,
+            "verdict_parts": {
+                "tables": "MATCH" if tables_match else "MISMATCH",
+                "sequences": "MATCH" if seq_match else "MISMATCH",
+                "objects": objects["verdict"],
+            },
             "created_at": datetime.now(UTC).isoformat(),
         }
         # Saved before any write is opened on the target (S3-AC2).
@@ -599,7 +707,18 @@ class CutoverRunner:
             return {"commit_point": req.kind, "after_stage_seq": rec.last_seq}
 
         async def obs_commit() -> Observation:
-            return True, {"recorded_in": "platform-db"}
+            # Read back from the platform DB: the replication switch before this point must be
+            # committed there (stage row OK and its effects CONFIRMED_APPLIED), not assumed.
+            data = await self._ledger.get_run(req.run_id)
+            stages = [] if data is None else data["stages"]
+            effects = [] if data is None else data["effects"]
+            switch = [st for st in stages if st["name"] in ("6a_switch_replication", "failback.6_stop_reverse")]
+            sub_effects = [e for e in effects if "/db/subscription:" in e["resource"]
+                           and e["action"] in ("ENABLE", "DISABLE")]
+            ok = bool(switch) and switch[-1]["result"] == "OK" and bool(sub_effects) and all(
+                e["state"] == "CONFIRMED_APPLIED" for e in sub_effects)
+            return ok, {"recorded_in": "platform-db", "switch_stage": switch[-1]["name"] if switch else None,
+                        "subscription_effects": [f"{e['resource']} {e['action']} {e['state']}" for e in sub_effects]}
 
         await fx.apply(Resources.PLATFORM_RUN, "COMMIT_POINT", commit, obs_commit)
         detail["irreversible"] = True
@@ -658,97 +777,110 @@ class CutoverRunner:
 
         await fx.apply(Resources.app_role(side), "LOGIN", login, obs_login)
 
-    async def _retarget_pool(self, fx: EffectRunner, admin: PgBouncerAdmin, side: str, detail: dict[str, Any]) -> None:
-        s = self._s
-        new_target = s.pgb_target(side)
-        new_host = _target_host(new_target)
+    async def _retarget_pools(self, fx: EffectRunner, sides: Sides, side: str) -> dict[str, Any]:
+        """Step 7: switch every pool's active target to ``side``, RELOAD, check SHOW DATABASES, RESUME."""
+        out: dict[str, Any] = {}
+        for pool, admin in sides.pools:
+            new_host = host_of(await pool.switch.target_line(side))
+            sw = pool.switch
 
-        async def rewrite() -> dict[str, Any]:
-            text = s.pgb_ini_path.read_text(encoding="utf-8")
-            before = read_database_target(text, s.pgb_db_name)
-            write_ini_atomically(s.pgb_ini_path, rewrite_database_target(text, s.pgb_db_name, new_target))
-            return {"from": before, "to": new_target}
+            async def activate(sw: Any = sw) -> dict[str, Any]:
+                return await sw.activate(side)
 
-        async def obs_rewrite() -> Observation:
-            now = read_database_target(s.pgb_ini_path.read_text(encoding="utf-8"), s.pgb_db_name)
-            return now == new_target, {"target": now}
+            async def obs_activate(sw: Any = sw) -> Observation:
+                now = await sw.current_side()
+                return now == side, {"active_side": now}
 
-        await fx.apply(Resources.PGBOUNCER_CONFIG, "REWRITE_TARGET", rewrite, obs_rewrite)
+            await fx.apply(pool.active_resource, "ACTIVATE_TARGET", activate, obs_activate)
 
-        async def reload() -> dict[str, Any]:
-            await admin.command("RELOAD")
-            return {}
+            async def reload(admin: PgBouncerAdmin = admin) -> dict[str, Any]:
+                await admin.command("RELOAD")
+                return {}
 
-        async def obs_reload() -> Observation:
-            row = await admin.database(s.pgb_db_name)
-            host = None if row is None else row.get("host")
-            return host == new_host, {"host": host}
+            async def obs_reload(
+                admin: PgBouncerAdmin = admin, pool: PoolSpec = pool, new_host: str | None = new_host
+            ) -> Observation:
+                row = await admin.database(pool.db_name)
+                host = None if row is None else row.get("host")
+                return host == new_host, {"host": host, "expected": new_host}
 
-        await fx.apply(Resources.PGBOUNCER, "RELOAD", reload, obs_reload)
+            await fx.apply(pool.resource, "RELOAD", reload, obs_reload)
+            out[pool.name] = {"host": new_host}
+        for pool, admin in sides.pools:
 
-        async def resume() -> dict[str, Any]:
-            await admin.command("RESUME", s.pgb_db_name)
-            return {}
+            async def resume(admin: PgBouncerAdmin = admin, pool: PoolSpec = pool) -> dict[str, Any]:
+                await admin.command("RESUME", pool.db_name)
+                return {}
 
-        async def obs_resume() -> Observation:
-            row = await admin.database(s.pgb_db_name)
-            paused = None if row is None else int(row.get("paused", 0))
-            return paused == 0, {"paused": paused, "host": None if row is None else row.get("host")}
+            async def obs_resume(admin: PgBouncerAdmin = admin, pool: PoolSpec = pool) -> Observation:
+                row = await admin.database(pool.db_name)
+                paused = None if row is None else int(row.get("paused", 0))
+                return paused == 0, {"paused": paused, "host": None if row is None else row.get("host")}
 
-        await fx.apply(Resources.PGBOUNCER, "RESUME", resume, obs_resume)
-        detail["pool_host"] = new_host
+            await fx.apply(pool.resource, "RESUME", resume, obs_resume)
+        return out
 
     async def _confirm_write(
-        self, req: CutoverRequest, fx: EffectRunner, target: ChatDb, side: str, detail: dict[str, Any]
+        self, req: CutoverRequest, fx: EffectRunner, sides: Sides, side: str, detail: dict[str, Any]
     ) -> int:
+        """Step 8: a business write through every pool must reach the target server. The server is
+        identified by pg_postmaster_start_time() read directly on each side in step 1 (cluster_name
+        is the same "chat-db" on both CNPG clusters). Returns the time of the last ACK."""
         s = self._s
-        expected = s.cluster_name(side)
-        probe_key = uuid.uuid5(uuid.NAMESPACE_URL, f"bravo:{req.kind}-probe:{req.run_id}")
-        result: dict[str, Any] = {}
+        expected = sides.identity[side]
+        target = sides.db[side]
+        acks: dict[str, int] = {}
+        probes: dict[str, Any] = {}
+        for pool, _admin in sides.pools:
+            probe_key = uuid.uuid5(uuid.NAMESPACE_URL, f"bravo:{req.kind}-probe:{req.run_id}:{pool.name}")
+            result: dict[str, Any] = {}
 
-        async def probe() -> dict[str, Any]:
-            conn = await AsyncConnection.connect(
-                s.pgb_app_dsn, autocommit=True, prepare_threshold=None, connect_timeout=int(s.probe_timeout_s)
-            )
-            try:
-                cur = await asyncio.wait_for(
-                    conn.execute(
-                        """
-                        INSERT INTO messages (room, author, body, idem_key)
-                        VALUES (%s, 'bravo-executor', %s, %s)
-                        ON CONFLICT (idem_key) DO NOTHING
-                        RETURNING id, current_setting('cluster_name')
-                        """,
-                        (s.probe_room, f"{req.kind} probe run={req.run_id}", probe_key),
-                    ),
-                    s.probe_timeout_s,
+            async def probe(pool: PoolSpec = pool, probe_key: uuid.UUID = probe_key,
+                            result: dict[str, Any] = result) -> dict[str, Any]:
+                conn = await AsyncConnection.connect(
+                    pool.app_dsn, autocommit=True, prepare_threshold=None, connect_timeout=int(s.probe_timeout_s)
                 )
-                row = await cur.fetchone()
-                result["ack_ns"] = self._clock_ns()
-                if row is None:
-                    cur = await conn.execute(
-                        "SELECT id, current_setting('cluster_name') FROM messages WHERE idem_key = %s", (probe_key,)
+                try:
+                    cur = await asyncio.wait_for(
+                        conn.execute(
+                            """
+                            INSERT INTO messages (room, author, body, idem_key)
+                            VALUES (%s, 'bravo-executor', %s, %s)
+                            ON CONFLICT (idem_key) DO NOTHING
+                            RETURNING id, pg_postmaster_start_time()::text
+                            """,
+                            (s.probe_room, f"{req.kind} probe run={req.run_id} pool={pool.name}", probe_key),
+                        ),
+                        s.probe_timeout_s,
                     )
                     row = await cur.fetchone()
-            finally:
-                await conn.close()
-            if row is None:
-                raise StepFailed("PROBE_NOT_ACKED")
-            result.update({"id": int(row[0]), "cluster": str(row[1])})
-            return {"id": result["id"], "cluster": result["cluster"], "idem_key": str(probe_key)}
+                    result["ack_ns"] = self._clock_ns()
+                    if row is None:
+                        cur = await conn.execute(
+                            "SELECT id, pg_postmaster_start_time()::text FROM messages WHERE idem_key = %s",
+                            (probe_key,),
+                        )
+                        row = await cur.fetchone()
+                finally:
+                    await conn.close()
+                if row is None:
+                    raise StepFailed("PROBE_NOT_ACKED", {"pool": pool.name})
+                result.update({"id": int(row[0]), "server": str(row[1])})
+                return {"id": result["id"], "server": result["server"], "idem_key": str(probe_key)}
 
-        async def obs_probe() -> Observation:
-            cur = await target.conn.execute("SELECT id FROM messages WHERE idem_key = %s", (probe_key,))
-            row = await cur.fetchone()
-            on_target = row is not None and int(row[0]) == result.get("id")
-            return on_target and result.get("cluster") == expected, {
-                f"row_on_{side}": on_target,
-                "served_by": result.get("cluster"),
-            }
+            async def obs_probe(probe_key: uuid.UUID = probe_key, result: dict[str, Any] = result) -> Observation:
+                cur = await target.conn.execute("SELECT id FROM messages WHERE idem_key = %s", (probe_key,))
+                row = await cur.fetchone()
+                on_target = row is not None and int(row[0]) == result.get("id")
+                return on_target and result.get("server") == expected, {
+                    f"row_on_{side}": on_target, "served_by_target": result.get("server") == expected,
+                }
 
-        await fx.apply(Resources.PGBOUNCER_POOL_PATH, "PROBE_WRITE", probe, obs_probe)
-        detail["probe"] = {"id": result.get("id"), "served_by": result.get("cluster")}
-        return int(result["ack_ns"])
+            await fx.apply(pool.path_resource, "PROBE_WRITE", probe, obs_probe)
+            acks[pool.name] = int(result["ack_ns"])
+            probes[pool.name] = {"id": result.get("id"), "served_by_target": result.get("server") == expected}
+        detail["probes"] = probes
+        return max(acks.values())
 
     async def _restore(
         self, req: CutoverRequest, fx: EffectRunner, applied: Applied, origin: str, target: str
@@ -785,25 +917,41 @@ class CutoverRunner:
         finally:
             for db in dbs.values():
                 await db.close()
-        if applied.paused:
-            admin = await PgBouncerAdmin.connect(s.pgb_admin_dsn)
+        for pool in s.pools:
+            if pool.name not in applied.paused_pools:
+                continue
+            admin = await PgBouncerAdmin.connect(pool.admin_dsn)
             try:
-                async def resume() -> dict[str, Any]:
-                    row = await admin.database(s.pgb_db_name)
+                async def resume(admin: PgBouncerAdmin = admin, pool: PoolSpec = pool) -> dict[str, Any]:
+                    row = await admin.database(pool.db_name)
                     if row is not None and int(row.get("paused", 0)) == 1:
-                        await admin.command("RESUME", s.pgb_db_name)
+                        await admin.command("RESUME", pool.db_name)
                         return {"compensates": "PAUSE", "sent": True}
                     return {"compensates": "PAUSE", "sent": False, "reason": "pool was not paused"}
 
-                async def obs_resume() -> Observation:
-                    row = await admin.database(s.pgb_db_name)
+                async def obs_resume(admin: PgBouncerAdmin = admin, pool: PoolSpec = pool) -> Observation:
+                    row = await admin.database(pool.db_name)
                     paused = None if row is None else int(row.get("paused", 0))
                     return paused == 0, {"paused": paused, "host": None if row is None else row.get("host")}
 
-                await fx.apply(Resources.PGBOUNCER, "RESUME", resume, obs_resume)
-                restored.append("pool resumed")
+                await fx.apply(pool.resource, "RESUME", resume, obs_resume)
+                restored.append(f"pool {pool.name} resumed")
             finally:
                 await admin.close()
+        for entry in s.entries:
+            if entry.name not in applied.blocked_entries:
+                continue
+            client = WriteBlockClient(entry)
+
+            async def unblock(client: WriteBlockClient = client) -> dict[str, Any]:
+                return {"compensates": "BLOCK", "response": await client.set(False)}
+
+            async def obs_unblock(client: WriteBlockClient = client) -> Observation:
+                now = await client.get()
+                return now["blocked"] is False, now
+
+            await fx.apply(entry.resource, "UNBLOCK", unblock, obs_unblock)
+            restored.append(f"entry {entry.name} writes open")
         for side, prior in applied.attachments_prior.items():
             db = ChatDb(await connect(s.dst_dsn if side == "dst" else s.src_dsn), side)
             try:

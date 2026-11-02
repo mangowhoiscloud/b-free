@@ -1,0 +1,1 @@
+{"ok":true,"observe_only":true,"observe_reason":{"orphaned_runs":["dece0e93-41a4-4117-a4aa-c5721423328d"],"unresolved_effects":1,"in_flight_marked_unknown":1,"pgbouncer":{"reachable":true,"pool_host":"src-db","pool_paused":1,"admin_clients":[{"addr":"172.23.0.4","port":48166,"connect_time":"2026-11-02 10:24:08 UTC"}]}}}

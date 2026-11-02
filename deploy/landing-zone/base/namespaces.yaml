@@ -1,0 +1,64 @@
+# Landing zone namespaces (D-23). Pod Security "restricted" everywhere except where an overlay
+# says otherwise (rook-ceph on K3s).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chat
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cf-edge
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bravo-edge
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bravo-observability
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    bravo.dev/landing-zone: "true"

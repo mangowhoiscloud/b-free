@@ -1,0 +1,110 @@
+# Default deny + explicit allows (NET-01). Enforced by Dataplane V2 (eBPF). Same intent as the Kyverno
+# generated baseline on the other overlays (TECH-STACK-SPEC 1절). The app's own policy comes from the
+# chart (values/chat.yaml). kubectl port-forward (temporary link, Executor) is not subject to NetworkPolicy.
+# --- chat ------------------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: chat}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-dns, namespace: chat}
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: chat-db, namespace: chat}
+spec:
+  podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: chat-pgbouncer}}}]
+      ports: [{port: 5432, protocol: TCP}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}}]
+      ports: [{port: 8000, protocol: TCP}, {port: 5432, protocol: TCP}]
+    - from: [{podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}}]
+      ports: [{port: 5432, protocol: TCP}, {port: 8000, protocol: TCP}]
+  egress:
+    # instance manager -> Kubernetes API (control plane private endpoint)
+    - to: [{ipBlock: {cidr: ${API_SERVER_CIDR}}}]
+      ports: [{port: 443, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}}]
+      ports: [{port: 5432, protocol: TCP}, {port: 8000, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: chat-pgbouncer, namespace: chat}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: chat-pgbouncer}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: bravo-demo, app.kubernetes.io/instance: chat}}}]
+      ports: [{port: 6432, protocol: TCP}]
+  egress:
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}}]
+      ports: [{port: 5432, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: src-db-link}}}]
+      ports: [{port: 5432, protocol: TCP}]
+# --- cf-edge -----------------------------------------------------------------------------------------
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: cf-edge}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: cloudflared, namespace: cf-edge}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: cloudflared}}
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    # Cloudflare edge (QUIC/HTTP2 on 7844, API on 443). Not to private ranges.
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]
+      ports: [{port: 7844, protocol: UDP}, {port: 7844, protocol: TCP}, {port: 443, protocol: TCP}]
+    # Gateway bravo-gateway (fixed internal address)
+    - to: [{ipBlock: {cidr: ${GATEWAY_IP}/32}}]
+      ports: [{port: 80, protocol: TCP}]
+# --- bravo-edge (no pods; Gateway is a managed load balancer) -------------------------------------
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: bravo-edge}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+# --- bravo-observability ----------------------------------------------------------------------------
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: bravo-observability}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: otel-agent, namespace: bravo-observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: otel-agent}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: chat}}}]
+      ports: [{port: 4317, protocol: TCP}, {port: 4318, protocol: TCP}]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: platform-otel}}}]
+      ports: [{port: 4317, protocol: TCP}]

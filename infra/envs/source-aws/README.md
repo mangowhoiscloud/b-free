@@ -11,6 +11,7 @@
 - 첨부 S3 버킷. 공개 접근 차단 넷을 모두 켭니다. SSE-KMS와 버킷 키, 버전 관리, `BucketOwnerEnforced`를 겁니다.
 - Secrets Manager 비밀 `<name>/chat/db-app`. 그릇만 만듭니다.
 - EKS Pod Identity 역할 둘: `chat/chat-app`, `external-secrets/external-secrets`.
+- ECR 저장소 둘(`ecr.tf`): `<name>/bravo-demo`, `<name>/bravo-pgbouncer`. 태그 변경 불가, 푸시 때 스캔, 전용 KMS CMK. 배포는 digest로만 합니다.
 - landing zone 묶음의 Argo CD Application 파일(`gitops/`). 클러스터에 적용하지 않습니다.
 
 ## 첨부 버킷 정책
@@ -25,10 +26,13 @@
 
 ## DB 비밀번호 값을 넣는 방법
 
-Terraform은 비밀 값을 만들지 않습니다. 값이 상태 파일에 남기 때문입니다(NFR-6). 아래 둘 가운데 하나로 넣습니다.
+Terraform은 비밀 값을 만들지 않습니다. 값이 상태 파일에 남기 때문입니다(NFR-6).
 
-1. 클러스터 안에서 CNPG가 앱 역할 비밀번호를 만듭니다. ESO `PushSecret`이 그 값을 이 비밀에 씁니다. ESO 역할은 이 비밀 하나에만 `PutSecretValue`를 받습니다.
-2. 운영자가 한 번 넣습니다. 명령: `aws secretsmanager put-secret-value --secret-id <db_secret_arn> --secret-string file://<값 파일>`
+- 클러스터 안에서 CNPG가 앱 역할(`app_writer`) 비밀번호를 만듭니다(Secret `chat/chat-db-app`).
+- `deploy/landing-zone/overlays/eks/install.sh`(단계 `schema`)가 그 값을 파이프로 `aws secretsmanager put-secret-value --secret-string file:///dev/stdin`에 넘깁니다. 파일이나 인자에 남지 않습니다.
+- 같은 단계가 값을 플랫폼 OpenBao `secret/envs/source-aws/chat-db`(필드 `app_writer`)에도 파이프로 씁니다(Executor 계약 §9).
+- ESO는 이 비밀을 읽어 PgBouncer 인증 Secret에 합칩니다(`ExternalSecret chat-pgbouncer-auth`).
+- ESO 역할의 `PutSecretValue` 권한은 지금 쓰지 않습니다. ESO 2.14 `PushSecret`은 비밀에 `managed-by=external-secrets` 태그와 `DeleteResourcePolicy` 권한을 요구하기 때문입니다(ESO 소스 `providers/v1/aws/secretsmanager`).
 
 앱은 이 비밀을 SDK로 직접 읽습니다. 이 의존성은 S2의 재료로 일부러 둔 것입니다(스펙 §8.10).
 

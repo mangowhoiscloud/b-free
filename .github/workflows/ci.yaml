@@ -1,0 +1,406 @@
+# CI: lint and tests per service (AGENTS.md "완료 조건": `make check` + the tests of the area you changed).
+#
+# - One job per service. A job runs only when its paths changed; otherwise it shows as "skipped",
+#   which branch protection treats as passing. `ci ok` at the end is the single check to require.
+#   Change detection is plain `git diff` in the `changes` job (no third-party action gets the token).
+#   A change to this file, a workflow_dispatch, or a push with no usable base commit runs every job.
+# - Commands are the ones the team already uses (README / Makefile / scripts per service). Nothing
+#   here adds a linter or test tool the service does not configure itself.
+# - Credentials: none. Only GITHUB_TOKEN with `contents: read` (checkout). Tests that need AWS
+#   credentials, a kubeconfig, an S3/RGW endpoint or an LLM key skip themselves with the reason
+#   (`pytest -rs` prints it). Docker-backed tests (real postgres:16, PgBouncer, OpenBao) run, because
+#   GitHub-hosted Ubuntu runners have a Docker daemon.
+# - Runners are pinned to ubuntu-24.04: `ubuntu-latest` moves to 26.04 in November 2026
+#   (actions/runner-images#14748).
+# - Every action is pinned by full commit SHA; the tag is in the trailing comment.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Repo-wide document check (scripts/check_docs.py). It reads AGENTS.md and every *.md in the repo,
+  # so it cannot be path-filtered; it runs on every event (stdlib only, a few seconds).
+  repo:
+    name: repo · make check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - &checkout
+        name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: make check (scripts/check_docs.py)
+        run: make check
+
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.diff.outputs.api }}
+      gate: ${{ steps.diff.outputs.gate }}
+      collector: ${{ steps.diff.outputs.collector }}
+      executor: ${{ steps.diff.outputs.executor }}
+      rehearsal: ${{ steps.diff.outputs.rehearsal }}
+      agent: ${{ steps.diff.outputs.agent }}
+      console: ${{ steps.diff.outputs.console }}
+      demo: ${{ steps.diff.outputs.demo }}
+      loadgen: ${{ steps.diff.outputs.loadgen }}
+      link: ${{ steps.diff.outputs.link }}
+    steps:
+      - name: Check out (full history, to diff against the base commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide which jobs run
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          all=false
+          base=""
+          case "$EVENT" in
+            pull_request) base=$(git rev-parse --verify --quiet 'HEAD^1' || true) ;;  # HEAD is the PR merge commit; ^1 is the base tip
+            push) base="$BEFORE" ;;
+            *) all=true ;;
+          esac
+          if [ "$all" = false ] && { [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] \
+              || [ "$base" = 0000000000000000000000000000000000000000 ] \
+              || ! git cat-file -e "${base}^{commit}" 2>/dev/null; }; then
+            echo "::notice::no usable base commit ('$base'); running every job"
+            all=true
+          fi
+          changed=""
+          if [ "$all" = false ]; then
+            changed=$(git diff --name-only "$base" HEAD)
+            if grep -qx '.github/workflows/ci.yaml' <<<"$changed"; then all=true; fi
+          fi
+          { echo "### Changed files"; echo; echo '```'; echo "${changed:-(all jobs)}"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          # job <name> <extended regex over changed paths>
+          job() {
+            local v=false
+            if [ "$all" = true ] || grep -qE "$2" <<<"$changed"; then v=true; fi
+            echo "$1=$v" | tee -a "$GITHUB_OUTPUT"
+          }
+          # api: tests/test_rehearsal.py starts the real platform/rehearsal service, which imports platform/agent.
+          job api       '^(platform/api/|platform/rehearsal/(src/|pyproject\.toml$|uv\.lock$)|platform/agent/(src/|allowlists/|pyproject\.toml$))'
+          job gate      '^platform/gate/'
+          # collector: tests/test_inventory.py scans the real apps/demo tree.
+          job collector '^(platform/collector/|apps/demo/)'
+          # executor: tests load apps/demo/schema/sql; scripts/run-tests.sh reads CHAT_DB_IMAGE from deploy/pilot/.env.example.
+          job executor  '^(platform/executor/|apps/demo/schema/|deploy/pilot/\.env\.example$)'
+          # rehearsal: path dependency on platform/agent (allowlists, schemas, harbor task templates).
+          job rehearsal '^(platform/rehearsal/|platform/agent/)'
+          job agent     '^platform/agent/'
+          job console   '^platform/console/'
+          # demo: the PgBouncer tests use the pilot PgBouncer image and deploy/pilot/pgbouncer/pgbouncer.ini.
+          job demo      '^(apps/demo/|deploy/pilot/pgbouncer/)'
+          job loadgen   '^tools/loadgen/'
+          job link      '^tools/link/'
+
+  api:
+    name: platform/api
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: platform/api
+    steps:
+      - *checkout
+      - &setup-uv
+        name: Set up uv 0.10.2 (same uv as the Dockerfiles)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.10.2"
+          # sha256 of uv-x86_64-unknown-linux-gnu.tar.gz for uv 0.10.2 (GitHub release asset digest
+          # and the release's .sha256 file agree). x86_64 only: every job here runs on ubuntu-24.04 x64.
+          checksum: "6aa4576c31f791c0b9d4739e256d07358d45e7535695287fec03cf6839e25512"
+          cache-suffix: ${{ github.job }}
+      - name: Install (uv.lock, dev group)
+        run: uv sync --locked
+      - name: Lint (ruff, [tool.ruff] in pyproject.toml)
+        run: uv run --frozen ruff check src tests
+      - name: Type check (pyright basic, [tool.pyright] in pyproject.toml)
+        run: uv run --frozen pyright
+      - name: Rehearsal service virtualenv for tests/test_rehearsal.py
+        # The test starts platform/rehearsal/.venv/bin/python as a child process with no model key and
+        # expects llm_unconfigured. Without this venv the test skips with rehearsal_venv_missing.
+        working-directory: platform/rehearsal
+        run: uv sync --locked --extra service
+      - name: Tests (real postgres:16 container through docker)
+        run: uv run --frozen pytest -q -rs
+
+  gate:
+    name: platform/gate
+    needs: changes
+    if: needs.changes.outputs.gate == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: platform/gate
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install (uv.lock, dev group)
+        run: uv sync --locked
+      - name: Lint (ruff, [tool.ruff] in pyproject.toml)
+        # No type checker: platform/gate has no pyright config or dependency.
+        run: uv run --frozen ruff check src tests
+      - name: Tests (README "시험"; two real postgres:16 containers, AWS and object-store tests skip)
+        run: uv run --frozen pytest -q -rs
+
+  collector:
+    name: platform/collector
+    needs: changes
+    if: needs.changes.outputs.collector == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: platform/collector
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install (uv.lock, dev group)
+        run: uv sync --locked
+      - name: Lint (ruff, [tool.ruff] in pyproject.toml)
+        # No type checker: platform/collector has no pyright config or dependency.
+        run: uv run --frozen ruff check src tests
+      - name: Tests (README "시험"; real postgres:16, AWS and kubeconfig tests skip)
+        run: uv run --frozen pytest -q -rs
+
+  executor:
+    name: platform/executor
+    needs: changes
+    if: needs.changes.outputs.executor == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: platform/executor
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install (uv.lock, dev group)
+        run: uv sync --locked
+      - name: Lint, type check and tests (scripts/run-tests.sh)
+        # The team's script: starts a throwaway postgres (CHAT_DB_IMAGE from deploy/pilot/.env.example),
+        # exports BRAVO_TEST_PG_DSN, then runs ruff, pyright and pytest. S3 attachment-copy tests skip.
+        run: bash scripts/run-tests.sh -rs
+
+  rehearsal:
+    name: platform/rehearsal
+    needs: changes
+    if: needs.changes.outputs.rehearsal == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: platform/rehearsal
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install (README, uv sync --extra service --extra dev)
+        run: uv sync --locked --extra service --extra dev
+      - name: make check (check_docs, check_tasks, check_notes, pytest)
+        # No ruff/pyright config in this project; its static checks are the three scripts above.
+        # llm and cluster tests skip (no ANTHROPIC_API_KEY / gateway, no BRAVO_REHEARSAL_KUBECONFIG);
+        # docker tests run real postgres:16 and OpenBao. `make oracle` (Harbor run) is not part of CI.
+        run: make check PY=.venv/bin/python
+
+  agent:
+    name: platform/agent
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: platform/agent
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install hash-locked dependencies
+        # requirements.lock (+ codex extra) and harbor/requirements.lock (harbor 0.25.0, so
+        # tests/test_harbor_tasks.py validates task.toml against the Harbor model instead of skipping).
+        # Both are `uv pip compile --generate-hashes` output with no conflicting pins.
+        # pytest is the dev extra in pyproject.toml (pytest==9.2.0); it is not in either lock file.
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python --require-hashes -r requirements.lock -r harbor/requirements.lock
+          uv pip install --python .venv/bin/python pytest==9.2.0
+      - name: make test (unit tests, no SDK or model calls)
+        # No lint config in this project. `make images` / `audit` / `smoke` need the sandbox images;
+        # images.yaml builds and scans them, audit and smoke are not run in CI.
+        run: make test PY=.venv/bin/python
+
+  console:
+    name: platform/console
+    needs: changes
+    if: needs.changes.outputs.console == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: platform/console
+    env:
+      PNPM_VERSION: 12.6.0
+      # dist.integrity of pnpm@12.6.0 on registry.npmjs.org (checked against the downloaded tarball).
+      PNPM_INTEGRITY: sha512-PvaPlRyxEawgS0paFvCy3fDaVqluBBPoHYVdnwtV75JnFHCQKOHNAMQFwsX7e56OxNxGd3yAXQNzwvL/AP0g7A==
+    steps:
+      - *checkout
+      - name: Set up Node.js 22.23.4 (NODE_VERSION in the Dockerfile's node:22-alpine digest)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.23.4"
+          package-manager-cache: false
+      - name: Install pnpm 12.6.0 (package.json packageManager), integrity-checked
+        run: |
+          set -euo pipefail
+          tgz="$RUNNER_TEMP/pnpm-$PNPM_VERSION.tgz"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$tgz" "https://registry.npmjs.org/pnpm/-/pnpm-$PNPM_VERSION.tgz"
+          actual="sha512-$(openssl dgst -sha512 -binary "$tgz" | base64 -w0)"
+          if [ "$actual" != "$PNPM_INTEGRITY" ]; then echo "::error::pnpm tarball integrity mismatch: $actual"; exit 1; fi
+          npm install --global --no-fund --no-audit "$tgz"
+          pnpm --version
+      - name: Install (pnpm-lock.yaml)
+        run: pnpm install --frozen-lockfile
+      - name: Build (README, strict `tsc --noEmit` then `vite build`)
+        # No lint config (no ESLint/Biome) and no test script in package.json; the strict type check
+        # inside `pnpm build` is the only static check this project has.
+        run: pnpm build
+
+  demo:
+    name: apps/demo
+    needs: changes
+    if: needs.changes.outputs.demo == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/demo
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install (uv.lock, dev group)
+        run: uv sync --locked
+      - name: Lint (ruff, [tool.ruff] in pyproject.toml)
+        run: uv run --frozen ruff check src tests
+      - name: Type check (pyright basic, [tool.pyright] in pyproject.toml)
+        run: uv run --frozen pyright
+      - name: Build the pilot PgBouncer image the tests expect (bravo-pgbouncer:pilot)
+        # Same image deploy/pilot builds (compose.data.yaml). Without it the PgBouncer tests skip.
+        working-directory: deploy/pilot/pgbouncer
+        run: docker build --tag bravo-pgbouncer:pilot .
+      - name: Tests (README, uv run pytest -q -rs; real postgres:16 + PgBouncer, S3/AWS tests skip)
+        run: uv run --frozen pytest -q -rs
+
+  loadgen:
+    name: tools/loadgen
+    needs: changes
+    if: needs.changes.outputs.loadgen == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tools/loadgen
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install (uv.lock, dev group)
+        run: uv sync --locked
+      - name: Lint (ruff, [tool.ruff] in pyproject.toml)
+        run: uv run --frozen ruff check src tests
+      - name: Type check (pyright basic, [tool.pyright] in pyproject.toml)
+        run: uv run --frozen pyright
+      - name: Tests
+        run: uv run --frozen pytest -q -rs
+
+  link:
+    name: tools/link
+    needs: changes
+    if: needs.changes.outputs.link == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tools/link
+    steps:
+      - *checkout
+      - *setup-uv
+      - name: Install (uv.lock, dev group)
+        run: uv sync --locked
+      - name: Lint (ruff, [tool.ruff] in pyproject.toml)
+        run: uv run --frozen ruff check src tests
+      - name: Type check (pyright basic, [tool.pyright] in pyproject.toml)
+        run: uv run --frozen pyright
+      - name: Tests
+        # The tunnel tests reach the host from a postgres container via host.docker.internal. On Linux
+        # Docker Engine that name resolves only if the container is started with
+        # --add-host=host.docker.internal:host-gateway (Docker Desktop provides it automatically).
+        run: uv run --frozen pytest -q -rs
+
+  # Single required check for branch protection: fails if any job failed or was cancelled;
+  # skipped jobs (paths unchanged) count as passing.
+  ci-ok:
+    name: ci ok
+    needs: [repo, changes, api, gate, collector, executor, rehearsal, agent, console, demo, loadgen, link]
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions: {}
+    timeout-minutes: 5
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$RESULTS"
+          bad=$(jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key] | join(", ")' <<<"$RESULTS")
+          if [ -n "$bad" ]; then echo "::error::not successful: $bad"; exit 1; fi

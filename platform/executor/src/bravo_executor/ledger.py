@@ -85,6 +85,7 @@ class Ledger(Protocol):
         self, run_id: UUID, resources: list[str], owner: str, epoch: int, lease_s: float
     ) -> None: ...
     async def release_locks_if_resolved(self, run_id: UUID) -> bool: ...
+    async def get_run(self, run_id: UUID) -> dict[str, Any] | None: ...
 
 
 class PostgresLedger:
@@ -247,6 +248,17 @@ class PostgresLedger:
         return int(row[0]) if row else 1
 
     # ---- reads -------------------------------------------------------------------------
+
+    async def list_runs(self, kind: str | None, limit: int) -> list[dict[str, Any]]:
+        async with self._pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                SELECT run_id, plan_id, kind, epoch, status, write_pause_ms, started_at, ended_at
+                FROM runs WHERE (%s::text IS NULL OR kind = %s) ORDER BY started_at DESC LIMIT %s
+                """,
+                (kind, kind, limit),
+            )
+            return list(await cur.fetchall())
 
     async def find_run_by_key(self, idem_key: str) -> UUID | None:
         async with self._pool.connection() as conn:

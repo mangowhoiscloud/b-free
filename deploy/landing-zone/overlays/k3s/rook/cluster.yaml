@@ -1,0 +1,43 @@
+# Ceph cluster for the on-prem object store (D-22): mon 1, mgr 1, one OSD per VM on its raw data
+# disk, RGW 1. Not HA (single mon). ${OSD_NODES} is rendered by install.sh, which picks each node's
+# data disk by size and emptiness (with vz the cloud-init ISO is also a disk; names are not stable).
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: rook-ceph
+  namespace: rook-ceph
+spec:
+  cephVersion:
+    image: ${CEPH_IMAGE}
+  dataDirHostPath: /var/lib/rook
+  mon: {count: 1, allowMultiplePerNode: false}
+  mgr: {count: 1, allowMultiplePerNode: false}
+  dashboard: {enabled: false}
+  monitoring: {enabled: false}
+  crashCollector: {disable: true}
+  cephConfig:
+    global:
+      osd_pool_default_size: "2"
+      osd_pool_default_min_size: "1"
+      mon_warn_on_pool_no_redundancy: "false"
+    osd:
+      osd_memory_target: "1073741824"
+  resources:
+    mon: {requests: {cpu: 100m, memory: 512Mi}, limits: {memory: 1Gi}}
+    mgr: {requests: {cpu: 100m, memory: 512Mi}, limits: {memory: 1Gi}}
+    osd: {requests: {cpu: 200m, memory: 1Gi}, limits: {memory: 2Gi}}
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    nodes: ${OSD_NODES}
+---
+# Rook's built-in .mgr pool, sized for two OSDs.
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: builtin-mgr
+  namespace: rook-ceph
+spec:
+  name: .mgr
+  failureDomain: host
+  replicated: {size: 2, requireSafeReplicaSize: false}

@@ -1,0 +1,7 @@
+{
+  "change_id": "3e24d0f4-06ba-416b-be5b-eb8d1206905a",
+  "role": "app_migration",
+  "target_environment": "target-onprem",
+  "artifact": null,
+  "provenance": "Operator CLI run of the T31 pipeline (fork of the T10/T31 platform-API agent), t31-20261102T120416Z. No rehearsal artifact exists yet, so there is no diff: the image is apps/demo at git HEAD. No API approval record exists for a CLI run: the platform API is not deployed (laptop Compose pilot down, platform EKS not yet serving)."
+}

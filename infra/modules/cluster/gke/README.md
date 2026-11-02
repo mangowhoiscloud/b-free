@@ -1,30 +1,23 @@
 # cluster/gke
 
-GKE Autopilot 리전 클러스터를 만듭니다. `target-gcp`(제안 D-01)가 씁니다. `terraform validate`만 합니다.
+GKE Standard 클러스터와 노드 풀을 만듭니다(D-21, TECH-STACK-SPEC 1절). `envs/target-gcp`가 씁니다.
 
-## 왜 Autopilot인가
+## 왜 Standard인가
 
-- 노드 풀, 노드 OS, 업그레이드를 Google이 맡습니다. 고객이 노드를 고르지 않습니다.
-- Dataplane V2가 늘 켜져 있어 NetworkPolicy를 집행합니다. PD CSI도 기본으로 켜져 있습니다.
-- 목적지에 필요한 CNPG, OpenBao, SeaweedFS, Kyverno는 Autopilot 제약 안에서 돕니다(추정, 실측 전).
-
-## Autopilot 제약(확인할 것)
-
-- 특권 Pod와 호스트 경로를 쓰는 워크로드는 막힙니다. TopoLVM은 GKE에 필요 없습니다.
-- Kyverno 웹훅은 GKE 관리 네임스페이스(`kube-system` 등)를 대상으로 삼을 수 없습니다. 차트 기본값이 `kube-system`을 빼므로 맞습니다(추정).
-- Istio ambient의 ztunnel은 `NET_ADMIN`이 필요합니다. 메시는 플랫폼 EKS에만 두므로 해당 없습니다.
-- 위 셋 가운데 하나라도 막히면 Standard 리전 클러스터로 바꿉니다. 출력 계약은 그대로 둡니다.
+- Dataplane V2는 생성 때만 정할 수 있어 `datapath_provider = "ADVANCED_DATAPATH"`로 고정합니다.
+- Autopilot은 kube-bench용 특권 Pod를 막아 통제 비교(T5, T14)를 할 수 없습니다(TECH-STACK-SPEC 2.1).
+- 노드 풀은 이 모듈 안에 둡니다(`node` 모듈 없음, `infra/README.md`). 고객 입력은 크기뿐이고 머신 종류는 env 프리셋이 고릅니다.
 
 ## 무엇을 만드나
 
-- 사설 노드, 비공개 IP 엔드포인트, IAM으로 지키는 DNS 엔드포인트.
-- 릴리스 채널 `REGULAR`, 최소 판 1.36입니다. 모든 환경이 1.36을 씁니다.
-- 1.36은 2026-11-02 현재 Regular 채널에 있습니다. Stable에는 2026-11-11 무렵 들어옵니다(GKE 출시 일정, 2026-11-02 확인). 그 뒤 `release_channel = "STABLE"`로 바꿀 수 있습니다.
-- 고객 관리 키 둘: Secret 애플리케이션 계층 암호화, PD(노드 부팅 디스크와 PV).
-- Cloud KMS 키링은 지울 수 없습니다. 다시 올릴 때 이름이 겹치지 않게 무작위 접미사를 붙입니다.
-- 최소 권한 노드 서비스 계정(`roles/container.defaultNodeServiceAccount`), Workload Identity.
-- `deletion_protection` 기본값은 `true`입니다. 지우려면 먼저 `false`로 apply합니다.
+- 기본 노드 풀 없음(`initial_node_count = 0`, 1.36.4-gke.1469000+). `node_pools` 입력마다 `google_container_node_pool`.
+- 사설 노드, 사설 엔드포인트(허가 대역 비움), IAM으로 지키는 DNS 엔드포인트. kubeconfig는 비밀 없이 `gke-gcloud-auth-plugin`을 부릅니다.
+- 릴리스 채널 `REGULAR`, 최소 판 1.36(출발지 EKS 1.36, 온프렘 K3s 1.36과 같음).
+- Gateway API(`CHANNEL_STANDARD`), Workload Identity(노드 `GKE_METADATA`), 관리형 Hubble relay.
+- 고객 관리 키 둘: Secret 애플리케이션 계층 암호화, 노드 부팅 디스크와 PV. Cloud KMS 키링은 지울 수 없어 이름에 무작위 접미사를 붙입니다.
+- 로그 · 지표는 시스템 구성요소만(비용). 관리 활동 감사 로그는 GKE가 늘 Cloud Logging에 씁니다(AUD-01).
+- Arm 노드 taint: `architecture_taint_behavior`(기본 `NONE`). 모든 노드가 Arm인 클러스터에서 차트마다 toleration을 넣지 않게 합니다.
 
 ## 출력 계약
 
-`cluster/eks`와 같은 이름입니다. `cni`는 `{ name = "gke-dataplane-v2", network_policy = true, encapsulation = "none", mtu = 1460 }`입니다. `storage_platform = "gke"`(landing_zone의 `provider_kind`), `addon_delivery = "argocd"`(landing_zone의 `delivery`), 그리고 `pd_kms_key_id`를 둡니다.
+`cluster/eks`와 같은 이름(`name`, `kubernetes_version`, `api_endpoint`, `kubeconfig_path`, `cni`, `node_pools`, `storage_platform`, `addon_delivery`)에 GKE 것을 더합니다: `location`, `node_service_account`, `workload_pool`, `pd_kms_key_id`. `cni`는 `{ name = "gke-dataplane-v2", network_policy = true, encapsulation = "none", mtu = 1460 }`입니다.

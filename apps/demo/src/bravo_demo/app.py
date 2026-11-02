@@ -57,6 +57,7 @@ from .telemetry import Instruments
 log = logging.getLogger(__name__)
 
 STATUS_INTERVAL_S = 2.0
+STORE_CHECK_INTERVAL_S = 15.0
 MAX_INFLIGHT_PER_SOCKET = 16
 MAX_AUTHOR = 40
 MAX_BODY = 2000
@@ -137,6 +138,23 @@ def create_app(settings: Settings) -> FastAPI:
 
         switch_task = asyncio.create_task(ensure_switch_row(), name="ensure-write-block-row")
         store = ObjectStore(settings.s3) if settings.s3 else None
+
+        async def watch_store() -> None:
+            # Attachments are offered only after a real HeadBucket succeeds, and withdrawn when it fails.
+            assert store is not None
+            while True:
+                try:
+                    await asyncio.to_thread(store.ping)
+                    if not state.get("store_ok"):
+                        log.info("object store reachable", extra={"store_id": store.store_id})
+                    state["store_ok"] = True
+                except Exception as exc:
+                    if state.get("store_ok") is not False:
+                        log.warning("object store not reachable: %s", exc, extra={"store_id": store.store_id})
+                    state["store_ok"] = False
+                await asyncio.sleep(STORE_CHECK_INTERVAL_S)
+
+        store_task = asyncio.create_task(watch_store(), name="watch-object-store") if store else None
         poller = Poller(
             db, hub, interval_s=settings.poll_interval_s, grace_s=settings.gap_grace_s,
             to_message=message_public,
@@ -154,6 +172,8 @@ def create_app(settings: Settings) -> FastAPI:
         finally:
             state["ready"] = False
             switch_task.cancel()
+            if store_task is not None:
+                store_task.cancel()
             await poller.stop()
             await db.close()
 
@@ -173,9 +193,25 @@ def create_app(settings: Settings) -> FastAPI:
     def env_doc() -> dict[str, Any]:
         return {"id": settings.env_id, "label": settings.env_label, "label_ja": settings.env_label_ja}
 
+    def attachments_state() -> str:
+        # off: no bucket configured | checking: no HeadBucket answer yet | ok | unavailable
+        if settings.s3 is None:
+            return "off"
+        ok = state.get("store_ok")
+        return "checking" if ok is None else ("ok" if ok else "unavailable")
+
+    def db_status() -> tuple[bool, int | None]:
+        """True only when the last poll of the write DB succeeded recently (no answer yet = False)."""
+        poller: Poller | None = state.get("poller")
+        if poller is None or poller.last_ok is None:
+            return False, None
+        age = int((time.monotonic() - poller.last_ok) * 1000)
+        return age < max(3000, int(settings.poll_interval_s * 4000)), age
+
     def limits_doc() -> dict[str, Any]:
         return {
-            "attachments": settings.s3 is not None,
+            "attachments": attachments_state() == "ok",
+            "attachments_state": attachments_state(),
             "max_attachment_bytes": settings.s3.max_bytes if settings.s3 else 0,
             "write_wait_s": settings.db.write_wait_s,
             "max_body": MAX_BODY,
@@ -247,18 +283,24 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/readyz")
     async def readyz() -> Response:
-        # Readiness does not query the database: during a PgBouncer PAUSE every pod would turn
-        # unready at once and the Service would drop all users. Writes wait (8 s) instead.
-        if state.get("ready"):
-            return JSONResponse({"status": "ready"})
-        return JSONResponse({"status": "starting"}, status_code=503)
+        # Ready only after this process has read the write DB (the poller's queries go through
+        # PgBouncer) and only while its last successful read is younger than READY_DB_STALE_S.
+        # The window is longer than any write pause (seconds): a PgBouncer PAUSE must not take
+        # every pod out of the Service at once, a lost database must.
+        poller: Poller | None = state.get("poller")
+        if not state.get("ready") or poller is None or poller.last_ok is None:
+            return JSONResponse({"status": "starting", "db": "not_reached"}, status_code=503)
+        age = time.monotonic() - poller.last_ok
+        if age > settings.ready_db_stale_s:
+            return JSONResponse({"status": "db_unreachable", "db_age_s": round(age, 1)}, status_code=503)
+        return JSONResponse({"status": "ready", "db_age_s": round(age, 1), "attachments": attachments_state()})
 
     @app.get("/api/status")
     async def status() -> dict[str, Any]:
         poller: Poller | None = state.get("poller")
         age = None if not poller or poller.last_ok is None else int((time.monotonic() - poller.last_ok) * 1000)
         return {"env": env_doc(), "instance": settings.instance_id, "poll_age_ms": age,
-                "ws_connections": hub.connections}
+                "ws_connections": hub.connections, "attachments": attachments_state()}
 
     # --- attachments (D-04) -------------------------------------------------------------------
 
@@ -271,6 +313,9 @@ def create_app(settings: Settings) -> FastAPI:
         db: ChatDb = state["db"]
         if store is None or settings.s3 is None:
             return _err(404, "attachments_disabled")
+        if attachments_state() != "ok":
+            return JSONResponse({"error": "attachments_unavailable", "state": attachments_state(), "retryable": True},
+                                status_code=503, headers={"Retry-After": str(int(STORE_CHECK_INTERVAL_S))})
         if not ROOM_RE.match(room):
             return _err(400, "invalid_room")
         idem_key = _uuid(request.headers.get("idempotency-key"))
@@ -441,7 +486,6 @@ def create_app(settings: Settings) -> FastAPI:
             await websocket.close(code=1013)
             return
         db: ChatDb = state["db"]
-        poller: Poller = state["poller"]
         await websocket.accept()
         queue = hub.subscribe(room)  # subscribe before reading history: nothing falls between
         instruments.ws_connections.add(1, {"env": settings.env_id})
@@ -498,8 +542,9 @@ def create_app(settings: Settings) -> FastAPI:
                 await reply({"type": "nack", "idem_key": str(idem_key), "code": code, "retryable": retryable})
 
         async def sender() -> None:
+            db_ok, _ = db_status()
             await send({"type": "hello", "env": env_doc(), "instance": settings.instance_id, "room": room,
-                        "limits": limits_doc()})
+                        "limits": limits_doc(), "db_ok": db_ok})
             if after > 0:
                 items = await db.fetch_after(room, after, settings.backlog_limit)
             else:
@@ -511,9 +556,9 @@ def create_app(settings: Settings) -> FastAPI:
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=timeout)
                 except TimeoutError:
-                    age = None if poller.last_ok is None else int((time.monotonic() - poller.last_ok) * 1000)
-                    db_ok = age is not None and age < max(3000, int(settings.poll_interval_s * 4000))
-                    await send({"type": "status", "db_ok": db_ok, "poll_age_ms": age})
+                    db_ok, age = db_status()
+                    await send({"type": "status", "db_ok": db_ok, "poll_age_ms": age,
+                                "attachments_state": attachments_state()})
                     next_status = time.monotonic() + STATUS_INTERVAL_S
                     continue
                 if item is None:  # slow consumer: let it reconnect with its last id

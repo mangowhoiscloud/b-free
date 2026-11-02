@@ -125,6 +125,7 @@ class Settings:
     service_name: str
     log_level: str
     forwarded_allow_ips: str
+    ready_db_stale_s: float
     admin: AdminSettings
 
 
@@ -197,7 +198,7 @@ def load(env: dict[str, str] | None = None) -> Settings:
             conditional_put=_bool(env, "S3_CONDITIONAL_PUT", True),
         )
 
-    env_id = _opt(env, "APP_ENV_ID") or "unknown"
+    env_id = _req(env, "APP_ENV_ID")
     if not _ENV_ID.match(env_id):
         raise ConfigError("APP_ENV_ID must be 1-32 lowercase ASCII letters, digits or - (e.g. aws, onprem, gcp)")
     instance_id = re.sub(r"[^A-Za-z0-9._-]", "-", _opt(env, "APP_INSTANCE_ID") or _opt(env, "HOSTNAME") or "local")[:63]
@@ -223,6 +224,7 @@ def load(env: dict[str, str] | None = None) -> Settings:
         service_name=_opt(env, "OTEL_SERVICE_NAME") or "bravo-demo",
         log_level=(_opt(env, "LOG_LEVEL") or "INFO").upper(),
         forwarded_allow_ips=_opt(env, "FORWARDED_ALLOW_IPS") or "127.0.0.1",
+        ready_db_stale_s=_float(env, "READY_DB_STALE_S", 30.0, 5.0, 600.0),
         admin=AdminSettings(
             host=_opt(env, "ADMIN_HOST") or host,
             port=_int(env, "ADMIN_PORT", 8081, 1, 65535),

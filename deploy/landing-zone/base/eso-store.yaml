@@ -1,0 +1,29 @@
+# External Secrets -> platform OpenBao (D-26). PENDING: the environment link (D-16) does not
+# exist yet, so there is no reachable, trusted OpenBao address and no AppRole for this
+# environment. This store stays NotReady until then; today the platform pipes Secrets in with
+# deploy/pilot/scripts/keys.sh env-pipe (CLOUD-E2E-CONTRACT §4).
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: bravo-platform-openbao
+  labels:
+    bravo.dev/link: pending
+  annotations:
+    bravo.dev/pending-reason: "D-16 link to the platform OpenBao not built; secrets are piped by keys.sh env-pipe"
+spec:
+  provider:
+    vault:
+      server: https://openbao.bravo-link.invalid:8200
+      path: secret
+      version: v2
+      auth:
+        appRole:
+          path: approle
+          roleRef:
+            name: eso-target-onprem
+            key: role_id
+            namespace: external-secrets
+          secretRef:
+            name: eso-target-onprem
+            key: secret_id
+            namespace: external-secrets

@@ -1,0 +1,50 @@
+# D-16 링크 Pod: 허용한 호출자에게서만 받고(02-network.md 4.3), Cloudflare edge(443)와 DNS로만 나감.
+# 호출자는 플랫폼 bravo-control 의 수집기 · Executor · 게이트 · 리허설 서비스(02-network.md 3절 권한 표).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: d16-links
+  namespace: bravo-link
+  labels:
+    app.kubernetes.io/part-of: bravo-link
+    bravo.io/link-mode: d16
+spec:
+  podSelector:
+    matchLabels:
+      bravo.io/link-mode: d16
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: bravo-control
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["collector", "executor", "gate", "rehearsal"]
+      ports:
+        - port: link
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # cloudflared access tcp: WebSocket over HTTPS to the Cloudflare edge. Instance metadata is excluded.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+              - 169.254.170.23/32
+      ports:
+        - port: 443
+          protocol: TCP

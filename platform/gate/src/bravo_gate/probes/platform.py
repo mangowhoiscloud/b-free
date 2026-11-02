@@ -26,6 +26,19 @@ _BOTO = Config(retries={"max_attempts": 3, "mode": "standard"}, connect_timeout=
 
 
 # --- Kubernetes ---------------------------------------------------------------------------------------------
+PARTIAL_METADATA = "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"
+
+
+def _metadata_get(api: Any, path: str, path_params: dict[str, str]) -> int:
+    """HTTP status of a metadata-only GET (PartialObjectMetadata): values of Secrets never arrive."""
+    method, url, headers, body, post = api.param_serialize(
+        method="GET", resource_path=path, path_params=path_params,
+        header_params={"Accept": PARTIAL_METADATA}, auth_settings=["BearerToken"])
+    resp = api.call_api(method, url, header_params=headers, body=body, post_params=post, _request_timeout=10)
+    resp.read()
+    return int(resp.status)
+
+
 class KubernetesProbe:
     def __init__(self, section: KubernetesSection) -> None:
         self.s = section
@@ -50,6 +63,19 @@ class KubernetesProbe:
     def _down(self) -> Obs:
         return unknown("cluster_unreachable", error=self._error)
 
+    def _missing(self, api: Any, ns: str, secret: str | None) -> Obs | None:
+        """A question about an app that is not deployed is UNKNOWN, never PASS (a SAR on a missing
+        namespace is "denied" and would look like a pass)."""
+        try:
+            if _metadata_get(api, "/api/v1/namespaces/{name}", {"name": ns}) == 404:
+                return unknown("app_namespace_missing", namespace=ns)
+            if secret and _metadata_get(api, "/api/v1/namespaces/{namespace}/secrets/{name}",
+                                        {"namespace": ns, "name": secret}) == 404:
+                return unknown("app_secret_missing", secret=f"{ns}/{secret}")
+        except Exception as exc:  # noqa: BLE001
+            return unknown("cluster_read_error", error=error_text(exc))
+        return None
+
     def secret_read(self) -> Obs:
         ns, secret = self.s.app_namespace, self.s.app_secret
         if not ns or not secret or not self.s.other_service_accounts:
@@ -59,6 +85,9 @@ class KubernetesProbe:
             return self._down()
         from kubernetes import client
 
+        missing = self._missing(api, ns, secret)
+        if missing is not None:
+            return missing
         authz = client.AuthorizationV1Api(api)
         parts: list[Obs] = []
         for ref in sorted(self.s.other_service_accounts):
@@ -76,8 +105,13 @@ class KubernetesProbe:
                     parts.append(unknown("sar_error", identity=ref, verb=verb, error=error_text(exc)))
                     continue
                 ev = {"identity": ref, "verb": verb, "secret": f"{ns}/{name or '*'}"}
-                parts.append(failed("other_identity_can_read_secret", **ev) if st.allowed
-                             else passed("other_identity_denied", **ev))
+                if st.allowed:
+                    parts.append(failed("other_identity_can_read_secret", **ev))
+                elif st.evaluation_error:
+                    # The authorizer could not evaluate every rule: "not allowed" is not a proof (audit B17).
+                    parts.append(unknown("sar_evaluation_error", error=str(st.evaluation_error)[:200], **ev))
+                else:
+                    parts.append(passed("other_identity_denied", **ev))
         return worst(parts)
 
     def default_deny(self) -> Obs:
@@ -89,6 +123,9 @@ class KubernetesProbe:
             return self._down()
         from kubernetes import client
 
+        missing = self._missing(api, ns, None)
+        if missing is not None:
+            return missing
         try:
             items = client.NetworkingV1Api(api).list_namespaced_network_policy(ns).items
         except Exception as exc:  # noqa: BLE001
@@ -150,10 +187,16 @@ class AwsProbe:
         return self.session.client(name, region_name=self.s.region, config=_BOTO)
 
     def secret_read(self) -> Obs:
-        if not self.s.secret_ids or not self.s.other_principal_arns:
+        if not self.s.secret_ids or not (self.s.other_principal_arns or self.s.other_principal_roles):
             return unknown("secret_probe_not_configured")
         sm, iam = self._c("secretsmanager"), self._c("iam")
         parts: list[Obs] = []
+        principals = set(self.s.other_principal_arns)
+        for role in sorted(self.s.other_principal_roles):
+            try:
+                principals.add(iam.get_role(RoleName=role)["Role"]["Arn"])
+            except Exception as exc:  # noqa: BLE001
+                parts.append(unknown("principal_unresolved", role=role, error=error_text(exc)))
         for sid in sorted(self.s.secret_ids):
             try:
                 arn = sm.describe_secret(SecretId=sid)["ARN"]
@@ -161,7 +204,7 @@ class AwsProbe:
             except Exception as exc:  # noqa: BLE001
                 parts.append(unknown("secret_read_error", secret=sid, error=error_text(exc)))
                 continue
-            for principal in sorted(self.s.other_principal_arns):
+            for principal in sorted(principals):
                 kwargs: dict[str, Any] = {"PolicySourceArn": principal, "ResourceArns": [arn],
                                           "ActionNames": ["secretsmanager:GetSecretValue"]}
                 if rp:
@@ -209,12 +252,14 @@ class AwsProbe:
         logging_trails = []
         for t in sorted(trails, key=lambda x: x["TrailARN"]):
             try:
-                if ct.get_trail_status(Name=t["TrailARN"]).get("IsLogging") and t.get("IsMultiRegionTrail"):
+                if not (ct.get_trail_status(Name=t["TrailARN"]).get("IsLogging") and t.get("IsMultiRegionTrail")):
+                    continue
+                if _records_management_writes(ct.get_event_selectors(TrailName=t["TrailARN"])):
                     logging_trails.append(t["Name"])
             except Exception as exc:  # noqa: BLE001
                 return unknown("cloudtrail_read_error", trail=t["Name"], error=error_text(exc))
-        parts = [passed("cloudtrail_logging", trails=logging_trails) if logging_trails
-                 else failed("no_logging_multiregion_trail", trails_seen=len(trails))]
+        parts = [passed("cloudtrail_logging_management_events", trails=logging_trails) if logging_trails
+                 else failed("no_multiregion_trail_with_management_events", trails_seen=len(trails))]
         eks = self._c("eks")
         for name in sorted(self.s.eks_clusters):
             try:
@@ -228,6 +273,24 @@ class AwsProbe:
         return worst(parts)
 
 
+def _records_management_writes(sel: dict[str, Any]) -> bool:
+    """Does the trail record management write events (logins, IAM and policy changes)? (audit B17)
+
+    Basic selectors: IncludeManagementEvents with ReadWriteType All or WriteOnly.
+    Advanced selectors: a selector with eventCategory = Management and no readOnly = true restriction.
+    """
+    for s in sel.get("EventSelectors") or []:
+        if s.get("IncludeManagementEvents") and s.get("ReadWriteType", "All") in ("All", "WriteOnly"):
+            return True
+    for s in sel.get("AdvancedEventSelectors") or []:
+        fields = {f.get("Field"): f for f in s.get("FieldSelectors") or []}
+        cat = fields.get("eventCategory") or {}
+        ro = fields.get("readOnly") or {}
+        if "Management" in (cat.get("Equals") or []) and "true" not in (ro.get("Equals") or []):
+            return True
+    return False
+
+
 # --- Network --------------------------------------------------------------------------------------------------
 def _tcp(path: str, timeout_s: float) -> str:
     host, _, port = path.rpartition(":")
@@ -238,6 +301,8 @@ def _tcp(path: str, timeout_s: float) -> str:
         return "timeout"
     except ConnectionRefusedError:
         return "refused"
+    except socket.gaierror:
+        return "dns_error"
     except OSError as exc:
         return f"error:{type(exc).__name__}"
 
@@ -254,6 +319,9 @@ def network_paths(section: NetworkSection) -> Obs:
         return unknown("denied_path_not_configured", **ev)
     if any(v == "connected" for v in denied.values()):
         return failed("denied_path_reachable", **ev)
+    if any(v not in ("refused", "timeout") for v in denied.values()):
+        # DNS failures and other errors say nothing about the network policy (audit B17).
+        return unknown("denied_path_inconclusive", **ev)
     return passed("only_allowed_paths_reachable", **ev)
 
 

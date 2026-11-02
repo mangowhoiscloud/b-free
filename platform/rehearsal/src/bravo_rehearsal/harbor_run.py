@@ -99,7 +99,10 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
         trial.finish("INFRA_ERROR", "verifier_unbound")
         return
     expected = verifier_image.rsplit("@", 1)[1]
-    if not str(record.get("image_id", "")).endswith(expected):
+    # The container status gives one repo digest; the node's image record lists every name of that same image
+    # (a side-loaded image can show another digest first). Bound when the pinned digest names that image.
+    names = [str(record.get("image_id", "")), *(str(n) for n in record.get("image_names") or [])]
+    if not any(n.endswith("@" + expected) or n.endswith(expected) for n in names if n):
         trial.finish("INFRA_ERROR", "verifier_image_mismatch")
         return
     bound = _read_json(verifier_dir / "binding.json")
@@ -112,11 +115,13 @@ def accept(trial: Trial, binding: Binding, *, exception: ExceptionInfo | None, v
         "run_id": f"{record['namespace']}/{record['pod']}",
         "pod_uid": record["pod_uid"],
         "image_digest": expected,
+        "image_id": record.get("image_id"),
         "task_version": task_version,
         "artifact_digest": trial.artifact_digest,
         "reward": float(reward),
         "checks": checks,
         "refused_uploads": record.get("refused_uploads", []),
+        "verifier_kind": trial.verifier_kind or "unknown",  # e.g. static_rules: no redeploy, no live probe
         "collected_at": now_iso(),
     }
     if reward >= 1:

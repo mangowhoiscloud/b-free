@@ -5,7 +5,6 @@
  */
 import { createContext, useContext, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Banner } from '@astryxdesign/core/Banner';
 import { Badge, type BadgeVariant } from '@astryxdesign/core/Badge';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Text } from '@astryxdesign/core/Text';
@@ -23,7 +22,7 @@ export function useConfig(): RuntimeConfig {
   return c;
 }
 
-export type Service = 'collector' | 'gate' | 'executor' | 'prometheus' | 'app-src' | 'app-dst';
+export type Service = 'collector' | 'gate' | 'prometheus';
 
 export class LiveError extends Error {
   readonly status: number;
@@ -98,19 +97,14 @@ export function useLive<T>(service: Service, path: string, intervalMs: number, p
   return { data: q.data, error: q.error, endpoint: `GET /svc/${service}/${path}`, updatedAt: q.dataUpdatedAt, isLoading: q.isLoading };
 }
 
-/** Explicit "not connected" state: what was tried and why it failed. */
+/** Explicit "not connected" state, inline (no box): what was tried and why it failed. */
 export function NotConnected({ title, endpoint, reason }: { title?: string; endpoint: string; reason: string }) {
   return (
-    <Banner
-      status="warning"
-      container="card"
-      title={title ?? '연결 안 됨'}
-      description={
-        <span>
-          {reason} · <code className="mono">{endpoint}</code>
-        </span>
-      }
-    />
+    <p className="nc" role="status">
+      <Badge variant="neutral" label={title ?? '연결 안 됨'} />
+      <span>{reason}</span>
+      <code className="mono nc__ep">{endpoint}</code>
+    </p>
   );
 }
 

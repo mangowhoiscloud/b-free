@@ -4,8 +4,6 @@
  * Granted approvals come from the plan SSE stream; the change approval's diff / image digest /
  * policy diff wait for the platform-api contract and show "연결 안 됨" until then.
  */
-import { Grid } from '@astryxdesign/core/Grid';
-import { Text } from '@astryxdesign/core/Text';
 import type { StreamStatus } from '../api/client';
 import type { ConsoleView } from '../api/derive';
 import type { DevToken, PlanEvent } from '../api/types';
@@ -33,35 +31,42 @@ export function ApprovalsScreen({ planId, view, events, status, detail, user }: 
       {!planId || !view ? (
         <NotConnected title="계획이 열려 있지 않음" endpoint="GET /v1/plans/{plan_id} · /events (SSE)" reason="승인은 계획마다 있습니다. 위의 계획 ID 칸에서 계획을 여세요(API에 계획 목록 엔드포인트가 없음)" />
       ) : (
-        <Grid columns={{ minWidth: 300 }} gap={4}>
-          {KINDS.map((k) => {
-            const mine = granted.filter((e) => str(asRecord(e.data).stage) === k.stage);
-            const waiting = view.awaiting?.stage === k.stage;
-            return (
-              <Block key={k.stage} title={k.title} meta={<Tag variant={mine.length ? 'success' : waiting ? 'warning' : 'neutral'} label={mine.length ? `승인 ${mine.length}` : waiting ? '승인 대기' : '기록 없음'} />}>
-                <Text type="supporting" color="secondary" as="p">
-                  {k.what}
-                </Text>
-                <DataTable
-                  rows={mine}
-                  rowKey={(e) => e.id}
-                  empty="이 계획에는 이 종류의 승인 기록이 없습니다."
-                  cols={[
-                    { key: 't', header: '시각', render: (e) => <span className="mono">{fmtTime(e.at)}</span> },
-                    { key: 'a', header: '승인 주체', weight: 2, render: (e) => <span className="mono">{e.actor.kind} {shortId(e.actor.principal)}</span> },
-                    { key: 'id', header: '승인 ID', render: (e) => <span className="mono">{shortId(str(asRecord(e.data).approval_id))}</span> },
-                  ]}
-                />
-                {k.stage === 'change' && (
-                  <NotConnected
-                    endpoint="platform-api change 승인 엔드포인트 (docs/architecture 계약 문서 대기)"
-                    reason="diff · 이미지 digest · 정책 diff를 내주는 API 경로와 계약 문서가 아직 없습니다. 생기면 이 자리에서 결속 내용을 보여 줍니다"
-                  />
-                )}
-              </Block>
-            );
-          })}
-        </Grid>
+        <>
+          <Block title="승인 종류">
+            <DataTable
+              rows={KINDS.map((k) => {
+                const mine = granted.filter((e) => str(asRecord(e.data).stage) === k.stage);
+                return { k, mine, waiting: view.awaiting?.stage === k.stage };
+              })}
+              rowKey={(r) => r.k.stage}
+              empty="—"
+              cols={[
+                { key: 'k', header: '종류', weight: 2, render: (r) => r.k.title },
+                { key: 's', header: '상태', render: (r) => (r.mine.length ? <Tag variant="success" label="승인됨" /> : r.waiting ? <Tag variant="warning" label="승인 대기" /> : <span className="foot">기록 없음</span>) },
+                { key: 'n', header: '승인', numeric: true, render: (r) => `${r.mine.length}건` },
+                { key: 'b', header: '결속 대상', weight: 4, render: (r) => <span className="foot">{r.k.what}</span> },
+              ]}
+            />
+            <NotConnected
+              title="change 결속 내용 연결 안 됨"
+              endpoint="platform-api change 승인 경로 (docs/architecture 계약 문서 대기)"
+              reason="diff · 이미지 digest · 정책 diff를 내주는 API 경로와 계약 문서가 아직 없습니다."
+            />
+          </Block>
+          <Block title={`승인 기록 (${granted.length}건)`}>
+            <DataTable
+              rows={granted}
+              rowKey={(e) => e.id}
+              empty="이 계획에는 승인 기록이 없습니다."
+              cols={[
+                { key: 't', header: '시각', render: (e) => <span className="mono">{fmtTime(e.at)}</span> },
+                { key: 's', header: '종류', render: (e) => str(asRecord(e.data).stage) ?? '—' },
+                { key: 'a', header: '승인 주체', weight: 2, render: (e) => <span className="mono">{e.actor.kind} {shortId(e.actor.principal)}</span> },
+                { key: 'id', header: '승인 ID', weight: 2, render: (e) => <span className="mono">{str(asRecord(e.data).approval_id) ?? '—'}</span> },
+              ]}
+            />
+          </Block>
+        </>
       )}
       {planId && view && <ApprovalPanel planId={planId} view={view} user={user} />}
     </Screen>

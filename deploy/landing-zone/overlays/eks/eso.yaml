@@ -1,0 +1,32 @@
+# External Secrets on the EKS source (spec r2 T6 "ESO + Secrets Manager"). The customer's store is
+# AWS Secrets Manager. The store has no auth block, so ESO uses the controller's own credentials:
+# EKS Pod Identity for external-secrets/external-secrets (infra/envs/source-aws/app.tf, read on
+# <name>/* only). The demo app itself still calls Secrets Manager with the SDK (S2 material, §8.10).
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: aws-secrets-manager
+  namespace: chat
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: ${AWS_REGION}
+---
+# PgBouncer auth: app_writer comes from Secrets Manager; pgb_admin and pgb_stats are platform
+# logins that the platform pipes from OpenBao into the same Secret first (creationPolicy Merge).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: chat-pgbouncer-auth
+  namespace: chat
+spec:
+  refreshInterval: 15m
+  secretStoreRef: {kind: SecretStore, name: aws-secrets-manager}
+  target:
+    name: chat-pgbouncer-auth
+    creationPolicy: Merge
+    deletionPolicy: Retain
+  data:
+    - secretKey: app_writer
+      remoteRef: {key: "${DB_SECRET_NAME}"}

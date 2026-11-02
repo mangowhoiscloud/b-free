@@ -10,6 +10,9 @@ data "cloudflare_zone" "this" {
 locals {
   zone_name = data.cloudflare_zone.this.name
   hostnames = { for env, _ in var.environments : env => "${var.app}-${env}.${local.zone_name}" }
+  # LB에 넣을 환경. 비우면 전부. 요금제의 포함 끝점 수(지금 2개)를 넘지 않게 고름.
+  lb_env_names = var.lb_environments == null ? keys(var.environments) : var.lb_environments
+  lb_envs      = var.lb_enabled ? { for env, e in var.environments : env => e if contains(local.lb_env_names, env) } : {}
 }
 
 resource "cloudflare_zero_trust_tunnel_cloudflared" "env" {
@@ -50,9 +53,10 @@ resource "cloudflare_dns_record" "env" {
   comment  = "bravo ${var.app} ${each.key} tunnel"
 }
 
-# LB 구독 전: 대표 이름을 활성 환경 터널에 바로 연결. LB를 켜면 LB가 같은 이름을 맡으므로 만들지 않음.
+# 대표 이름을 활성 환경 터널에 바로 연결. LB를 켜도 지우지 않음: LB가 같은 이름보다 우선하고,
+# LB를 끄면 이 레코드가 다시 답하므로 비상 경로가 됨(15-multicloud-traffic.md E1).
 resource "cloudflare_dns_record" "front" {
-  count   = var.lb_enabled ? 0 : 1
+  count   = 1
   zone_id = var.zone_id
   name    = "${var.app}.${local.zone_name}"
   type    = "CNAME"
@@ -81,7 +85,7 @@ resource "cloudflare_load_balancer_monitor" "app" {
 }
 
 resource "cloudflare_load_balancer_pool" "env" {
-  for_each   = var.lb_enabled ? var.environments : {}
+  for_each   = local.lb_envs
   account_id = var.account_id
   name       = "bravo-${var.app}-${each.key}"
   monitor    = cloudflare_load_balancer_monitor.app[0].id
@@ -99,15 +103,16 @@ resource "cloudflare_load_balancer" "app" {
   name            = "${var.app}.${local.zone_name}"
   proxied         = true
   steering_policy = "random"
-  default_pools   = [for env, _ in var.environments : cloudflare_load_balancer_pool.env[env].id]
-  fallback_pool   = cloudflare_load_balancer_pool.env[keys(var.environments)[0]].id
+  default_pools   = [for env, _ in local.lb_envs : cloudflare_load_balancer_pool.env[env].id]
+  # 모든 풀이 나쁠 때 갈 곳은 활성 환경(15-multicloud-traffic.md E2). keys()는 이름순이라 dst가 될 수 있었음.
+  fallback_pool = cloudflare_load_balancer_pool.env[var.active_env].id
   random_steering = {
     default_weight = 0
-    pool_weights   = { for env, e in var.environments : cloudflare_load_balancer_pool.env[env].id => e.weight }
+    pool_weights   = { for env, e in local.lb_envs : cloudflare_load_balancer_pool.env[env].id => e.weight }
   }
 
   lifecycle {
     # 이전 중 가중치(0 → 10 → 50 → 100%)는 콘솔 승인 뒤 Executor가 API로 바꿈. Terraform이 되돌리지 않게 함.
-    ignore_changes = [random_steering]
+    ignore_changes = [random_steering, fallback_pool]
   }
 }

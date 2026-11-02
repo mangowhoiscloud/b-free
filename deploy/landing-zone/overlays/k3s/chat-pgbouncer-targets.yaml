@@ -1,0 +1,19 @@
+# PgBouncer targets on the on-prem destination (CLOUD-E2E-CONTRACT §9). Each file holds only the
+# [databases] section; the Executor copies one of them to /run/pgbouncer/active.ini.
+#   target-src.ini: the source DB through the temporary link (D-16 not yet): host.lima.internal is
+#                   the laptop (platform); 15434 is SRC_DB_APP_PORT in deploy/cloud/cloud.env.
+#   target-dst.ini: the local CNPG chat-db.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-pgbouncer-targets
+  namespace: chat
+  annotations:
+    bravo.dev/link: "임시 링크(D-16 전)"
+data:
+  target-src.ini: |
+    [databases]
+    chat = host=host.lima.internal port=15434 dbname=chat
+  target-dst.ini: |
+    [databases]
+    chat = host=chat-db-rw.chat.svc.cluster.local port=5432 dbname=chat

@@ -1,0 +1,19 @@
+# Lets the RDS subscriber (source VPC private subnets) reach the reverse relay client port.
+# NetworkPolicies are additive; this one sits next to the rendered pilot-pg-link policy.
+# Note: the source EKS VPC CNI runs with --enable-network-policy=false, so neither policy is enforced today.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pilot-pg-link-from-rds
+  namespace: spike-db
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pilot-pg-link
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - ipBlock: {cidr: 10.10.11.0/24}
+        - ipBlock: {cidr: 10.10.13.0/24}
+      ports:
+        - port: 5432

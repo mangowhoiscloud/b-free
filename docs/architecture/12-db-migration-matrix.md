@@ -53,7 +53,7 @@
 
 | # | 출발 → 목적 | 정방향 방식 | 준비 | 출발지 펜싱 | 역방향(되돌리기) | 막는 것 | 판단 |
 |---|---|---|---|---|---|---|---|
-| 1 | C → C | 지금 엔진 그대로 | 없음(랜딩 존) | 지금과 같음 | CNPG 발행 → CNPG 구독, `origin = none` | 없음. 파일럿 97–107 ms | P0 |
+| 1 | C → C | 지금 엔진 그대로 | 없음(랜딩 존) | 지금과 같음 | CNPG 발행 → CNPG 구독, `origin = none` | 없음. 파일럿(노트북) 기록 76–139 ms(PostgreSQL 공식 이미지, CNPG 아님, `docs/evidence/pilot-notebook/RUNS.tsv`) | P0 |
 | 2 | C → A | CNPG 발행 → RDS · Aurora 구독(`rds_superuser`) | 목적지 IaC: 논리 디코딩을 켠 파라미터 그룹으로 생성(재부팅 없음, 추론). 구독자가 닿을 내부 LB 링크 | 지금과 같음 | RDS · Aurora 발행 → CNPG 구독 | 관리형 구독자가 우리 CA를 읽지 못함(SPK-03). `origin = none` 지원(SPK-02) | 제안. SPK-02 · 03 뒤 |
 | 3 | C → G | CNPG 발행 → Cloud SQL 구독(`cloudsqlsuperuser`) | Cloud SQL을 비HA, 공유 CA 모드, 플래그를 켜고 생성 | 지금과 같음 | Cloud SQL 발행 → CNPG 구독 | HA 구독 불가(관찰 [G2]). 구독자 CA(SPK-03). AlloyDB는 보류 | 제안, P2 |
 | 4 | A → C | RDS · Aurora 발행 → CNPG 구독 | 출발지 논리 디코딩 켜기(재부팅, 5.1) + PgBouncer 끼워 넣기(5.2) | 4.5절 권한으로 NOLOGIN, REVOKE, 세션 종료 | CNPG 발행 → RDS · Aurora 구독(꺼 둔 채 미리 생성) | 재부팅 일정. 역방향은 #2와 같은 구독자 CA 문제. Aurora 슬롯 장애 조치(SPK-08) | 첫 이전의 중심. P1 후보 |

@@ -39,7 +39,7 @@
 | 플랫폼 구성요소의 클라우드 자격 | 없음 | Workload Identity | Pod Identity |
 | 메타데이터 차단 | 해당 없음 | 메타데이터 서버 보호 | IMDSv2 hop limit 1 |
 
-쿠버네티스 minor는 셋 모두 같게 둡니다(1.35 권고). 세 환경 모두 Cilium이 정책을 집행하고 Hubble이 흐름을 남깁니다. 기본 차단 정책은 Kyverno가 같은 방식으로 만듭니다.
+쿠버네티스 minor는 셋 모두 1.36입니다(실무 결정, 팀장 확인 대기, `docs/spec/TECH-STACK-SPEC.md` 3절 7번). 세 환경 모두 Cilium이 정책을 집행하고 Hubble이 흐름을 남깁니다. 기본 차단 정책은 Kyverno가 같은 방식으로 만듭니다.
 
 ## 4. 환경 만들기: 고객에게 같은 흐름
 

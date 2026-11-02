@@ -158,3 +158,78 @@ def test_messages_columns_unchanged(stack: Stack, superuser_src: psycopg.Connect
     pubs = {r[0] for r in superuser_src.execute(
         "SELECT tablename FROM pg_publication_tables WHERE pubname = 'bravo_fwd'").fetchall()}
     assert pubs == {"messages", "bravo_barrier", "attachments", "message_attachments"}
+
+
+def test_roles_store_scram_verifiers_made_client_side(stack: Stack, superuser_src: psycopg.Connection) -> None:
+    """B19: 00-bravo-init.sh hashes on the client; the server holds SCRAM verifiers only."""
+    rows = superuser_src.execute(
+        "SELECT rolname, rolpassword FROM pg_authid WHERE rolname = ANY(%s) ORDER BY rolname",
+        (["app_writer", "executor_ctl", "executor_observe", "replicator"],),
+    ).fetchall()
+    assert [r[0] for r in rows] == ["app_writer", "executor_ctl", "executor_observe", "replicator"]
+    for name, verifier in rows:
+        assert verifier.startswith("SCRAM-SHA-256$4096:"), name
+        assert stack.passwords[name] not in verifier
+    # And the verifier is valid: SCRAM login with the real password works.
+    for user in ("app_writer", "executor_ctl", "executor_observe"):
+        with psycopg.connect(stack.dsn("src", user)) as conn:
+            assert conn.execute("SELECT current_user").fetchone()[0] == user  # type: ignore[index]
+
+
+def test_replication_password_stays_out_of_logs_and_catalog_reads(stack: Stack) -> None:
+    """B19: repl-setup passes the replication password by environment (\\getenv), never argv; the
+    CREATE SUBSCRIPTION session keeps it out of the server log; only superusers read subconninfo."""
+    from .conftest import _docker
+
+    for side in ("src", "dst"):
+        logs = _docker("logs", f"{stack.tag}-{side}", check=False)
+        assert stack.passwords["replicator"] not in logs.stdout + logs.stderr, side
+        with psycopg.connect(stack.dsn(side, "executor_ctl")) as conn:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                conn.execute("SELECT subconninfo FROM pg_subscription")
+    with psycopg.connect(stack.dsn("dst", "postgres")) as conn:
+        assert conn.execute(
+            "SELECT pid IS NOT NULL FROM pg_stat_subscription WHERE subname = 'bravo_fwd_sub' AND relid IS NULL"
+        ).fetchone()[0] is True  # type: ignore[index]
+
+
+def test_planted_regression_is_off_by_default(stack: Stack) -> None:
+    """Item 28: the 심은 시나리오 grant exists only with BRAVO_PLANT_REGRESSION=1."""
+    with psycopg.connect(stack.dsn("dst", "postgres")) as conn:
+        assert conn.execute("SELECT has_table_privilege('public', 'messages', 'SELECT')").fetchone()[0] is False  # type: ignore[index]
+
+
+def test_planted_regression_with_flag(stack: Stack) -> None:
+    """Item 28: a dst initialised with BRAVO_PLANT_REGRESSION=1 has the planted grant."""
+    from .conftest import PG_IMAGE, SCHEMA_DIR, _docker, _host_port, _wait_pg
+
+    name = f"{stack.tag}-plant"
+    pw = stack.passwords
+    _docker(
+        "run", "-d", "--name", name, "-p", "127.0.0.1::5432",
+        "-e", "POSTGRES_DB=chat", "-e", f"POSTGRES_PASSWORD={pw['postgres']}",
+        "-e", "BRAVO_SCHEMA_DIR=/bravo-schema/sql", "-e", "BRAVO_SIDE=dst", "-e", "BRAVO_PLANT_REGRESSION=1",
+        "-e", f"APP_WRITER_PASSWORD={pw['app_writer']}", "-e", f"REPLICATOR_PASSWORD={pw['replicator']}",
+        "-e", f"EXECUTOR_CTL_PASSWORD={pw['executor_ctl']}",
+        "-e", f"EXECUTOR_OBSERVE_PASSWORD={pw['executor_observe']}",
+        "-v", f"{SCHEMA_DIR / '00-bravo-init.sh'}:/docker-entrypoint-initdb.d/00-bravo-init.sh:ro",
+        "-v", f"{SCHEMA_DIR / 'sql'}:/bravo-schema/sql:ro",
+        PG_IMAGE, "postgres", "-c", "wal_level=logical",
+    )
+    try:
+        port = _host_port(name, 5432)
+        dsn = f"host=127.0.0.1 port={port} dbname=chat user=postgres password={pw['postgres']}"
+        _wait_pg(dsn)
+        deadline = time.monotonic() + 60
+        while True:
+            with psycopg.connect(dsn) as conn:
+                if conn.execute("SELECT to_regclass('attachment_store')").fetchone()[0] is not None:  # type: ignore[index]
+                    granted = conn.execute("SELECT has_table_privilege('public', 'messages', 'SELECT')").fetchone()[0]  # type: ignore[index]
+                    if granted or time.monotonic() > deadline:
+                        break
+            time.sleep(0.5)
+        assert granted is True
+        logs = _docker("logs", name, check=False)
+        assert "심은 시나리오 적용" in logs.stdout + logs.stderr
+    finally:
+        _docker("rm", "-f", "-v", name, check=False)

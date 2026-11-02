@@ -154,10 +154,10 @@ flowchart LR
 
 **Trial 1회의 흐름(2026-11-02 구현).**
 
-1. `harbor_task`가 템플릿(`platform/agent/harbor/<task>`, 없으면 `tasks/templates/<task>`)으로 Trial용 task 폴더를 만듭니다. 정답 해(`solution/`)는 넣지 않습니다. 분리 검증기와 no-network를 강제하고, `artifacts`를 비웁니다. `tests/test.sh`가 없으면 플랫폼 검증 진입점을 넣습니다.
+1. `harbor_task`가 템플릿(`platform/agent/harbor/<task>`, 없으면 `tasks/templates/<task>`)과 고객 저장소 스냅숏(수집기 인벤토리 digest에 묶여 올라온 것만, 없으면 `/src`는 비어 있음)으로 Trial용 task 폴더를 만듭니다. 정답 해(`solution/`)는 넣지 않습니다. 분리 검증기와 no-network를 강제하고, `artifacts`를 비웁니다. `tests/test.sh`가 없으면 플랫폼 검증 진입점을 넣습니다.
 2. Harbor가 에이전트 환경을 띄웁니다. 어댑터가 `rehearsal-<plan>-<n>`, 기본선, exec RBAC, 샌드박스 Pod를 만들고, 격리 시험 뒤 앱 작업 사본(`environment/app`)을 exec 계정으로 `/app`에 넣습니다.
 3. Harbor가 `RehearsalAgent.run`을 부릅니다. 모델 자격, 역할 허용 목록, Trial 결속 중 하나라도 없으면 워커를 띄우지 않고 이유(`llm_unconfigured`, `role_allowlist_missing` 등)로 실패합니다. 워커는 `/mcp` 도구 계층으로만 일하고, `plan_propose`가 산출물을 고정합니다. 워커가 끝나면 플랫폼이 고정된 매니페스트를 리허설 네임스페이스에 적용하고, 서버 쪽 도구 호출 기록으로 궤적(ATIF)을 씁니다.
-4. Harbor가 분리 검증기를 돌립니다. 같은 어댑터가 `verify-<plan>-<n>`과 검증 Pod(digest 고정 검증 이미지)를 만들고, 고정된 산출물을 플랫폼에서 `/input/artifact.json`으로 넣습니다. 샌드박스에서 오는 업로드는 `/tests` 밖이면 거부하고 기록합니다. 검증 진입점이 비공개 테스트를 돌려 `reward.json`과 산출물 digest(`binding.json`)를 씁니다.
+4. Harbor가 분리 검증기를 돌립니다. 같은 어댑터가 `verify-<plan>-<n>`과 검증 Pod(digest 고정 검증 이미지)를 만들고, 고정된 산출물을 플랫폼에서 `/input/artifact.json`으로 넣습니다. 샌드박스에서 오는 업로드는 `/tests` 밖이면 거부하고 기록합니다. 검증 진입점이 비공개 정적 규칙(`tests/verify.py`: 스키마, Trial 결속, 정책 규칙)으로 고정된 제안서 JSON을 판정해 reward와 산출물 digest(`binding.json`)를 씁니다. 재배포 뒤 동작 시험(예: RGW 버킷 익명 GET 거부)은 아직 없어서, 판정 기록에 `verifier_kind: static_rules`를 남깁니다(stub-audit B7).
 5. 판정(`harbor_run.accept`)은 분리 모드의 reward, 어댑터가 K8s API에서 본 검증 Pod UID와 이미지 digest, 산출물 digest가 모두 맞을 때만 받습니다. 에이전트가 샌드박스에 미리 써 둔 reward 파일(Harbor issue #2551)은 읽지 않습니다. Harbor가 두 환경을 멈추면 어댑터가 네임스페이스를 지우고, 남은 것은 Trial에 기록합니다(V6).
 
 파일 전송은 exec 채널 위 tar 스트림입니다. stdin으로 base64 줄과 `EOF` 표시를 보내고, Pod 안 `python3`가 tar의 `data` 필터로 풉니다. 받기는 반대 방향입니다. 실제 K3s에서의 실행은 아직 확인하지 못했습니다(클러스터 시험은 `BRAVO_REHEARSAL_KUBECONFIG`가 있을 때만 돕니다).

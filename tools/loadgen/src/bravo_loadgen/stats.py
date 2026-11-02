@@ -64,6 +64,7 @@ def _round(v: float | None) -> float | None:
 
 @dataclass(frozen=True, slots=True)
 class Nfr2Result:
+    sent: int
     acked: int
     found_once: int
     lost: list[str]
@@ -71,25 +72,43 @@ class Nfr2Result:
     failed: int
 
     @property
+    def accounted(self) -> bool:
+        """Every request ended either acked or failed (nothing silently dropped)."""
+        return self.sent == self.acked + self.failed
+
+    @property
     def ok(self) -> bool:
-        return not self.lost and not self.duplicated and self.failed == 0
+        return (
+            self.acked > 0
+            and self.accounted
+            and not self.lost
+            and not self.duplicated
+            and self.failed == 0
+        )
 
     def as_dict(self) -> dict[str, object]:
         return {
             "ok": self.ok,
+            "sent": self.sent,
             "acked": self.acked,
+            "accounted": self.accounted,
             "found_exactly_once": self.found_once,
             "lost": len(self.lost),
             "duplicated": len(self.duplicated),
             "failed_requests": self.failed,
             "lost_sample": self.lost[:10],
             "duplicated_sample": self.duplicated[:10],
+            "duplicate_rule": "rows per request body marker (not the UNIQUE idem_key)",
         }
 
 
-def evaluate_nfr2(acked_keys: Sequence[UUID], counts: Mapping[UUID, int], failed: int) -> Nfr2Result:
-    """Every acked idem_key must be present exactly once in the final DB, and no request may fail."""
-    lost = [str(k) for k in acked_keys if counts.get(k, 0) == 0]
-    dup = [str(k) for k in acked_keys if counts.get(k, 0) > 1]
-    once = sum(1 for k in acked_keys if counts.get(k, 0) == 1)
-    return Nfr2Result(acked=len(acked_keys), found_once=once, lost=lost, duplicated=dup, failed=failed)
+def evaluate_nfr2(
+    acked_keys: Sequence[UUID], rows_per_marker: Mapping[UUID, int], failed: int, sent: int
+) -> Nfr2Result:
+    """NFR-2 on the final DB. ``rows_per_marker`` counts rows whose body carries the request's own
+    marker (``load message <request id>``), so a duplicate written under another idem_key is
+    still seen; the UNIQUE idem_key alone would make duplicates impossible to observe."""
+    lost = [str(k) for k in acked_keys if rows_per_marker.get(k, 0) == 0]
+    dup = [str(k) for k in acked_keys if rows_per_marker.get(k, 0) > 1]
+    once = sum(1 for k in acked_keys if rows_per_marker.get(k, 0) == 1)
+    return Nfr2Result(sent=sent, acked=len(acked_keys), found_once=once, lost=lost, duplicated=dup, failed=failed)

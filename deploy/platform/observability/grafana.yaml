@@ -1,0 +1,91 @@
+# Grafana 13.3.0. Anonymous access off. No public route: operators reach it with kubectl port-forward.
+# The admin password comes from Secret grafana-admin (key admin_password). That Secret is not in Git:
+# keys.sh pipes OpenBao secret/platform/grafana (field admin_password) into it (D-26). Without it the pod does not start.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana
+  labels: { app.kubernetes.io/name: grafana }
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels: { app.kubernetes.io/name: grafana }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: grafana }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: grafana }
+    spec:
+      serviceAccountName: grafana
+      automountServiceAccountToken: false
+      nodeSelector: { bravo.io/pool: core }
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: grafana
+          image: grafana/grafana@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205 # 13.3.0
+          env:
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "false" }
+            - { name: GF_SECURITY_ADMIN_PASSWORD__FILE, value: /run/secrets/grafana/admin_password }
+            - { name: GF_PATHS_DATA, value: /var/lib/grafana }
+            - { name: GF_PATHS_PROVISIONING, value: /etc/grafana/provisioning }
+            - { name: GF_LOG_MODE, value: console }
+            # Egress is limited to DNS and this namespace: no update or plugin checks.
+            - { name: GF_ANALYTICS_REPORTING_ENABLED, value: "false" }
+            - { name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false" }
+            - { name: GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES, value: "false" }
+            - { name: GF_PLUGINS_PREINSTALL_DISABLED, value: "true" }
+          ports:
+            - { name: http, containerPort: 3000 }
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: admin, mountPath: /run/secrets/grafana, readOnly: true }
+            - { name: datasources, mountPath: /etc/grafana/provisioning/datasources, readOnly: true }
+            - { name: data, mountPath: /var/lib/grafana }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: admin
+          secret:
+            secretName: grafana-admin
+            items: [{ key: admin_password, path: admin_password }]
+        - name: datasources
+          configMap: { name: grafana-datasources }
+        - name: data
+          emptyDir: { sizeLimit: 256Mi }
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels: { app.kubernetes.io/name: grafana }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: grafana }
+  ports:
+    - { name: http, port: 3000, targetPort: http }

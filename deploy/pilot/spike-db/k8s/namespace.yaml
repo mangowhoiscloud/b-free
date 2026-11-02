@@ -1,0 +1,8 @@
+# Spike namespace (docs/architecture/12-db-migration-matrix.md 11절). Deleted at teardown.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spike-db
+  labels:
+    component: spike
+    app.kubernetes.io/part-of: bravo-spike-db

@@ -8,3 +8,11 @@
 | `controls.tsv` | 환경별 통제 시험 결과 | T14 |
 | `rehearsals.tsv` | 리허설 결과, 차단 건수, 검증 판정 | T15, T26 |
 | `isolation.tsv` | 리허설 격리 시험 결과 | T3 |
+
+## 있는 것
+
+| 위치 | 내용 | 환경 |
+|---|---|---|
+| [pilot-notebook/](pilot-notebook/README.md) | 노트북 Compose 파일럿의 스모크 11회 · 계약 시험 5회 원본 사본과 실행별 PASS · FAIL(`RUNS.tsv`). 감사 B22 | **파일럿(노트북) 기록.** 클라우드 결과 아님 |
+
+클라우드(출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS)에서 낸 실행 기록은 아직 없습니다(2026-11-02 20:45 KST). 데모 사전 실행 기록은 `docs/demo/SCRIPT.md` 5절이 이 폴더의 행을 가리킵니다.

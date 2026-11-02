@@ -1,0 +1,36 @@
+# Applied to the ON-PREM K3s (context bravo-onprem). The platform collector reads the K3s API through the D-16
+# link dst-k8s (t1-dst-k8s.mangowhois.ai, Access service token plat-dst-k8s) with a TokenRequest token of this
+# ServiceAccount (168h, kept only in OpenBao secret/envs/target-onprem/collector-k8s, re-minted by
+# deploy/platform/scripts/onprem-collector-token.sh). Read-only, the same rules as the source ClusterRole. No Secrets.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bravo-collector
+  namespace: kube-system
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bravo-collector-read
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+rules:
+  - apiGroups: [""]
+    resources: [nodes, namespaces, pods]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bravo-collector-read
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: bravo-collector-read}
+subjects:
+  - {kind: ServiceAccount, name: bravo-collector, namespace: kube-system}

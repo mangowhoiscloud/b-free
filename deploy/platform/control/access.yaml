@@ -1,0 +1,16 @@
+# Cloudflare Access settings for the platform API and operator MCP (CLOUD-E2E-CONTRACT 6 "Access 설정 값",
+# infra/envs/edge/access.tf, applied 2026-11-02 20:5x). Not secret. The API accepts ONLY Access JWTs
+# (Cf-Access-Jwt-Assertion); BRAVO_DEV_AUTH=0, no dev login, no public bypass. The jwks-sync sidecar keeps
+# the JWKS file fresh from certs_url (Access rotates its signing keys).
+# Console app bravo-platform (b-free.mangowhois.ai) and MCP app bravo-platform-mcp (b-free.mangowhois.ai/mcp,
+# Managed OAuth) are on one host: the API picks the allowed AUD by path (/mcp -> mcp_aud, else console_aud).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-access
+  namespace: bravo-control
+data:
+  issuer: "https://falling-rain-1f1c.cloudflareaccess.com"
+  certs_url: "https://falling-rain-1f1c.cloudflareaccess.com/cdn-cgi/access/certs"
+  console_aud: "bcaacf0741fb858e899a672ebd8f93e0fdf35c8ddf112b85bec7cbf6c2493443"
+  mcp_aud: "59e040227a6e74ec26645f184927486ae144bf1244b77ee610a2b5bc8691b523"

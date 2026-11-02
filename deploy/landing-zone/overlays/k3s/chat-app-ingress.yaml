@@ -1,0 +1,17 @@
+# The app NetworkPolicy (chart) admits only ns cf-edge. Traffic through the Cilium Gateway reaches
+# the app from Envoy with the reserved "ingress" identity, which a Kubernetes NetworkPolicy cannot
+# name, so this Cilium policy admits exactly that identity on the app port.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: chat-app-from-gateway
+  namespace: chat
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: chat
+      app.kubernetes.io/name: bravo-demo
+  ingress:
+    - fromEntities: [ingress]
+      toPorts:
+        - ports: [{port: "8000", protocol: TCP}]

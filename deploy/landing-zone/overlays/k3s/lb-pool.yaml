@@ -1,0 +1,10 @@
+# Cilium LB-IPAM pool so LoadBalancer Services (the Gateway's cilium-gateway-bravo-gateway) get
+# an address and the Gateway reports Programmed. Not announced outside the cluster (no L2/BGP):
+# the only way in from outside is the Cloudflare tunnel (cf-edge).
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: bravo-internal
+spec:
+  blocks:
+    - cidr: 172.31.250.0/28

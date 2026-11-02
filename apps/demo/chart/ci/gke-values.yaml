@@ -1,5 +1,8 @@
+# EXAMPLE VALUES - render tests only (helm lint / kubeconform). Not for deployment.
 # GKE: same chart; GCS through its XML API with HMAC keys, same variable names as S3.
-image: {repository: ghcr.io/example/bravo-demo, digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"}
+image:
+  repository: registry.example.invalid/bravo-demo   # EXAMPLE
+  digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"   # EXAMPLE
 environment: {id: gcp, label: GCP, labelJa: GCP}
 db:
   dsnSecret: {name: bravo-demo-db, key: dsn}
@@ -8,9 +11,9 @@ db:
 attachments:
   storeId: gcp
   s3:
-    bucket: bravo-demo-attachments
+    bucket: example-attachments-bucket   # EXAMPLE
     endpointUrl: https://storage.googleapis.com
     region: auto
     addressingStyle: path
     credentialsSecret: {name: bravo-demo-gcs-hmac}
-otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}
+otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}   # EXAMPLE

@@ -1,0 +1,30 @@
+# StorageClasses with the landing-zone names (docs/architecture/09-cni-csi.md §1): EBS CSI gp3,
+# encrypted with the EBS CMK of infra/modules/cluster/eks (output ebs_kms_key_arn; the EBS CSI
+# controller role has kms use on it through EC2 only). Delete is for the demo; production uses Retain.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-db
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  csi.storage.k8s.io/fstype: xfs
+  encrypted: "true"
+  kmsKeyId: ${EBS_KMS_KEY_ARN}
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-general
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  csi.storage.k8s.io/fstype: ext4
+  encrypted: "true"
+  kmsKeyId: ${EBS_KMS_KEY_ARN}
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true

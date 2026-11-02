@@ -121,7 +121,7 @@ def test_response_shape_failure_isolation_and_not_configured(apis):
         r = c.get("/v1/clusters")
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"observed_at", "clusters", "not_configured"}
+    assert set(body) == {"observed_at", "clusters", "not_configured", "credential_source"}
     assert body["observed_at"].endswith("Z")
     by_id = {x["cluster_id"]: x for x in body["clusters"]}
     assert set(by_id) == {"bravo-source", "broken"}
@@ -198,10 +198,20 @@ def test_eks_token_format_offline():
 
 def test_short_error_redacts_tokens():
     msg = cl.short_error(RuntimeError("Bearer k8s-aws-v1.abcDEF_123 rejected"))
-    assert "abcDEF" not in msg and "[redacted]" in msg
+    assert "abcDEF" not in msg and "redacted" in msg
 
 
 def test_default_factory_not_configured(monkeypatch):
     monkeypatch.delenv("BRAVO_TEST_UNSET_KUBECONFIG", raising=False)
     with pytest.raises(cl.NotConfigured):
         cl.default_api_factory(KubernetesSection(provider="k3s", kubeconfig_env="BRAVO_TEST_UNSET_KUBECONFIG"))
+
+
+def test_failed_read_is_unknown_not_absent():
+    """Audit 36: when the workloads list fails, workload rows are present=None, not False."""
+    rows = cl.detect_landing_zone([{"name": "kube-system"}], [], ["bravo-db"], [], frozenset({"workloads"}))
+    by = {r["component"]: r for r in rows}
+    assert by["cloudnative-pg"]["present"] is None and "could not be read" in by["cloudnative-pg"]["detail"]
+    assert by["storageclass bravo-db"]["present"] is True  # storage classes were read
+    rows2 = cl.detect_landing_zone([{"name": "kube-system"}], [], ["bravo-db"], [])
+    assert {r["component"]: r for r in rows2}["cloudnative-pg"]["present"] is False

@@ -1,0 +1,37 @@
+# Real targets of the cloud E2E (deploy/CLOUD-E2E-CONTRACT.md §2). One registry for the collector
+# (FR-1) and the gate (FR-6, FR-12); each reads its own keys and ignores the rest.
+# References only: kubectl contexts, bucket / role / secret names. No account id, no credential.
+# Credentials come from the standard chains of whoever runs the tools (operator now, Pod Identity later).
+# Terraform-generated names (random suffix) are from infra/envs/source-aws outputs as of 2026-11-02.
+environments:
+  source-aws:
+    display_name: 출발지 Amazon EKS bravo-source (ap-northeast-2)
+    kubernetes:
+      context: bravo-source
+      namespaces: [chat]
+      app_namespace: chat
+      app_secret: chat-admin             # the one K8s Secret the chart creates in every environment
+      other_service_accounts: [chat/chat-db, chat/bravo-executor, default/default]
+      restore_cluster: chat/chat-db-restore
+    aws:
+      region: ap-northeast-2
+      secret_ids: [bravo-source/chat/db-app]
+      other_principal_roles: [bravo-source-node-40ca019e8ee974e33ed7633028, bravo-source-ebs-csi-fea7b6132bc602d9a2d7364f49]
+      eks_clusters: [bravo-source]
+      app_namespaces: [chat]
+      s3_buckets: [bravo-source-attachments-e8c4128d1fe51a0ea466556c84]
+      iam_role_names: [bravo-source-chat-app-d0fe673177d4c1201078daddec]
+    object_store:
+      bucket: bravo-source-attachments-e8c4128d1fe51a0ea466556c84
+      region: ap-northeast-2
+      read_credential: {default_chain: true}   # canary presence and encryption facts only
+      write_probes: false                      # no PUT on the real bucket without approval
+  target-onprem:
+    display_name: 목적지 온프렘 K3s bravo-onprem (Lima)
+    kubernetes:
+      context: bravo-onprem
+      namespaces: [chat]
+      app_namespace: chat
+      app_secret: chat-admin
+      other_service_accounts: [chat/chat-db, chat/bravo-executor, default/default]
+      restore_cluster: chat/chat-db-restore

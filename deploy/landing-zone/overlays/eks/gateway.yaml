@@ -1,0 +1,69 @@
+# In-cluster entry (CLOUD-E2E-CONTRACT §3): Gateway bravo-gateway in ns bravo-edge, Cilium implementation,
+# Service cilium-gateway-bravo-gateway. cloudflared (ns cf-edge) sends both public names here.
+# No LoadBalancer Service (EKS would create an ELB): CiliumGatewayClassConfig only offers LoadBalancer or
+# NodePort, so the class uses NodePort. Nodes sit in private subnets with no public IP; the tunnel reaches
+# the Service ClusterIP from inside the cluster. Namespace bravo-edge comes from base/namespaces.yaml.
+apiVersion: cilium.io/v2alpha1
+kind: CiliumGatewayClassConfig
+metadata:
+  name: bravo-nodeport
+  namespace: bravo-edge
+spec:
+  service:
+    type: NodePort
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: bravo-cilium
+spec:
+  controllerName: io.cilium/gateway-controller
+  description: Cilium Envoy, Service NodePort (no cloud load balancer)
+  parametersRef:
+    group: cilium.io
+    kind: CiliumGatewayClassConfig
+    name: bravo-nodeport
+    namespace: bravo-edge
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: bravo-gateway
+  namespace: bravo-edge
+spec:
+  gatewayClassName: bravo-cilium
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: chat
+---
+# Customer app route. The admin Service chat-admin (8081) is never a backend here (contract §8).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: chat
+  namespace: chat
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: bravo-gateway
+      namespace: bravo-edge
+      sectionName: http
+  hostnames:
+    - b-free-chat-src.mangowhois.ai
+    - b-free-chat.mangowhois.ai
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: chat-bravo-demo
+          port: 80

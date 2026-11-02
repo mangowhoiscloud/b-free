@@ -1,0 +1,42 @@
+# Default deny (11-landing-zone §2 "정책"): Kyverno generates a NetworkPolicy "default-deny"
+# (all ingress and egress, every pod) in each enrolled namespace, and keeps it (synchronize).
+# Enrolled: every Trial sandbox (rehearsal-*, verify-*) and any namespace labelled
+# bravo.dev/default-deny=enabled. Allow rules are added next to it, never by editing it.
+apiVersion: policies.kyverno.io/v1
+kind: GeneratingPolicy
+metadata:
+  name: bravo-default-deny
+spec:
+  evaluation:
+    admission: {enabled: true}
+    generateExisting: {enabled: true}
+    synchronize: {enabled: true}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  matchConditions:
+    - name: enrolled
+      expression: >-
+        object.metadata.name.startsWith('rehearsal-') ||
+        object.metadata.name.startsWith('verify-') ||
+        (has(object.metadata.labels) && 'bravo.dev/default-deny' in object.metadata.labels &&
+         object.metadata.labels['bravo.dev/default-deny'] == 'enabled')
+  variables:
+    - name: nsName
+      expression: object.metadata.name
+    - name: downstream
+      expression: >-
+        [
+          {
+            "apiVersion": dyn("networking.k8s.io/v1"),
+            "kind": dyn("NetworkPolicy"),
+            "metadata": dyn({"name": "default-deny", "namespace": string(variables.nsName),
+                             "labels": {"bravo.dev/generated-by": "kyverno-bravo-default-deny"}}),
+            "spec": dyn({"podSelector": {}, "policyTypes": ["Ingress", "Egress"]})
+          }
+        ]
+  generate:
+    - expression: generator.Apply(variables.nsName, variables.downstream)

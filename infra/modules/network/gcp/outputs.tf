@@ -37,3 +37,13 @@ output "service_range_name" {
   description = "Service 보조 대역 이름"
   value       = local.service_range_name
 }
+
+output "proxy_only_cidr" {
+  description = "프록시 전용 서브넷 대역(없으면 null)"
+  value       = var.proxy_only_cidr
+}
+
+output "subnet_name" {
+  description = "노드 서브넷 이름"
+  value       = google_compute_subnetwork.nodes.name
+}

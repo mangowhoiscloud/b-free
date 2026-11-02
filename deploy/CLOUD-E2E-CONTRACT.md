@@ -39,18 +39,60 @@
 - 목적지(온프렘)는 이미지 tar를 K3s containerd로 가져옵니다(폐쇄망 방식). AWS에 의존하지 않습니다.
 - 두 쪽 모두 digest로 고정합니다.
 
-## 6. 앞단
+## 6. 앞단(이름 바뀜, 류지환 지시 2026-11-02 20:4x)
 
-- `b-free.mangowhois.ai`가 대표 이름입니다. LB 구독 전에는 활성 환경의 터널을 가리키는 CNAME 하나입니다(`infra/envs/edge`).
-- 전환은 Executor가 Cloudflare API로 합니다. 토큰은 OpenBao에서 그 실행 동안만 받습니다.
-- `b-free-src`, `b-free-dst`는 환경별 직접 이름입니다.
+| 이름 | 무엇 | 터널 | OpenBao 토큰 |
+|---|---|---|---|
+| `b-free.mangowhois.ai` | **우리 플랫폼**(콘솔 · API · MCP). 플랫폼 EKS의 Gateway `bravo-gateway`(ns `bravo-edge`)로 | `bravo-platform` | `secret/envs/platform/cf-tunnel` |
+| `b-free-chat.mangowhois.ai` | 고객 데모 앱 대표 이름. LB 전에는 활성 환경 터널을 가리키는 CNAME, 전환은 Executor(`front.py`). **코드만, 미실행**: CNAME 전환과 LB 가중치 모두 실제 실행 기록이 없음(감사 B21, 2026-11-02 20:4x) | - | - |
+| `b-free-chat-src.mangowhois.ai` | 출발지(EKS) 앱 | `bravo-b-free-chat-src` | `secret/envs/source-aws/cf-tunnel` |
+| `b-free-chat-dst.mangowhois.ai` | 목적지(온프렘 K3s) 앱 | `bravo-b-free-chat-dst` | `secret/envs/target-onprem/cf-tunnel` |
+
+- 플랫폼 API는 Cloudflare Access JWT만 받습니다. 공개로 우회하는 길을 만들지 않습니다.
 - 터널 원격 설정의 `origin_service`는 3절의 진입 Service로 맞추고 `infra/envs/edge/terraform.tfvars`를 고칩니다.
+
+**LB(2026-11-02 20:4x 적용, `lb_enabled = true`).** LB `b-free-chat.mangowhois.ai`(random steering), pool `bravo-b-free-chat-src`(가중치 1, fallback) · `bravo-b-free-chat-dst`(가중치 0), 모니터 HTTPS `GET /healthz` 200, 60초. Host 헤더는 pool 끝점의 환경 이름이 모니터보다 우선합니다. 대표 CNAME은 비상 경로로 남아 있습니다. 요금제는 끝점 2개 포함이라 `lb_environments = ["src", "dst"]`로 gke pool은 만들지 않았습니다(gke를 넣으면 3개). 20:5x 상태: dst pool 정상(200), src pool 비정상(530, `bravo-b-free-chat-src` 터널에 커넥터 없음). 그래서 대표 이름은 530(1033)입니다. 가중치는 Executor가 바꿉니다.
+
+**Access 설정 값(2026-11-02 20:5x 적용, `infra/envs/edge/access.tf`).** 비밀이 아닙니다. 플랫폼 API · `operator-mcp`가 `Cf-Access-Jwt-Assertion`을 검증할 때 씁니다.
+
+| 설정(`platform/api` 환경 변수) | 값 |
+|---|---|
+| `BRAVO_JWT_ISSUER`(iss) | `https://falling-rain-1f1c.cloudflareaccess.com` |
+| JWKS(`BRAVO_JWKS_PATH`가 가리킬 파일의 원본) | `https://falling-rain-1f1c.cloudflareaccess.com/cdn-cgi/access/certs`(RS256 키 2개, 교체됨) |
+| `BRAVO_CONSOLE_AUD`(Access 앱 `bravo-platform`, 도메인 `b-free.mangowhois.ai`) | `bcaacf0741fb858e899a672ebd8f93e0fdf35c8ddf112b85bec7cbf6c2493443` |
+| `BRAVO_MCP_AUD`(Access 앱 `bravo-platform-mcp`, 도메인 `b-free.mangowhois.ai/mcp`) | `59e040227a6e74ec26645f184927486ae144bf1244b77ee610a2b5bc8691b523` |
+| `BRAVO_MCP_ALLOWED_HOSTS` | `b-free.mangowhois.ai` |
+
+- 두 앱 모두 정책 `bravo platform operators`(Allow, 팀장 이메일 하나. 이메일은 gitignore된 `terraform.tfvars`에만)와 로그인 방법 One-time PIN 하나만 받습니다.
+- MCP 앱은 Access Managed OAuth를 켰습니다. DCR 허용(localhost · loopback 리디렉트), 접근 토큰 15분, grant 세션 168시간. 토큰 없는 요청은 `401` + `WWW-Authenticate: Bearer … resource_metadata="https://b-free.mangowhois.ai/.well-known/cloudflare-access-protected-resource/mcp"`. 인가 서버 메타데이터는 `https://falling-rain-1f1c.cloudflareaccess.com/.well-known/oauth-authorization-server`.
+- 콘솔과 MCP가 같은 호스트이고 경로로 나뉩니다(`08-operator-mcp.md`의 `mcp.<도메인>` 안과 다름). 그래서 API는 호스트가 아니라 경로로 허용 AUD를 고릅니다. `/mcp`는 MCP AUD만, 나머지는 콘솔 AUD만 받습니다.
+- Managed OAuth로 들어온 요청의 실제 `aud`는 첫 실제 연결에서 확인합니다(`08` 12절).
+- `bravo-platform` 터널에 아직 커넥터가 없어 `b-free`는 로그인 뒤 530입니다. 커넥터는 Access 앱이 있는 지금부터 띄워도 됩니다.
+
+## 6.1 노트북 Compose 파일럿은 내림
+
+류지환 지시(2026-11-02): "compose는 다 내려. 혼선을 주니까." 실제 대상은 출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS뿐입니다. 예외는 플랫폼 키 보관소 `platform-bao` 하나입니다. 플랫폼 EKS로 옮기는 동안만 노트북에서 돌고, UI는 없습니다. 시험이 잠깐 띄우고 지우는 컨테이너는 괜찮습니다.
 
 ## 7. 환경 사이 링크
 
-- D-16 목표는 Cloudflare Tunnel + Access 서비스 토큰입니다. Zero Trust가 아직 꺼져 있어 지금은 쓸 수 없습니다.
+- D-16 목표는 Cloudflare Tunnel + Access 서비스 토큰입니다. Zero Trust Free가 2026-11-02 20:5x에 켜졌고, Cloudflare 쪽(Access 앱, Service Auth 정책, 관리 Tunnel, DNS)은 적용했습니다(`infra/envs/edge/links.tf`, `infra/modules/edge_link/cloudflare`). 클러스터 쪽(관리 Tunnel 커넥터, `bravo-link`)은 아직입니다. 그때까지 아래 임시 링크를 씁니다.
 - 그전까지 쓰는 임시 링크는 플랫폼(노트북)의 `kubectl port-forward`입니다. 목적지 K3s(Lima)는 `host.lima.internal`로 노트북 포트에 닿습니다.
 - 임시 링크는 문서와 콘솔에 "임시 링크(D-16 전)"로 표시합니다.
+
+**링크 이름과 토큰(D-16, 2026-11-02 20:5x).** 호스트는 `t1-<노출 환경>-<서비스>.mangowhois.ai`, 토큰은 `<소비>-<노출 환경>-<서비스>`(`02-network.md` 4.1)입니다. 토큰은 `keys.sh issue-service-token`이 만들어 OpenBao에만 씁니다. 필드 `client_id`, `client_secret`, `token_id`, `name`, `expires_at`. 만료 2026-11-09 11:50 UTC(168시간). Terraform에는 ID만 들어갑니다.
+
+| 링크 호스트 | 원본(노출 클러스터 안) | 토큰(ID) | OpenBao |
+|---|---|---|---|
+| `t1-src-k8s` | `tcp://kubernetes.default.svc:443` | `plat-src-k8s`(`ab5f3dc8-5be9-4f52-a9ad-3eac65b5e5b0`) | `secret/envs/platform/cf-link-src-k8s` |
+| `t1-src-db` | `tcp://chat-db-rw.chat.svc:5432` | `plat-src-db`(`cfb015e8-470a-42e5-8b4c-2fff897caf64`), `dst-src-db`(`0aeac4d3-0311-4171-8597-31dfcac6e0db`) | `secret/envs/platform/cf-link-src-db`, `secret/envs/target-onprem/cf-link-src-db` |
+| `t1-src-pgb` | `tcp://chat-pgbouncer.chat.svc:6432` | `plat-src-pgb`(`360b174a-52c7-44ac-833d-91c1e58488c1`) | `secret/envs/platform/cf-link-src-pgb` |
+| `t1-dst-k8s` | `tcp://kubernetes.default.svc:443` | `plat-dst-k8s`(`0cd17532-f7c5-4a3a-a447-9e6fb993d3e4`) | `secret/envs/platform/cf-link-dst-k8s` |
+| `t1-dst-db` | `tcp://chat-db-rw.chat.svc:5432` | `plat-dst-db`(`8a6f2479-e17b-4c3b-9376-7723151252c2`), `src-dst-db`(`800eca3c-5f46-4406-be1f-7780e6cd5630`) | `secret/envs/platform/cf-link-dst-db`, `secret/envs/source-aws/cf-link-dst-db` |
+| `t1-dst-pgb` | `tcp://chat-pgbouncer.chat.svc:6432` | `plat-dst-pgb`(`d4ea5882-3a6d-499b-99d7-ba2a7ba085cb`) | `secret/envs/platform/cf-link-dst-pgb` |
+
+- 관리 Tunnel: `t1-src-mgmt`(`17ecaa76-0ed9-44a0-93a1-e84ffc50b714`), `t1-dst-mgmt`(`eac116b0-c06d-4e05-a25b-bbb162bc5e5f`). `config_src = local`이라 Cloudflare 쪽에서 라우트를 더할 수 없습니다. 커넥터 토큰 경로는 `secret/envs/<env>/cf-mgmt-tunnel`인데, `keys.sh issue-tunnel-token`은 지금 `cf-tunnel`(사용자 진입)에만 씁니다. 커넥터를 띄우는 갈래가 경로를 받게 고쳐야 합니다.
+- 토큰 없이 링크 호스트에 오면 403입니다(2026-11-02 20:5x, 6개 모두 확인).
+- `plat-src-access`(`12893ba3-800a-40c9-8da1-54f1c2cb61bb`, `secret/envs/source-aws/cf-access-service-token`)는 시험 중 만든 환경 단위 토큰입니다. 어느 정책에도 없어 아무 데도 들어갈 수 없습니다. 쓰지 않으면 폐기합니다.
 
 ## 8. 스펙 r2가 더한 계약(`docs/spec/sources/spec-v0.1.md` r2 절)
 
@@ -74,4 +116,10 @@ Executor는 노트북에서 돕니다(플랫폼). 아래가 없으면 컷오버�
 | PgBouncer `chat-pgbouncer` | 이미지 `bravo-pgbouncer`(`deploy/pilot/pgbouncer/Dockerfile`, `sh` · `cp` · `mv` 있음). replica 1. 대상 두 벌 `target-src.ini`, `target-dst.ini`(각각 `[databases]` 절만)을 ConfigMap 디렉터리 `/etc/pgbouncer/targets/`로 마운트(subPath 금지). 주 설정 `pgbouncer.ini` 끝에 `%include /run/pgbouncer/active.ini`. `/run/pgbouncer`는 emptyDir이고 init 컨테이너가 기본 선택을 복사(출발지 클러스터 `target-src.ini`, 목적지 클러스터도 처음은 `target-src.ini` = 링크 경유 출발지 DB). `admin_users = pgb_admin`, `stats_users = pgb_stats`, `pool_mode = transaction`, `query_wait_timeout = 8`. Service `chat-pgbouncer`(6432) |
 | Executor의 K8s 권한 | ns `chat`에서 `pods/exec`(PgBouncer Pod), `pods/portforward`(`chat-db`, `chat-pgbouncer`, `chat-admin` Pod), `pods` get/list. ConfigMap 쓰기 없음 |
 | 쓰기 차단 스위치 | 8절 그대로. Executor는 `chat-admin`(8081)에 port-forward로 닿고 토큰은 OpenBao `secret/envs/<env>/chat-admin` |
-| 목적지 앱의 DB 경로(컷오버 전) | 목적지 PgBouncer `target-src.ini`의 host는 링크 끝 `host.lima.internal`, port는 플랫폼이 연 출발지 DB 포워드 포트(임시 링크(D-16 전)) |
+| 목적지 앱의 DB 경로(컷오버 전) | 목적지 PgBouncer `target-src.ini` = `chat = host=host.lima.internal port=15434 dbname=chat`(플랫폼이 연 출발지 DB 포워드, 앱 경로 전용. 임시 링크(D-16 전)) |
+| 링크 포트(노트북 127.0.0.1, `deploy/cloud/cloud.env`) | 출발지 DB: 15432 Executor 제어, 15433 정방향 복제(목적지 구독), 15434 목적지 앱 경로. 목적지 DB 25432. PgBouncer 16432(src) · 26432(dst). `chat-admin` 18081 · 28081. 역방향 relay 에이전트 17070. Exit Drill(T27)은 15434만 끊고 15433은 둠 |
+| 출발지 PgBouncer `target-dst.ini` | `chat = host=dst-db-link.chat.svc port=5432 dbname=chat`(역방향 relay, `tools/link/k8s/reverse-relay.yaml`) |
+| 역방향 relay 이미지 | python3가 든 이미지(데모 앱 이미지면 됨)가 출발지 ECR에 있어야 함. `tools/link/k8s` kustomize에 digest를 넣음 |
+| 객체 저장소(T8) | OpenBao `secret/envs/<env>/object-store`, 필드 `bucket`, `endpoint_url`(비우면 AWS), `region`, `access_key_id`, `secret_access_key`(비우면 SDK 기본 자격) |
+| 실행 도구(데이터 · 컷오버, `deploy/cloud/`) | `bootstrap.sh check`(전제 조건, 안 되면 "연결 안 됨"과 이유) · `db_roles.py`(빈 DB에만 01–03 적용, 역할 비밀번호는 SCRAM 검증자로만 전달, Executor 역할 값은 OpenBao에 생성) · `link.sh`(정방향 포워드, 역방향 relay, OpenBao 포워드) · `repl_setup.sh` · `executor.sh` · `run_e2e.sh`(S3 · S4) · `contract.sh`(E1 · E4 · E5 · E6) · `t25.sh` · `exit_drill.sh`. 실행 기록은 `deploy/pilot/runs/cloud-*` |
+| 승인(감사 A2) | Executor는 플랫폼 DB `approvals`에서 승인을 확인한 뒤에만 실행. 필요: platform/api가 `bravo_executor`에 `approvals` SELECT와 RLS 정책을 주고, `stage`에 `failback`을 더함. 승인 없는 클라우드 실행은 없음 |

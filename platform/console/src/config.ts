@@ -13,6 +13,8 @@ export interface RuntimeConfig {
   publicFrontHost: string;
   /** Public DNS-over-HTTPS JSON resolver for the edge-name check; null = not shown. */
   dohUrl: string | null;
+  /** Where the demo app runs: collector cluster id or kubectl context -> public host. */
+  appEnvs: { id: string; host: string }[];
 }
 
 export class ConfigError extends Error {
@@ -45,7 +47,17 @@ function optionalUrl(v: unknown): string | null {
 }
 
 const SVC_BASE = `${import.meta.env.BASE_URL}svc`;
-const DEFAULT_FRONT = 'b-free.mangowhois.ai';
+const DEFAULT_FRONT = 'b-free-chat.mangowhois.ai';
+const DEFAULT_APP_ENVS = 'bravo-source=b-free-chat-src.mangowhois.ai,bravo-onprem=b-free-chat-dst.mangowhois.ai';
+
+function parseAppEnvs(v: unknown): { id: string; host: string }[] {
+  if (typeof v !== 'string') return [];
+  return v
+    .split(',')
+    .map((pair) => pair.split('='))
+    .filter((p): p is [string, string] => p.length === 2 && /^[\w.-]+$/.test(p[0] ?? '') && /^[a-zA-Z0-9.-]+$/.test(p[1] ?? ''))
+    .map(([id, host]) => ({ id, host }));
+}
 const DEFAULT_DOH = 'https://cloudflare-dns.com/dns-query';
 
 export async function loadConfig(): Promise<RuntimeConfig> {
@@ -54,11 +66,12 @@ export async function loadConfig(): Promise<RuntimeConfig> {
     return {
       apiBase: validBase(import.meta.env.VITE_API_BASE, 'VITE_API_BASE'),
       svcBase: SVC_BASE,
-      grafanaUrl: optionalUrl(import.meta.env.VITE_GRAFANA_URL ?? 'http://localhost:3300'),
-      prometheusUrl: optionalUrl(import.meta.env.VITE_PROMETHEUS_URL ?? 'http://localhost:9090'),
+      grafanaUrl: optionalUrl(import.meta.env.VITE_GRAFANA_URL),
+      prometheusUrl: optionalUrl(import.meta.env.VITE_PROMETHEUS_URL),
       tempoUrl: optionalUrl(import.meta.env.VITE_TEMPO_URL),
       publicFrontHost: DEFAULT_FRONT,
       dohUrl: optionalUrl(import.meta.env.VITE_DOH_URL ?? DEFAULT_DOH),
+      appEnvs: parseAppEnvs(import.meta.env.VITE_APP_ENVS ?? DEFAULT_APP_ENVS),
     };
   }
   let res: Response;
@@ -84,5 +97,6 @@ export async function loadConfig(): Promise<RuntimeConfig> {
     tempoUrl: optionalUrl(o.tempoUrl),
     publicFrontHost: host,
     dohUrl: optionalUrl(o.dohUrl),
+    appEnvs: parseAppEnvs(o.appEnvs ?? DEFAULT_APP_ENVS),
   };
 }

@@ -22,7 +22,8 @@ from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .attachment_copy import AttachmentCopier, copier_from_env
+from .approvals import ApprovalCheck, PlatformDbApprovals
+from .attachment_copy import AttachmentCopier, ObjectStore, copier_from_env
 from .chatdb import ChatDb, connect
 from .config import Settings
 from .controls import ANON_READ, AUTH, UNKNOWN, ControlResult, evaluate_anon_read, evaluate_auth
@@ -59,6 +60,7 @@ class ExecutorService:
         )
         self.ledger = PostgresLedger(self.pool)
         self.runner = CutoverRunner(settings, self.ledger, self._copier)
+        self.approvals = PlatformDbApprovals(self.pool)
         self.observe_only = False
         self.observe_reason: dict[str, Any] = {}
         self._admit = asyncio.Lock()
@@ -66,6 +68,11 @@ class ExecutorService:
 
     def _copier(self, from_side: str, to_side: str) -> AttachmentCopier | None:
         s = self.settings
+        if s.object_stores:
+            stores = dict(s.object_stores)
+            if from_side not in stores or to_side not in stores:
+                return None
+            return AttachmentCopier(self.pool, ObjectStore(stores[from_side]), ObjectStore(stores[to_side]))
         return copier_from_env(self.pool, from_side, to_side, {"src": s.src_store_id, "dst": s.dst_store_id})
 
     # ---- lifecycle -----------------------------------------------------------------------
@@ -109,29 +116,36 @@ class ExecutorService:
         log.warning("observe-only mode: %s", self.observe_reason)
 
     async def _observe_pgbouncer(self) -> dict[str, Any]:
-        """Read-only PgBouncer view (stats user): pool state and admin sessions still connected (E6)."""
-        try:
-            conn = await AsyncConnection.connect(self.settings.pgb_stats_dsn, autocommit=True, connect_timeout=3)
-        except Exception as exc:  # noqa: BLE001
-            return {"reachable": False, "error": type(exc).__name__}
-        try:
-            async with conn.cursor(row_factory=dict_row) as cur:
-                await cur.execute(b"SHOW DATABASES")
-                pool = next((r for r in await cur.fetchall() if r.get("name") == self.settings.pgb_db_name), None)
-                await cur.execute(b"SHOW CLIENTS")
-                admin_clients = [
-                    {"addr": r.get("addr"), "port": r.get("port"), "connect_time": str(r.get("connect_time"))}
-                    for r in await cur.fetchall()
-                    if r.get("user") == "pgb_admin"
-                ]
-        finally:
-            await conn.close()
-        return {
-            "reachable": True,
-            "pool_host": None if pool is None else pool.get("host"),
-            "pool_paused": None if pool is None else pool.get("paused"),
-            "admin_clients": admin_clients,
-        }
+        """Read-only PgBouncer view per pool (stats user): pool state and admin sessions still
+        connected (E6). Never uses the admin credentials."""
+        out: dict[str, Any] = {}
+        for name, dsn in self.settings.pool_stats_dsns:
+            db_name = next((p.db_name for p in self.settings.pools if p.name == name), self.settings.chat_db)
+            try:
+                conn = await AsyncConnection.connect(dsn, autocommit=True, connect_timeout=3)
+            except Exception as exc:  # noqa: BLE001
+                out[name] = {"reachable": False, "error": type(exc).__name__}
+                continue
+            try:
+                async with conn.cursor(row_factory=dict_row) as cur:
+                    await cur.execute(b"SHOW DATABASES")
+                    pool = next((r for r in await cur.fetchall() if r.get("name") == db_name), None)
+                    await cur.execute(b"SHOW CLIENTS")
+                    admin_clients = [
+                        {"addr": r.get("addr"), "port": r.get("port"), "connect_time": str(r.get("connect_time"))}
+                        for r in await cur.fetchall()
+                        if r.get("user") == "pgb_admin"
+                    ]
+            finally:
+                await conn.close()
+            out[name] = {
+                "reachable": True,
+                "pool_host": None if pool is None else pool.get("host"),
+                "pool_paused": None if pool is None else pool.get("paused"),
+                "admin_clients": admin_clients,
+            }
+        # Compose pilot has one pool named "0": keep the flat shape the contract test reads.
+        return out["0"] if list(out) == ["0"] else out
 
     async def stop(self) -> None:
         for task in self._tasks.values():
@@ -154,6 +168,10 @@ class ExecutorService:
             running = await self.ledger.running_run_ids()
             if running:
                 raise RunInProgress(running[0])
+            # A2: verify the approval against the platform's record before a run row exists.
+            approval = await self.approvals.verify(
+                ApprovalCheck(approval_id=body.approval_id, plan_id=body.plan_id, kind=body.kind, idem_key=idem_key)
+            )
             run_id, created = await self.ledger.create_or_get_run(req)
             if created:
                 creq = CutoverRequest(
@@ -163,6 +181,7 @@ class ExecutorService:
                     approval_id=body.approval_id,
                     write_pause_budget_ms=body.write_pause_budget_ms,
                     kind=body.kind,
+                    approval=approval,
                 )
                 self._tasks[run_id] = asyncio.create_task(self._execute(creq), name=f"{body.kind}-{run_id}")
             return run_id, created

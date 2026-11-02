@@ -18,9 +18,12 @@ from .result import Obs, error_text, unknown
 TTL_ENV = "BRAVO_EVIDENCE_TTL_S"
 
 
-def _probe_for(env: Environment, section: str) -> Any:
+SECTIONS = ("object_store", "postgres", "kubernetes", "aws", "network")
+
+
+def _probe_for(env: Environment, section: str, allow_writes: bool = False) -> Any:
     if section == "object_store" and env.object_store:
-        return ObjectStoreProbe(env.object_store)
+        return ObjectStoreProbe(env.object_store, allow_writes=allow_writes)
     if section == "postgres" and env.postgres:
         return PostgresProbe(env.postgres)
     if section == "kubernetes" and env.kubernetes:
@@ -38,13 +41,13 @@ def _probe_for(env: Environment, section: str) -> Any:
     return None
 
 
-def observe(env: Environment, sections: set[str]) -> dict[str, Obs]:
-    """Run every question whose section is in ``sections``. Questions run in a fixed order per section."""
+def observe(env: Environment, sections: set[str] | None = None, *, allow_writes: bool = False) -> dict[str, Obs]:
+    """Run every question (all five sections by default). Questions run in a fixed order per section."""
     out: dict[str, Obs] = {}
-    for section in sorted(sections):
+    for section in sorted(sections or SECTIONS):
         probe = None
         try:
-            probe = _probe_for(env, section)
+            probe = _probe_for(env, section, allow_writes)
         except Exception as exc:  # noqa: BLE001
             err = unknown("probe_setup_error", error=error_text(exc))
             for q in QUESTIONS:
@@ -64,16 +67,14 @@ def observe(env: Environment, sections: set[str]) -> dict[str, Obs]:
     return out
 
 
-def _sections(env: Environment) -> set[str]:
-    return {s for s in ("object_store", "postgres", "kubernetes", "aws", "network") if getattr(env, s) is not None}
-
-
-def compare(source: Environment, target: Environment) -> dict[str, Any]:
-    sections = _sections(source) | _sections(target)
+def compare(source: Environment, target: Environment, *, allow_writes: bool = False) -> dict[str, Any]:
+    """Every question of every section on both sides (audit B16): an unconfigured section is answered
+    UNKNOWN ``not_configured`` and blocks, it never disappears from the report."""
+    sections = set(SECTIONS)
     started = datetime.now(UTC)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        fs = pool.submit(observe, source, sections)
-        ft = pool.submit(observe, target, sections)
+        fs = pool.submit(observe, source, sections, allow_writes=allow_writes)
+        ft = pool.submit(observe, target, sections, allow_writes=allow_writes)
         src_obs, dst_obs = fs.result(), ft.result()
     report = build_rows(SideResults(source.environment_id, src_obs), SideResults(target.environment_id, dst_obs))
     ttl = int(os.environ.get(TTL_ENV, "3600"))

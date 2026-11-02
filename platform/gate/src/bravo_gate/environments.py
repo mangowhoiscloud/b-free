@@ -41,6 +41,9 @@ class ObjectStoreSection(_Section):
     canary_key: str = "_gate/canary"
     app_credential: Credential | None = None
     other_credential: Credential | None = None
+    # Read-only fact checks (canary presence, GetBucketEncryption) when the app credential is not available
+    # to the gate (e.g. EKS Pod Identity). Never used for the access questions OBJ-01..06.
+    read_credential: Credential | None = None
     # PUT probes (OBJ-03 anonymous PUT, OBJ-04 app PUT) write to the bucket. Off unless approved for this store.
     write_probes: bool = False
     timeout_s: float = 5.0
@@ -72,8 +75,10 @@ class AwsSection(_Section):
     region: str
     profile: str | None = None
     secret_ids: tuple[str, ...] = ()
-    # Principals that must not read the app secrets (iam:SimulatePrincipalPolicy).
+    # Principals that must not read the app secrets (iam:SimulatePrincipalPolicy). Role names are resolved
+    # to ARNs with iam:GetRole at run time, so the registry needs no account id.
     other_principal_arns: tuple[str, ...] = ()
+    other_principal_roles: tuple[str, ...] = ()
     cloudtrail_trails: tuple[str, ...] = ()
     eks_clusters: tuple[str, ...] = ()
 

@@ -8,8 +8,27 @@
 #   keys.sh status                  seal state, custody, audit devices, Cloudflare secret version
 #   keys.sh import-cloudflare       .env CLOUDFLARE_* -> secret/platform/cloudflare, then blank the .env token
 #   keys.sh with-cloudflare -- CMD  run CMD with CLOUDFLARE_API_TOKEN/ACCOUNT_ID/ZONE_ID in its env only
-#   keys.sh issue-tunnel-token ENV TUNNEL_ID   Cloudflare tunnel token -> secret/envs/ENV/cf-tunnel
+#   keys.sh issue-tunnel-token ENV TUNNEL_ID [NAME]  tunnel token -> secret/envs/ENV/NAME (default cf-tunnel)
+#   keys.sh issue-service-token ENV NAME [SECRET] [DUR]  Access service token -> secret/envs/ENV/SECRET
+#                                   (default cf-access-service-token, 168h); prints only the token ID
 #   keys.sh generate-root | revoke-root        break-glass root token (custody only) and its revocation
+#   keys.sh env-generate ENV NAME FIELD [BYTES] random value -> secret/envs/ENV/NAME (only if absent)
+#   keys.sh env-pipe ENV NAME FIELD -- CMD      CMD receives secret/envs/ENV/NAME FIELD on stdin only
+#   keys.sh llm-run claude|openai -- CMD        CMD gets a one-use secret_id (60 s) for AppRole llm-<p> (reads only
+#                                   secret/envs/platform/llm-<p>) and the OpenBao address; it reads the credential itself
+#   keys.sh llm-status                          llm-claude / llm-openai stored or not (metadata only, no value)
+#   keys.sh env-put ENV NAME FIELD              stdin -> secret/envs/ENV/NAME FIELD (never overwrites a different value)
+#   keys.sh signer-init                         T31: transit engine + non-exportable key bravo-supply-chain (ecdsa-p256),
+#                                               policy platform-signer(-issuer), AppRole signer, issuer token -> custody
+#                                               (uses generate-root, revokes root at the end)
+#   keys.sh with-signer -- CMD                  CMD gets VAULT_ADDR/VAULT_CACERT/VAULT_TOKEN (5 min signer token) in its
+#                                               env only (cosign --key hashivault://bravo-supply-chain); revoked after CMD
+#   keys.sh signer-pubkey [FILE]                public key of bravo-supply-chain (PEM) -> FILE or stdout (not secret)
+#   keys.sh env-put ENV NAME FIELD < pipe         stdin -> secret/envs/ENV/NAME FIELD (other fields kept)
+#   keys.sh --target platform-eks CMD          any command against the platform EKS OpenBao (port-forward)
+#   keys.sh --target platform-eks tls           platform CA + server cert -> Secret openbao/openbao-tls
+#   keys.sh migrate-to-platform                 pilot store -> platform EKS by raft snapshot (shares unchanged)
+#   (after the move the default target is platform-eks; BRAVO_BAO_TARGET=pilot reaches the stopped pilot)
 #
 # Short-lived edge credentials (with-cloudflare, issue-tunnel-token):
 #   custody holds an "edge issuer" token that can only mint secret_ids for the edge AppRole;
@@ -43,7 +62,46 @@ env_get() {
 }
 
 BAO_PORT="${PLATFORM_BAO_HOST_PORT:-$(env_get PLATFORM_BAO_HOST_PORT)}"
-BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:${BAO_PORT:-8200}}"
+PILOT_BAO_ADDR="https://127.0.0.1:${BAO_PORT:-8200}"
+PILOT_TLS_DIR="$TLS_DIR"
+BAO_ADDR="${BAO_ADDR:-$PILOT_BAO_ADDR}"
+
+# Target (D-26: one store). pilot = laptop Compose platform-bao. platform-eks = OpenBao on the platform
+# EKS (deploy/platform/openbao), reached only through `kubectl port-forward` to pod openbao-0 (no public
+# address, the EKS API is open to the operator /32 only). Choose with `keys.sh --target <t> <cmd>` or
+# BRAVO_BAO_TARGET. Default: platform-eks once custody records the move (migrate-to-platform), else pilot.
+PLATFORM_CONTEXT="${BRAVO_PLATFORM_CONTEXT:-bravo-platform}"
+PLATFORM_TLS_DIR="$CUSTODY_DIR/platform-eks"
+BAO_TARGET="${BRAVO_BAO_TARGET:-}"
+if [[ ${1-} == --target ]]; then BAO_TARGET=${2-}; shift 2 || die "usage: keys.sh --target pilot|platform-eks <cmd>"
+elif [[ ${1-} == --target=* ]]; then BAO_TARGET=${1#--target=}; shift; fi
+if [[ -z $BAO_TARGET ]]; then
+  BAO_TARGET=pilot
+  [[ -f $CUSTODY && $(jq -r '.bao_target // "pilot"' "$CUSTODY" 2>/dev/null) == platform-eks ]] && BAO_TARGET=platform-eks
+fi
+[[ $BAO_TARGET == pilot || $BAO_TARGET == platform-eks ]] || die "unknown target: $BAO_TARGET (pilot | platform-eks)"
+PF_PID=""
+pf_stop() { [[ -z $PF_PID ]] || { kill "$PF_PID" 2>/dev/null || true; wait "$PF_PID" 2>/dev/null || true; PF_PID=""; }; }
+# Start a private port-forward to the platform OpenBao on a free local port for this run only.
+pf_start() {
+  [[ -z $PF_PID ]] || return 0
+  command -v kubectl >/dev/null || die "--target platform-eks needs kubectl"
+  [[ -f $PLATFORM_TLS_DIR/ca.crt ]] || die "no $PLATFORM_TLS_DIR/ca.crt: keys.sh --target platform-eks tls"
+  local port i code
+  port="$(python3 -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
+  kubectl --context "$PLATFORM_CONTEXT" -n openbao port-forward pod/openbao-0 "$port:8200" >/dev/null 2>&1 &
+  PF_PID=$!
+  trap pf_stop EXIT
+  TLS_DIR="$PLATFORM_TLS_DIR"; BAO_ADDR="https://127.0.0.1:$port"
+  for i in $(seq 1 40); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$TLS_DIR/ca.crt" --max-time 2 "$BAO_ADDR/v1/sys/seal-status" || true)"
+    [[ $code == 200 ]] && return 0
+    kill -0 "$PF_PID" 2>/dev/null || die "kubectl port-forward to $PLATFORM_CONTEXT openbao/openbao-0 exited"
+    sleep 0.25
+  done
+  die "platform OpenBao not reachable through port-forward ($PLATFORM_CONTEXT openbao/openbao-0)"
+}
+use_pilot() { pf_stop; TLS_DIR="$PILOT_TLS_DIR"; BAO_ADDR="$PILOT_BAO_ADDR"; }
 
 tok_hdr() { [[ -z ${1-} ]] || printf 'X-Vault-Token: %s\n' "$1"; }
 
@@ -330,12 +388,16 @@ cmd_with_cloudflare() {
   [[ ${1-} == -- ]] && shift
   (($#)) || die "usage: keys.sh with-cloudflare -- <cmd> [args...]"
   edge_login; cf_load; edge_logout
+  pf_stop
   CLOUDFLARE_API_TOKEN="$CF_TOKEN" CLOUDFLARE_ACCOUNT_ID="$CF_ACCOUNT" CLOUDFLARE_ZONE_ID="$CF_ZONE" exec "$@"
 }
 
+# keys.sh issue-tunnel-token ENV TUNNEL_ID [NAME]: NAME defaults to cf-tunnel (user entry tunnel); the D-16
+# management tunnels use cf-mgmt-tunnel. NAME must start with cf- (edge policy: secret/data/envs/+/cf-*).
 cmd_issue_tunnel_token() {
-  local env=${1-} tid=${2-}
-  [[ $env =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || die "usage: keys.sh issue-tunnel-token <env> <tunnel_id> (env: a-z 0-9 -)"
+  local env=${1-} tid=${2-} name=${3:-cf-tunnel}
+  [[ $env =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || die "usage: keys.sh issue-tunnel-token <env> <tunnel_id> [cf-name] (env: a-z 0-9 -)"
+  [[ $name =~ ^cf-[a-z0-9-]{1,60}$ ]] || die "secret name must start with cf- (a-z 0-9 -)"
   [[ $tid =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || die "tunnel_id must be a UUID"
   edge_login; cf_load
   [[ -n $CF_ACCOUNT ]] || { edge_logout; die "secret/$CF_SECRET has no account_id"; }
@@ -348,8 +410,64 @@ cmd_issue_tunnel_token() {
     edge_logout; die "Cloudflare did not return a tunnel token"
   fi
   printf '%s' "$resp" | jq '{data: {token: .result}}' \
-    | api -d POST "secret/data/envs/$env/cf-tunnel" "$EDGE_TOKEN" \
-    | jq -r '"written secret/envs/'"$env"'/cf-tunnel version \(.data.version) (field token, value not shown)"'
+    | api -d POST "secret/data/envs/$env/$name" "$EDGE_TOKEN" \
+    | jq -r '"written secret/envs/'"$env/$name"' version \(.data.version) (field token, value not shown)"'
+  edge_logout
+}
+
+# keys.sh issue-service-token ENV TOKEN_NAME [SECRET_NAME] [DURATION]
+# New Cloudflare Access service token -> secret/envs/ENV/SECRET_NAME, fields client_id, client_secret,
+# token_id, name, expires_at (D-16, D-26). SECRET_NAME defaults to cf-access-service-token and must start
+# with cf- (edge policy). DURATION defaults to 168h (02-network.md 4.3: 7 days). Prints only the token ID,
+# which Terraform takes as input (link_service_token_ids). Never re-issues: if the OpenBao secret or a
+# Cloudflare token with the same name exists, it stops; rotation is a separate, deliberate step.
+cf_call() { # METHOD PATH: JSON body (if any) on stdin; URL and Authorization go to curl as config, not argv
+  local m=$1 p=$2
+  if [[ $m == GET || $m == DELETE ]]; then
+    curl -sS --max-time 30 -X "$m" -K <(printf 'url = "%s%s"\nheader = "Authorization: Bearer %s"\n' "$CF_API" "$p" "$CF_TOKEN") </dev/null
+  else
+    curl -sS --max-time 30 -X "$m" -H 'Content-Type: application/json' --data-binary @- \
+      -K <(printf 'url = "%s%s"\nheader = "Authorization: Bearer %s"\n' "$CF_API" "$p" "$CF_TOKEN")
+  fi
+}
+cf_errors() { jq -c '[.errors[]? | {code, message}]' 2>/dev/null || printf 'unparseable response'; }
+
+cmd_issue_service_token() {
+  local env=${1-} tname=${2-} sname=${3:-cf-access-service-token} dur=${4:-168h} admin resp tid
+  [[ $env =~ ^[a-z0-9][a-z0-9-]{0,62}$ && $tname =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] \
+    || die "usage: keys.sh issue-service-token <env> <token_name> [secret_name] [duration] (a-z 0-9 -)"
+  [[ $sname =~ ^cf-[a-z0-9-]{1,60}$ ]] || die "secret_name must start with cf- (edge policy secret/envs/+/cf-*)"
+  [[ $dur =~ ^[1-9][0-9]*h$ ]] || die "duration must look like 168h"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  if api GET "secret/metadata/envs/$env/$sname" "$admin" >/dev/null 2>&1; then
+    die "secret/envs/$env/$sname already exists; not re-issuing (rotate deliberately)"
+  fi
+  edge_login; cf_load
+  [[ -n $CF_ACCOUNT ]] || { edge_logout; die "secret/$CF_SECRET has no account_id"; }
+
+  resp="$(cf_call GET "/accounts/$CF_ACCOUNT/access/service_tokens?name=$tname")" || { edge_logout; die "Cloudflare API unreachable"; }
+  if ! jq -e '.success == true' <<<"$resp" >/dev/null 2>&1; then
+    printf 'keys.sh: Cloudflare: %s\n' "$(cf_errors <<<"$resp")" >&2; edge_logout; die "cannot list Access service tokens"
+  fi
+  tid="$(jq -r --arg n "$tname" '[.result[]? | select(.name == $n) | .id][0] // ""' <<<"$resp")"
+  [[ -z $tid ]] || { edge_logout; die "Cloudflare already has service token $tname (id $tid) but OpenBao does not; its secret cannot be read back. Delete or rotate it first"; }
+
+  resp="$(jq -n --arg n "$tname" --arg d "$dur" '{name: $n, duration: $d}' \
+    | cf_call POST "/accounts/$CF_ACCOUNT/access/service_tokens")" || { edge_logout; die "Cloudflare API unreachable"; }
+  if ! jq -e '.success == true and (.result.client_secret // "" | length > 0)' <<<"$resp" >/dev/null 2>&1; then
+    printf 'keys.sh: Cloudflare: %s\n' "$(cf_errors <<<"$resp")" >&2; edge_logout; die "Cloudflare did not return a service token"
+  fi
+  tid="$(jq -r .result.id <<<"$resp")"
+  if ! jq '{data: {client_id: .result.client_id, client_secret: .result.client_secret, token_id: .result.id,
+        name: .result.name, expires_at: .result.expires_at}}' <<<"$resp" \
+      | api -d POST "secret/data/envs/$env/$sname" "$EDGE_TOKEN" >/dev/null; then
+    # Do not leave a token whose secret nobody holds.
+    cf_call DELETE "/accounts/$CF_ACCOUNT/access/service_tokens/$tid" >/dev/null || true
+    resp=""; edge_logout; die "OpenBao write failed; deleted the new Cloudflare token $tid"
+  fi
+  log "service token $tname id $tid (expires $(jq -r .result.expires_at <<<"$resp")) -> secret/envs/$env/$sname (client_id, client_secret not shown)"
+  resp=""
   edge_logout
 }
 
@@ -389,8 +507,378 @@ cmd_revoke_root() {
   log "root token revoked"
 }
 
+# Per-environment secrets for a cluster (CLOUD-E2E-CONTRACT §4, §8). Values never reach argv,
+# files or the terminal: generated with openssl into a pipe, delivered on a child's stdin.
+POLICY_ENV_DELIVER='# Reads one environment secret for a single delivery run (keys.sh env-pipe).
+path "secret/data/envs/+/*" { capabilities = ["read"] }'
+
+env_path_check() {
+  [[ $1 =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || die "env must match a-z 0-9 -"
+  [[ $2 =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || die "secret name must match a-z 0-9 -"
+  [[ $3 =~ ^[a-z0-9_]{1,64}$ ]] || die "field must match a-z 0-9 _"
+}
+
+# keys.sh env-generate <env> <name> <field> [bytes]: random hex value, only if the field is absent.
+cmd_env_generate() {
+  local env=${1-} name=${2-} field=${3-} bytes=${4:-32} admin cur
+  env_path_check "$env" "$name" "$field"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  if cur="$(api GET "secret/data/envs/$env/$name" "$admin" 2>/dev/null)"; then
+    if jq -e --arg f "$field" '.data.data[$f] // "" | length > 0' <<<"$cur" >/dev/null; then
+      log "secret/envs/$env/$name field $field exists (version $(jfield "$cur" .data.metadata.version)); not changed"
+      return 0
+    fi
+    openssl rand -hex "$bytes" | jq -Rn --arg f "$field" '{data: {($f): input}}' \
+      | api -p PATCH "secret/data/envs/$env/$name" "$admin" >/dev/null
+  else
+    openssl rand -hex "$bytes" | jq -Rn --arg f "$field" '{data: {($f): input}}' \
+      | api -d POST "secret/data/envs/$env/$name" "$admin" >/dev/null
+  fi
+  log "generated secret/envs/$env/$name field $field ($bytes random bytes, hex; value not shown)"
+}
+
+# keys.sh env-put <env> <name> <field>: store a value that something else generated (e.g. the CNPG app
+# password on the source cluster), read from stdin only. Same value already there: no change. A
+# different value already there: refused (no silent overwrite). Prints the KV version, never the value.
+cmd_env_put() {
+  local env=${1-} name=${2-} field=${3-} admin cur val
+  env_path_check "$env" "$name" "$field"
+  [[ ! -t 0 ]] || die "env-put reads the value from stdin (pipe it in)"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  val="$(cat)"
+  [[ -n $val ]] || die "env-put: empty value on stdin"
+  if cur="$(api GET "secret/data/envs/$env/$name" "$admin" 2>/dev/null)"; then
+    if jq -e --arg f "$field" '.data.data | has($f)' <<<"$cur" >/dev/null; then
+      if printf '%s' "$val" | jq -Rse --arg f "$field" --argjson cur "$cur" '. == $cur.data.data[$f]' >/dev/null; then
+        log "secret/envs/$env/$name field $field already holds this value (version $(jfield "$cur" .data.metadata.version)); not changed"
+        return 0
+      fi
+      die "secret/envs/$env/$name field $field holds a different value; refusing to overwrite"
+    fi
+    printf '%s' "$val" | jq -Rs --arg f "$field" '{data: {($f): .}}' \
+      | api -p PATCH "secret/data/envs/$env/$name" "$admin" >/dev/null
+  else
+    printf '%s' "$val" | jq -Rs --arg f "$field" '{data: {($f): .}}' \
+      | api -d POST "secret/data/envs/$env/$name" "$admin" >/dev/null
+  fi
+  val=""
+  log "stored secret/envs/$env/$name field $field from stdin (value not shown)"
+}
+
+# keys.sh env-delete <env> <name>: remove a wrongly stored secret (all versions). Value never shown.
+cmd_env_delete() {
+  local env=${1-} name=${2-} admin
+  env_path_check "$env" "$name" x
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  api DELETE "secret/metadata/envs/$env/$name" "$admin" >/dev/null || die "delete failed for secret/envs/$env/$name"
+  log "deleted secret/envs/$env/$name (all versions)"
+}
+
+# keys.sh env-pipe <env> <name> <field> -- CMD...: CMD gets the value on stdin (no newline).
+# The read uses a one-use secret_id (60 s) for AppRole env-deliver, then revokes that token.
+cmd_env_pipe() {
+  local env=${1-} name=${2-} field=${3-} admin role_id secret_id tok j
+  env_path_check "$env" "$name" "$field"; shift 3
+  [[ ${1-} == -- ]] && shift
+  (($#)) || die "usage: keys.sh env-pipe <env> <name> <field> -- <cmd> [args...]"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  if ! api GET sys/policies/acl/platform-env-deliver "$admin" >/dev/null 2>&1; then
+    # Logs go to stderr: stdout of this command is the value pipe.
+    put_policy platform-env-deliver "$POLICY_ENV_DELIVER" "$admin" >&2
+    printf '%s' '{"token_policies":["platform-env-deliver"],"token_type":"service","token_ttl":"2m",
+      "token_max_ttl":"5m","bind_secret_id":true,"secret_id_ttl":"60s","secret_id_num_uses":1}' \
+      | api -d POST auth/approle/role/env-deliver "$admin" >/dev/null
+    log "approle: role env-deliver (policy platform-env-deliver, token 2m, secret_id 60s / 1 use)" >&2
+  fi
+  role_id="$(api GET auth/approle/role/env-deliver/role-id "$admin" | jq -er .data.role_id)"
+  secret_id="$(printf '{"ttl":"60s","num_uses":1}' | api -d POST auth/approle/role/env-deliver/secret-id "$admin" | jq -er .data.secret_id)"
+  tok="$(printf '%s\n%s\n' "$role_id" "$secret_id" | jq -Rn '[inputs] as $v | {role_id: $v[0], secret_id: $v[1]}' \
+    | api -d POST auth/approle/login | jq -er .auth.client_token)"
+  j="$(api GET "secret/data/envs/$env/$name" "$tok")" || { api POST auth/token/revoke-self "$tok" >/dev/null || true; die "cannot read secret/envs/$env/$name"; }
+  api POST auth/token/revoke-self "$tok" >/dev/null || true
+  jq -e --arg f "$field" '.data.data[$f] // "" | length > 0' <<<"$j" >/dev/null || die "secret/envs/$env/$name has no field $field"
+  jq -j --arg f "$field" '.data.data[$f]' <<<"$j" | "$@"
+}
+
+# --- T31 supply-chain signer (OpenBao transit, D-26) -------------------------------------------------------
+# The trusted apply pipeline (platform/apply) signs image digests with cosign --key hashivault://KEY. The key is
+# created inside OpenBao transit, is not exportable and never leaves it. A signing run gets a 5 min token from a
+# one-use secret_id (60 s) minted by the signer issuer token in custody, same model as the edge step.
+SIGNER_KEY="bravo-supply-chain"
+POLICY_SIGNER='# T31 signer (D-26): sign with the platform supply-chain key and read its public key. Nothing else.
+path "transit/sign/bravo-supply-chain" { capabilities = ["update"] }
+path "transit/sign/bravo-supply-chain/*" { capabilities = ["update"] }
+path "transit/keys/bravo-supply-chain" { capabilities = ["read"] }'
+
+POLICY_SIGNER_ISSUER='# Mints short-lived secret_ids for the signer AppRole only (keys.sh with-signer).
+path "auth/approle/role/signer/role-id" { capabilities = ["read"] }
+path "auth/approle/role/signer/secret-id" { capabilities = ["update"] }'
+
+# Revoke the root token this run generated (before the port-forward stops), whatever happened.
+signer_cleanup() {
+  if [[ -f $CUSTODY && $(jq -r '.root_token_revoked_at // ""' "$CUSTODY") == "" ]]; then cmd_revoke_root || true; fi
+  pf_stop
+}
+
+cmd_signer_init() {
+  need_custody; need_unsealed
+  [[ $(jq -r '.root_token_revoked_at // ""' "$CUSTODY") != "" ]] \
+    || die "a root token is active in custody; revoke it first (keys.sh revoke-root)"
+  local root issuer
+  # Mounting an engine and creating orphan tokens need root: regenerate it from the shares for this run only.
+  trap signer_cleanup EXIT
+  cmd_generate_root >/dev/null
+  root="$(custody_get .root_token)"
+  if api GET sys/mounts "$root" | jq -e '(.data // .) | has("transit/")' >/dev/null; then
+    log "transit: mounted at transit/"
+  else
+    printf '{"type":"transit","description":"platform signing keys (D-26, T31)"}' \
+      | api -d POST sys/mounts/transit "$root" >/dev/null
+    log "transit: enabled at transit/"
+  fi
+  if api GET "transit/keys/$SIGNER_KEY" "$root" >/dev/null 2>&1; then
+    log "transit key $SIGNER_KEY exists"
+  else
+    printf '{"type":"ecdsa-p256","exportable":false,"allow_plaintext_backup":false}' \
+      | api -d POST "transit/keys/$SIGNER_KEY" "$root" >/dev/null
+    log "transit key $SIGNER_KEY created (ecdsa-p256, not exportable, no plaintext backup)"
+  fi
+  put_policy platform-signer "$POLICY_SIGNER" "$root"
+  put_policy platform-signer-issuer "$POLICY_SIGNER_ISSUER" "$root"
+  printf '%s' '{"token_policies":["platform-signer"],"token_type":"service","token_ttl":"5m","token_max_ttl":"10m",
+    "bind_secret_id":true,"secret_id_ttl":"60s","secret_id_num_uses":1}' \
+    | api -d POST auth/approle/role/signer "$root" >/dev/null
+  log "approle: role signer (policy platform-signer, token 5m, secret_id 60s / 1 use)"
+  issuer="$(jq -r '.signer_issuer_token // ""' "$CUSTODY")"
+  if [[ -n $issuer ]] && api GET auth/token/lookup-self "$issuer" >/dev/null 2>&1; then
+    log "signer issuer token in custody is valid; kept"
+  else
+    printf '{"policies":["platform-signer-issuer"],"period":"168h","display_name":"signer-issuer"}' \
+      | api -d POST auth/token/create-orphan "$root" \
+      | jq '{signer_issuer_token: .auth.client_token, signer_issuer_token_accessor: .auth.accessor}' | custody_merge
+    log "signer issuer token (platform-signer-issuer, periodic 168h) -> custody"
+  fi
+  issuer=""
+  cmd_revoke_root
+}
+
+# Sets SIGNER_TOKEN (not exported): one fresh secret_id (60 s, 1 use) -> 5 min signer token.
+signer_login() {
+  need_custody; need_unsealed
+  local issuer role_id secret_id
+  issuer="$(jq -r '.signer_issuer_token // ""' "$CUSTODY")"
+  [[ -n $issuer ]] || die "no signer issuer token in custody: keys.sh signer-init"
+  api POST auth/token/renew-self "$issuer" >/dev/null || die "signer issuer token invalid or expired: keys.sh signer-init"
+  role_id="$(api GET auth/approle/role/signer/role-id "$issuer" | jq -er .data.role_id)"
+  secret_id="$(printf '{"ttl":"60s","num_uses":1}' | api -d POST auth/approle/role/signer/secret-id "$issuer" | jq -er .data.secret_id)"
+  SIGNER_TOKEN="$(printf '%s\n%s\n' "$role_id" "$secret_id" \
+    | jq -Rn '[inputs] as $v | {role_id: $v[0], secret_id: $v[1]}' \
+    | api -d POST auth/approle/login | jq -er .auth.client_token)"
+}
+signer_logout() { api POST auth/token/revoke-self "$SIGNER_TOKEN" >/dev/null || true; SIGNER_TOKEN=""; }
+
+cmd_with_signer() {
+  [[ ${1-} == -- ]] && shift
+  (($#)) || die "usage: keys.sh with-signer -- <cmd> [args...]"
+  signer_login
+  local rc=0
+  # The token reaches only CMD's environment (cosign's hashivault KMS reads VAULT_*), never argv or a file.
+  VAULT_ADDR="$BAO_ADDR" VAULT_CACERT="$TLS_DIR/ca.crt" VAULT_TOKEN="$SIGNER_TOKEN" \
+    TRANSIT_SECRET_ENGINE_PATH=transit "$@" || rc=$?
+  signer_logout
+  return "$rc"
+}
+
+cmd_signer_pubkey() {
+  local out=${1-} j pem ver
+  signer_login
+  j="$(api GET "transit/keys/$SIGNER_KEY" "$SIGNER_TOKEN")" || { signer_logout; die "cannot read transit/keys/$SIGNER_KEY"; }
+  signer_logout
+  ver="$(jq -r .data.latest_version <<<"$j")"
+  pem="$(jq -r --arg v "$ver" '.data.keys[$v].public_key // ""' <<<"$j")"
+  [[ $pem == "-----BEGIN PUBLIC KEY-----"* ]] || die "transit key $SIGNER_KEY has no public key for version $ver"
+  if [[ -n $out ]]; then
+    printf '%s\n' "$pem" >"$out"; chmod 644 "$out"
+    log "public key $SIGNER_KEY v$ver -> $out (sha256 $(openssl dgst -sha256 -r "$out" | cut -d' ' -f1))"
+  else
+    printf '%s\n' "$pem"
+  fi
+}
+
+# Model credentials for the agent worker (13 6, D-26). claude: the lead's `claude setup-token` OAuth token
+# (secret/envs/platform/llm-claude oauth_token, stored with env-put). openai: the OpenAI API key
+# (secret/envs/platform/llm-openai api_key). The policy files allow reading that one path only.
+LLM_POLICY_DIR="$PILOT_DIR/bao/policies"
+llm_role_setup() { # PROVIDER ADMIN_TOKEN: policy platform-llm-<p> + AppRole llm-<p> (idempotent; logs on stderr)
+  local p=$1 admin=$2 pol="platform-llm-$1" role="llm-$1"
+  [[ -f $LLM_POLICY_DIR/$pol.hcl ]] || die "missing $LLM_POLICY_DIR/$pol.hcl"
+  jq -Rs '{policy: .}' "$LLM_POLICY_DIR/$pol.hcl" | api -d PUT "sys/policies/acl/$pol" "$admin" >/dev/null
+  printf '{"token_policies":["%s"],"token_type":"service","token_ttl":"2m","token_max_ttl":"5m","bind_secret_id":true,"secret_id_ttl":"60s","secret_id_num_uses":1}' "$pol" \
+    | api -d POST "auth/approle/role/$role" "$admin" >/dev/null
+  log "approle $role: policy $pol (read secret/envs/platform/$role only), token 2m, secret_id 60s / 1 use" >&2
+}
+
+# keys.sh llm-run claude|openai -- CMD...: CMD runs (port-forward kept open) with BRAVO_BAO_ADDR, BRAVO_BAO_CACERT,
+# BRAVO_BAO_KV_MOUNT, BRAVO_LLM_BAO_ROLE_ID and a one-use BRAVO_LLM_BAO_SECRET_ID in its env only. The credential
+# itself is read by CMD (bravo_agents.llm_secret) and never passes through this script, argv or a file.
+cmd_llm_run() {
+  local p=${1-} admin role_id secret_id
+  [[ $p == claude || $p == openai ]] || die "usage: keys.sh llm-run claude|openai -- <cmd> [args...]"
+  shift; [[ ${1-} == -- ]] && shift
+  (($#)) || die "usage: keys.sh llm-run claude|openai -- <cmd> [args...]"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  api GET "secret/metadata/envs/platform/llm-$p" "$admin" >/dev/null 2>&1 \
+    || die "secret/envs/platform/llm-$p is not stored (토큰 미저장)"
+  llm_role_setup "$p" "$admin"
+  role_id="$(api GET "auth/approle/role/llm-$p/role-id" "$admin" | jq -er .data.role_id)"
+  secret_id="$(printf '{"ttl":"60s","num_uses":1}' | api -d POST "auth/approle/role/llm-$p/secret-id" "$admin" | jq -er .data.secret_id)"
+  admin=""
+  BRAVO_BAO_ADDR="$BAO_ADDR" BRAVO_BAO_CACERT="$TLS_DIR/ca.crt" BRAVO_BAO_KV_MOUNT=secret \
+    BRAVO_LLM_BAO_ROLE_ID="$role_id" BRAVO_LLM_BAO_SECRET_ID="$secret_id" "$@"
+}
+
+cmd_llm_status() {
+  need_custody; need_unsealed
+  local admin p md; admin="$(custody_get .admin_token)"
+  for p in claude openai; do
+    if md="$(api GET "secret/metadata/envs/platform/llm-$p" "$admin" 2>/dev/null)"; then
+      printf 'secret/envs/platform/llm-%s: stored, version %s, updated %s\n' "$p" "$(jfield "$md" .data.current_version)" \
+        "$(jfield "$md" .data.updated_time)"
+    else
+      printf 'secret/envs/platform/llm-%s: not stored\n' "$p"
+    fi
+  done
+}
+
+# keys.sh env-put <env> <name> <field>: the value arrives on stdin (pipe) and is written to
+# secret/envs/<env>/<name> (other fields kept). For credentials minted elsewhere, e.g. a TokenRequest token.
+cmd_env_put() {
+  local env=${1-} name=${2-} field=${3-} admin
+  env_path_check "$env" "$name" "$field"
+  [[ ! -t 0 ]] || die "env-put reads the value from a pipe, not a terminal"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  if api GET "secret/metadata/envs/$env/$name" "$admin" >/dev/null 2>&1; then
+    jq -Rs --arg f "$field" '{data: {($f): .}}' | api -p PATCH "secret/data/envs/$env/$name" "$admin" >/dev/null
+  else
+    jq -Rs --arg f "$field" '{data: {($f): .}}' | api -d POST "secret/data/envs/$env/$name" "$admin" >/dev/null
+  fi
+  log "wrote secret/envs/$env/$name field $field from stdin (value not shown)"
+}
+
+# --- platform-eks (deploy/platform/openbao) --------------------------------------------------------------
+
+# CA + server cert for the platform OpenBao. The server key goes only into the cluster Secret
+# openbao/openbao-tls (EKS envelope-encrypted with KMS). The CA key is not kept (rotation = new CA);
+# ca.crt stays in custody for clients and is published as ConfigMap openbao-ca (not secret).
+cmd_tls_platform() {
+  command -v kubectl >/dev/null || die "needs kubectl"
+  if [[ -f $PLATFORM_TLS_DIR/ca.crt && ${1-} != --rotate ]]; then
+    log "platform TLS exists ($PLATFORM_TLS_DIR/ca.crt); use --rotate to replace, then restart openbao-0"; return 0
+  fi
+  mkdir -p "$CUSTODY_DIR" "$PLATFORM_TLS_DIR"; chmod 700 "$CUSTODY_DIR" "$PLATFORM_TLS_DIR"
+  local d; d="$(mktemp -d "$CUSTODY_DIR/.tls.XXXXXX")"
+  local sans="DNS:openbao,DNS:openbao.openbao,DNS:openbao.openbao.svc,DNS:openbao.openbao.svc.cluster.local"
+  sans="$sans,DNS:openbao-0.openbao-internal.openbao.svc,DNS:openbao-0.openbao-internal.openbao.svc.cluster.local"
+  sans="$sans,DNS:localhost,IP:127.0.0.1"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 90 \
+    -subj "/CN=bravo platform-eks OpenBao CA" -keyout "$d/ca.key" -out "$d/ca.crt" \
+    -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" 2>/dev/null
+  openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -subj "/CN=openbao.openbao.svc" -keyout "$d/tls.key" -out "$d/tls.csr" 2>/dev/null
+  openssl x509 -req -in "$d/tls.csr" -CA "$d/ca.crt" -CAkey "$d/ca.key" -days 30 \
+    -set_serial "0x$(openssl rand -hex 16)" -out "$d/tls.crt" -extfile <(printf '%s\n' \
+      "basicConstraints=critical,CA:FALSE" "keyUsage=critical,digitalSignature" \
+      "extendedKeyUsage=serverAuth" "subjectAltName=$sans") 2>/dev/null
+  kubectl --context "$PLATFORM_CONTEXT" -n openbao create secret generic openbao-tls \
+    --from-file=tls.crt="$d/tls.crt" --from-file=tls.key="$d/tls.key" --from-file=ca.crt="$d/ca.crt" \
+    --dry-run=client -o yaml | kubectl --context "$PLATFORM_CONTEXT" apply -f - >/dev/null
+  cp "$d/ca.crt" "$PLATFORM_TLS_DIR/ca.crt"; chmod 600 "$PLATFORM_TLS_DIR/ca.crt"
+  rm -rf "$d"
+  local ns
+  for ns in openbao bravo-control; do
+    kubectl --context "$PLATFORM_CONTEXT" get ns "$ns" >/dev/null 2>&1 || continue
+    kubectl --context "$PLATFORM_CONTEXT" -n "$ns" create configmap openbao-ca --from-file=ca.crt="$PLATFORM_TLS_DIR/ca.crt" \
+      --dry-run=client -o yaml | kubectl --context "$PLATFORM_CONTEXT" apply -f - >/dev/null
+  done
+  log "platform TLS: Secret openbao/openbao-tls (server cert 30 days), CA in $PLATFORM_TLS_DIR/ca.crt and ConfigMap openbao-ca"
+}
+
+# Move the pilot store to the platform EKS by raft snapshot, so the Shamir shares in custody keep working.
+#  1 pilot: break-glass root (custody only) -> raft snapshot to a 600 file in custody (barrier-encrypted)
+#  2 pilot: revoke that root there, stop the container (sealed from then on: no write after the snapshot)
+#  3 platform: throwaway init (1 share, file in custody) -> unseal -> snapshot-force restore
+#  4 platform: unseal with the custody shares, check the custody admin token and the secret tree
+#  5 revoke the root on the platform, delete the snapshot and throwaway init, custody bao_target=platform-eks
+cmd_migrate_to_platform() {
+  need_custody
+  [[ $(jq -r '.bao_target // "pilot"' "$CUSTODY") != platform-eks ]] || die "custody already says bao_target=platform-eks"
+  local ts snap boot admin root code st before after cid tmproot tmpkey
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"; snap="$CUSTODY_DIR/.migrate-$ts.snap"; boot="$CUSTODY_DIR/.platform-eks-bootstrap-$ts.json"
+
+  use_pilot; need_unsealed
+  admin="$(custody_get .admin_token)"
+  before="$(api LIST secret/metadata/envs "$admin" | jq -c '.data.keys | sort')"
+  cmd_generate_root
+  root="$(custody_get .root_token)"
+  code="$(curl -sS --cacert "$TLS_DIR/ca.crt" --max-time 60 -H @<(tok_hdr "$root") -o "$snap" -w '%{http_code}' \
+    "$BAO_ADDR/v1/sys/storage/raft/snapshot")" || die "snapshot request failed"
+  [[ $code == 200 && -s $snap ]] || { rm -f "$snap"; die "snapshot HTTP $code"; }
+  chmod 600 "$snap"
+  log "pilot: raft snapshot taken ($(wc -c <"$snap" | tr -d ' ') bytes, barrier-encrypted, $snap)"
+  api POST auth/token/revoke-self "$root" >/dev/null || die "could not revoke the pilot root token"
+  cid="$(docker ps -q --filter label=com.docker.compose.project=bravo-pilot --filter label=com.docker.compose.service=platform-bao)"
+  [[ -n $cid ]] && docker stop "$cid" >/dev/null && log "pilot: root revoked, container platform-bao stopped (sealed; volume kept for rollback)"
+
+  pf_start
+  st="$(seal_state)"
+  [[ $(jfield "$st" .initialized) == false ]] || die "platform OpenBao is already initialised; refusing to restore over it"
+  printf '{"secret_shares":1,"secret_threshold":1}' | api -d PUT sys/init >"$boot"; chmod 600 "$boot"
+  tmpkey="$(jq -er '.keys_base64[0]' "$boot")"; tmproot="$(jq -er .root_token "$boot")"
+  printf '%s' "$tmpkey" | jq -Rs '{key: .}' | api -d PUT sys/unseal >/dev/null
+  for _ in $(seq 1 40); do [[ $(curl -s -o /dev/null -w '%{http_code}' --cacert "$TLS_DIR/ca.crt" "$BAO_ADDR/v1/sys/health") == 200 ]] && break; sleep 0.5; done
+  code="$(curl -sS --cacert "$TLS_DIR/ca.crt" --max-time 120 -X POST -H @<(tok_hdr "$tmproot") \
+    -H 'Content-Type: application/octet-stream' --data-binary @"$snap" -o /dev/null -w '%{http_code}' \
+    "$BAO_ADDR/v1/sys/storage/raft/snapshot-force")" || die "restore request failed"
+  [[ $code == 2* ]] || die "snapshot-force HTTP $code (snapshot kept at $snap, throwaway init at $boot)"
+  tmpkey=""; tmproot=""
+  log "platform: snapshot restored"
+  # The node keeps the throwaway seal config in memory until it restarts (seen 2026-11-02: unseal with a
+  # custody share failed "invalid key size 33" until restart). Restart the pod, then unseal with custody.
+  pf_stop
+  kubectl --context "$PLATFORM_CONTEXT" -n openbao delete pod openbao-0 --wait=true >/dev/null
+  kubectl --context "$PLATFORM_CONTEXT" -n openbao wait --for=condition=PodScheduled pod/openbao-0 --timeout=120s >/dev/null
+  for _ in $(seq 1 60); do
+    [[ $(kubectl --context "$PLATFORM_CONTEXT" -n openbao get pod openbao-0 -o jsonpath='{.status.containerStatuses[0].started}' 2>/dev/null) == true ]] && break
+    sleep 1
+  done
+  pf_start
+  [[ $(jfield "$(seal_state)" .n) == "$(custody_get '.keys_base64 | length')" ]] || die "restored seal config does not match custody"
+  cmd_unseal
+  api GET auth/token/lookup-self "$admin" >/dev/null || die "custody admin token does not work on the platform store"
+  after="$(api LIST secret/metadata/envs "$admin" | jq -c '.data.keys | sort')"
+  [[ $before == "$after" ]] || die "secret/envs listing differs after restore"
+  log "platform: custody shares unseal it, admin token works, secret/envs listing matches ($(jq length <<<"$after") entries)"
+  api POST auth/token/revoke-self "$root" >/dev/null || die "could not revoke the root token on the platform store"
+  rm -f "$snap" "$boot"
+  jq -n --arg at "$(now)" --arg ctx "$PLATFORM_CONTEXT" \
+    '{bao_target: "platform-eks", bao_addr: ("kubectl --context " + $ctx + " -n openbao port-forward pod/openbao-0"),
+      migrated_at: $at, migrated_from: "pilot compose platform-bao (raft snapshot)", root_token_revoked_at: $at}' | custody_merge
+  log "done: custody bao_target=platform-eks; root revoked on both stores; snapshot and throwaway init deleted"
+}
+
 for bin in curl jq openssl; do command -v "$bin" >/dev/null || die "needs $bin"; done
 cmd=${1-help}; shift || true
+case $cmd in
+  tls | migrate-to-platform | help | -h | --help) ;;
+  *) [[ $BAO_TARGET == pilot ]] || pf_start ;;
+esac
+[[ $cmd == tls && $BAO_TARGET == platform-eks ]] && cmd=tls-platform
 case $cmd in
   tls) cmd_tls "$@" ;;
   init) cmd_init ;;
@@ -399,8 +887,20 @@ case $cmd in
   import-cloudflare) cmd_import_cloudflare ;;
   with-cloudflare) cmd_with_cloudflare "$@" ;;
   issue-tunnel-token) cmd_issue_tunnel_token "$@" ;;
+  env-delete) cmd_env_delete "$@" ;;
+  issue-service-token) cmd_issue_service_token "$@" ;;
   generate-root) cmd_generate_root ;;
   revoke-root) cmd_revoke_root ;;
-  help | -h | --help) sed -n '2,13p' "${BASH_SOURCE[0]}" ;;
+  env-generate) cmd_env_generate "$@" ;;
+  env-pipe) cmd_env_pipe "$@" ;;
+  env-put) cmd_env_put "$@" ;;
+  llm-run) cmd_llm_run "$@" ;;
+  llm-status) cmd_llm_status ;;
+  tls-platform) cmd_tls_platform "$@" ;;
+  migrate-to-platform) cmd_migrate_to_platform ;;
+  signer-init) cmd_signer_init ;;
+  with-signer) cmd_with_signer "$@" ;;
+  signer-pubkey) cmd_signer_pubkey "$@" ;;
+  help | -h | --help) sed -n '2,30p' "${BASH_SOURCE[0]}" ;;
   *) die "unknown command: $cmd (keys.sh help)" ;;
 esac

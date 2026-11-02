@@ -1,0 +1,56 @@
+{
+  "mode": "cli",
+  "phase": "apply",
+  "change_id": "3e24d0f4-06ba-416b-be5b-eb8d1206905a",
+  "target": "target-onprem",
+  "provenance": "Operator CLI run of the T31 pipeline (fork of the T10/T31 platform-API agent), t31-20261102T120416Z. No rehearsal artifact exists yet, so there is no diff: the image is apps/demo at git HEAD. No API approval record exists for a CLI run: the platform API is not deployed (laptop Compose pilot down, platform EKS not yet serving). Apply binding: the operator running this CLI approved the prepared digest by passing it here; this is not a console approval (approver != requester is not enforced in CLI mode).",
+  "started_at": "2026-11-02T12:05:18.850961+00:00",
+  "ended_at": "2026-11-02T12:05:26.221726+00:00",
+  "status": "failed",
+  "reason": "cosign_sign_failed",
+  "stages": [
+    {
+      "seq": 1,
+      "name": "tools.verify",
+      "result": "OK",
+      "ms": 233
+    },
+    {
+      "seq": 2,
+      "name": "approval.verify",
+      "result": "OK",
+      "ms": 0
+    },
+    {
+      "seq": 3,
+      "name": "image.locate",
+      "result": "OK",
+      "ms": 1
+    },
+    {
+      "seq": 4,
+      "name": "destination.connect",
+      "result": "OK",
+      "ms": 138
+    },
+    {
+      "seq": 5,
+      "name": "policies.scope",
+      "result": "SKIPPED",
+      "ms": 0
+    },
+    {
+      "seq": 6,
+      "name": "staging.push",
+      "result": "OK",
+      "ms": 5927
+    },
+    {
+      "seq": 7,
+      "name": "image.sign",
+      "result": "FAIL",
+      "ms": 1067
+    }
+  ],
+  "result": null
+}

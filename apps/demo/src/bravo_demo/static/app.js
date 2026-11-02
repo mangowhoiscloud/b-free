@@ -10,7 +10,8 @@
     messages: new Map(),   // id -> message
     pending: new Map(),    // idem_key -> {idem_key, author, body, attachment, status}
     attachment: null,      // {file, idem_key, uploaded}
-    dbOk: true, connected: false, hadConnection: false,
+    // null = no answer from the write DB yet: the badge says "checking", never "live".
+    dbOk: null, connected: false, hadConnection: false,
   };
 
   // crypto.randomUUID needs a secure context; phones on plain http LAN addresses do not have one.
@@ -42,9 +43,12 @@
     const live = $("live");
     live.classList.remove("off", "wait");
     if (!state.connected) { live.classList.add("off"); $("live-text").textContent = state.hadConnection ? t("reconnecting") : t("connecting"); }
+    else if (state.dbOk === null) { live.classList.add("off"); $("live-text").textContent = t("checking"); }
     else if (!state.dbOk) { live.classList.add("wait"); $("live-text").textContent = t("waiting"); }
     else { $("live-text").textContent = t("live"); }
-    $("attach-label").classList.toggle("disabled", !(state.limits && state.limits.attachments));
+    const attachOk = !!(state.limits && state.limits.attachments);
+    $("attach-label").classList.toggle("disabled", !attachOk);
+    $("attach-label").title = attachOk ? "" : t(state.limits && state.limits.attachments_state === "off" ? "attachOff" : "attachUnavailable");
   }
 
   function attachmentNode(att) {
@@ -136,7 +140,7 @@
       let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === "hello") {
         const prev = state.env;
-        state.env = msg.env; state.limits = msg.limits; state.connected = true; state.dbOk = true;
+        state.env = msg.env; state.limits = msg.limits; state.connected = true; state.dbOk = msg.db_ok === true ? true : null;
         if (prev && prev.id !== msg.env.id) {
           toast(t("envChanged", { env: envLabel(msg.env) }));
           const b = $("env"); b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash");
@@ -177,7 +181,12 @@
         render();
       } else if (msg.type === "status") {
         const was = state.dbOk; state.dbOk = !!msg.db_ok;
-        if (was !== state.dbOk) { banner(state.dbOk ? null : t("dbWaiting")); renderBadges(); }
+        if (state.limits && msg.attachments_state) {
+          state.limits.attachments_state = msg.attachments_state;
+          state.limits.attachments = msg.attachments_state === "ok";
+        }
+        if (was !== state.dbOk && was !== null) banner(state.dbOk ? null : t("dbWaiting"));
+        renderBadges();
       }
     };
     ws.onclose = (ev) => {
@@ -208,6 +217,7 @@
     if (res.status === 423) banner(t("attachPaused"), "err");
     else if (res.status === 413) banner(t("attachTooBig", { max: fmtBytes(doc.max_bytes || 0) }), "err");
     else if (res.status === 503 && doc.error === "writes_blocked") banner(t("writesPaused"));
+    else if (res.status === 503 && doc.error === "attachments_unavailable") banner(t("attachUnavailable"), "err");
     else if (res.status === 503) banner(t("delayed"));
     else banner(t("attachFailed"), "err");
     return null; // the same idempotency key is reused on the next try

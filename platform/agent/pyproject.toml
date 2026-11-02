@@ -1,7 +1,7 @@
 [project]
 name = "bravo-agents"
 version = "0.1.0"
-description = "Role-separated migration agents on the Claude Agent SDK. Proposals only; the state machine decides and executes."
+description = "Role-separated migration agents on an Agent SDK (Claude Agent SDK, OpenAI Agents SDK). Proposals only; the state machine decides and executes."
 requires-python = ">=3.12"
 dependencies = [
   "claude-agent-sdk==0.2.176",
@@ -11,9 +11,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest==9.2.0"]
-# Pilot/demo only: codex_chatgpt provider (operator ChatGPT login via the Codex SDK). Pulls the
-# matching Codex runtime wheel (openai-codex-cli-bin==0.157.0, same as the operator CLI).
-codex = ["openai-codex==0.157.0"]
+# openai_agents provider: the OpenAI Agents SDK as a second engine behind the same contract (13 6).
+# The API key comes from the platform OpenBao at run time; there is no ChatGPT-subscription login.
+# 0.20.0 is the newest release on openai<3: harbor 0.25.0 pulls litellm, which needs openai<3 (0.21+ needs openai>=3).
+openai = ["openai-agents==0.20.0"]
 
 [build-system]
 requires = ["setuptools==80.9.0"]

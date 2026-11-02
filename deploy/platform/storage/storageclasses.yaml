@@ -1,0 +1,34 @@
+# StorageClass names are the same in every environment (09-cni-csi.md, D-23): bravo-db, bravo-general.
+# EKS provider: EBS CSI, gp3, encrypted with the cluster EBS CMK (modules/cluster/eks kms.tf, alias/bravo-platform-ebs).
+# WaitForFirstConsumer keeps each volume in the AZ of its pod (one core node per AZ).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-db
+  labels:
+    app.kubernetes.io/part-of: bravo-platform
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  kmsKeyId: arn:aws:kms:ap-northeast-2:721622471953:key/ea325aeb-6662-432b-ab8d-1e90d85e2470
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-general
+  labels:
+    app.kubernetes.io/part-of: bravo-platform
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  kmsKeyId: arn:aws:kms:ap-northeast-2:721622471953:key/ea325aeb-6662-432b-ab8d-1e90d85e2470
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

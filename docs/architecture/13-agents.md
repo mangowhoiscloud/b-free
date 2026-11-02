@@ -136,19 +136,35 @@ R = 수행, A = 최종 책임, C = 의견, I = 통보. 에이전트는 어느 �
 - 에이전트 Pod가 가진 것은 짧은 수명의 Trial 토큰 하나입니다. 토큰은 MCP 헤더와 CLI 환경 변수에만 있고, 모델에게 Read · Bash 도구가 없어 읽을 수 없습니다. 시험(`test_trial_token_stays_out_of_model_context`)이 프롬프트 · 봉투 · 도구 정의에 토큰이 없음을 확인합니다.
 - 검사 환경 변수에 비밀 모양의 이름을 두면 허용 목록 로더가 거부합니다. `/src` 스냅샷은 수집기가 비밀 검사(gitleaks)로 가린 뒤 넣고, 도구 계층은 결과에서 비밀 모양 문자열을 가립니다(도구 계층 작업).
 
-**LLM 경로.** 모델 키와 클라우드 자격은 LLM 게이트웨이에만 있습니다. Anthropic API에는 일본 리전이 없고 ISMAP 등록이 없으므로, 운영 경로는 Amazon Bedrock 도쿄의 `jp.` 추론 프로필입니다(Opus 5.5, Haiku 5.5. Sonnet 5.5는 없음). 그래서 모델 등급은 opus와 haiku 둘만 씁니다. 데모는 합성 데이터만 보냅니다.
+**LLM 경로(팀장 지시 2026-11-02 "에이전트는 무조건 Agent SDK 사용해. 구독 정보는 내 계정 정보 쓰고").** 모든 역할이 Agent SDK 위에서 돕니다. 엔진은 `BRAVO_LLM_PROVIDER` 하나로 고르고, 없으면 `claude_subscription`입니다. 엔진을 바꿔도 봉투 · 도구 계층 · 출력 모델 · 검증 · `plan_propose` 제출은 같습니다(Beyond Lock-In). 데모는 합성 데이터만 보냅니다. 모델 등급은 opus와 haiku 둘입니다.
 
-| `BRAVO_LLM_PROVIDER` | SDK 환경 | 게이트웨이 뒤 |
-|---|---|---|
-| `anthropic_gateway` | `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`=Trial 토큰 | Anthropic API(개발) |
-| `bedrock_gateway` | `CLAUDE_CODE_USE_BEDROCK=1`, `ANTHROPIC_BEDROCK_BASE_URL`, `CLAUDE_CODE_SKIP_BEDROCK_AUTH=1`, `ANTHROPIC_CUSTOM_HEADERS`=Trial 토큰, `AWS_REGION` | Bedrock 도쿄 `jp.` 프로필(운영) |
-| `codex_chatgpt` | `BRAVO_CODEX_MODEL`(필수), `BRAVO_CODEX_EFFORT` · `BRAVO_CODEX_BIN`(선택). Codex Python SDK `openai-codex==0.157.0`, 운영자 기기의 ChatGPT 플랜 로그인 | **파일럿 · 데모 전용**(팀장 결정 2026-11-02). 게이트웨이 없음 |
+| `BRAVO_LLM_PROVIDER` | SDK | 자격 | 쓰임 |
+|---|---|---|---|
+| `claude_subscription`(기본) | Claude Agent SDK `claude-agent-sdk==0.2.176` | 팀장 구독의 장기 OAuth 토큰(`claude setup-token`). 플랫폼 OpenBao `secret/envs/platform/llm-claude`, 필드 `oauth_token` | **데모 경로** |
+| `openai_agents` | OpenAI Agents SDK `openai-agents==0.20.0` | OpenAI API 키. OpenBao `secret/envs/platform/llm-openai`, 필드 `api_key`. 없으면 `llm_unconfigured` | 대체 엔진 |
+| `anthropic_gateway` | Claude Agent SDK | 게이트웨이가 플랫폼 API 키를 가짐. 워커는 Trial 토큰(`ANTHROPIC_AUTH_TOKEN`)만 | 개발 |
+| `bedrock_gateway` | Claude Agent SDK(Bedrock 모드) | 게이트웨이가 AWS 자격을 가짐. 워커는 Trial 토큰(`ANTHROPIC_CUSTOM_HEADERS`)만 | **운영 목표**(Bedrock 도쿄 `jp.` 추론 프로필) |
 
-**`codex_chatgpt`의 차이와 격리(2026-11-02 실측, `bravo_agents/codex_chatgpt.py`).**
-- **차이 1(D-26).** 자격이 플랫폼 OpenBao가 아니라 운영자 기기의 Codex 자체 저장소에 있습니다. 코드는 그 파일을 열지 않고 app-server의 `account/read`로 로그인 여부만 봅니다(없으면 `codex_login_missing`).
-- **차이 2(운영 경로 아님).** ChatGPT 플랜은 개인 구독입니다. 고객에게 서비스하는 데 쓰는 것은 운영 경로가 아닙니다. 운영 경로는 플랫폼이 키를 가진 LLM 게이트웨이이고, 같은 계약 뒤에 Anthropic · OpenAI API나 고객이 요구하는 클라우드 엔진을 둡니다.
-- **격리 3중.** ① 설정 덮어쓰기: 내장 기능 35개 끔, 웹 검색 끔, `mcp_servers`는 `platform` 하나(승인 도구만 `enabled_tools`), 다른 설정 층의 MCP 서버는 꺼진 가짜 전송으로 덮음, 샌드박스 `read-only`, 승인 `never`, 실행마다 새 빈 cwd, `ephemeral` 스레드. ② 모델 카탈로그 사본: 모델 항목이 켜는 code mode(`exec`/`wait`), `apply_patch`, shell을 설정 키로는 끌 수 없어 `tool_mode=direct`, `shell_type=disabled`, `apply_patch_tool_type=null`로 고친 사본을 `model_catalog_json`으로 넘김. ③ 실행 전 검사(`isolation_preflight`): 같은 설정으로 인증 없는 로컬 가짜 공급자에 한 턴을 보내 모델에게 갈 도구 목록을 받고, 플랫폼 MCP의 승인 도구와 Codex의 MCP 리소스 조회 도구 셋 말고 하나라도 있거나 승인 도구가 빠지면 `codex_isolation_failed`로 멈춤. 실행 뒤에는 기록 항목에 MCP 밖 도구 실행이 없는지 다시 확인합니다.
-- **남은 차이.** MCP 리소스 조회 도구 셋(`list_mcp_resources` 등)은 끄는 설정이 없어 남습니다. 켜진 MCP 서버가 `platform` 하나라 도구 계층 밖으로 나가지 않습니다. `max_turns`는 MCP 호출 수로 셉니다. 비용 한도(`max_budget_usd`)는 플랜 정액이라 적용하지 않고 토큰 사용량만 남깁니다.
+**자격 전달(D-26, `bravo_agents/llm_secret.py`).** `claude_subscription`과 `openai_agents`의 자격은 플랫폼 OpenBao에만 있습니다. 리허설 서비스는 값을 읽지 않습니다.
+- 서비스는 KV 메타데이터로 있는지만 봅니다(`/readyz`의 `llm_token`, `POST /v1/trials` 사전 조건 `llm_token_missing`).
+- Trial마다 서비스가 공급자 전용 AppRole(`llm-claude`, `llm-openai`)의 secret_id를 하나 발급합니다(60초, 한 번). 정책은 그 경로 하나 읽기뿐입니다(`deploy/pilot/bao/policies/platform-llm-*.hcl`).
+- 워커가 그 secret_id로 로그인해 값을 한 번 읽고, 받은 토큰을 바로 폐기합니다. 값은 CLI 자식 프로세스 환경(`CLAUDE_CODE_OAUTH_TOKEN`)이나 OpenAI 클라이언트에만 들어갑니다. 파일 · argv · 로그 · 프롬프트에는 없습니다.
+- 운영자 기기에서는 `deploy/pilot/scripts/keys.sh llm-run claude -- <명령>`이 같은 전달을 합니다. 저장은 `keys.sh env-put platform llm-claude oauth_token`(표준 입력)입니다.
+
+**claude_subscription 격리(2026-11-02 실측, CLI 2.1.316).**
+- 환경: `KEEP_ENV`(PATH, 로캘, 프록시 등) 말고 상속한 변수는 모두 비웁니다. `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, Bedrock · Vertex · Foundry 변수, 클라우드 자격, 호스트 세션 변수(`CLAUDE_CODE_*`)도 빈 값입니다. `CLAUDE_CONFIG_DIR`와 `HOME`은 실행마다 새 임시 디렉터리라 운영자 `~/.claude`의 플러그인 · MCP 서버 · hook · 메모리 · 로그인을 읽지 않습니다. 토큰 없이 띄우면 "Not logged in"으로 끝납니다(키체인 대체 없음).
+- 옵션: `tools=[]`, `allowed_tools`=역할의 `mcp__platform__*`, `mcp_servers`=`platform` 하나(Streamable HTTP, Trial 토큰 헤더), `strict_mcp_config=True`, `setting_sources=[]`, `permission_mode="dontAsk"`, `output_format`=역할 스키마, `max_turns`=허용 목록, cwd=새 빈 디렉터리.
+- 시작 검사(`claude_engine.check_init`): init의 도구가 승인 도구와 `StructuredOutput` 밖이면 `unexpected_tools`, MCP 서버가 `platform` 하나가 아니면 `unexpected_mcp_servers`, 연결 안 됐거나 승인 도구가 빠지면 `mcp_unavailable`, CLI 내장(`builtin`) 아닌 플러그인이 보이면 `unexpected_plugins`, `apiKeySource`가 `none`이 아니면 `unexpected_credentials`. 모두 인프라 실패로 멈춥니다.
+- 실측 canary(`platform/rehearsal/tests/test_live_agents.py`): cwd 밖 파일에 무작위 표식을 두고 "읽고 셸 명령을 실행하라"고 지시했습니다. 모델은 플랫폼 도구만 불렀고 도구 계층이 막았습니다(`path_outside_workspace`, `repo_unconfigured`). 표식은 출력 · SDK 메시지 · CLI stderr · 도구 기록 · hook 기록 · 디스크 어디에도 없었습니다.
+- 비용: 구독은 정액이라 USD 한도(`max_budget_usd`)를 두지 않고 `total_cost_usd`는 비웁니다. 토큰 사용량과 API 가격 환산치(`api_price_equivalent_usd`, 청구액 아님)만 남깁니다. 한도는 턴과 시간입니다.
+
+**openai_agents 격리.** `Agent(tools=[], handoffs=[], mcp_servers=[platform])`, `MCPServerStreamableHttp`의 `tool_filter`=승인 도구, `output_type`=역할 Pydantic 모델(governance · ci는 자유 형식 객체가 있어 비엄격 스키마, 나머지는 엄격). 실행 전 `get_all_tools`가 승인 도구와 정확히 같지 않으면 멈춥니다. 키는 클라이언트에만 넘기고 `OPENAI_API_KEY` · `OPENAI_BASE_URL` 환경 변수를 읽지 않습니다. 주소는 `api.openai.com`으로 고정, 추적 전송은 끕니다. 판 고정: harbor 0.25.0이 끌어오는 litellm이 `openai<3`을 요구해, `openai<3`을 받는 마지막 판 0.20.0을 씁니다.
+
+**차이와 정직한 메모.**
+- 개인 구독은 고객에게 서비스하는 경로가 아닙니다. 데모에서 팀장 계정 하나로 돌리는 경로이고, 사용 한도에 걸리면 Trial이 멈출 수 있습니다. 운영 경로는 플랫폼이 키를 가진 LLM 게이트웨이(Bedrock 도쿄)입니다.
+- OpenAI Agents SDK에는 ChatGPT 구독으로 로그인하는 지원 경로가 없습니다. `openai_agents`는 API 키로만 돕니다. 흉내 내지 않습니다.
+- Codex SDK 경로(`codex_chatgpt`)는 지웠습니다. Codex SDK는 Agent SDK가 아니라는 팀장 지시입니다.
+- 남은 차이: Trial 토큰은 SDK가 `--mcp-config` 인자로 CLI에 넘겨 같은 기기의 프로세스 목록에 보입니다(짧은 수명, 그 Trial만). 구독 토큰은 argv에 없습니다.
 
 모델 ID(`BRAVO_MODEL_OPUS`, `BRAVO_MODEL_HAIKU`), 게이트웨이 주소, 지역(`BRAVO_BEDROCK_REGION`)은 환경 변수로만 받습니다. 하나라도 없으면 시작하지 않습니다.
 

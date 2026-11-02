@@ -134,7 +134,7 @@ def test_python_sdk_and_dsn_classification(app_tree: Path) -> None:
     assert kms_call["PY-KMS-CALL"] == Tier.CODE_CHANGE
     assert kms_call["GEN-KMS-ARN"] == Tier.ADAPTER  # KeyId="alias/chat-app"
     assert _at(r, py, 30)["PY-AWS-OTHER-CLIENT"] == Tier.UNCLASSIFIED
-    assert _at(r, py, 33)["GEN-DSN-URL"] == Tier.CONFIG_SWAP
+    assert _at(r, py, 33)["GEN-DSN-URL"] == Tier.CODE_CHANGE  # literal DSN in code (audit 37)
 
     by_rule = {(f.rule_id, f.line): f for f in r.findings if f.file == py}
     assert by_rule[("PY-S3-ENDPOINT-LITERAL", 17)].hardcoded is True
@@ -270,3 +270,34 @@ def test_trailing_yaml_comment_is_not_evidence(tmp_path: Path) -> None:
         'url: "https://example.com/#frag"\n')
     r = scan(root)
     assert [f.line for f in [*r.findings, *r.unclassified] if f.line in (1, 2)] == []
+
+
+
+def test_masks_cover_secret_shapes() -> None:
+    """Audit B18: evidence never carries these values."""
+    from bravo_collector.inventory.detector import mask
+
+    cases = {
+        'aws_secret_access_key=abcdEFGH1234abcdEFGH1234': "abcdEFGH1234",
+        "DB_PASSWORD=hunter2-value": "hunter2-value",
+        'POSTGRES_PASSWORD: "s3cr3t"': "s3cr3t",
+        '{"user": "app", "password": "jsonpass1"}': "jsonpass1",
+        "postgresql://app:dsnpass9@db:5432/chat": "dsnpass9",
+        "host=db user=app password=libpqpass": "libpqpass",
+        "export SESSION_TOKEN=tok-123456": "tok-123456",
+    }
+    for line, secret in cases.items():
+        out = mask(line)
+        assert secret not in out, (line, out)
+    assert mask("password=%s") == "password=%s"  # templates stay readable
+
+
+def test_skipped_files_are_listed_with_reason(tmp_path: Path) -> None:
+    root = tmp_path / "r"
+    root.mkdir()
+    (root / "bin.py").write_bytes(b"\x00\x01binary")
+    (root / "latin.py").write_bytes("caf\xe9".encode("latin-1"))
+    (root / "ok.py").write_text("x = 1\n")
+    r = scan(root)
+    assert r.files_skipped == 2
+    assert {s["file"]: s["reason"] for s in r.skipped} == {"bin.py": "binary (NUL byte)", "latin.py": "not UTF-8"}

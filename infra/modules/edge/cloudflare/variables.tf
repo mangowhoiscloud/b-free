@@ -27,6 +27,12 @@ variable "lb_enabled" {
   default     = false
 }
 
+variable "lb_environments" {
+  description = "LB pool을 만들 환경 이름 목록. null이면 environments 전부. 요금제의 포함 끝점 수를 넘지 않게 고름"
+  type        = list(string)
+  default     = null
+}
+
 variable "health_path" {
   description = "LB 모니터가 확인할 경로"
   type        = string

@@ -1,0 +1,54 @@
+# Platform DB (T7 "플랫폼 DB(상태 · 감사 로그 인덱스)", 10-cluster-overview 2.1): CNPG, PostgreSQL 16,
+# 3 instances, one per AZ (core node per AZ). Async streaming replicas; the API keeps working when one
+# AZ's node stops (T7 completion, D-21). RDS instead is an open decision (TECH-STACK-SPEC 3 #3).
+# Owner password: Secret platform-db-owner (basic-auth) piped from OpenBao secret/envs/platform/platform-db
+# (field owner) by deploy/platform/scripts/deliver-secrets.sh. Not in Git (D-26).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: platform-db
+  namespace: bravo-control
+  labels:
+    app.kubernetes.io/name: platform-db
+    app.kubernetes.io/part-of: bravo-platform
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.13-standard-trixie@sha256:8c25c9dcc7af607b65cfa6a125c8cae4c126a03d224dc1b6959cc279b7bf89f4
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: bravo
+      owner: bravo_owner
+      secret:
+        name: platform-db-owner
+  managed:
+    roles:
+      # Migrations (platform/api migrate.py) run as the owner and CREATE ROLE bravo_api/mcp/executor.
+      - name: bravo_owner
+        ensure: present
+        login: true
+        createrole: true
+        passwordSecret:
+          name: platform-db-owner
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      log_min_duration_statement: "1000"
+  storage:
+    storageClass: bravo-db
+    size: 2Gi
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: topology.kubernetes.io/zone
+    nodeSelector:
+      bravo.io/pool: core
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+  monitoring:
+    enablePodMonitor: false

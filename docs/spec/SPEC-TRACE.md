@@ -1,6 +1,6 @@
 # 스펙 추적표 (v0.1)
 
-스펙의 요구, 시나리오 인수 조건, 작업을 저장소 경로와 시험에 잇습니다. 스펙 문장은 요약만 하되, 완료 판정에 쓰는 조건은 빼지 않습니다. 원문은 스펙을 봅니다. 작업 표의 상태는 "계획", "진행", "완료" 중 하나이고, 끝나면 PR에서 고칩니다.
+스펙의 요구, 시나리오 인수 조건, 작업을 저장소 경로와 시험에 잇습니다. 스펙 문장은 요약만 하되, 완료 판정에 쓰는 조건은 빼지 않습니다. 원문은 스펙을 봅니다. 작업 표의 상태는 "계획", "진행", "완료" 중 하나이고, 끝나면 PR에서 고칩니다. 2026-11-02 20:45 KST 기준은 이렇습니다(감사 25). 코드나 실제 자원이 있으면 "진행"입니다. 완료 기준을 클라우드에서 확인한 작업은 아직 없습니다. 파일럿(노트북) 기록은 완료 근거로 쓰지 않습니다.
 
 담당 영역 이름은 스펙 §11.2를 따릅니다. 담당자 이름은 11/2 21:00 회의에서 채웁니다.
 
@@ -60,35 +60,37 @@
 
 | 작업 | 이름 | 영역 | 경로 | 완료 기준(요약) | 선행 | 상태 |
 |---|---|---|---|---|---|---|
-| T1 | AWS 기반: 권한, VPC 2개, 비용 태그 | 인프라 · CI | `infra/modules/network/aws`, `infra/envs/` | VPC 2개 생성 · 삭제 1회, 모든 자원에 태그 | 없음 | 계획 |
-| T2 | 온프렘 목적지: K3s(CIS 하드닝) + 노드 준비. 작업 이름은 D-21이 바꿈 | 인프라 · CI | `infra/modules/cluster/k3s`, `infra/envs/target-onprem/` | Lima VM 2대(server 1, agent 1)에서 K3s가 하드닝 설정으로 뜨고 kube-bench(K3s 벤치마크) 결과. StorageClass `bravo-db`, `bravo-general`이 있음(저장소는 D-22 검증 결과를 따름) | 없음 | 계획 |
+| T1 | AWS 기반: 권한, VPC 2개, 비용 태그 | 인프라 · CI | `infra/modules/network/aws`, `infra/envs/` | VPC 2개 생성 · 삭제 1회, 모든 자원에 태그 | 없음 | 진행(출발지 VPC · EKS apply됨, 플랫폼 EKS 생성 중 20:30 KST) |
+| T2 | 온프렘 목적지: K3s(CIS 하드닝) + 노드 준비. 작업 이름은 D-21이 바꿈 | 인프라 · CI | `infra/modules/cluster/k3s`, `infra/envs/target-onprem/` | Lima VM 2대(server 1, agent 1)에서 K3s가 하드닝 설정으로 뜨고 kube-bench(K3s 벤치마크) 결과. StorageClass `bravo-db`, `bravo-general`이 있음(저장소는 D-22 검증 결과를 따름) | 없음 | 진행(K3s v1.36.5+k3s1 노드 2개 기동, 20:41 KST NotReady) |
 | T3 | 리허설 네임스페이스 격리 실측 | 에이전트 · 리허설 | `platform/rehearsal/`, `policies/rehearsal/` | 격리 시험이 통과하고 생성 직후 자동 실행 | 없음 | 계획 |
-| T4 | 데모 앱 v0: 채팅 스텁 | 데모 앱 · 통합 | `apps/demo/` | 두 브라우저 메시지와 첨부, 멱등 키 중복 없음 | 없음 | 계획 |
+| T4 | 데모 앱 v0: 채팅 스텁 | 데모 앱 · 통합 | `apps/demo/` | 두 브라우저 메시지와 첨부, 멱등 키 중복 없음 | 없음 | 진행(코드) |
 | T5 | 6개 통제 시험 설계 | 보안 통제 · 게이트 | `platform/gate/controls/` | EKS와 K3s에서 같은 뜻으로 비교할 통제 × 시험 × 합격 기준 표 확정, 리뷰 승인. kube-bench는 벤치마크가 달라 같은 뜻의 항목만 비교(`docs/architecture/04-governance.md` 1절) | 없음 | 계획 |
-| T6 | 출발지: EKS + CNPG + PgBouncer + ESO | 인프라 · CI | `infra/envs/source-aws/` | 데모 앱 v0이 EKS에서 PgBouncer 경유로 동작 | T1 | 계획 |
-| T7 | 플랫폼 클러스터(EKS) + Actions OIDC. 작업 이름은 D-21이 바꿈 | 인프라 · CI | `infra/modules/cluster/eks`, `infra/envs/platform-aws/`, `.github/workflows/` | OIDC로 플랫폼 배포 1회. 관리형 노드 그룹 core가 3 AZ에 하나씩, agents에 taint. core 노드 하나를 지워도 API와 상태 머신이 응답 | T1 | 계획 |
-| T8 | 복제 경로: Tailscale + 논리 복제 왕복(스펙 이름 그대로. 제안 D-16은 연결을 Cloudflare 링크로 바꿈) | 데이터 · 컷오버 | `infra/`, `platform/executor/` | 양방향 도착과 지연값 기록 | T2, T6 | 계획 |
+| T6 | 출발지: EKS + CNPG + PgBouncer + ESO | 인프라 · CI | `infra/envs/source-aws/` | 데모 앱 v0이 EKS에서 PgBouncer 경유로 동작 | T1 | 진행(EKS `bravo-source` 가동. `chat`의 CNPG · PgBouncer · 앱 없음) |
+| T7 | 플랫폼 클러스터(EKS) + Actions OIDC. 작업 이름은 D-21이 바꿈 | 인프라 · CI | `infra/modules/cluster/eks`, `infra/envs/platform-aws/`, `.github/workflows/` | OIDC로 플랫폼 배포 1회. 관리형 노드 그룹 core가 3 AZ에 하나씩, agents에 taint. core 노드 하나를 지워도 API와 상태 머신이 응답 | T1 | 진행(EKS `bravo-platform` CREATING, 20:30 KST) |
+| T8 | 복제 경로: Tailscale + 논리 복제 왕복(스펙 이름 그대로. 제안 D-16은 연결을 Cloudflare 링크로 바꿈) | 데이터 · 컷오버 | `infra/`, `platform/executor/` | 양방향 도착과 지연값 기록 | T2, T6 | 진행(코드 `repl_setup.py`. 클라우드 실행 없음) |
 | T9 | 목적지 보안 구성요소: OpenBao, ESO, S3 호환 저장소(후보 Rook-Ceph RGW, 제안 D-22, 검증 중) | 보안 통제 · 게이트 | `infra/modules/secret/onprem`, `infra/modules/object_store/onprem` | 앱 전용 자격만 버킷 접근, 무인증 거부 | T2 | 계획 |
-| T10 | 상태 머신 + 플랫폼 API + 이벤트 스트림 | 데이터 · 컷오버 | `platform/api/` | 목업으로 COLLECT에서 DONE까지, 조건 미충족 전이 거부 | T7 | 계획 |
-| T11 | 에이전트 워커 + 도구 계층 + 제안서 스키마 | 에이전트 · 리허설 | `platform/agent/` | 틀린 스키마와 차단 명령이 거부 · 기록 | T7 | 계획 |
-| T12 | Cutover Executor | 데이터 · 컷오버 | `platform/executor/` | 컷오버 1회, ABORT_PRE_WRITE와 SAFE_HOLD 각 1회 | T8, T10 | 계획 |
-| T13 | 무결성 비교와 영수증 | 데이터 · 컷오버 | `platform/executor/integrity/` | 한 행 어긋나면 MISMATCH, 맞추면 MATCH. 영수증 저장 | T8 | 계획 |
-| T14 | 통제 시험기와 비교표 | 보안 통제 · 게이트 | `platform/gate/controls/` | 6개 통제가 양쪽에서 결과를 냄 | T5, T6, T9 | 계획 |
-| T15 | 리허설 러너: 작업 1건, 검증 Job, 승인 결속 | 에이전트 · 리허설 | `platform/rehearsal/` | 리허설, 검증 통과, 승인 대기(diff와 digest 결속) | T3, T11 | 계획 |
-| T16 | 의존성 인벤토리: 정적 탐지 + 3등급 | 에이전트 · 리허설 | `platform/agent/inventory/` | DB 주소, S3, Secrets Manager, KMS가 등급과 함께 나옴 | T4, T11 | 계획 |
-| T17 | Edge: Cloudflare LB + Tunnel 가중치 전환 | 콘솔 · 관측 · Edge | `infra/modules/edge/`, `platform/api/edge/` | 10, 50, 100, 0% 전환과 반영 시간 기록 | T2, T6 | 계획 |
-| T18 | 부하 생성기와 관측 | 콘솔 · 관측 · Edge | `tools/loadgen/` | 실패 · 유실 · 중복과 쓰기 공백 자동 집계 | T4 | 계획 |
-| T19 | 원본 대조 게이트 | 보안 통제 · 게이트 | `platform/gate/` | 열린 버킷과 스키마 불일치 BLOCK, 고친 뒤 PASS. 같은 입력이면 판정이 항상 같음 | T13, T14 | 계획 |
-| T20 | 되돌리기(failback) | 데이터 · 컷오버 | `platform/executor/` | 전환 뒤 메시지가 되돌린 뒤 출발지에 모두 있음 | T12, T13 | 계획 |
-| T21 | 콘솔 | 콘솔 · 관측 · Edge | `platform/console/` | 10장 데모 흐름 전체를 한 화면에서 조작 | T10, T18 | 계획 |
-| T22 | 데모 앱 v1 | 데모 앱 · 통합 | `apps/demo/` | 컷오버 중 휴대폰 채팅이 이어지고 환경 표시가 바뀜 | T4 | 계획 |
+| T10 | 상태 머신 + 플랫폼 API + 이벤트 스트림 | 데이터 · 컷오버 | `platform/api/` | 실제 단계로 COLLECT에서 DONE까지, 조건 미충족 전이 거부. 스펙 원문은 "목업 단계로"이지만 팀장 지시(목업 금지, `deploy/CLOUD-E2E-CONTRACT.md` 1절)를 따름 | T7 | 진행(코드. 실행은 파일럿(노트북) 기록뿐) |
+| T11 | 에이전트 워커 + 도구 계층 + 제안서 스키마 | 에이전트 · 리허설 | `platform/agent/` | 틀린 스키마와 차단 명령이 거부 · 기록 | T7 | 진행(코드) |
+| T12 | Cutover Executor | 데이터 · 컷오버 | `platform/executor/` | 컷오버 1회, ABORT_PRE_WRITE와 SAFE_HOLD 각 1회 | T8, T10 | 진행(코드. 클라우드 실행 없음) |
+| T13 | 무결성 비교와 영수증 | 데이터 · 컷오버 | `platform/executor/integrity/` | 한 행 어긋나면 MISMATCH, 맞추면 MATCH. 영수증 저장 | T8 | 진행(코드) |
+| T14 | 통제 시험기와 비교표 | 보안 통제 · 게이트 | `platform/gate/controls/` | 6개 통제가 양쪽에서 결과를 냄 | T5, T6, T9 | 진행(코드) |
+| T15 | 리허설 러너: 작업 1건, 검증 Job, 승인 결속 | 에이전트 · 리허설 | `platform/rehearsal/` | 리허설, 검증 통과, 승인 대기(diff와 digest 결속) | T3, T11 | 진행(코드) |
+| T16 | 의존성 인벤토리: 정적 탐지 + 3등급 | 에이전트 · 리허설 | `platform/agent/inventory/` | DB 주소, S3, Secrets Manager, KMS가 등급과 함께 나옴 | T4, T11 | 진행(코드) |
+| T17 | Edge: Cloudflare LB + Tunnel 가중치 전환 | 콘솔 · 관측 · Edge | `infra/modules/edge/`, `platform/api/edge/` | 10, 50, 100, 0% 전환과 반영 시간 기록 | T2, T6 | 진행(코드만, 미실행. 감사 B21) |
+| T18 | 부하 생성기와 관측 | 콘솔 · 관측 · Edge | `tools/loadgen/` | 실패 · 유실 · 중복과 쓰기 공백 자동 집계 | T4 | 진행(코드. 감사 B14 · B15 열림) |
+| T19 | 원본 대조 게이트 | 보안 통제 · 게이트 | `platform/gate/` | 열린 버킷과 스키마 불일치 BLOCK, 고친 뒤 PASS. 같은 입력이면 판정이 항상 같음 | T13, T14 | 진행(코드. 감사 A5 · B16 · B17 열림) |
+| T20 | 되돌리기(failback) | 데이터 · 컷오버 | `platform/executor/` | 전환 뒤 메시지가 되돌린 뒤 출발지에 모두 있음 | T12, T13 | 진행(코드. 클라우드 실행 없음) |
+| T21 | 콘솔 | 콘솔 · 관측 · Edge | `platform/console/` | 10장 데모 흐름 전체를 한 화면에서 조작 | T10, T18 | 진행(코드) |
+| T22 | 데모 앱 v1 | 데모 앱 · 통합 | `apps/demo/` | 컷오버 중 휴대폰 채팅이 이어지고 환경 표시가 바뀜 | T4 | 진행(코드) |
 | T23 | 규제 매핑표 원문 확인 (P1) | 보안 통제 · 게이트 | `platform/governance/packs/` | 매핑표의 "원문 확인" 칸이 출처와 함께 채워짐 | T5 | 계획 |
 | T24 | 감사 로그(S3 Object Lock) (P1) | 보안 통제 · 게이트 | `platform/api/audit/` | 데모 1회 기록 조회, 삭제 시도 거부 | T10 | 계획 |
 | T25 | 반복 측정 · 장애 주입 · SAFE_HOLD 시험 (P1) | 데이터 · 컷오버 | `tests/e2e/`, `tools/loadgen/` | 측정 리포트와 장애별 결과 | T12, T18, T20 | 계획 |
 | T26 | Harbor(에이전트 샌드박스 · 평가 프레임워크, CNCF 레지스트리 Harbor와 다름) 평가: 결함 시나리오 반복 (P1) | 에이전트 · 리허설 | `platform/rehearsal/` | 발표용 수치 표 1개 | T15 | 계획 |
 | T27 | Exit Drill (P1) | 데이터 · 컷오버 | `platform/executor/drill/` | 차단 상태에서 목적지 앱 동작, 남은 의존성 지도 | T12 | 계획 |
-| T28 | 통합 리허설 · 데모 각본 · reset | 전원 | `tests/e2e/`, `docs/runbooks/` | 270초 안에 끝나는 리허설 3회 연속 | T15, T16, T17, T19, T20, T21, T22 | 계획 |
-| T29 | 결정 문서 · ADR · 설계 문서 갱신 (P1) | 전원 | `docs/adr/` | 결정 문서의 모든 결정에 ADR | 없음 | 계획 |
+| T28 | 통합 리허설 · 데모 각본 · reset | 전원 | `tests/e2e/`, `docs/runbooks/` | 270초 안에 끝나는 리허설 3회 연속 | T15, T16, T17, T19, T20, T21, T22 | 진행(각본 `docs/demo/SCRIPT.md`, reset `deploy/scripts/reset-demo.sh`, 리허설 0회) |
+| T29 | 결정 문서 · ADR · 설계 문서 갱신 (P1) | 전원 | `docs/adr/` | 결정 문서의 모든 결정에 ADR | 없음 | 진행(ADR 0002–0009) |
+| T30 | 목적지 워크로드: CNPG · PgBouncer · 앱 + 연결(스펙 이름은 Tailscale. D-16은 Cloudflare 링크, 지금은 임시 링크) | 인프라 · CI | `infra/envs/target-onprem/`, `apps/demo/chart/` | 목적지 앱이 목적지 PgBouncer와 링크를 거쳐 출발지 DB에 읽기 · 쓰기 성공 | T2 | 계획 |
+| T31 | 승인 반영 경로: diff, 이미지, 목적지 배포 | 에이전트 · 리허설 | `platform/rehearsal/`, `.github/workflows/` | 승인한 버킷 정책과 코드 수정이 목적지에 반영되고 배포 digest가 승인 digest와 같으며 게이트 재대조 PASS | T7, T15, T30 | 계획 |
 
 가장 긴 경로는 T1, T6, T8, T12, T20, T28입니다(§11.1).
 

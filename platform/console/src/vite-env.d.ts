@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_PROMETHEUS_URL?: string;
   readonly VITE_TEMPO_URL?: string;
   readonly VITE_DOH_URL?: string;
+  readonly VITE_APP_ENVS?: string;
 }
 
 interface ImportMeta {

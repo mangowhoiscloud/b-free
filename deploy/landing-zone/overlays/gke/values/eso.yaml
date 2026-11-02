@@ -1,0 +1,11 @@
+# external-secrets chart 2.14.0. ESO only on customer clusters (D-26): no vault in the cluster.
+installCRDs: true
+replicaCount: 1
+resources:
+  requests: {cpu: 20m, memory: 64Mi}
+webhook:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+certController:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}

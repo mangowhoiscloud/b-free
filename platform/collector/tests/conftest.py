@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 import shutil
 import subprocess
@@ -13,6 +14,8 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from bravo_collector.scram import scram_sha256_verifier
+
 PG_IMAGE = "postgres:16.15@sha256:5db6dac2ef5dcff512f4f00a009c3c332b9f2f28f24277175bf3e4a3d02ef83a"
 SQL_DIR = Path(__file__).resolve().parents[1] / "sql"
 
@@ -23,6 +26,7 @@ class PgServer:
     port: int
     superuser_dsn: str
     collector_dsn: str
+    container_id: str = ""
 
 
 def _docker_ok() -> str | None:
@@ -31,6 +35,16 @@ def _docker_ok() -> str | None:
     r = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], capture_output=True, text=True,  # noqa: S603,S607
                        timeout=20, check=False)
     return None if r.returncode == 0 else f"docker daemon unavailable: {r.stderr.strip()[:200]}"
+
+
+def apply_collector_ro(cid: str, sql: str, verifier: str) -> subprocess.CompletedProcess[str]:
+    """psql inside the container; the verifier goes by environment (name only in argv), never plaintext."""
+    env = {**os.environ, "COLLECTOR_RO_SCRAM_VERIFIER": verifier}
+    return subprocess.run(  # noqa: S603
+        ["docker", "exec", "-i", "-e", "COLLECTOR_RO_SCRAM_VERIFIER", cid,  # noqa: S607
+         "psql", "-U", "postgres", "-d", "chat", "-v", "ON_ERROR_STOP=1", "-q"],
+        input=sql, capture_output=True, text=True, timeout=60, check=True, env=env,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -63,17 +77,13 @@ def pg_server() -> Iterator[PgServer]:
                 time.sleep(0.5)
         # Apply the shipped SQL with psql inside the container (same path operators use).
         sql = (SQL_DIR / "collector_ro.sql").read_text(encoding="utf-8")
-        subprocess.run(  # noqa: S603
-            ["docker", "exec", "-i", cid, "psql", "-U", "postgres", "-d", "chat", "-v", "ON_ERROR_STOP=1",  # noqa: S607
-             "-v", f"collector_ro_password={ro_pw}", "-q"],
-            input=sql, capture_output=True, text=True, timeout=60, check=True,
-        )
+        apply_collector_ro(cid, sql, scram_sha256_verifier(ro_pw))
         with psycopg.connect(su, autocommit=True) as conn:
             conn.execute("CREATE TABLE messages (id bigserial PRIMARY KEY, body text NOT NULL)")
             conn.execute("CREATE ROLE app_writer LOGIN PASSWORD NULL")
             conn.execute("GRANT SELECT, INSERT ON messages TO app_writer")
             conn.execute("GRANT SELECT ON messages TO PUBLIC")  # planted regression to be reported
         ro = f"host=127.0.0.1 port={port} dbname=chat user=collector_ro password={ro_pw}"
-        yield PgServer(host="127.0.0.1", port=port, superuser_dsn=su, collector_dsn=ro)
+        yield PgServer(host="127.0.0.1", port=port, superuser_dsn=su, collector_dsn=ro, container_id=cid)
     finally:
         subprocess.run(["docker", "rm", "-f", cid], capture_output=True, timeout=60, check=False)  # noqa: S603,S607

@@ -16,11 +16,12 @@ terraform {
     }
   }
 
-  # 상태는 GCS 백엔드(잠금 내장). 버킷 이름은 저장소에 두지 않고 init 때 넘김.
+  # 상태는 다른 환경과 같은 S3 백엔드(플랫폼 계정, 잠금 파일). key = "envs/target-gcp.tfstate".
   #   terraform init -backend-config=backend.hcl
-  # backend.hcl 예: bucket = "...", prefix = "envs/target-gcp"
+  # 왜 GCS가 아닌가(README "상태 저장"): 상태는 플랫폼이 쥐는 것이고(TECH-STACK-SPEC 3절 #1), 지울 수도 있는
+  # 고객 프로젝트 안에 두지 않음. 경계는 S3 API라 endpoint만 바꾸면 RGW 등 S3 호환 저장소로 옮길 수 있음.
   # 검증만 할 때는 terraform init -backend=false
-  backend "gcs" {}
+  backend "s3" {}
 }
 
 provider "google" {
@@ -28,9 +29,5 @@ provider "google" {
   region  = var.region
 
   # NFR-8: 모든 자원에 component 라벨(GCP 라벨은 소문자만)
-  default_labels = merge(var.labels, {
-    component  = "target"
-    env        = "target-gcp"
-    managed-by = "terraform"
-  })
+  default_labels = local.labels
 }

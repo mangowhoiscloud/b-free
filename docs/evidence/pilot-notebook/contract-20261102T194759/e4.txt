@@ -1,0 +1,21 @@
+fence update: ERROR:  permission denied for table bravo_fence
+barrier insert: ERROR:  permission denied for table bravo_barrier
+alter role: ERROR:  permission denied to alter role
+DETAIL:  Only roles with the CREATEROLE attribute and the ADMIN option on role "app_writer" may alter this role.
+revoke: WARNING:  no privileges could be revoked for "messages"
+WARNING:  no privileges could be revoked for column "tableoid" of relation "messages"
+WARNING:  no privileges could be revoked for column "cmax" of relation "messages"
+WARNING:  no privileges could be revoked for column "xmax" of relation "messages"
+WARNING:  no privileges could be revoked for column "cmin" of relation "messages"
+WARNING:  no privileges could be revoked for column "xmin" of relation "messages"
+WARNING:  no privileges could be revoked for column "ctid" of relation "messages"
+WARNING:  no privileges could be revoked for column "id" of relation "messages"
+WARNING:  no privileges could be revoked for column "room" of relation "messages"
+WARNING:  no privileges could be revoked for column "author" of relation "messages"
+WARNING:  no privileges could be revoked for column "body" of relation "messages"
+WARNING:  no privileges could be revoked for column "idem_key" of relation "messages"
+WARNING:  no privileges could be revoked for column "created_at" of relation "messages"
+REVOKE
+subscription: ERROR:  must be owner of subscription bravo_rev_sub
+pgbouncer PAUSE: ERROR:  admin access needed
+pgbouncer RELOAD: ERROR:  admin access needed

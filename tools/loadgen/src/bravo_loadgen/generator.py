@@ -106,7 +106,7 @@ class LoadGenerator:
             self._queue.put_nowait(None)
 
     async def _attempt(self, conn: AsyncConnection, req: Request) -> tuple[int, bool]:
-        body = f"load message {req.request_id}"
+        body = body_marker(req.request_id)
         cur = await conn.execute(INSERT_SQL, (self.cfg.room, self.cfg.author, body, req.request_id))
         row = await cur.fetchone()
         if row is not None:
@@ -195,14 +195,19 @@ class LoadGenerator:
         return self.result
 
 
+def body_marker(request_id: uuid.UUID) -> str:
+    return f"load message {request_id}"
+
+
 async def count_keys(dsn: str, keys: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Rows per request, counted by the body marker (see stats.evaluate_nfr2)."""
     counts: dict[uuid.UUID, int] = {}
+    by_marker = {body_marker(k): k for k in keys}
     async with await AsyncConnection.connect(dsn, autocommit=True, prepare_threshold=None) as conn:
-        for i in range(0, len(keys), 1000):
-            chunk = keys[i : i + 1000]
-            cur = await conn.execute(
-                "SELECT idem_key, count(*) FROM messages WHERE idem_key = ANY(%s) GROUP BY idem_key", (chunk,)
-            )
-            for key, n in await cur.fetchall():
-                counts[key] = int(n)
+        markers = list(by_marker)
+        for i in range(0, len(markers), 1000):
+            chunk = markers[i : i + 1000]
+            cur = await conn.execute("SELECT body, count(*) FROM messages WHERE body = ANY(%s) GROUP BY body", (chunk,))
+            for body, n in await cur.fetchall():
+                counts[by_marker[body]] = int(n)
     return counts

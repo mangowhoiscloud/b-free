@@ -85,3 +85,31 @@ def test_trial_token_stays_out_of_model_context(envelope):
     for text in (o.system_prompt, render_task_prompt(envelope), canonical_json(envelope).decode(),
                  str(o.output_format), str(o.allowed_tools), str(o.disallowed_tools)):
         assert "tok-SECRET-123" not in text
+
+
+def test_subscription_options_match_13_section_6(envelope):
+    """claude_subscription: tools=[], 승인 MCP 도구만, platform 하나, strict, setting_sources=[], dontAsk,
+    역할 스키마, max_turns, 빈 cwd, 새 CLAUDE_CONFIG_DIR, 토큰은 CLI 환경에만, USD 한도 없음."""
+    import pytest
+
+    from bravo_agents.llm import resolve_llm, subscription_env
+    al = load_allowlist("governance")
+    route = resolve_llm("opus", {"BRAVO_MODEL_OPUS": "claude-opus-5-5"})
+    env = subscription_env("oauth-SECRET", "/tmp/cfg", {"ANTHROPIC_API_KEY": "k", "PATH": "/bin"})
+    o = build_options(al, envelope, "https://tools.bravo.svc/mcp", "tok", route, "/tmp/cfg",
+                      make_hooks(envelope, _Sink()), cli_env=env, cwd="/tmp/empty-cwd")
+    assert o.tools == [] and o.permission_mode == "dontAsk" and o.setting_sources == []
+    assert o.strict_mcp_config is True and list(o.mcp_servers) == ["platform"]
+    assert o.mcp_servers["platform"]["type"] == "http"
+    assert o.allowed_tools == ["mcp__platform__inventory_describe", "mcp__platform__policy_evaluate",
+                               "mcp__platform__rehearsal_exec"]
+    assert o.output_format == {"type": "json_schema", "schema": output_schema("governance")}
+    assert o.max_turns == al.limits.max_turns and o.max_budget_usd is None
+    assert o.model == "claude-opus-5-5" and o.cwd == "/tmp/empty-cwd"
+    assert o.env["CLAUDE_CONFIG_DIR"] == "/tmp/cfg" and o.env["CLAUDE_CODE_OAUTH_TOKEN"] == "oauth-SECRET"
+    assert o.env["ANTHROPIC_API_KEY"] == "" and o.env["ANTHROPIC_BASE_URL"] == ""
+    for text in (o.system_prompt, str(o.mcp_servers), str(o.allowed_tools), str(o.output_format)):
+        assert "oauth-SECRET" not in text                 # 토큰은 환경에만(argv · 프롬프트에 없음)
+    with pytest.raises(ValueError):
+        build_options(al, envelope, "https://tools.bravo.svc/mcp", "tok", route, "/tmp/cfg",
+                      make_hooks(envelope, _Sink()))     # 구독인데 cli_env가 없으면 만들지 않음

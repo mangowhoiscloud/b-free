@@ -1,0 +1,26 @@
+# Envoy Gateway 1.9.3 (gateway-helm) = Gateway API implementation for the platform front (bravo-gateway).
+# Why not the Cilium implementation (TECH-STACK-SPEC 1 "Gateway API(Envoy, Cilium 구현)"): in AWS VPC CNI
+# chaining mode Cilium's Envoy dials backends from its own cluster-pool "ingress" IP (10.0.x.y), which the VPC
+# does not route, and the agent forces masquerading off in chaining mode (config drift "actual=false").
+# Cross-node Gateway -> backend returned 503 (2026-11-02 20:58). Envoy Gateway's proxy is an ordinary pod with
+# a VPC address. Cilium stays the CNI (NetworkPolicy, Hubble). Gateway API CRDs v1.6.3 are installed
+# separately (deploy/platform/gateway-api), so this chart does not install CRDs.
+crds:
+  enabled: false
+deployment:
+  replicas: 1
+  envoyGateway:
+    resources:
+      requests: {cpu: 20m, memory: 96Mi}
+      limits: {memory: 384Mi}
+  pod:
+    nodeSelector:
+      bravo.io/pool: core
+# Proxies (Deployment + Service) live in the Gateway's own namespace (bravo-edge), not in envoy-gateway-system.
+config:
+  envoyGateway:
+    provider:
+      type: Kubernetes
+      kubernetes:
+        deploy:
+          type: GatewayNamespace

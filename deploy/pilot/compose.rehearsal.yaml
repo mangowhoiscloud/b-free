@@ -12,8 +12,9 @@
 #   PLATFORM_DB_REHEARSAL_RO_PASSWORD, REHEARSAL_SYNTHETIC_RW_PASSWORD, REHEARSAL_SYNTHETIC_ADMIN_PASSWORD
 #   REHEARSAL_HOST_PORT            host port of the service (default 8090)
 # Without a kubeconfig or a model route every Trial is refused with its reason (cluster_unconfigured,
-# llm_unconfigured); nothing is simulated. The codex_chatgpt route needs the operator's ChatGPT login,
-# so live Codex rehearsals run through the CLI runner on the operator machine, not in this container.
+# llm_unconfigured); nothing is simulated. claude_subscription (default) needs the token in OpenBao
+# (keys.sh env-put platform llm-claude oauth_token) and the AppRole llm-claude (keys.sh llm-run creates it);
+# the service mints one secret_id per Trial and the worker reads the token itself (13 6).
 
 x-hardening: &hardening
   read_only: true
@@ -83,7 +84,7 @@ services:
       BRAVO_BAO_SYNTHETIC_DB_PATH: platform/rehearsal-synthetic-db
       BRAVO_BAO_EVIDENCE_DB_PATH: platform/rehearsal-evidence-db
       # Model route: provider and route variables only (13 6). Empty means llm_unconfigured.
-      BRAVO_LLM_PROVIDER: ${BRAVO_LLM_PROVIDER:-}
+      BRAVO_LLM_PROVIDER: ${BRAVO_LLM_PROVIDER:-claude_subscription}
       BRAVO_LLM_GATEWAY_URL: ${BRAVO_LLM_GATEWAY_URL:-}
       BRAVO_MODEL_OPUS: ${BRAVO_MODEL_OPUS:-}
       BRAVO_MODEL_HAIKU: ${BRAVO_MODEL_HAIKU:-}

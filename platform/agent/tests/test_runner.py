@@ -47,3 +47,15 @@ def test_accepts_dict_envelope_and_rejects_invalid(llm_env):
         asyncio.run(run_agent("governance", {"plan_id": "p-1"}, "https://tools.bravo.svc/mcp", "tok",
                               evidence=_Sink()))
     assert e.value.code == "envelope_invalid"
+
+
+@pytest.mark.parametrize("provider", ["claude_subscription", "openai_agents", ""])
+def test_vault_providers_fail_closed_without_openbao_delivery(monkeypatch, provider):
+    """모델 ID는 있지만 OpenBao 전달 값이 없으면 SDK를 띄우기 전에 llm_unconfigured(가짜 자격 없음)."""
+    for k in ("BRAVO_BAO_ADDR", "BRAVO_LLM_BAO_ROLE_ID", "BRAVO_LLM_BAO_SECRET_ID", "CLAUDE_CODE_OAUTH_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("BRAVO_LLM_PROVIDER", provider)
+    monkeypatch.setenv("BRAVO_MODEL_OPUS", "m-opus")
+    with pytest.raises(AgentRunError) as e:
+        asyncio.run(run_agent("governance", make_envelope(), "https://tools.bravo.svc/mcp", "tok", evidence=_Sink()))
+    assert e.value.code == "llm_unconfigured" and "openbao delivery not configured" in e.value.detail

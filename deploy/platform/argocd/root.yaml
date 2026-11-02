@@ -1,0 +1,20 @@
+# App-of-apps root for the platform EKS. Applied once by deploy/platform/scripts/bootstrap.sh; from then on
+# Argo CD pulls everything under deploy/platform/argocd/apps from Git (D-16, 14-provisioning-scenarios 1.4-1.5).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    targetRevision: main
+    path: deploy/platform/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

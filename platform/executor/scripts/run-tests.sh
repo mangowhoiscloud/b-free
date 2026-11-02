@@ -29,6 +29,7 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
+export BRAVO_TEST_PG_IMAGE
 export BRAVO_TEST_PG_DSN="host=127.0.0.1 port=${BRAVO_TEST_PG_PORT} dbname=bravo_test user=postgres password=${pw}"
 uv run ruff check src tests
 uv run pyright

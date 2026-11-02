@@ -1,0 +1,18 @@
+# Cilium gives the API server the reserved identity kube-apiserver; a Kubernetes NetworkPolicy ipBlock does not
+# match it (seen on the on-prem K3s 2026-11-02: dial 10.43.0.1:443 i/o timeout). This adds only that egress
+# for the management connector (link *-k8s). Every landing-zone cluster runs Cilium (TECH-STACK-SPEC 1).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cloudflared-mgmt-apiserver
+  namespace: cf-edge
+  labels:
+    app.kubernetes.io/part-of: cf-edge
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared-mgmt
+  egress:
+    - toEntities: ["kube-apiserver"]
+      toPorts:
+        - ports: [{port: "443", protocol: TCP}, {port: "6443", protocol: TCP}]

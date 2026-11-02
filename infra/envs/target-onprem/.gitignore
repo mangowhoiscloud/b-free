@@ -1,0 +1,5 @@
+.terraform/
+.lima/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan

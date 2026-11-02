@@ -135,7 +135,7 @@ spec:
             - name: ATTACHMENT_STORE_ID
               value: {{ $v.attachments.storeId | quote }}
             - name: ATTACHMENT_MAX_BYTES
-              value: {{ $v.attachments.maxBytes | quote }}
+              value: {{ $v.attachments.maxBytes | int64 | quote }}
             - name: S3_BUCKET
               value: {{ $v.attachments.s3.bucket | quote }}
             {{- with $v.attachments.s3.endpointUrl }}
@@ -190,6 +190,9 @@ spec:
             - name: s3-credentials
               mountPath: /var/run/bravo/s3
               readOnly: true
+            {{- end }}
+            {{- with $v.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -250,6 +253,9 @@ spec:
             items:
               - key: {{ $v.attachments.s3.credentialsSecret.secretAccessKeyKey }}
                 path: secret-access-key
+        {{- end }}
+        {{- with $v.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with $v.nodeSelector }}
       nodeSelector:

@@ -1,0 +1,72 @@
+{
+  "comment": "T31 apply-path configuration. References only, no secrets. Paths are relative to this file. Destination keys are environment names (environments.name in the platform DB, CLOUD-E2E-CONTRACT 2).",
+  "staging_registry": {
+    "address": "127.0.0.1:5055",
+    "container": "bravo-apply-staging",
+    "volume": "bravo-apply-staging",
+    "image": "docker.io/library/registry:3@sha256:d4032d4cc323c1731c707931ecada07a53076eac38e3b61ae57533f170f2c6c3",
+    "label": "platform staging registry (CNCF distribution 3.1.2, operator laptop, bound to 127.0.0.1 only). Holds the candidate image and its cosign signature; not a destination."
+  },
+  "signer": {
+    "key_ref": "hashivault://bravo-supply-chain",
+    "public_key": "keys/bravo-supply-chain.pub",
+    "keys_sh": "../../deploy/pilot/scripts/keys.sh",
+    "signing_config": "signing-config.json"
+  },
+  "apps": {
+    "bravo-demo": {
+      "subdir": "apps/demo",
+      "dockerfile": "Dockerfile",
+      "ref": "HEAD",
+      "platform": "linux/arm64"
+    }
+  },
+  "scan_policy": {
+    "block_severities": [
+      "CRITICAL"
+    ],
+    "fixable_only": true
+  },
+  "destinations": {
+    "target-onprem": {
+      "kind": "k3s-containerd",
+      "app": "bravo-demo",
+      "kube_context": "bravo-onprem",
+      "lima_nodes": [
+        "bravo-onprem-server",
+        "bravo-onprem-agent"
+      ],
+      "image_repository": "bravo.local/bravo-demo",
+      "namespace": "chat",
+      "deployment": "chat-bravo-demo",
+      "container": "app",
+      "rollout_timeout_s": 240,
+      "policy_types": [
+        "k8s_rbac",
+        "external_secret"
+      ],
+      "gate": {
+        "source": "source-aws",
+        "target": "target-onprem"
+      }
+    },
+    "target-gcp": {
+      "kind": "gke-artifact-registry",
+      "app": "bravo-demo",
+      "kube_context": null,
+      "detect_context_cluster_contains": "b-free-target-20261102",
+      "image_repository": "asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo",
+      "namespace": "chat",
+      "deployment": "chat-bravo-demo",
+      "container": "app",
+      "policy_types": [
+        "k8s_rbac",
+        "external_secret"
+      ],
+      "gate": {
+        "source": "source-aws",
+        "target": "target-gcp"
+      }
+    }
+  }
+}

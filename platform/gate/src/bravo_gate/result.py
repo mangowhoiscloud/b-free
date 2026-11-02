@@ -46,4 +46,7 @@ def worst(observations: list[Obs], *, empty_reason: str = "no_probe") -> Obs:
 
 
 def error_text(exc: BaseException) -> str:
-    return f"{type(exc).__name__}: {exc}"[:300]
+    """Error text for evidence, with credential-shaped substrings masked (audit 38)."""
+    from .redact import redact
+
+    return redact(f"{type(exc).__name__}: {exc}")[:300]

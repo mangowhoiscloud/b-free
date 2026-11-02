@@ -99,60 +99,40 @@
   font-size: 15px;
 }
 
-.stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border-left: 3px solid var(--accent);
-  background: var(--panel-2);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  min-width: 0;
-}
-.stat__value {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
+/* Numbers: right-aligned (Table align=end), tabular figures, unit in secondary ink. */
+.num {
   font-variant-numeric: tabular-nums;
-  overflow-wrap: break-word;
-  word-break: keep-all;
+  white-space: nowrap;
 }
-.stat__unit {
-  font-size: 12px;
-  font-weight: 400;
+.unit {
+  margin-left: 2px;
   color: var(--ink-3);
-  margin-left: 4px;
+  font-size: 0.9em;
 }
-.stat .mono {
-  overflow-wrap: anywhere;
+.why {
+  color: var(--ink-3);
+  font-size: 12px;
+  white-space: normal;
 }
-
-.pipeline {
+/* "연결 안 됨" is a line, not a box. */
+.nc {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+  align-items: baseline;
+  gap: 4px 8px;
   margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: step;
+  font-size: 13px;
+  color: var(--ink-2);
 }
-.pipeline__step {
-  counter-increment: step;
-  position: relative;
-  padding: 6px 14px 6px 22px;
+.nc__ep {
   font-size: 12px;
-  border: 1px dashed var(--line-2);
-  margin-right: -1px;
   color: var(--ink-3);
-  background: var(--panel);
+  overflow-wrap: anywhere;
 }
-.pipeline__step::before {
-  content: counter(step);
-  position: absolute;
-  left: 7px;
-  top: 6px;
-  font-family: var(--font-mono);
-  font-size: 10px;
+.foot {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin: 0;
 }
 .muted {
   color: var(--ink-3);
@@ -186,4 +166,13 @@
 }
 .app:focus {
   outline: none;
+}
+
+
+.notes {
+  margin: 0;
+  padding-left: 18px;
+}
+.notes li::marker {
+  font-variant-numeric: tabular-nums;
 }

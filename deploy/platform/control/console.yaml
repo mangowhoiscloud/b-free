@@ -1,0 +1,66 @@
+# Operator console (FR-13): static files on unprivileged nginx. Served at https://b-free.mangowhois.ai/
+# through the platform tunnel -> Gateway bravo-gateway. The browser calls the API on the same origin (/v1);
+# the API accepts Access JWTs only, so without Zero Trust the page loads but nobody can sign in.
+# /svc/<name>/ is the console's own read-only GET proxy to platform services (docker/40-bravo-config.sh).
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: console, namespace: bravo-control}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console
+  namespace: bravo-control
+  labels: {app.kubernetes.io/name: console, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: console}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: console, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+    spec:
+      serviceAccountName: console
+      automountServiceAccountToken: false
+      nodeSelector: {bravo.io/pool: core}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/name: console}}}
+      securityContext: {runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: console
+          image: bravo/console
+          env:
+            - {name: BRAVO_API_BASE, value: "https://b-free.mangowhois.ai"}
+            - {name: BRAVO_COLLECTOR_UPSTREAM, value: "http://collector.bravo-control.svc.cluster.local:8083"}
+            - {name: BRAVO_GATE_UPSTREAM, value: "http://gate.bravo-control.svc.cluster.local:8084"}
+            - {name: BRAVO_EXECUTOR_UPSTREAM, value: "http://executor.bravo-control.svc.cluster.local:8081"}
+            - {name: BRAVO_PROMETHEUS_UPSTREAM, value: "http://prometheus.bravo-observe.svc.cluster.local:9090"}
+            - {name: BRAVO_APP_SRC_UPSTREAM, value: "https://b-free-chat-src.mangowhois.ai"}
+            - {name: BRAVO_APP_DST_UPSTREAM, value: "https://b-free-chat-dst.mangowhois.ai"}
+            - {name: BRAVO_DNS_RESOLVER, value: "10.63.0.10"}
+            # Grafana / Prometheus / Tempo UIs are not published (operators use kubectl port-forward): no links.
+            - {name: BRAVO_GRAFANA_URL, value: ""}
+            - {name: BRAVO_PROMETHEUS_URL, value: ""}
+            - {name: BRAVO_TEMPO_URL, value: ""}
+            - {name: BRAVO_PUBLIC_FRONT_HOST, value: "b-free-chat.mangowhois.ai"}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /config.json, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /config.json, port: http}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: console, namespace: bravo-control, labels: {app.kubernetes.io/name: console}}
+spec:
+  selector: {app.kubernetes.io/name: console}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: console, namespace: bravo-control}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/name: console}}}

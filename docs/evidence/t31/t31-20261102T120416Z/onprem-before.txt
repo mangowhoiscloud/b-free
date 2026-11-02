@@ -1,0 +1,2 @@
+bravo.local/bravo-demo@sha256:92592b8710154fea9ec17d46a8137faa49202e39a2a781068295c791a4238bf9  (read 12:04Z before the first attempt)
+bravo.local/bravo-demo@sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57  (set by another thread at 12:05:25Z; the rollout step read it as "before")

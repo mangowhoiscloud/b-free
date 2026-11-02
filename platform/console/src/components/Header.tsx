@@ -29,21 +29,21 @@ export function Header({
         </span>
         <div>
           <h1 className="brand__name">Bravo 운영 콘솔</h1>
-          <p className="brand__sub">파일럿 · chat DB 이전</p>
+          <p className="brand__sub">chat DB 이전</p>
         </div>
       </div>
 
       <div className="envs" aria-label="이전 방향">
         <span className="env env--src">
-          <span className="env__k">출발지</span>
-          <span className="env__v">AWS</span>
+          <span className="env__k">출발지 역할</span>
+          <span className="env__v">src</span>
         </span>
         <span className="env__arrow" aria-hidden="true">
           →
         </span>
         <span className="env env--dst">
-          <span className="env__k">목적지</span>
-          <span className="env__v">온프렘</span>
+          <span className="env__k">목적지 역할</span>
+          <span className="env__v">dst</span>
         </span>
       </div>
 
@@ -179,11 +179,11 @@ function CreatePlanDialog({
             <input className="input" value={input.workload} onChange={set('workload')} required />
           </label>
           <label className="field">
-            <span className="field__label">출발지 환경 ID (AWS)</span>
+            <span className="field__label">출발지 환경 ID</span>
             <input className="input mono" value={input.source_environment_id} onChange={set('source_environment_id')} required spellCheck={false} />
           </label>
           <label className="field">
-            <span className="field__label">목적지 환경 ID (온프렘)</span>
+            <span className="field__label">목적지 환경 ID</span>
             <input className="input mono" value={input.target_environment_id} onChange={set('target_environment_id')} required spellCheck={false} />
           </label>
           <p className="muted">환경 ID는 <code>POST /v1/environments</code>(MCP <code>env_register</code>)가 돌려준 값입니다. 요청자는 {session.user?.email ?? '—'}입니다.</p>

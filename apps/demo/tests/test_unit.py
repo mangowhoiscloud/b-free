@@ -65,6 +65,7 @@ def test_cursor_start_from_does_not_redeliver_history() -> None:
 
 
 BASE = {
+    "APP_ENV_ID": "aws",
     "APP_ENV_LABEL": "AWS",
     "DB_DSN": "host=pgbouncer port=6432 dbname=chat user=app_writer",
     "DB_PASSWORD_SOURCE": "env-file",
@@ -102,3 +103,12 @@ def test_config_attachment_limit_cannot_exceed_schema_cap() -> None:
     env = {**BASE, "S3_BUCKET": "b", "ATTACHMENT_STORE_ID": "store-src", "ATTACHMENT_MAX_BYTES": str(6 * 1024 * 1024)}
     with pytest.raises(config.ConfigError):
         config.load(env)
+
+
+def test_config_requires_environment_id() -> None:
+    env = dict(BASE)
+    del env["APP_ENV_ID"]
+    with pytest.raises(config.ConfigError, match="APP_ENV_ID"):
+        config.load(env)
+    with pytest.raises(config.ConfigError, match="APP_ENV_ID"):
+        config.load({**BASE, "APP_ENV_ID": "온프렘"})

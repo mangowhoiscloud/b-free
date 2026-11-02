@@ -33,6 +33,7 @@ from kubernetes.client.rest import ApiException
 
 from .environments import Environment, KubernetesSection, Registry
 from .kubernetes import load_api_client
+from .redact import redact
 
 CALL_TIMEOUT_S = 5  # per Kubernetes / AWS call
 CLUSTER_DEADLINE_S = 12  # whole cluster, then "unreachable"
@@ -65,7 +66,7 @@ def short_error(exc: BaseException) -> str:
     elif isinstance(exc, ClientError):
         msg = f"AWS {exc.response.get('Error', {}).get('Code', 'error')}"
     else:
-        text = str(exc).strip().splitlines()
+        text = redact(str(exc)).strip().splitlines()
         msg = f"{type(exc).__name__}: {text[0]}" if text else type(exc).__name__
     return _REDACT.sub("[redacted]", msg)[:200]
 
@@ -183,17 +184,33 @@ def _ready(w: dict[str, Any]) -> bool:
     return w["ready"] >= w["desired"]
 
 
+# Which list read each rule depends on. A failed read makes the row unknown (present: null), not absent.
+def _depends_on(r: LzRule) -> str:
+    if r.kind == "StorageClass":
+        return "storageclasses"
+    if r.kind in ("PodSecurity", "NamespacePrefix"):
+        return "namespaces"
+    return "workloads"
+
+
 def detect_landing_zone(
     namespaces: list[dict[str, Any]],
     workloads: list[dict[str, Any]],
     storage_classes: list[str],
     restricted_namespaces: list[str],
+    failed_reads: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     ns_names = {n["name"] for n in namespaces}
     out = []
     for r in LANDING_ZONE_RULES:
         row: dict[str, Any] = {"component": r.component, "namespace": r.namespace, "present": False,
                                "ready": None, "detail": None}
+        dep = _depends_on(r)
+        if dep in failed_reads:
+            # Audit 36: a read that failed is not evidence of absence.
+            row.update(present=None, detail=f"unknown: {dep} could not be read")
+            out.append(row)
+            continue
         if r.kind == "StorageClass":
             row["present"] = any(n in storage_classes for n in r.names)
             row["detail"] = None if row["present"] else "StorageClass not found"
@@ -310,12 +327,14 @@ def collect_cluster(env: Environment, api: ApiClient) -> dict[str, Any]:
         row.update(status="unreachable", error=short_error(exc))
         return row
     errors: list[str] = []
+    failed: set[str] = set()
 
     def take(label: str, fn: Callable[[], Any], default: Any) -> Any:
         try:
             return fn()
         except Exception as exc:  # noqa: BLE001 - partial view, reason in "error"
             errors.append(f"{label}: {short_error(exc)}")
+            failed.add(label)
             return default
 
     row["nodes"] = take("nodes", lambda: _nodes(api), [])
@@ -323,8 +342,11 @@ def collect_cluster(env: Environment, api: ApiClient) -> dict[str, Any]:
     row["workloads"] = take("workloads", lambda: _workloads(api), [])
     row["pods"] = take("pods", lambda: _pods(api), {})
     storage_classes = take("storageclasses", lambda: _storage_classes(api), [])
-    row["landing_zone"] = detect_landing_zone(row["namespaces"], row["workloads"], storage_classes, restricted)
+    row["landing_zone"] = detect_landing_zone(row["namespaces"], row["workloads"], storage_classes, restricted,
+                                              frozenset(failed))
     if errors:
+        row["status"] = "partial"
+        row["failed_reads"] = sorted(failed)
         row["error"] = ("partial: " + "; ".join(errors))[:300]
     return row
 

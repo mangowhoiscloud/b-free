@@ -1,5 +1,7 @@
 # 파일럿 계약(2026-11-02 21:00 목표)
 
+**내림(2026-11-02).** Compose 파일럿은 팀장 지시로 내렸습니다(`../CLOUD-E2E-CONTRACT.md` 6.1). 이 문서는 이력입니다. 수치는 "파일럿(노트북) 기록"(`docs/evidence/pilot-notebook/`)입니다.
+
 스펙 P0의 한 줄기를 노트북에서 실제로 돌립니다: 운영자 MCP로 계획과 게이트 → 게이트 BLOCK → 고친 뒤 재대조 PASS → 콘솔 승인 → **실제 논리 복제 컷오버** → 쓰기 정지 ms와 무결성 영수증. 세 갈래(데이터면 · Executor, API · MCP, 콘솔)가 이 문서만 보고 따로 만듭니다. 바꿀 때는 이 문서를 먼저 고칩니다.
 
 - 실행은 Docker Compose(`deploy/pilot/compose.yaml`)입니다. 목표 실행 환경(EKS · K3s · GKE + Helm + CNPG)은 그대로이고, 이미지와 설정(환경 변수)은 그대로 옮겨 갑니다.
@@ -23,10 +25,10 @@
 
 | 서비스 | 이미지 · 위치 | 포트(호스트) | 하는 일 |
 |---|---|---|---|
-| `src-db` | CNPG PostgreSQL 16 이미지(digest 고정) | 15432 | 출발지 채팅 DB. `wal_level=logical` |
+| `src-db` | PostgreSQL 16 공식 이미지(`CHAT_DB_IMAGE`, digest 고정). CNPG 운영자 없음 | 15432 | 출발지 채팅 DB. `wal_level=logical` |
 | `dst-db` | 같은 이미지 | 25432 | 목적지 채팅 DB. `wal_level=logical` |
 | `pgbouncer` | PGDG 패키지로 직접 빌드(`deploy/pilot/pgbouncer/Dockerfile`) | 16432 | 앱 쓰기 경로. 처음 대상은 `src-db` |
-| `platform-db` | CNPG PostgreSQL 16 이미지 | 35432 | 플랫폼 DB(계획, 이벤트, 승인, 실행, 효과, 영수증) |
+| `platform-db` | PostgreSQL 16 공식 이미지(`postgres:16.13`, digest 고정). CNPG 운영자 없음 | 35432 | 플랫폼 DB(계획, 이벤트, 승인, 실행, 효과, 영수증) |
 | `executor` | `platform/executor/` | 8081 | 컷오버 실행(§8.6). 플랫폼 DB에 직접 기록 |
 | `api` | `platform/api/` | 8080 | REST `/v1/*`, SSE. 콘솔이 부름 |
 | `operator-mcp` | `platform/api/` 같은 이미지, `BRAVO_MODE=mcp` | 8082 | 운영자 MCP 서버 `/mcp` |

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# OBSOLETE: Compose 파일럿 전용입니다. Compose는 내렸습니다(CLOUD-E2E-CONTRACT.md 6.1). 클라우드는
+# deploy/cloud/run_e2e.sh, deploy/cloud/contract.sh를 씁니다. 이 파일은 실행하지 않고 끝납니다.
+echo "obsolete: use deploy/cloud (Compose pilot is down)" >&2; exit 2
 # Executor contract tests E1, E4, E5, E6 against the running pilot stack
 # (platform/executor/README.md "계약 시험"). E2 and E3 (resource_locks) run as DB tests in
 # platform/executor/tests/test_resource_locks.py against a real PostgreSQL.

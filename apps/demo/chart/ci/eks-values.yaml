@@ -1,20 +1,26 @@
-# Source on AWS (EKS, ap-northeast-2): DB password straight from Secrets Manager (S2 material),
-# attachments on Amazon S3, EKS Pod Identity for chat/chat-app (association made by infra/envs/source-aws).
-# Real values come from `terraform -chdir=infra/envs/source-aws output`: attachments_bucket,
-# attachments_bucket_region, db_secret_arn. The ones below are placeholders for rendering tests.
-image: {repository: ghcr.io/example/bravo-demo, digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"}
+# EXAMPLE VALUES - render tests only (helm lint / kubeconform). Not for deployment.
+# Every value marked "EXAMPLE" is a placeholder, not a real resource. Real values for the source
+# EKS come from Terraform and the registry: apps/demo/scripts/render-values.sh eks ...
+image:
+  repository: registry.example.invalid/bravo-demo   # EXAMPLE (real: the source ECR repository)
+  digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"   # EXAMPLE (real: the pushed image digest)
 environment: {id: aws, label: AWS, labelJa: AWS}
-publicUrl: https://chat.example.test
+publicUrl: https://chat.example.invalid   # EXAMPLE (real: the edge hostname)
 db:
   dsnSecret: {name: bravo-demo-db, key: dsn}
   passwordSource: aws-secrets-manager
-  secretsManager: {secretId: "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:bravo-source/chat/db-app", region: ap-northeast-2}
+  secretsManager:
+    secretId: "arn:aws:secretsmanager:ap-northeast-2:000000000000:secret:example-db-app"   # EXAMPLE (real: terraform output db_secret_arn)
+    region: ap-northeast-2
 attachments:
   storeId: src
-  s3: {bucket: example-attachments-bucket, region: ap-northeast-2, addressingStyle: virtual}
+  s3:
+    bucket: example-attachments-bucket   # EXAMPLE (real: terraform output attachments_bucket)
+    region: ap-northeast-2
+    addressingStyle: virtual
 serviceAccount:
-  name: chat-app
-otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}
+  name: chat-app   # EKS Pod Identity association chat/chat-app (infra/envs/source-aws)
+otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}   # EXAMPLE
 # Write-block switch: Service chat-admin:8081 (release "chat"), token from Secret chat-admin/token
 # that the platform creates from OpenBao secret/envs/<env>/chat-admin. Not routed by the tunnel.
 admin:

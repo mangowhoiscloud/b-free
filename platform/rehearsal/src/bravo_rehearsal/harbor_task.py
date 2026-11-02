@@ -99,6 +99,12 @@ with open(f"{verifier_dir}/binding.json", "w", encoding="utf-8") as f:
 '''
 
 
+# Both verifier entries grade the frozen proposal JSON with fixed rules (schema, binding, policy lint).
+# They do not redeploy the proposal or probe a live endpoint; that is recorded as the verifier kind.
+STATIC_RULES = "static_rules"
+META_FILE = "bravo_task.json"
+
+
 class TaskInvalid(ValueError):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -148,7 +154,8 @@ def checked_config(raw: dict[str, Any]) -> TaskConfig:
     return cfg.model_copy(update={"artifacts": [], "environment": environment, "verifier": verifier})
 
 
-def materialize(template: Path, dest: Path, expected: dict[str, Any] | None = None) -> Path:
+def materialize(template: Path, dest: Path, expected: dict[str, Any] | None = None,
+                source_snapshot: Path | None = None) -> Path:
     """Copy ``template`` to ``dest`` as a Harbor 0.25.0 task folder and return ``dest``.
 
     ``expected`` (role, plan_id, trial_id, attempt, evidence_ids) is required for
@@ -174,4 +181,23 @@ def materialize(template: Path, dest: Path, expected: dict[str, Any] | None = No
         (tests / "test.sh").chmod(0o755)
         (tests / "bravo_reward.py").write_text(REWARD_SCRIPT, encoding="utf-8")
     (dest / "environment").mkdir(exist_ok=True)
+    # /src in the sandbox is the customer's repository snapshot or nothing; template sample files never stand in.
+    shutil.rmtree(dest / "environment" / "source", ignore_errors=True)
+    if source_snapshot is not None:
+        shutil.copytree(source_snapshot, dest / "environment" / "source", symlinks=False)
+    # What the verifier actually does, recorded with the Trial so no verdict claims more than what ran.
+    (dest / META_FILE).write_text(json.dumps({
+        "template": str(template.name), "template_source": "platform/agent/harbor" if agent_template else "tasks",
+        "verifier_kind": STATIC_RULES,
+        "verifier": "tests/verify.py on the frozen proposal JSON (schema, binding, policy rules); "
+                    "nothing is deployed or probed",
+    }, sort_keys=True), encoding="utf-8")
     return dest
+
+
+def task_meta(task_dir: Path) -> dict[str, Any]:
+    try:
+        meta = json.loads((task_dir / META_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = {}
+    return meta if isinstance(meta, dict) else {}

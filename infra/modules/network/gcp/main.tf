@@ -66,3 +66,16 @@ resource "google_compute_router_nat" "this" {
     filter = "ERRORS_ONLY"
   }
 }
+
+# 지역 Envoy 기반 부하 분산기(GKE Gateway gke-l7-rilb)가 쓰는 프록시 전용 서브넷. null이면 만들지 않음.
+resource "google_compute_subnetwork" "proxy_only" {
+  count = var.proxy_only_cidr == null ? 0 : 1
+
+  project       = var.project_id
+  name          = "${var.name}-proxy-only"
+  region        = var.region
+  network       = google_compute_network.this.id
+  ip_cidr_range = var.proxy_only_cidr
+  purpose       = "REGIONAL_MANAGED_PROXY"
+  role          = "ACTIVE"
+}

@@ -1,0 +1,34 @@
+# In-environment entry (CLOUD-E2E-CONTRACT §3): Gateway bravo-gateway in ns bravo-edge. With the
+# Cilium implementation the data-plane Service is cilium-gateway-bravo-gateway; the tunnel's
+# origin_service points at it. Only ns chat may attach routes.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: bravo-gateway
+  namespace: bravo-edge
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: {kubernetes.io/metadata.name: chat}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: chat
+  namespace: chat
+spec:
+  parentRefs:
+    - {name: bravo-gateway, namespace: bravo-edge, sectionName: http}
+  # Environment name and the front name (CNAME to the active environment's tunnel).
+  hostnames: [b-free-chat-dst.mangowhois.ai, b-free-chat.mangowhois.ai]
+  rules:
+    - matches: [{path: {type: PathPrefix, value: /}}]
+      backendRefs:
+        - {name: chat-bravo-demo, port: 80}

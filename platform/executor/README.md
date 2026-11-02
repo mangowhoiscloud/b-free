@@ -30,6 +30,8 @@ Cutover Executor, 무결성 영수증, 되돌리기, Exit Drill입니다. 작업
 | SHIFT 시작 | (D-04) 첨부 동결 | 쓰기 DB의 `attachment_store` |
 | SHIFT | Edge 가중치 단계 하나 | Cloudflare LB pool API |
 | SHIFT 실패 | 가중치 0, (D-04) 첨부 동결 해제 | Cloudflare LB pool API, `attachment_store` |
+
+SHIFT 두 행(가중치 단계, 0% 복귀)은 **코드만, 미실행**입니다. `src/bravo_executor/front.py`, `front_api.py`가 있지만 Cloudflare에 실제로 전환한 기록이 없습니다(감사 B21). 계정에 Load Balancing이 켜졌다는 전달은 있었으나(2026-11-02) `infra/envs/edge` 출력의 `pool_ids`는 비어 있습니다.
 | 2 | 진입점 쓰기 차단 | 차단 플래그 |
 | 3 | PgBouncer PAUSE(출발지, 목적지 각 한 행) | `SHOW STATE` |
 | 4 | 출발지 writer 제한(`NOLOGIN`, REVOKE) | DB 카탈로그 |

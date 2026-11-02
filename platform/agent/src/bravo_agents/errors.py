@@ -7,7 +7,8 @@ class AgentRunError(Exception):
     # 인프라 쪽 실패(INFRA_ERROR 상한 2회로 셈)와 에이전트 쪽 실패(검증 불합격 3회로 셈)를 나눕니다.
     INFRA = frozenset({
         "llm_unconfigured", "evidence_unconfigured", "sdk_unavailable", "unexpected_tools",
-        "timeout", "sdk_error", "allowlist_invalid", "envelope_invalid", "codex_login_missing", "codex_isolation_failed",
+        "timeout", "sdk_error", "allowlist_invalid", "envelope_invalid", "unexpected_mcp_servers", "mcp_unavailable",
+        "unexpected_plugins", "unexpected_credentials", "llm_auth_failed",
     })
 
     def __init__(self, code: str, detail: str = ""):

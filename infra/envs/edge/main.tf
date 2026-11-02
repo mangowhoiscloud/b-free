@@ -1,11 +1,12 @@
 module "edge" {
-  source       = "../../modules/edge/cloudflare"
-  account_id   = var.account_id
-  zone_id      = var.zone_id
-  app          = var.app
-  environments = var.environments
-  lb_enabled   = var.lb_enabled
-  active_env   = var.active_env
+  source          = "../../modules/edge/cloudflare"
+  account_id      = var.account_id
+  zone_id         = var.zone_id
+  app             = var.app
+  environments    = var.environments
+  lb_enabled      = var.lb_enabled
+  lb_environments = var.lb_environments
+  active_env      = var.active_env
 }
 
 output "tunnel_ids" {

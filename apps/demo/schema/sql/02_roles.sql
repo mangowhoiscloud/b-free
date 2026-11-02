@@ -1,9 +1,14 @@
--- Roles (CONTRACT.md 3). Passwords come from psql variables set by 00-bravo-init.sh,
--- which reads them from the container environment. No secret is stored in this file.
+-- Roles (CONTRACT.md 3). 00-bravo-init.sh hashes each password into a SCRAM-SHA-256 verifier
+-- on the client side and exports it; \getenv reads it here, so neither psql's argv nor the SQL
+-- text sent to the server carries a password. No secret is stored in this file.
 \set ON_ERROR_STOP on
+\getenv app_writer_verifier BRAVO_APP_WRITER_VERIFIER
+\getenv replicator_verifier BRAVO_REPLICATOR_VERIFIER
+\getenv executor_ctl_verifier BRAVO_EXECUTOR_CTL_VERIFIER
+\getenv executor_observe_verifier BRAVO_EXECUTOR_OBSERVE_VERIFIER
 
 -- Application writer: messages SELECT/INSERT and sequence USAGE only.
-CREATE ROLE app_writer LOGIN PASSWORD :'app_writer_password';
+CREATE ROLE app_writer LOGIN PASSWORD :'app_writer_verifier';
 GRANT SELECT, INSERT ON messages TO app_writer;
 GRANT USAGE ON SEQUENCE messages_id_seq TO app_writer;
 -- Attachments (D-04): insert and read; the only update is deleted_at. No privilege on
@@ -15,12 +20,12 @@ GRANT UPDATE (deleted_at) ON attachments TO app_writer;
 GRANT SELECT, INSERT, UPDATE ON write_block TO app_writer;
 
 -- Replication user used by the subscriptions on the other side.
-CREATE ROLE replicator LOGIN REPLICATION PASSWORD :'replicator_password';
+CREATE ROLE replicator LOGIN REPLICATION PASSWORD :'replicator_verifier';
 GRANT SELECT ON messages, bravo_barrier, attachments, message_attachments TO replicator;
 
 -- Executor control role. REPLICATION: drop the forward slot at 6b and the reverse slot at
 -- failback (pg_drop_replication_slot needs it); it never opens a walsender connection.
-CREATE ROLE executor_ctl LOGIN CREATEROLE REPLICATION PASSWORD :'executor_ctl_password';
+CREATE ROLE executor_ctl LOGIN CREATEROLE REPLICATION PASSWORD :'executor_ctl_verifier';
 GRANT pg_signal_backend TO executor_ctl;          -- terminate app_writer sessions (step 4)
 GRANT pg_monitor TO executor_ctl;                 -- pg_stat_subscription, pg_stat_activity, settings
 GRANT pg_create_subscription TO executor_ctl;     -- owns bravo_fwd_sub / bravo_rev_sub
@@ -57,7 +62,7 @@ GRANT EXECUTE ON FUNCTION bravo_catalog.role_has_password(text) TO executor_ctl;
 
 -- Observe-only role (D-19): catalog, state and table reads only. Used by a restarted
 -- Executor with unresolved effects; it cannot change roles, fences, subscriptions or data.
-CREATE ROLE executor_observe LOGIN PASSWORD :'executor_observe_password';
+CREATE ROLE executor_observe LOGIN PASSWORD :'executor_observe_verifier';
 GRANT pg_monitor TO executor_observe;
 GRANT SELECT ON messages, bravo_barrier, bravo_fence, attachments, message_attachments, attachment_store
   TO executor_observe;

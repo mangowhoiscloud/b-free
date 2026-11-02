@@ -1,0 +1,7 @@
+# Rook operator on the two Lima nodes (D-22 spike layout): small requests, no discovery daemon.
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {memory: 512Mi}
+enableDiscoveryDaemon: false
+monitoring:
+  enabled: false

@@ -1,0 +1,8 @@
+2026-11-02T12:10:05Z
+spec image: bravo.local/bravo-demo@sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57
+chat-bravo-demo-594fccc5cf   1     <none>   bravo.local/bravo-demo@sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57
+chat-bravo-demo-67ff957b8f   2     2        bravo.local/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f
+chat-bravo-demo-998b5bc8c    0     <none>   bravo.local/bravo-demo@sha256:92592b8710154fea9ec17d46a8137faa49202e39a2a781068295c791a4238bf9
+chat-bravo-demo-594fccc5cf-qp855   bravo-onprem-server   false   bravo.local/bravo-demo@sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57
+chat-bravo-demo-67ff957b8f-2tchw   bravo-onprem-agent    true    bravo.local/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f
+chat-bravo-demo-67ff957b8f-w88zq   bravo-onprem-agent    true    bravo.local/bravo-demo@sha256:a9f7b8661bd6a8a3bb24afca0581e9038b15a15e8279ca7fa562926bb008007f

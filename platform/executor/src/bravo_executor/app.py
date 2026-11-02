@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -12,10 +14,14 @@ from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import front_api
+from .approvals import ApprovalRejected
 from .config import Settings
 from .cutover import CUTOVER, FAILBACK
 from .ledger import IdempotencyConflict
 from .service import CutoverInput, ExecutorService, ObserveOnly, RunInProgress
+from .topology import FileSecrets, settings_from_topology
+from .vault import SecretBroker
 
 
 class CutoverBody(BaseModel):
@@ -46,15 +52,38 @@ def _jsonable(value: Any) -> Any:
 def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = ExecutorService(settings or Settings.from_env())
+        broker: SecretBroker | None = None
+        resolved = settings
+        topology = os.environ.get("BRAVO_TOPOLOGY_FILE", "").strip()
+        if os.environ.get("BRAVO_BAO_ROLE_ID"):
+            # secret_id is single-use and short-lived: log in at start-up, not on first request.
+            broker = SecretBroker.from_env()
+            await broker.read("platform/cloudflare")
+        if resolved is None and topology:
+            platform_dsn = os.environ.get("PLATFORM_DB_DSN", "").strip()
+            if not platform_dsn:
+                raise RuntimeError("PLATFORM_DB_DSN is required")
+            secrets_dir = os.environ.get("BRAVO_SECRETS_DIR", "").strip()
+            if secrets_dir:  # in-cluster: fields delivered from OpenBao into a mounted Secret
+                lookup = FileSecrets(Path(secrets_dir)).field
+            elif broker is not None:  # operator laptop: AppRole login (executor-bao.sh with-executor)
+                lookup = broker.field
+            else:
+                raise RuntimeError("BRAVO_TOPOLOGY_FILE needs BRAVO_SECRETS_DIR or OpenBao AppRole credentials")
+            resolved = await settings_from_topology(Path(topology), lookup, platform_dsn)
+        service = ExecutorService(resolved or Settings.from_env())
+        app.state.secret_broker = broker
         await service.start()
         app.state.service = service
         try:
             yield
         finally:
             await service.stop()
+            if broker is not None:
+                await broker.close()
 
     app = FastAPI(title="Bravo Cutover Executor", version="0.1.0", lifespan=lifespan)
+    app.include_router(front_api.router)
 
     def svc(request: Request) -> ExecutorService:
         return request.app.state.service
@@ -98,6 +127,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ) from exc
         except ObserveOnly as exc:
             raise HTTPException(status_code=503, detail={"code": "OBSERVE_ONLY"}) from exc
+        except ApprovalRejected as exc:
+            raise HTTPException(status_code=403, detail={"code": exc.code}) from exc
         response.headers["Idempotent-Replayed"] = "false" if created else "true"
         return CutoverAccepted(run_id=run_id)
 
@@ -119,6 +150,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> CutoverAccepted:
         """FR-11, 03-migration.md 4.3. Same request and response shape as /v1/cutover."""
         return await _submit(FAILBACK, body, request, response, idempotency_key)
+
+    @app.get("/v1/runs")
+    async def list_runs(request: Request, kind: str | None = None, limit: int = 20) -> JSONResponse:
+        """Recent runs, newest first (operator CLI: find the run the console started)."""
+        rows = await svc(request).ledger.list_runs(kind, max(1, min(limit, 200)))
+        return JSONResponse(_jsonable(rows))
 
     @app.get("/v1/runs/{run_id}")
     async def get_run(run_id: UUID, request: Request) -> JSONResponse:

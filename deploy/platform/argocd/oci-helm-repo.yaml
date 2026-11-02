@@ -1,0 +1,13 @@
+# Public OCI Helm registry for Envoy Gateway (no credential). Not secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-envoyproxy-oci
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: helm
+  name: envoyproxy
+  url: registry-1.docker.io/envoyproxy
+  enableOCI: "true"

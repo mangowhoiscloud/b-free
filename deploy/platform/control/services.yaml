@@ -1,0 +1,159 @@
+# Collector (FR-1, FR-2), gate (FR-6, FR-12), rehearsal service (S2, Harbor) and Cutover Executor (§8.6).
+# AWS access only through EKS Pod Identity (infra/envs/platform-aws pod_identity.tf): no ~/.aws mount,
+# no static key (NFR-6, D-26). The gate has no cloud or cluster credential: those questions answer UNKNOWN.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: collector, namespace: bravo-control}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  namespace: bravo-control
+  labels: {app.kubernetes.io/name: collector, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: collector}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: collector, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+    spec:
+      serviceAccountName: collector
+      automountServiceAccountToken: false
+      nodeSelector: {bravo.io/pool: core}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: collector
+          image: bravo/collector
+          args: ["serve"]
+          env:
+            - {name: BRAVO_ENVIRONMENTS_FILE, value: /etc/bravo/environments.yaml}
+            - {name: BRAVO_INVENTORY_ROOT, value: /srv/app}
+            - {name: BRAVO_COLLECTOR_HOST, value: 0.0.0.0}
+            - {name: BRAVO_COLLECTOR_PORT, value: "8083"}
+            - {name: BRAVO_EVIDENCE_TTL_S, value: "3600"}
+            - {name: AWS_REGION, value: ap-northeast-2}
+            - {name: BRAVO_ONPREM_KUBECONFIG, value: /etc/bravo/onprem/kubeconfig}
+          ports: [{name: http, containerPort: 8083}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 50m, memory: 192Mi}, limits: {memory: 512Mi}}
+          volumeMounts:
+            - {name: registry, mountPath: /etc/bravo/environments.yaml, subPath: environments.yaml, readOnly: true}
+            - {name: onprem, mountPath: /etc/bravo/onprem, readOnly: true}
+            - {name: app, mountPath: /srv/app}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: registry, configMap: {name: environments}}
+        - {name: onprem, secret: {secretName: onprem-kubeconfig, optional: true}}
+        # FR-2 static inventory of the app repository: not in the image; empty until the CI agent lane mounts it.
+        - {name: app, emptyDir: {sizeLimit: 64Mi}}
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: collector, namespace: bravo-control, labels: {app.kubernetes.io/name: collector}}
+spec:
+  selector: {app.kubernetes.io/name: collector}
+  ports: [{name: http, port: 8083, targetPort: http}]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: gate, namespace: bravo-control}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gate
+  namespace: bravo-control
+  labels: {app.kubernetes.io/name: gate, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gate}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: gate, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+    spec:
+      serviceAccountName: gate
+      automountServiceAccountToken: false
+      nodeSelector: {bravo.io/pool: core}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: gate
+          image: bravo/gate
+          args: ["serve"]
+          env:
+            - {name: BRAVO_ENVIRONMENTS_FILE, value: /etc/bravo/environments.yaml}
+            - {name: BRAVO_GATE_HOST, value: 0.0.0.0}
+            - {name: BRAVO_GATE_PORT, value: "8084"}
+            - {name: BRAVO_EVIDENCE_TTL_S, value: "3600"}
+          ports: [{name: http, containerPort: 8084}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 30m, memory: 160Mi}, limits: {memory: 384Mi}}
+          volumeMounts:
+            - {name: registry, mountPath: /etc/bravo/environments.yaml, subPath: environments.yaml, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: registry, configMap: {name: environments}}
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gate, namespace: bravo-control, labels: {app.kubernetes.io/name: gate}}
+spec:
+  selector: {app.kubernetes.io/name: gate}
+  ports: [{name: http, port: 8084, targetPort: http}]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: rehearsal, namespace: bravo-control}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rehearsal
+  namespace: bravo-control
+  labels: {app.kubernetes.io/name: rehearsal, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: rehearsal}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: rehearsal, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+    spec:
+      serviceAccountName: rehearsal
+      automountServiceAccountToken: false
+      nodeSelector: {bravo.io/pool: core}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: rehearsal
+          image: bravo/rehearsal
+          # Preconditions it checks per trial (model path, target kubeconfig, Trial token key, images) are not
+          # configured on the platform yet; POST /v1/trials answers the first missing reason (llm_unconfigured).
+          env:
+            - {name: BRAVO_GATE_URL, value: "http://gate.bravo-control.svc:8084"}
+            - {name: BRAVO_REHEARSAL_TRIALS_DIR, value: /var/lib/bravo/runs}
+          ports: [{name: http, containerPort: 8090}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 30}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 30m, memory: 192Mi}, limits: {memory: 512Mi}}
+          volumeMounts:
+            - {name: runs, mountPath: /var/lib/bravo}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: runs, emptyDir: {sizeLimit: 512Mi}}
+        - {name: tmp, emptyDir: {sizeLimit: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: rehearsal, namespace: bravo-control, labels: {app.kubernetes.io/name: rehearsal}}
+spec:
+  selector: {app.kubernetes.io/name: rehearsal}
+  ports: [{name: http, port: 8090, targetPort: http}]

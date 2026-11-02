@@ -14,7 +14,7 @@
 
 ## 2. 비교
 
-판정 칸의 뜻: **채택**(우리 설계에 씀), **출구**(같은 계약으로 옮겨 갈 수 있는 대안), **제외**(우리 제약과 부딪침). 우리 제약은 인바운드 0(D-16), 단일 클라우드 LB를 전역층으로 쓰지 않음, 키는 플랫폼 OpenBao에만(D-26), 세 환경에서 같은 경험(D-23)입니다.
+판정 칸의 뜻: **채택**(우리 설계에 씀), **출구**(같은 계약으로 옮겨 갈 수 있는 대안), **제외**(우리 제약과 부딪침). 우리 제약은 넷입니다. 인바운드 0(D-16), 단일 클라우드 LB를 전역층으로 쓰지 않음, 키는 플랫폼 OpenBao에만(D-26), 세 환경에서 같은 경험(D-23)입니다.
 
 ### 2.1 전역층(Edge, DNS)
 
@@ -155,7 +155,7 @@ flowchart LR
 
 다른 에이전트가 `infra/modules/edge/cloudflare`를 지금 쓰고 있습니다. 아래는 계획만 적습니다. 적용은 LB 구독 결정 뒤 인프라 · CI 담당이 합니다.
 
-**E1. 대표 CNAME을 LB와 함께 둠.** LB가 같은 이름의 DNS 레코드보다 우선합니다. LB를 끄면 기존 레코드가 응답합니다(C5). 지금은 `lb_enabled = true`면 CNAME을 지웁니다. 그러면 비상 경로가 사라지고, 한 번의 apply 안에서 지우기와 만들기 순서도 보장되지 않습니다.
+**E1. 대표 CNAME을 LB와 함께 둠.** (반영 2026-11-02 20:3x, `infra/modules/edge/cloudflare/main.tf`. 지금 설정으로 plan 하면 변경 없음) LB가 같은 이름의 DNS 레코드보다 우선합니다. LB를 끄면 기존 레코드가 응답합니다(C5). 지금은 `lb_enabled = true`면 CNAME을 지웁니다. 그러면 비상 경로가 사라지고, 한 번의 apply 안에서 지우기와 만들기 순서도 보장되지 않습니다.
 
 ```hcl
 resource "cloudflare_dns_record" "front" {
@@ -164,7 +164,7 @@ resource "cloudflare_dns_record" "front" {
 }
 ```
 
-**E2. fallback pool을 활성 환경으로.** 지금 식은 `keys(var.environments)[0]`입니다. `keys`는 이름 순으로 정렬하므로 `dst`가 `src`보다 앞섭니다. 모든 pool이 아플 때 목적지로 가게 됩니다. 컷오버 뒤에는 Executor가 바꾸므로 Terraform이 되돌리지 않게 합니다.
+**E2. fallback pool을 활성 환경으로.** (반영 2026-11-02 20:3x, `fallback_pool`을 `ignore_changes`에 넣음. LB 구독 뒤 plan으로 확인) 지금 식은 `keys(var.environments)[0]`입니다. `keys`는 이름 순으로 정렬하므로 `dst`가 `src`보다 앞섭니다. 모든 pool이 아플 때 목적지로 가게 됩니다. 컷오버 뒤에는 Executor가 바꾸므로 Terraform이 되돌리지 않게 합니다.
 
 ```hcl
 resource "cloudflare_load_balancer" "app" {
@@ -176,7 +176,7 @@ resource "cloudflare_load_balancer" "app" {
 }
 ```
 
-**E3. 모니터가 앱까지 닿는지 시험.** pool 끝점의 Host 헤더가 환경 이름이므로, `/healthz`는 Tunnel과 Gateway를 지나 앱에 닿을 것입니다(추정). 공식 문서의 예시는 `cloudflared` 도달만 확인합니다(C3). 시험 T-E5로 확인합니다. 연속 실패 수를 명시합니다.
+**E3. 모니터가 앱까지 닿는지 시험.** pool 끝점의 Host 헤더는 환경 이름입니다. 그래서 `/healthz`는 Tunnel과 Gateway를 지나 앱에 닿을 것입니다(추정). 공식 문서의 예시는 `cloudflared` 도달만 확인합니다(C3). 시험 T-E5로 확인합니다. 연속 실패 수를 명시합니다.
 
 ```hcl
 resource "cloudflare_load_balancer_monitor" "app" {

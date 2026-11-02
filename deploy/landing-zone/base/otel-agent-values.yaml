@@ -1,0 +1,56 @@
+# OTel Collector agent per customer cluster (11-landing-zone §2 "관측", §6 #3): one OTLP endpoint
+# otel-agent.bravo-observability.svc:4317/4318 for the apps. Forwarding to the platform Collector
+# needs the environment link (D-16); until then the agent exports to its own log only ("debug"),
+# and the Deployment carries bravo.dev/link=pending. image.digest is set by install.sh.
+mode: deployment
+fullnameOverride: otel-agent
+replicaCount: 1
+image:
+  repository: otel/opentelemetry-collector-k8s
+command:
+  name: otelcol-k8s
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+podLabels:
+  bravo.dev/link: pending
+podAnnotations:
+  bravo.dev/export: "debug only until the D-16 link to the platform Collector exists"
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {memory: 512Mi}
+ports:
+  otlp: {enabled: true}
+  otlp-http: {enabled: true}
+  jaeger-compact: {enabled: false}
+  jaeger-thrift: {enabled: false}
+  jaeger-grpc: {enabled: false}
+  zipkin: {enabled: false}
+  metrics: {enabled: false}
+config:
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+    otlp:
+      protocols:
+        grpc: {endpoint: "0.0.0.0:4317"}
+        http: {endpoint: "0.0.0.0:4318"}
+  processors:
+    batch: {}
+    resource/env:
+      attributes:
+        - {key: bravo.environment, value: target-onprem, action: upsert}
+  exporters:
+    debug: {verbosity: basic}
+  service:
+    pipelines:
+      traces: {receivers: [otlp], processors: [resource/env, batch], exporters: [debug]}
+      metrics: {receivers: [otlp], processors: [resource/env, batch], exporters: [debug]}
+      logs: {receivers: [otlp], processors: [resource/env, batch], exporters: [debug]}

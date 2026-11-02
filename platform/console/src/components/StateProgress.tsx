@@ -52,7 +52,7 @@ export function StateProgress({ view }: { view: ConsoleView }) {
           const mode = view.modes[s];
           const statusText =
             status === 'skip'
-              ? '파일럿 범위 밖, 들어가지 않음'
+              ? '이 계획은 들어가지 않음'
               : status === 'done'
                 ? '지남'
                 : status === 'current'
@@ -73,7 +73,7 @@ export function StateProgress({ view }: { view: ConsoleView }) {
               <span className="step__mode">
                 {status === 'skip' ? (
                   <span className="step__skip" aria-hidden="true">
-                    파일럿 범위 밖
+                    들어가지 않음
                   </span>
                 ) : mode ? (
                   <ModeBadge mode={mode} />

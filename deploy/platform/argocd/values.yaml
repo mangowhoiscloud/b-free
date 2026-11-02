@@ -1,0 +1,37 @@
+# Argo CD 3.5.6 (chart argo-cd 10.11.6) on the platform EKS (TECH-STACK-SPEC 2.7, D-16: clusters pull Git).
+# Repo: private https://github.com/mangowhoiscloud/b-free.git, branch main. The read token is NOT in Git:
+# Secret argocd/repo-b-free is piped from OpenBao secret/envs/platform/argocd-repo (field token) by
+# deploy/platform/scripts/deliver-secrets.sh. UI/API are not published; operators use kubectl port-forward.
+global:
+  nodeSelector:
+    bravo.io/pool: core
+configs:
+  params:
+    server.insecure: true
+  cm:
+    # deploy/platform/control reads platform/executor/migrations (outside its directory).
+    kustomize.buildOptions: --load-restrictor LoadRestrictionsNone
+    admin.enabled: "false"
+    exec.enabled: "false"
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  replicas: 1
+controller:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 768Mi}
+repoServer:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+server:
+  resources:
+    requests: {cpu: 20m, memory: 96Mi}
+    limits: {memory: 256Mi}
+redis:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+    limits: {memory: 128Mi}

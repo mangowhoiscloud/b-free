@@ -34,6 +34,33 @@ env_get() {
 
 BAO_PORT="${PLATFORM_BAO_HOST_PORT:-$(env_get PLATFORM_BAO_HOST_PORT)}"
 BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:${BAO_PORT:-8200}}"
+# Target (D-26: one store): after keys.sh migrate-to-platform the store is the platform EKS OpenBao
+# (custody bao_target = platform-eks). Like keys.sh, this script opens a private port-forward to
+# pod openbao-0 on a free local port for this invocation only and closes it on exit; there is no
+# 127.0.0.1:8200 default any more. BRAVO_BAO_TARGET=pilot reaches the stopped laptop store.
+PF_PID=""
+pf_stop() { [[ -z $PF_PID ]] || { kill "$PF_PID" 2>/dev/null || true; wait "$PF_PID" 2>/dev/null || true; PF_PID=""; }; }
+BAO_TARGET="${BRAVO_BAO_TARGET:-}"
+if [[ -z $BAO_TARGET ]]; then
+  BAO_TARGET=pilot
+  [[ -f $CUSTODY && $(jq -r '.bao_target // "pilot"' "$CUSTODY" 2>/dev/null) == platform-eks ]] && BAO_TARGET=platform-eks
+fi
+if [[ $BAO_TARGET == platform-eks ]]; then
+  command -v kubectl >/dev/null || die "platform-eks target needs kubectl"
+  TLS_DIR="$CUSTODY_DIR/platform-eks"
+  [[ -f $TLS_DIR/ca.crt ]] || die "no $TLS_DIR/ca.crt (keys.sh --target platform-eks tls)"
+  pf_port="$(python3 -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
+  kubectl --context "${BRAVO_PLATFORM_CONTEXT:-bravo-platform}" -n openbao port-forward pod/openbao-0 \
+    "$pf_port:8200" >/dev/null 2>&1 &
+  PF_PID=$!
+  trap pf_stop EXIT
+  BAO_ADDR="https://127.0.0.1:$pf_port"
+  for _ in $(seq 1 40); do
+    [[ $(curl -s -o /dev/null -w '%{http_code}' --cacert "$TLS_DIR/ca.crt" --max-time 2 "$BAO_ADDR/v1/sys/seal-status" || true) == 200 ]] && break
+    kill -0 "$PF_PID" 2>/dev/null || die "port-forward to openbao-0 exited"
+    sleep 0.25
+  done
+fi
 
 tok_hdr() { [[ -z ${1-} ]] || printf 'X-Vault-Token: %s\n' "$1"; }
 
@@ -122,8 +149,12 @@ cmd_with_executor() {
   api POST auth/token/renew-self "$issuer" >/dev/null || die "executor issuer token invalid: executor-bao.sh setup"
   role_id="$(api GET "auth/approle/role/$ROLE/role-id" "$issuer" | jq -er .data.role_id)"
   secret_id="$(printf '{"ttl":"60s","num_uses":1}' | api -d POST "auth/approle/role/$ROLE/secret-id" "$issuer" | jq -er .data.secret_id)"
+  # Not exec: the private port-forward must live as long as CMD and be closed after it.
+  local rc=0
   BRAVO_BAO_ADDR="$BAO_ADDR" BRAVO_BAO_CACERT="$TLS_DIR/ca.crt" \
-    BRAVO_BAO_ROLE_ID="$role_id" BRAVO_BAO_SECRET_ID="$secret_id" exec "$@"
+    BRAVO_BAO_ROLE_ID="$role_id" BRAVO_BAO_SECRET_ID="$secret_id" "$@" || rc=$?
+  pf_stop
+  return $rc
 }
 
 cmd_status() {

@@ -1,0 +1,46 @@
+# Lima VM for one K3s node of the on-prem destination (D-21). Rendered by Terraform.
+# K3s itself is installed by scripts/k3s-*.sh after boot (binary pinned by version + SHA-256).
+minimumLimaVersion: 1.1.0
+vmType: vz
+arch: aarch64
+cpus: ${cpus}
+memory: ${memory}
+disk: ${disk}
+
+images:
+  # Ubuntu 24.04 LTS cloud image, pinned to one release and its SHA-256 (SHA256SUMS of that release).
+  - location: ${image_url}
+    arch: aarch64
+    digest: ${image_digest}
+
+# No host directories inside the node.
+mounts: []
+# containerd comes with K3s.
+containerd:
+  system: false
+  user: false
+
+# eth0 (Lima slirp) gives every VM the same 192.168.5.15 and no VM-to-VM path.
+# lima0 on the user-v2 network is the node network: K3s --node-ip and the Cilium VXLAN endpoint.
+networks:
+  - lima: user-v2
+
+# Raw data disk for the Ceph OSD. format: false, so Lima neither partitions nor formats it.
+# With vz the cloud-init ISO is also a block device: find this disk by size and emptiness.
+additionalDisks:
+  - name: ${data_disk}
+    format: false
+
+# Only the K3s API is published on the laptop (server node), nothing else.
+portForwards:
+%{ for pf in port_forwards ~}
+  - guestPort: ${pf.guest}
+    hostPort: ${pf.host}
+    hostIP: 127.0.0.1
+%{ endfor ~}
+  - guestPortRange: [1, 65535]
+    ignore: true
+
+ssh:
+  forwardAgent: false
+  loadDotSSHPubKeys: false

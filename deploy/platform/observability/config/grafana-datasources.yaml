@@ -1,0 +1,13 @@
+# From deploy/pilot/observability/grafana/provisioning/datasources/datasources.yaml, with in-cluster service names.
+apiVersion: 1
+datasources:
+  - { name: Prometheus, uid: prom, type: prometheus, access: proxy, url: http://prometheus.bravo-observe.svc:9090, isDefault: true }
+  - { name: Loki, uid: loki, type: loki, access: proxy, url: http://loki.bravo-observe.svc:3100 }
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo.bravo-observe.svc:3200
+    jsonData:
+      tracesToLogsV2: { datasourceUid: loki, filterByTraceID: true }
+      serviceMap: { datasourceUid: prom }

@@ -23,6 +23,12 @@ variable "lb_enabled" {
   default = false
 }
 
+variable "lb_environments" {
+  description = "LB pool에 넣을 환경. null이면 전부"
+  type        = list(string)
+  default     = null
+}
+
 variable "active_env" {
   type    = string
   default = "src"

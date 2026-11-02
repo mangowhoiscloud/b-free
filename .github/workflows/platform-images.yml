@@ -1,0 +1,86 @@
+# [T7] 플랫폼 이미지 빌드 → 플랫폼 ECR push(digest). 장기 키 없음: GitHub OIDC로 역할을 받음(NFR-6).
+# 역할(infra/modules/ci_identity/aws)은 repo:mangowhoiscloud/b-free:ref:refs/heads/main 만 믿고,
+# 플랫폼 ECR 저장소(bravo-platform/*)에 push만 할 수 있음. 클러스터 배포는 Argo CD pull(D-16).
+# 저장소 변수 PLATFORM_CI_ROLE_ARN = terraform -chdir=infra/envs/platform-aws output -raw ci_deploy_identity
+# 서드파티 Action은 커밋 SHA로 고정(TECH-STACK-SPEC 2.8). Trivy 단계는 두지 않음(OIDC를 주지 않기 위해).
+name: platform-images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "platform/**"
+      - "tools/link/**"
+      - "deploy/platform/images/**"
+      - ".github/workflows/platform-images.yml"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: platform-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.image.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: api, context: platform/api, file: platform/api/Dockerfile, build_contexts: "" }
+          - { name: console, context: platform/console, file: platform/console/Dockerfile, build_contexts: "" }
+          - { name: gate, context: platform/gate, file: platform/gate/Dockerfile, build_contexts: "" }
+          - { name: collector, context: platform/collector, file: platform/collector/Dockerfile, build_contexts: "" }
+          - { name: executor, context: platform/executor, file: platform/executor/Dockerfile, build_contexts: "" }
+          - { name: rehearsal, context: platform, file: platform/rehearsal/Dockerfile, build_contexts: "" }
+          - { name: link, context: tools/link, file: deploy/platform/images/link/Dockerfile, build_contexts: "extra=deploy/platform/images/link" }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU (linux/arm64 for t4g nodes)
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: AWS credentials (OIDC, no static key)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.PLATFORM_CI_ROLE_ARN }}
+          role-session-name: platform-images-${{ github.run_id }}
+          aws-region: ap-northeast-2
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Build and push (tag = commit SHA; ECR tags are immutable)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          build-contexts: ${{ matrix.image.build_contexts }}
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.ecr.outputs.registry }}/bravo-platform/${{ matrix.image.name }}:${{ github.sha }}
+
+      - name: Digest to job summary
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          NAME: ${{ matrix.image.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          test -n "$DIGEST" || { echo "no digest from build-push-action" >&2; exit 1; }
+          printf '| %s | `%s/bravo-platform/%s@%s` |\n' "$NAME" "$REGISTRY" "$NAME" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"

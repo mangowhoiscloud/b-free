@@ -1,6 +1,7 @@
 """Front switch for the representative name (T17, contract section 6, D-16).
 
-``b-free.mangowhois.ai`` reaches one environment through Cloudflare. Infra (``infra/modules/edge/
+``b-free-chat.mangowhois.ai`` (customer demo app; ``b-free`` is the platform and is refused)
+reaches one environment through Cloudflare. Infra (``infra/modules/edge/
 cloudflare``) creates one tunnel per environment (``bravo-<app>-<env>``) and either
 
 * CNAME mode (``lb_enabled = false``, now): a proxied CNAME ``<app>.<zone>`` -> ``<tunnel id>.cfargotunnel.com``
@@ -39,13 +40,16 @@ from .vault import SecretBroker
 CF_API = "https://api.cloudflare.com/client/v4"
 CF_SECRET_PATH = "platform/cloudflare"  # noqa: S105 - OpenBao path, not a secret
 LB_REQUIRED = "LB 구독 필요"
+# CLOUD-E2E-CONTRACT.md 6: b-free.<zone> is the platform itself (console, API, MCP). The Executor
+# switches only the customer app front (b-free-chat). Names here are never flipped, whatever the env says.
+PROTECTED_APPS = frozenset({"b-free"})
 
 # ---- configuration ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class FrontConfig:
-    app: str                                   # "b-free" -> hostnames b-free.<zone>, tunnels bravo-b-free-<env>
+    app: str                                   # "b-free-chat" -> b-free-chat.<zone>, tunnels bravo-b-free-chat-<env>
     env_ids: dict[str, str]                    # environment key -> app env id served at /api/config
     lb_enabled: bool
     probe_path: str = "/api/config"
@@ -65,6 +69,8 @@ class FrontConfig:
         ids_raw = (e.get("BRAVO_FRONT_ENV_IDS") or "").strip()
         if not app or not ids_raw:
             raise ValueError("BRAVO_FRONT_APP and BRAVO_FRONT_ENV_IDS (e.g. src=aws,dst=onprem) are required")
+        if app in PROTECTED_APPS:
+            raise ValueError(f"refusing to switch {app!r}: it is the platform front, not a customer app")
         env_ids = dict(part.split("=", 1) for part in ids_raw.split(",") if "=" in part)
 
         def f(name: str, default: float) -> float:

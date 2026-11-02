@@ -1,0 +1,38 @@
+# Landing zone namespaces (11-landing-zone.md 2절). Same names on k3s, eks and gke (D-23, CLOUD-E2E-CONTRACT §3).
+# Pod Security "restricted" is enforced on every workload namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chat
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+    bravo.io/gateway-access: "true"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bravo-edge
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cf-edge
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bravo-observability
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

@@ -36,3 +36,9 @@ variable "enable_flow_logs" {
   type        = bool
   default     = false
 }
+
+variable "proxy_only_cidr" {
+  description = "프록시 전용 서브넷 대역(GKE Gateway gke-l7-rilb). null이면 만들지 않음"
+  type        = string
+  default     = null
+}

@@ -2,3 +2,20 @@
 apps/demo/chart/ci/k3s-values.yaml:generic-api-key:1
 platform/collector/tests/test_inventory.py:aws-access-token:217
 platform/rehearsal/tests/test_server_tools.py:aws-access-token:103
+deploy/pilot/scripts/keys.sh:generic-api-key:12
+docs/evidence/pilot-notebook/smoke-20261102T184047/run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T191253/failback-run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T191406/run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T191253/run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T191406/failback-run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T192514/failback-run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T192514/run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T194530/run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T194436/run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T203049/failback-run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T194530/failback-run.json:generic-api-key:1
+docs/evidence/pilot-notebook/smoke-20261102T203049/run.json:generic-api-key:1
+platform/collector/tests/test_inventory.py:generic-api-key:281
+docs/evidence/t31/t31-20261102T120416Z/prepare/trivy.json:generic-api-key:55
+docs/evidence/t31/t31-20261102T120416Z/prepare/trivy.json:generic-api-key:172
+# 2026-11-02 21:12 확인한 오탐: 멱등 키 UUID(파일럿 증거), keys.sh 주석, 시험용 가짜 키, 공개 GPG 지문(trivy 결과)

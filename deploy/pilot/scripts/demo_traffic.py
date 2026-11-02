@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import signal
 import sys
 import time
 import uuid
@@ -25,6 +26,9 @@ from typing import Any
 
 import psycopg
 import websockets
+
+
+STOP: dict[str, float] = {}  # SIGTERM/SIGINT: stop sending now, then drain outstanding acks
 
 
 @dataclass
@@ -50,10 +54,13 @@ async def client(url: str, room: str, rate: float, duration: float, drain: float
     pending: dict[str, Pending] = {}
     stop_at = time.monotonic() + duration
     drain_until = stop_at + drain
+
+    def stopping() -> bool:
+        return time.monotonic() >= min(stop_at, STOP.get("at", float("inf")))
     interval = 1.0 / rate
     author = f"traffic-{url.rsplit(':', 1)[-1].split('/')[0]}"
     sep = "&" if "?" in url else "?"
-    while time.monotonic() < drain_until and (time.monotonic() < stop_at or pending):
+    while time.monotonic() < drain_until and (not stopping() or pending):
         try:
             async with websockets.connect(f"{url}{sep}room={room}", open_timeout=5, close_timeout=1) as ws:
                 for p in pending.values():  # resend everything not yet acked, same keys
@@ -88,11 +95,11 @@ async def client(url: str, room: str, rate: float, duration: float, drain: float
 
                 rx = asyncio.create_task(receive())
                 try:
-                    while time.monotonic() < drain_until and (time.monotonic() < stop_at or pending):
+                    while time.monotonic() < drain_until and (not stopping() or pending):
                         if rx.done():
                             rx.result()  # surface the disconnect
                             break
-                        if time.monotonic() < stop_at and time.monotonic() >= next_send:
+                        if not stopping() and time.monotonic() >= next_send:
                             key = str(uuid.uuid4())
                             pending[key] = Pending(key, time.monotonic())
                             st.sent += 1
@@ -103,7 +110,7 @@ async def client(url: str, room: str, rate: float, duration: float, drain: float
                     rx.cancel()
                     with contextlib.suppress(BaseException):
                         await rx
-                if time.monotonic() >= stop_at and not pending:
+                if stopping() and not pending:
                     return
         except (OSError, websockets.exceptions.WebSocketException, asyncio.TimeoutError):
             st.reconnects += 1
@@ -112,6 +119,9 @@ async def client(url: str, room: str, rate: float, duration: float, drain: float
 
 async def main_async(args: argparse.Namespace) -> int:
     st = Stats()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda: STOP.setdefault("at", time.monotonic()))
     await asyncio.gather(*(client(u, args.room, args.rate, args.duration, args.drain, st) for u in args.url))
     failed = st.sent - st.acked - st.nack_final
     out: dict[str, Any] = {

@@ -1,0 +1,26 @@
+{
+  "mode": "cli",
+  "phase": "apply",
+  "change_id": "3e24d0f4-06ba-416b-be5b-eb8d1206905a",
+  "target": "target-onprem",
+  "provenance": "Refusal check (real run): the approval binding names sha256:92592b87 (the image on-prem ran before), but this change prepared sha256:a9f7b866. Expected: refused before anything is signed, imported or deployed.",
+  "started_at": "2026-11-02T12:10:13.452712+00:00",
+  "ended_at": "2026-11-02T12:10:13.650704+00:00",
+  "status": "refused",
+  "reason": "approved_digest_mismatch",
+  "stages": [
+    {
+      "seq": 1,
+      "name": "tools.verify",
+      "result": "OK",
+      "ms": 197
+    },
+    {
+      "seq": 2,
+      "name": "approval.verify",
+      "result": "REFUSED",
+      "ms": 0
+    }
+  ],
+  "result": null
+}

@@ -1,0 +1,63 @@
+# Connector for the platform tunnel bravo-platform (id 62b5b448-4b65-4824-b94a-f284b1e70133, infra/envs/edge
+# platform.tf, remote config: b-free.mangowhois.ai -> http://cilium-gateway-bravo-gateway.bravo-edge.svc.cluster.local:80).
+# Token: Secret cf-tunnel (key token), piped from OpenBao secret/envs/platform/cf-tunnel by
+# deploy/platform/scripts/deliver-secrets.sh (CLOUD-E2E-CONTRACT 3, 4). Not in Git.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cf-edge
+  labels:
+    app.kubernetes.io/part-of: bravo-platform
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: cloudflared, namespace: cf-edge}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cf-edge
+  labels: {app.kubernetes.io/name: cloudflared, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: edge}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: cloudflared}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: cloudflared, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: edge}
+    spec:
+      serviceAccountName: cloudflared
+      automountServiceAccountToken: false
+      nodeSelector: {bravo.io/pool: core}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app.kubernetes.io/name: cloudflared}}}
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba # 2026.10.7
+          args: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:2000", "run", "--token-file", "/etc/cloudflared/token/token"]
+          ports: [{name: metrics, containerPort: 2000}]
+          readinessProbe: {httpGet: {path: /ready, port: metrics}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /ready, port: metrics}, periodSeconds: 30, failureThreshold: 4}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 10m, memory: 48Mi}, limits: {memory: 192Mi}}
+          volumeMounts:
+            - {name: token, mountPath: /etc/cloudflared/token, readOnly: true}
+      volumes:
+        - name: token
+          secret: {secretName: cf-tunnel, items: [{key: token, path: token}], defaultMode: 0440}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: cloudflared, namespace: cf-edge}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/name: cloudflared}}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: cloudflared, namespace: cf-edge}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: cloudflared}}
+  policyTypes: ["Ingress"]
+  ingress: []

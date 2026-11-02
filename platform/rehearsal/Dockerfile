@@ -6,7 +6,8 @@ ARG PYTHON_IMAGE=python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb
 
 FROM ${PYTHON_IMAGE} AS build
 ARG UV_VERSION=0.10.2
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+# The venv lives at its final path (/app/.venv) so console-script shebangs stay valid in the runtime stage.
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_PROJECT_ENVIRONMENT=/app/.venv
 RUN pip install --no-cache-dir "uv==${UV_VERSION}"
 WORKDIR /app
 COPY agent/pyproject.toml ./agent/pyproject.toml
@@ -22,7 +23,7 @@ RUN groupadd --system --gid "${APP_UID}" bravo \
  && useradd --system --uid "${APP_UID}" --gid "${APP_UID}" --home-dir /var/lib/bravo --no-create-home --shell /usr/sbin/nologin bravo \
  && mkdir -p /var/lib/bravo/runs && chown -R "${APP_UID}:${APP_UID}" /var/lib/bravo
 WORKDIR /app
-COPY --from=build --chown=root:root /app/rehearsal/.venv /app/.venv
+COPY --from=build --chown=root:root /app/.venv /app/.venv
 COPY --chown=root:root rehearsal/src ./src
 COPY --chown=root:root rehearsal/tasks ./tasks
 COPY --chown=root:root rehearsal/sql ./sql

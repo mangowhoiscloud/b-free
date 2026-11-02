@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from .redact import redact
+
 SCHEMA_VERSION = "collector/v1"
 
 
@@ -36,7 +38,7 @@ def failed(exc: BaseException | str) -> Item:
         msg = f"{type(exc).__name__}: {exc}"
     else:
         msg = exc
-    return Item(status="error", error=msg[:500])
+    return Item(status="error", error=redact(msg)[:500])
 
 
 def observe(fn: Callable[[], Any], *, absent_on: Callable[[BaseException], bool] | None = None) -> Item:
@@ -50,7 +52,7 @@ def observe(fn: Callable[[], Any], *, absent_on: Callable[[BaseException], bool]
 
 
 def _short(exc: BaseException) -> str:
-    return f"{type(exc).__name__}: {exc}"[:300]
+    return redact(f"{type(exc).__name__}: {exc}")[:300]
 
 
 class SourceResult(BaseModel):

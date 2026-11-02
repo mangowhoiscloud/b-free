@@ -1,0 +1,135 @@
+# PgBouncer chat-pgbouncer (CLOUD-E2E-CONTRACT §9). Image bravo-pgbouncer (sh, cp, mv), replica 1.
+# Targets: ConfigMap directory /etc/pgbouncer/targets/ (no subPath). Main config ends with
+# %include /run/pgbouncer/active.ini; /run/pgbouncer is an emptyDir that the init container fills.
+# Initial target: target-src (destination app uses the source DB over the link until cutover).
+# Only the Executor switches the target (pods/exec: cp + RELOAD).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-pgbouncer-targets
+  namespace: chat
+data:
+  # Source DB through the temporary link (D-16 전): bravo-link relay src-db-link in this namespace.
+  target-src.ini: |
+    [databases]
+    chat = host=src-db-link.chat.svc.cluster.local port=5432 dbname=chat
+  target-dst.ini: |
+    [databases]
+    chat = host=chat-db-rw.chat.svc.cluster.local port=5432 dbname=chat
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-pgbouncer-config
+  namespace: chat
+data:
+  pgbouncer.ini: |
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    unix_socket_dir =
+    auth_type = scram-sha-256
+    auth_file = /etc/pgbouncer/auth/userlist.txt
+    pool_mode = transaction
+    max_client_conn = 200
+    default_pool_size = 10
+    reserve_pool_size = 0
+    max_prepared_statements = 0
+    admin_users = pgb_admin
+    stats_users = pgb_stats
+    query_wait_timeout = 8
+    server_connect_timeout = 5
+    server_login_retry = 1
+    ignore_startup_parameters = extra_float_digits,options
+    log_connections = 0
+    log_disconnections = 0
+    log_pooler_errors = 1
+    %include /run/pgbouncer/active.ini
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-pgbouncer
+  namespace: chat
+  labels:
+    app.kubernetes.io/name: chat-pgbouncer
+    app.kubernetes.io/part-of: bravo-landing-zone
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chat-pgbouncer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chat-pgbouncer
+        app.kubernetes.io/part-of: bravo-landing-zone
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10070
+        runAsGroup: 10070
+        fsGroup: 10070
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: select-target
+          image: ${IMAGE_REGISTRY}/${PGB_IMAGE_NAME}@${PGB_DIGEST}
+          command: ["sh", "-c", "cp /etc/pgbouncer/targets/${PGB_INITIAL_TARGET}.ini /run/pgbouncer/active.ini && echo active=${PGB_INITIAL_TARGET}"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: targets, mountPath: /etc/pgbouncer/targets, readOnly: true}
+            - {name: run, mountPath: /run/pgbouncer}
+      containers:
+        - name: pgbouncer
+          image: ${IMAGE_REGISTRY}/${PGB_IMAGE_NAME}@${PGB_DIGEST}
+          env:
+            - {name: PGBOUNCER_INI, value: /etc/pgbouncer/conf/pgbouncer.ini}
+          ports:
+            - {name: pgbouncer, containerPort: 6432}
+          readinessProbe:
+            tcpSocket: {port: pgbouncer}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: pgbouncer}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/pgbouncer/conf, readOnly: true}
+            - {name: targets, mountPath: /etc/pgbouncer/targets, readOnly: true}
+            - {name: auth, mountPath: /etc/pgbouncer/auth, readOnly: true}
+            - {name: run, mountPath: /run/pgbouncer}
+      volumes:
+        - name: conf
+          configMap: {name: chat-pgbouncer-config}
+        - name: targets
+          configMap: {name: chat-pgbouncer-targets}
+        - name: auth
+          secret: {secretName: chat-pgbouncer-auth, defaultMode: 0440}
+        - name: run
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-pgbouncer
+  namespace: chat
+  labels:
+    app.kubernetes.io/name: chat-pgbouncer
+spec:
+  selector:
+    app.kubernetes.io/name: chat-pgbouncer
+  ports:
+    - {name: pgbouncer, port: 6432, targetPort: pgbouncer}

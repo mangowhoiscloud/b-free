@@ -76,3 +76,28 @@ def test_snapshot_serialises_and_marks_unconfigured(pg_server, monkeypatch):
     assert pg["status"] == "ok"
     assert pg["data"]["connection"]["status"] == "ok"
     assert snap["expires_at"] > snap["collected_at"]
+
+
+
+def test_collector_ro_sql_takes_only_a_scram_verifier(pg_server) -> None:
+    """Audit B19: the role password is stored from a client-side verifier; plaintext input is refused."""
+    import subprocess
+
+    import psycopg
+    import pytest as _pytest
+    from conftest import SQL_DIR, apply_collector_ro
+
+    from bravo_collector.scram import scram_sha256_verifier
+
+    with psycopg.connect(pg_server.superuser_dsn) as conn:
+        stored = conn.execute("SELECT rolpassword FROM pg_authid WHERE rolname = 'collector_ro'").fetchone()[0]
+    assert stored.startswith("SCRAM-SHA-256$4096:")
+    cid = pg_server.container_id
+    sql = (SQL_DIR / "collector_ro.sql").read_text(encoding="utf-8")
+    with _pytest.raises(subprocess.CalledProcessError):
+        apply_collector_ro(cid, sql, "plaintext-password-123")
+    with psycopg.connect(pg_server.superuser_dsn) as conn:
+        again = conn.execute("SELECT rolpassword FROM pg_authid WHERE rolname = 'collector_ro'").fetchone()[0]
+    assert again == stored  # unchanged after the refused run
+    v = scram_sha256_verifier("x" * 12, salt=b"\0" * 16)
+    assert v.startswith("SCRAM-SHA-256$4096:AAAAAAAAAAAAAAAAAAAAAA==$")

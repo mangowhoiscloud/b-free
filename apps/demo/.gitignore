@@ -3,3 +3,4 @@ pilot-app.env
 .pytest_cache/
 .ruff_cache/
 __pycache__/
+chart/values-*.generated.yaml

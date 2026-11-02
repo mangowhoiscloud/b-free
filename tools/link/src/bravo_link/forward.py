@@ -170,7 +170,7 @@ class PortForward:
             if stream is None:
                 return
             async for raw in stream:
-                log.log(level, "kubectl: %s", raw.decode(errors="replace").rstrip()[:300])
+                log.log(level, "kubectl: %s", raw.decode(errors="replace").rstrip()[:2000])
 
         await asyncio.gather(one(proc.stdout, logging.DEBUG), one(proc.stderr, logging.INFO))
 

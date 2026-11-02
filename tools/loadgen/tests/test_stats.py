@@ -32,14 +32,21 @@ def test_ack_gap_and_counts() -> None:
 
 def test_nfr2_ok_only_when_every_ack_is_present_exactly_once() -> None:
     a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    ok = evaluate_nfr2([a, b], {a: 1, b: 1}, failed=0)
-    assert ok.ok and ok.found_once == 2
+    ok = evaluate_nfr2([a, b], {a: 1, b: 1}, failed=0, sent=2)
+    assert ok.ok and ok.found_once == 2 and ok.accounted
 
-    lost = evaluate_nfr2([a, b], {a: 1}, failed=0)
+    lost = evaluate_nfr2([a, b], {a: 1}, failed=0, sent=2)
     assert not lost.ok and lost.lost == [str(b)]
 
-    dup = evaluate_nfr2([a, c], {a: 1, c: 2}, failed=0)
+    dup = evaluate_nfr2([a, c], {a: 1, c: 2}, failed=0, sent=2)
     assert not dup.ok and dup.duplicated == [str(c)]
 
-    failed = evaluate_nfr2([a], {a: 1}, failed=1)
+    failed = evaluate_nfr2([a], {a: 1}, failed=1, sent=2)
     assert not failed.ok and failed.as_dict()["failed_requests"] == 1
+
+
+def test_nfr2_is_not_ok_without_traffic_or_with_unaccounted_requests() -> None:
+    assert not evaluate_nfr2([], {}, failed=0, sent=0).ok  # nothing acked proves nothing
+    a = uuid.uuid4()
+    unaccounted = evaluate_nfr2([a], {a: 1}, failed=0, sent=3)  # two requests vanished
+    assert not unaccounted.ok and not unaccounted.accounted

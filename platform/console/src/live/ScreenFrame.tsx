@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { Card } from '@astryxdesign/core/Card';
+import { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList';
 import { Heading, Text } from '@astryxdesign/core/Text';
 import { HStack, VStack } from '@astryxdesign/core/Stack';
-import { Table, proportional, type TableColumn } from '@astryxdesign/core/Table';
+import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table';
 
 export function Screen({ title, lead, aside, children }: { title: string; lead: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -23,6 +24,7 @@ export function Screen({ title, lead, aside, children }: { title: string; lead: 
   );
 }
 
+/** One surface per section. Nothing inside it draws another box. */
 export function Block({ title, meta, children, id }: { title: ReactNode; meta?: ReactNode; children: ReactNode; id?: string }) {
   return (
     <Card padding={4} className="block">
@@ -31,7 +33,7 @@ export function Block({ title, meta, children, id }: { title: ReactNode; meta?: 
           <Heading level={3} id={id}>
             {title}
           </Heading>
-          {meta && <HStack gap={2} vAlign="center" wrap="wrap">{meta}</HStack>}
+          {meta && <HStack gap={3} vAlign="center" wrap="wrap">{meta}</HStack>}
         </HStack>
         {children}
       </VStack>
@@ -44,6 +46,9 @@ export interface Col<T> {
   header: string;
   render: (row: T) => ReactNode;
   weight?: number;
+  /** Numbers: right-aligned with tabular figures, fixed narrow width unless `px` is given. */
+  numeric?: boolean;
+  px?: number;
 }
 
 /** Astryx Table over plain rows. Rows are wrapped so any shape works. */
@@ -59,27 +64,38 @@ export function DataTable<T>({ rows, cols, rowKey, empty }: { rows: T[]; cols: C
   const columns: TableColumn<Row>[] = cols.map((c) => ({
     key: c.key,
     header: c.header,
-    width: proportional(c.weight ?? 1),
-    renderCell: (row: Row) => c.render(row._r),
+    width: c.px ? pixel(c.px) : c.numeric ? pixel(104) : proportional(c.weight ?? 1),
+    align: c.numeric ? 'end' : 'start',
+    renderCell: (row: Row) => (c.numeric ? <span className="num">{c.render(row._r)}</span> : c.render(row._r)),
   }));
   return <Table data={data} columns={columns} idKey="_k" density="compact" textOverflow="wrap" />;
 }
 
-export function Stat({ label, value, unit, note }: { label: string; value: ReactNode; unit?: string; note?: ReactNode }) {
+/** Description list (Astryx MetadataList): label / value pairs instead of stat tiles. */
+export function Facts({ items, columns = 'multi' }: { items: { label: string; value: ReactNode }[]; columns?: 'multi' | 'single' | number }) {
   return (
-    <div className="stat">
-      <Text type="label" color="secondary">
-        {label}
-      </Text>
-      <div className="stat__value mono">
-        {value}
-        {unit && <span className="stat__unit">{unit}</span>}
-      </div>
-      {note && (
-        <Text type="supporting" color="secondary">
-          {note}
-        </Text>
-      )}
-    </div>
+    <MetadataList columns={columns}>
+      {items.map((i) => (
+        <MetadataListItem key={i.label} label={i.label}>
+          {i.value}
+        </MetadataListItem>
+      ))}
+    </MetadataList>
+  );
+}
+
+/** A value with its unit, or "—" plus the reason when there is no value. */
+export function Val({ v, unit, why }: { v: string | number | null | undefined; unit?: string; why?: string }) {
+  if (v === null || v === undefined || v === '')
+    return (
+      <span className="num">
+        —{why && <span className="why"> {why}</span>}
+      </span>
+    );
+  return (
+    <span className="num">
+      {v}
+      {unit && <span className="unit">{unit}</span>}
+    </span>
   );
 }

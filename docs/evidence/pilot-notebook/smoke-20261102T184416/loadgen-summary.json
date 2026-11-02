@@ -1,0 +1,1 @@
+{"summary": {"sent": 800, "acked": 800, "acked_on_conflict": 0, "retried": 0, "retry_attempts": 0, "failed": 0, "max_latency_ms": 18.4, "p50_latency_ms": 1.5, "p99_latency_ms": 3.9, "longest_ack_gap_ms": 57.5}, "nfr2": {"ok": true, "acked": 800, "found_exactly_once": 800, "lost": 0, "duplicated": 0, "failed_requests": 0, "lost_sample": [], "duplicated_sample": []}}

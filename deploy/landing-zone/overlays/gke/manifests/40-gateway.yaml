@@ -1,0 +1,98 @@
+# In-environment entry: Gateway API, Gateway bravo-gateway in ns bravo-edge (CLOUD-E2E-CONTRACT §3).
+# GKE adapter: Dataplane V2 is a managed Cilium (anetd) without Cilium's Gateway API/Envoy, so the
+# implementation is the GKE Gateway controller with class gke-l7-rilb: a regional internal Application
+# Load Balancer (Google-managed Envoy proxies in the proxy-only subnet). Nothing is exposed to the internet;
+# users arrive only through Cloudflare (cf-edge -> this internal address).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: bravo-gateway
+  namespace: bravo-edge
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+spec:
+  gatewayClassName: gke-l7-rilb
+  addresses:
+    - type: NamedAddress
+      value: ${GATEWAY_ADDRESS_NAME}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              bravo.io/gateway-access: "true"
+---
+# Same in-cluster name as on k3s/eks for the tunnel origin (infra/envs/edge environments.gke.origin_service):
+# http://bravo-gateway.bravo-edge.svc.cluster.local:80 -> the Gateway's fixed internal address.
+apiVersion: v1
+kind: Service
+metadata:
+  name: bravo-gateway
+  namespace: bravo-edge
+  labels:
+    app.kubernetes.io/part-of: bravo-landing-zone
+spec:
+  ports:
+    - {name: http, port: 80, targetPort: 80, protocol: TCP}
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: bravo-gateway-ilb
+  namespace: bravo-edge
+  labels:
+    kubernetes.io/service-name: bravo-gateway
+    endpointslice.kubernetes.io/managed-by: bravo-landing-zone
+addressType: IPv4
+endpoints:
+  - addresses: ["${GATEWAY_IP}"]
+ports:
+  - {name: http, port: 80, protocol: TCP}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: chat
+  namespace: chat
+spec:
+  parentRefs:
+    - {name: bravo-gateway, namespace: bravo-edge, sectionName: http}
+  rules:
+    - backendRefs:
+        - {name: chat-bravo-demo, port: 80}
+---
+# Load balancer health check on the app's readiness path (the app answers 200 without a DB round trip).
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: chat
+  namespace: chat
+spec:
+  default:
+    checkIntervalSec: 5
+    timeoutSec: 3
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 8000
+        requestPath: /readyz
+  targetRef: {group: "", kind: Service, name: chat-bravo-demo}
+---
+# WebSocket connections live up to the backend service timeout on Google ALBs: 1 hour.
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: chat
+  namespace: chat
+spec:
+  default:
+    timeoutSec: 3600
+    connectionDraining:
+      drainingTimeoutSec: 10
+  targetRef: {group: "", kind: Service, name: chat-bravo-demo}

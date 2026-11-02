@@ -12,9 +12,17 @@ set -euo pipefail
 umask 077
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PILOT_DIR="$(cd "$HERE/.." && pwd)"
-TLS_DIR="$PILOT_DIR/bao/tls"
-CUSTODY="${BRAVO_KEY_CUSTODY_DIR:-$HOME/.bravo/custody}/openbao-init.json"
-BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:8200}"
+CUSTODY_DIR="${BRAVO_KEY_CUSTODY_DIR:-$HOME/.bravo/custody}"
+CUSTODY="$CUSTODY_DIR/openbao-init.json"
+# Same target rule as deploy/pilot/scripts/keys.sh: after migrate-to-platform the store is the platform
+# EKS OpenBao (openbao/openbao-0), reached through a kubectl port-forward (default 127.0.0.1:18200).
+if [[ $(jq -r '.bao_target // "pilot"' "$CUSTODY") == platform-eks ]]; then
+  TLS_DIR="$CUSTODY_DIR/platform-eks"
+  BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:${BRAVO_BAO_LOCAL_PORT:-18200}}"
+else
+  TLS_DIR="$PILOT_DIR/bao/tls"
+  BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:8200}"
+fi
 
 die() { printf 'bao.sh: %s\n' "$*" >&2; exit 1; }
 tok_hdr() { printf 'X-Vault-Token: %s\n' "$(jq -er .admin_token "$CUSTODY")"; }
