@@ -1,0 +1,72 @@
+# state before  2026-11-03 00:07:26 KST
+
+## bravo-onprem
+### server manifests (/var/lib/rancher/rke2/server/manifests)
+2026-11-02T21:21:58+0900 rke2-coredns.yaml
+2026-11-02T21:21:58+0900 rke2-metrics-server.yaml
+2026-11-02T21:21:58+0900 rke2-runtimeclasses.yaml
+2026-11-02T21:21:58+0900 rke2-snapshot-controller-crd.yaml
+2026-11-02T21:21:58+0900 rke2-snapshot-controller.yaml
+2026-11-02T21:21:58+0900 rke2-snapshot-validation-webhook.yaml
+2026-11-02T21:21:58+0900 rke2-traefik-crd.yaml
+### Traefik HelmChart, Addon, Job, Pod
+helmchart.helm.cattle.io/rke2-traefik-crd
+addon.k3s.cattle.io/rke2-traefik-crd
+job.batch/helm-install-rke2-traefik-crd
+helm-install-rke2-traefik-crd-md9gq                    0/1   Error       37 (5m26s ago)   165m
+### Helm release records (owner=helm) named *traefik*
+none
+### Gateway API CRDs (name uid resourceVersion created)
+backendtlspolicies.gateway.networking.k8s.io                                  9adee38c-db68-472f-be7f-b962864bc94e   766     2026-11-02T12:22:43Z
+gatewayclasses.gateway.networking.k8s.io                                      adf38227-c61b-4011-9b9c-2209504c6b9c   767     2026-11-02T12:22:43Z
+gateways.gateway.networking.k8s.io                                            ccaff77e-65fc-4cee-8090-00f52e6d0f2b   773     2026-11-02T12:22:43Z
+grpcroutes.gateway.networking.k8s.io                                          fabe3b2e-1dd6-4a3e-9674-7481b757cf39   775     2026-11-02T12:22:43Z
+httproutes.gateway.networking.k8s.io                                          d4abfff3-89cb-4c93-be88-bdbdf8f7f380   800     2026-11-02T12:22:43Z
+listenersets.gateway.networking.k8s.io                                        82cbc758-cd65-4154-91a7-3534ca799041   789     2026-11-02T12:22:43Z
+referencegrants.gateway.networking.k8s.io                                     4b808ad0-8824-4bdd-b368-6d3c8eac8017   791     2026-11-02T12:22:43Z
+tcproutes.gateway.networking.k8s.io                                           97551786-b4d0-4fb1-8f36-bceed49f23ea   793     2026-11-02T12:22:43Z
+tlsroutes.gateway.networking.k8s.io                                           4cb0bc44-b746-4861-9a05-fbca821652e2   801     2026-11-02T12:22:43Z
+udproutes.gateway.networking.k8s.io                                           92950960-3ba7-4768-a270-4919468cd91d   802     2026-11-02T12:22:43Z
+### Gateways and HTTPRoutes (kind ns name uid resourceVersion generation)
+Gateway     bravo-edge   bravo-gateway   154dcecc-d8a8-4179-a062-edc63f22778e   15792   1
+HTTPRoute   chat         chat            ae8ae2fb-cc01-4be5-aa2d-1ab5d96083a5   15790   1
+bravo-edge   bravo-gateway   True
+
+## bravo-platform-rke2
+### server manifests (/var/lib/rancher/rke2/server/manifests)
+2026-11-02T13:12:08+0000 rke2-coredns.yaml
+2026-11-02T13:12:08+0000 rke2-metrics-server.yaml
+2026-11-02T13:12:08+0000 rke2-runtimeclasses.yaml
+2026-11-02T13:12:08+0000 rke2-snapshot-controller-crd.yaml
+2026-11-02T13:12:08+0000 rke2-snapshot-controller.yaml
+2026-11-02T13:12:08+0000 rke2-snapshot-validation-webhook.yaml
+### Traefik HelmChart, Addon, Job, Pod
+HelmChart: none
+Addon: none
+Job: none
+Pod: none
+### Helm release records (owner=helm) named *traefik*
+none
+### Gateway API CRDs (name uid resourceVersion created)
+backendtlspolicies.gateway.networking.k8s.io               9b462018-b70e-4cce-a9fb-9abd06058f2c   28517   2026-11-02T12:24:11Z
+gatewayclasses.gateway.networking.k8s.io                   c5c0d711-b29a-446f-a194-d53847beaf82   28516   2026-11-02T12:24:11Z
+gateways.gateway.networking.k8s.io                         64494c0b-41cc-4e2e-9b78-dc2ab69af50b   28522   2026-11-02T12:24:12Z
+grpcroutes.gateway.networking.k8s.io                       5e641415-f851-40b6-8cc4-e1599c5edd31   28520   2026-11-02T12:24:12Z
+httproutes.gateway.networking.k8s.io                       c60c9269-26ae-4c6f-b815-b8bad18e1173   28523   2026-11-02T12:24:12Z
+listenersets.gateway.networking.k8s.io                     e7d28841-9eaf-494f-a9df-f1fb12d34a6b   28521   2026-11-02T12:24:13Z
+referencegrants.gateway.networking.k8s.io                  edbabd3e-13ce-4a98-a11a-02a210b3931b   28511   2026-11-02T12:24:13Z
+tcproutes.gateway.networking.k8s.io                        df3467bd-486e-407e-a589-d7219e5358bf   28514   2026-11-02T12:24:13Z
+tlsroutes.gateway.networking.k8s.io                        093203f7-1c49-4edf-bfd9-6f76ff81818c   28518   2026-11-02T12:24:13Z
+udproutes.gateway.networking.k8s.io                        6a67f9e1-bc33-4f5c-9b4f-e4d09e909f57   28515   2026-11-02T12:24:13Z
+### Gateways and HTTPRoutes (kind ns name uid resourceVersion generation)
+Gateway     bravo-edge      bravo-gateway    0230d3fd-eb4b-420c-9d82-7e5774346653   29779   2
+HTTPRoute   bravo-control   platform-front   f8c9d283-d518-41a4-bed2-f2b8e06583c9   29799   1
+HTTPRoute   bravo-observe   grafana          a7c6c959-709d-4b49-9ff1-df792fd4b814   29803   1
+bravo-edge   bravo-gateway   True
+
+## public routes (HTTP status, time)
+302 0.660858s  https://b-free.mangowhois.ai/
+302 1.804655s  https://b-free.mangowhois.ai/healthz
+200 1.204805s  https://b-free-chat.mangowhois.ai/api/config
+200 0.878039s  https://b-free-chat-dst.mangowhois.ai/api/config
+200 1.164677s  https://b-free-chat-src.mangowhois.ai/api/config

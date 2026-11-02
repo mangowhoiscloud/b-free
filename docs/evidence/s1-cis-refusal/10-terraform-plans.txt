@@ -1,0 +1,78 @@
+# Terraform plans after the fail-fast bootstrap and the traefik-crd skip (common cloud-init change)
+# Run 2026-11-03 00:0x KST with -lock=false (read-only; nothing applied). Module renders, sha256 of user-data:
+#   before (24045c1 = 1b0f4d3): server f21de113…, agent e0e7dd6c…
+#   after  (this change):       server 14ba584e…, agent a4501f51…
+
+## infra/envs/target-onprem: $ terraform plan -lock=false -no-color
+## The Lima VMs are module.cluster.terraform_data.node["server"|"agent"]: not in the plan (no replacement, no stop or start).
+## terraform_data.rke2_server / rke2_agent are the records of scripts/rke2-node.sh; replacing them re-runs it on the running
+## nodes. 08-rerun.log measures that re-run on a running server: same MainPID, NRestarts=0, no stop or start in the journal.
+## local_file.cloud_init = the rendered documents on the laptop (content diff left out below: the module diff is in git).
+module.cluster.local_file.lima_yaml["server"]: Refreshing state... [id=189a422de5b396a7f6ac3a3a973c788b5910b434]
+module.cluster.local_file.lima_yaml["agent"]: Refreshing state... [id=8c75383b52dc3bf066fba7a8820c20f3c8e7b7ae]
+module.cluster.local_file.cloud_init["agent"]: Refreshing state... [id=ad4548f7321130f39be1456e83c8cd6a30caa755]
+module.cluster.local_file.cloud_init["server"]: Refreshing state... [id=6add4eb866e2b37675199bd43b31ae37bc0b19b9]
+module.cluster.terraform_data.node["server"]: Refreshing state... [id=104456cd-e607-401a-5813-e8d09ae9a325]
+module.cluster.terraform_data.node["agent"]: Refreshing state... [id=ef43cc69-d9b4-9445-d32a-55bdd858659a]
+module.cluster.terraform_data.rke2_server: Refreshing state... [id=fa440830-e17b-788e-65f7-958e3d5a0db1]
+module.cluster.terraform_data.rke2_agent: Refreshing state... [id=62a2a18f-8bac-35dd-92db-8acd00e45f14]
+module.cluster.terraform_data.kubeconfig: Refreshing state... [id=ed8e45ae-ea8d-62ef-ab08-e009d609881a]
+terraform_data.landing_zone[0]: Refreshing state... [id=6f026537-b4a2-c935-9c0d-04c9699f3973]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+-/+ destroy and then create replacement
+
+Terraform will perform the following actions:
+
+  # module.cluster.local_file.cloud_init["agent"] must be replaced
+  # module.cluster.local_file.cloud_init["server"] must be replaced
+      (content diff omitted)
+  # module.cluster.terraform_data.kubeconfig must be replaced
+-/+ resource "terraform_data" "kubeconfig" {
+      ~ id               = "ed8e45ae-ea8d-62ef-ab08-e009d609881a" -> (known after apply)
+      ~ output           = {
+          - context = "bravo-onprem"
+          - scripts = "infra/modules/cluster/onprem/scripts"
+        } -> (known after apply)
+      ~ triggers_replace = [
+          ~ "fa440830-e17b-788e-65f7-958e3d5a0db1" -> (known after apply),
+            16443,
+        ]
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.cluster.terraform_data.rke2_agent must be replaced
+-/+ resource "terraform_data" "rke2_agent" {
+      ~ id               = "62a2a18f-8bac-35dd-92db-8acd00e45f14" -> (known after apply)
+      ~ triggers_replace = [
+            "ef43cc69-d9b4-9445-d32a-55bdd858659a",
+          ~ "fa440830-e17b-788e-65f7-958e3d5a0db1" -> (known after apply),
+          ~ "e0e7dd6c1bbd0af7cdcc2800e231993a098bbaac80813c9227aee46df544f51b" -> "a4501f519751e3d37c4a0a3f3e2409d251c51854728090fe8ccc74002af2a100",
+            "4b2c1e49f1cacde2a2548b9ab2ab6ab827935f1c350087c0b258803c02052198",
+        ]
+    }
+
+  # module.cluster.terraform_data.rke2_server must be replaced
+-/+ resource "terraform_data" "rke2_server" {
+      ~ id               = "fa440830-e17b-788e-65f7-958e3d5a0db1" -> (known after apply)
+      ~ triggers_replace = [
+            "104456cd-e607-401a-5813-e8d09ae9a325",
+          ~ "f21de113559d67c09e3267436727efa4d0696f43b15763fba0f891a7200a5b76" -> "14ba584ea34cf4aac00259f2256bf140a30147b8216ef664b6f1f653fef073c9",
+            "4b2c1e49f1cacde2a2548b9ab2ab6ab827935f1c350087c0b258803c02052198",
+        ]
+    }
+
+Plan: 5 to add, 0 to change, 5 to destroy.
+
+## infra/envs/platform-aws: $ terraform plan -lock=false -no-color   (refresh lines left out)
+
+No changes. Your infrastructure matches the configuration.
+
+Terraform has compared your real infrastructure against your configuration
+and found no differences, so no changes are needed.
+
+## Why no change: module.node.aws_instance.node has lifecycle ignore_changes = [ami, user_data] (modules/node/aws).
+## The new user-data differs from the one in state, and the plan still has no change:
+state  user_data sha256 57c52c244a4d81339e3ad260df875b4d2aa97a3ac92caa8e853fe25579998563  contains 'systemctl enable --now rke2-server.service': 1
+config user_data sha256 ba25fc7520b4af12e35b7a78a3ab5330096204f1f232e1ec4a5d23f070a1f903  (terraform console: new_bootstrap=true, old_bootstrap=false, skip=true)

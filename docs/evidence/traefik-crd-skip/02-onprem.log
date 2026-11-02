@@ -1,0 +1,52 @@
+## 2026-11-03 00:07:50 KST  bravo-onprem: create the skip file on the server node (rke2-traefik.yaml is not present, so only the CRD chart)
+$ limactl shell bravo-onprem-server -- sudo touch /var/lib/rancher/rke2/server/manifests/rke2-traefik-crd.yaml.skip
+-rw-r--r-- 1 root root 270882 2026-11-02T21:21:58+0900 rke2-traefik-crd.yaml
+-rw-r--r-- 1 root root      0 2026-11-03T00:07:50+0900 rke2-traefik-crd.yaml.skip
+
+## 2026-11-03 00:08:20 KST  30 s later: the skip file alone does not remove the objects already applied
+$ kubectl --context bravo-onprem -n kube-system get helmchart rke2-traefik-crd
+NAME               REPO   CHART   VERSION   TARGETNAMESPACE   BOOTSTRAP   FAILED
+rke2-traefik-crd                                                          False
+$ kubectl --context bravo-onprem -n kube-system get job helm-install-rke2-traefik-crd
+NAME                            STATUS    COMPLETIONS   DURATION   AGE
+helm-install-rke2-traefik-crd   Running   0/1           166m       166m
+
+## 2026-11-03 00:08:20 KST  no Helm release record for rke2-traefik-crd (so the controller's uninstall has nothing to remove)
+$ kubectl --context bravo-onprem -n kube-system get secrets -l owner=helm,name=rke2-traefik-crd
+No resources found in kube-system namespace.
+
+## 2026-11-03 00:08:20 KST  delete the leftover HelmChart (helm-controller runs its removal Job, then drops the finalizer)
+$ kubectl --context bravo-onprem -n kube-system delete helmchart rke2-traefik-crd --wait=true --timeout=180s
+helmchart.helm.cattle.io "rke2-traefik-crd" deleted from kube-system namespace
+$ kubectl --context bravo-onprem -n kube-system get jobs
+NAME                                        STATUS     COMPLETIONS   DURATION   AGE
+helm-install-rke2-coredns                   Complete   1/1           35s        166m
+helm-install-rke2-metrics-server            Complete   1/1           2m         166m
+helm-install-rke2-runtimeclasses            Complete   1/1           119s       166m
+helm-install-rke2-snapshot-controller       Complete   1/1           2m         166m
+helm-install-rke2-snapshot-controller-crd   Complete   1/1           2m         166m
+
+## 2026-11-03 00:08:30 KST  removal path: events for the chart and its Jobs (helm-delete Job, if any)
+2026-11-02T15:04:24Z   Pod         helm-install-rke2-traefik-crd-md9gq   BackOff            Back-off restarting failed container helm in pod helm-install-rke2-traefik-crd-md9gq_kube-system(402a77ae-6f38-4e48-8665-7a2e1c49c253)
+2026-11-02T15:07:05Z   Pod         helm-install-rke2-traefik-crd-md9gq   Pulled             Container image "rancher/klipper-helm:v0.13.3-build20260909" already present on machine and can be accessed by the pod
+2026-11-02T15:08:20Z   Job         helm-delete-rke2-traefik-crd          Resumed            Job resumed
+2026-11-02T15:08:20Z   Job         helm-delete-rke2-traefik-crd          Suspended          Job suspended
+2026-11-02T15:08:20Z   Job         helm-delete-rke2-traefik-crd          SuccessfulCreate   Created pod: helm-delete-rke2-traefik-crd-ld7zf
+2026-11-02T15:08:20Z   HelmChart   rke2-traefik-crd                      RemoveJob          Uninstalling HelmChart using Job kube-system/helm-delete-rke2-traefik-crd 
+2026-11-02T15:08:20Z   HelmChart   rke2-traefik-crd                      ResumeJob          Resumed synced Job kube-system/helm-delete-rke2-traefik-crd
+2026-11-02T15:08:21Z   Pod         helm-delete-rke2-traefik-crd-ld7zf    Started            Container started
+2026-11-02T15:08:21Z   Pod         helm-delete-rke2-traefik-crd-ld7zf    Created            Container created
+2026-11-02T15:08:21Z   Pod         helm-delete-rke2-traefik-crd-ld7zf    Pulled             Container image "rancher/klipper-helm:v0.13.3-build20260909" already present on machine and can be accessed by the pod
+2026-11-02T15:08:23Z   Job         helm-delete-rke2-traefik-crd          Completed          Job completed
+2026-11-02T15:08:23Z   HelmChart   rke2-traefik-crd                      RemoveJob          Uninstalled HelmChart using Job kube-system/helm-delete-rke2-traefik-crd, removing resources
+no traefik or helm-delete Pod left
+
+## 2026-11-03 00:09:30 KST  60 s later: the HelmChart is not re-created (the deploy controller skips the file)
+$ kubectl --context bravo-onprem -n kube-system get helmcharts
+NAME                           REPO   CHART   VERSION   TARGETNAMESPACE   BOOTSTRAP   FAILED
+rke2-coredns                                                              true        False
+rke2-metrics-server                                                                   False
+rke2-runtimeclasses                                                                   False
+rke2-snapshot-controller                                                              False
+rke2-snapshot-controller-crd                                                          False
+Job: none

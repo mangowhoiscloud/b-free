@@ -1,0 +1,109 @@
+
+## 2026-11-03 00:06:48 KST  render the common cloud-init (module infra/modules/cluster/onprem/cloud-init, RKE2 v1.36.5+rke2r1)
+cis_preconditions = false vs default (what the demo leaves out):
+--- cloud-config-cis.yaml
++++ cloud-config-no-cis.yaml
+@@ -1,4 +1,5 @@
+ #cloud-config
++# S1 4a DEMO ONLY (cis_preconditions = false): no CIS sysctls, no etcd user. RKE2 profile: cis must refuse to start.
+ # Common RKE2 node cloud-init (spec FR-3, §7.2, T2: "RKE2 ... 플랫폼 · 온프렘 공용 cloud-init으로 설치").
+ # One document for the on-prem Lima VMs and the platform EC2 node; rendered by
+ # infra/modules/cluster/onprem/cloud-init (role=server). No secret in it: the agent join token
+@@ -9,10 +10,6 @@
+   - path: /etc/sysctl.d/60-rke2-cis.conf
+     permissions: "0644"
+     content: |
+-      vm.panic_on_oom=0
+-      vm.overcommit_memory=1
+-      kernel.panic=10
+-      kernel.panic_on_oops=1
+       fs.inotify.max_user_instances=8192
+       fs.inotify.max_user_watches=524288
+   # Ceph RBD through rbd-nbd (the kernel 6.8 krbd cannot use Ceph Tentacle keys).
+@@ -99,10 +96,7 @@
+       # CIS host conditions.
+       sysctl --system >/dev/null
+       modprobe nbd 2>/dev/null || log "nbd module not loaded (RBD rbd-nbd mounts will fail)"
+-      if [ "$ROLE" = server ]; then
+-        getent group etcd >/dev/null || groupadd --system etcd
+-        id etcd >/dev/null 2>&1 || useradd --system --no-create-home --gid etcd --shell /sbin/nologin --comment "etcd user" etcd
+-      fi
++      log "S1 4a demo: CIS preconditions left out (cis_preconditions = false): no CIS sysctls, no etcd user"
+       # No sleep or power-save on a cluster node.
+       systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
+       # Node address: lima0 (Lima user-v2 as second NIC), else the default-route source address.
+
+## 2026-11-03 00:06:48 KST  empty Ubuntu VM bravo-cis-demo (image https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img)
+$ limactl create --tty=false --name bravo-cis-demo $WORK/bravo-cis-demo.yaml
+time="2026-11-03T00:06:50+09:00" level=info msg="Expanding to 30GiB"
+time="2026-11-03T00:06:50+09:00" level=info msg="Run `limactl start bravo-cis-demo` to start the instance."
+$ limactl start --tty=false --timeout 15m bravo-cis-demo
+time="2026-11-03T00:07:01+09:00" level=info msg="READY. Run `limactl shell bravo-cis-demo` to open the shell."
+$ [bravo-cis-demo] . /etc/os-release; echo "$PRETTY_NAME $(uname -m) kernel $(uname -r)"
+Ubuntu 24.04.5 LTS aarch64 kernel 6.8.0-147-generic
+$ [bravo-cis-demo] command -v rke2 || echo "rke2: not installed"; ls /etc/rancher 2>&1 || true
+rke2: not installed
+ls: cannot access '/etc/rancher': No such file or directory
+$ [bravo-cis-demo] echo "etcd user: $(id etcd 2>&1)"; echo "etcd group: $(getent group etcd || echo none)"
+etcd user: id: ‘etcd’: no such user
+etcd group: none
+$ [bravo-cis-demo] sysctl vm.panic_on_oom vm.overcommit_memory kernel.panic kernel.panic_on_oops
+vm.panic_on_oom = 0
+vm.overcommit_memory = 0
+kernel.panic = 0
+kernel.panic_on_oops = 0
+
+## 2026-11-03 00:07:01 KST  install with the common path (scripts/rke2-node.sh server), cis_preconditions = false
+$ infra/modules/cluster/onprem/scripts/rke2-node.sh server bravo-cis-demo $WORK/cloud-config-no-cis.yaml 36443
+Valid schema /etc/bravo-cloud-config.yaml
+bravo-rke2-bootstrap[server]: S1 4a demo: CIS preconditions left out (cis_preconditions = false): no CIS sysctls, no etcd user
+/tmp/rke2.tgz: OK
+bravo-rke2-bootstrap[server]: rke2 version v1.36.5+rke2r1 (e1d699d2c3a3d3c1f3247c4f9eb140f20d369776), node-ip 192.168.104.4
+Created symlink /etc/systemd/system/multi-user.target.wants/rke2-server.service → /usr/local/lib/systemd/system/rke2-server.service.
+Job for rke2-server.service failed because the control process exited with error code.
+See "systemctl status rke2-server.service" and "journalctl -xeu rke2-server.service" for details.
+bravo-rke2-bootstrap[server]: rke2-server did not start. Last errors from its journal:
+time="2026-11-03T00:07:06+09:00" level=fatal msg="invalid kernel parameter value kernel.panic=0 - expected 10\ninvalid kernel parameter value kernel.panic_on_oops=0 - expected 1\ninvalid kernel parameter value vm.overcommit_memory=0 - expected 1\n"
+rke2-node.sh exit code: 1 after 5 s
+
+## 2026-11-03 00:07:06 KST  result: rke2-server state and the CIS refusal in the journal
+$ [bravo-cis-demo] systemctl show rke2-server -p ActiveState -p SubState -p Result -p NRestarts
+Result=exit-code
+NRestarts=0
+ActiveState=activating
+SubState=auto-restart
+$ [bravo-cis-demo] echo "etcd user: $(id etcd 2>&1)"; echo "etcd group: $(getent group etcd || echo none)"
+etcd user: id: ‘etcd’: no such user
+etcd group: none
+$ [bravo-cis-demo] sysctl vm.panic_on_oom vm.overcommit_memory kernel.panic kernel.panic_on_oops
+vm.panic_on_oom = 0
+vm.overcommit_memory = 0
+kernel.panic = 0
+kernel.panic_on_oops = 0
+refusals so far: 1  (systemd retries every 5 s: Restart=always)
+first refusal (journal, TZ=Asia/Seoul):
+2026-11-03T00:07:06+09:00 lima-bravo-cis-demo systemd[1]: Starting rke2-server.service - Rancher Kubernetes Engine v2 (server)...
+2026-11-03T00:07:06+09:00 lima-bravo-cis-demo rke2[1982]: time="2026-11-03T00:07:06+09:00" level=fatal msg="invalid kernel parameter value kernel.panic=0 - expected 10\ninvalid kernel parameter value kernel.panic_on_oops=0 - expected 1\ninvalid kernel parameter value vm.overcommit_memory=0 - expected 1\n"
+2026-11-03T00:07:06+09:00 lima-bravo-cis-demo systemd[1]: rke2-server.service: Main process exited, code=exited, status=1/FAILURE
+2026-11-03T00:07:06+09:00 lima-bravo-cis-demo systemd[1]: rke2-server.service: Failed with result 'exit-code'.
+2026-11-03T00:07:06+09:00 lima-bravo-cis-demo systemd[1]: Failed to start rke2-server.service - Rancher Kubernetes Engine v2 (server).
+systemctl enable --now on its own (systemd 255 on Ubuntu 24.04; why the bootstrap runs enable and start apart):
+$ [bravo-cis-demo] sudo systemctl enable --now rke2-server.service; echo "systemctl enable --now exit code: $?"
+Job for rke2-server.service failed because the control process exited with error code.
+See "systemctl status rke2-server.service" and "journalctl -xeu rke2-server.service" for details.
+systemctl enable --now exit code: 0
+
+## 2026-11-03 00:07:12 KST  diagnostic only (by hand, not the fix path): set the CIS sysctls without the etcd user
+$ [bravo-cis-demo] sudo sysctl -w vm.overcommit_memory=1 kernel.panic=10 kernel.panic_on_oops=1
+vm.overcommit_memory = 1
+kernel.panic = 10
+kernel.panic_on_oops = 1
+next refusals (journal, TZ=Asia/Seoul):
+2026-11-03T00:07:17+09:00 lima-bravo-cis-demo rke2[2114]: time="2026-11-03T00:07:17+09:00" level=fatal msg="missing required: user: unknown user etcd\nmissing required: group: unknown group etcd\n"
+2026-11-03T00:07:22+09:00 lima-bravo-cis-demo rke2[2137]: time="2026-11-03T00:07:22+09:00" level=fatal msg="missing required: user: unknown user etcd\nmissing required: group: unknown group etcd\n"
+undo the hand change (values measured before the install):
+$ [bravo-cis-demo] sudo sysctl -w vm.panic_on_oom=0 vm.overcommit_memory=0 kernel.panic=0 kernel.panic_on_oops=0 
+vm.panic_on_oom = 0
+vm.overcommit_memory = 0
+kernel.panic = 0
+kernel.panic_on_oops = 0

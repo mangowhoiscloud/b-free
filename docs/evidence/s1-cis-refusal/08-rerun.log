@@ -1,0 +1,10 @@
+
+## 2026-11-03 00:11:04 KST  re-run the common path on the running node: rke2-node.sh server again, same document
+before: ActiveEnterTimestamp=Tue 2026-11-03 00:08:43 KST MainPID=2649 NRestarts=0 
+$ infra/modules/cluster/onprem/scripts/rke2-node.sh server bravo-cis-demo $WORK/cloud-config-cis.yaml 36443
+Valid schema /etc/bravo-cloud-config.yaml
+bravo-rke2-bootstrap[server]: rke2 version v1.36.5+rke2r1 (e1d699d2c3a3d3c1f3247c4f9eb140f20d369776), node-ip 192.168.104.4
+rke2-server[bravo-cis-demo]: API ready (laptop: https://127.0.0.1:36443)
+after:  ActiveEnterTimestamp=Tue 2026-11-03 00:08:43 KST MainPID=2649 NRestarts=0 
+same process, no restart: yes
+rke2-server stop or start lines in the journal since the re-run: 0

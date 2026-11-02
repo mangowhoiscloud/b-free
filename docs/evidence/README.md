@@ -15,6 +15,7 @@
 |---|---|---|
 | [pilot-notebook/](pilot-notebook/README.md) | 노트북 Compose 파일럿의 스모크 11회 · 계약 시험 5회 원본 사본과 실행별 PASS · FAIL(`RUNS.tsv`). 감사 B22 | **파일럿(노트북) 기록.** 클라우드 결과 아님 |
 | [s1-s2-bucket/](s1-s2-bucket/README.md) | S1 첨부 버킷 심은 시나리오(익명 읽기) → 게이트 OBJ-01 dst FAIL · BLOCK, S2 리허설 Trial `t-3ac2e611…` PASS(`verifier_kind: behavioral+static_rules`, 감사 B7) | 온프렘 RKE2 `bravo-onprem`, 운영자 노트북의 게이트 CLI · 리허설 CLI 러너 (2026-11-02 23:33–23:45 KST) |
-| [s1-cis-refusal/](s1-cis-refusal/README.md) | 스펙 S1 예외 4a(RKE2 `profile: cis` 시작 거부, 공통 cloud-init 조건 수정, 재설치)와 S1 인수 조건(빈 VM에서 RKE2 CIS, 노드 Ready). kube-bench `rke2-cis-1.9` PASS 76 · FAIL 5. 2026-11-02 23:37–23:58 KST | 버리는 Lima VM(Ubuntu 24.04 arm64, RKE2 v1.36.5+rke2r1). 실행 뒤 삭제 |
+| [s1-cis-refusal/](s1-cis-refusal/README.md) | 스펙 S1 예외 4a(RKE2 `profile: cis` 시작 거부, 공통 cloud-init 조건 수정, 재설치)와 S1 인수 조건(빈 VM에서 RKE2 CIS, 노드 Ready). kube-bench `rke2-cis-1.9` PASS 76 · FAIL 5. 2026-11-02 23:37–23:58 KST, 고친 부트스트랩으로 다시 돌린 거부(5초 만에 실패로 드러남) 2026-11-03 00:07 KST | 버리는 Lima VM(Ubuntu 24.04 arm64, RKE2 v1.36.5+rke2r1). 실행 뒤 삭제 |
+| [traefik-crd-skip/](traefik-crd-skip/README.md) | RKE2 `rke2-traefik-crd` 차트를 `.skip` 파일로 멈춤. 처리 전후의 Gateway API CRD · Gateway · HTTPRoute(uid, resourceVersion)와 공개 주소 응답 비교. 2026-11-03 00:07–00:10 KST | 운영 `bravo-onprem`, `bravo-platform-rke2` |
 
 클라우드(출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS)에서 낸 실행 기록은 아직 없습니다(2026-11-02 20:45 KST). 데모 사전 실행 기록은 `docs/demo/SCRIPT.md` 5절이 이 폴더의 행을 가리킵니다.

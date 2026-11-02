@@ -6,7 +6,9 @@
 #   run.sh fix      # same VM: rke2-uninstall, common cloud-init as shipped (conditions back), reinstall,
 #                   # landing-zone Cilium (cni: none), node Ready, kube-bench rke2-cis-1.9
 #   run.sh accept   # S1 acceptance alone: a new empty VM + common cloud-init as shipped -> RKE2 CIS, node Ready
+#   run.sh rerun    # same VM, after fix: run the common path again on the running node; no stop or start
 #   run.sh clean    # delete the VM and the scratch kubeconfig
+# BRAVO_CIS_DEMO_KUBE_BENCH=0 skips kube-bench in fix.
 # Prints commands and outputs with KST times; the caller tees them into this folder (README.md).
 set -euo pipefail
 
@@ -61,6 +63,7 @@ module "cis" {
 output "no_cis" { value = module.no_cis.user_data }
 output "cis" { value = module.cis.user_data }
 EOF
+  rm -rf "$r/.terraform"   # an absolute module source is copied at init: always copy the current module
   terraform -chdir="$r" init -input=false >/dev/null
   terraform -chdir="$r" apply -auto-approve -input=false >/dev/null
   terraform -chdir="$r" output -raw no_cis > "$WORK/cloud-config-no-cis.yaml"
@@ -135,7 +138,7 @@ refuse_result() {
   echo "first refusal (journal, TZ=Asia/Seoul):"
   journal > "$WORK/journal.txt"   # to a file first: grep -m1 on the pipe would cut limactl shell (exit 255)
   grep -m1 -B1 -A3 'level=fatal' "$WORK/journal.txt" | mask
-  echo "why the common path waits instead of failing at once (systemd 255 on Ubuntu 24.04):"
+  echo "systemctl enable --now on its own (systemd 255 on Ubuntu 24.04; why the bootstrap runs enable and start apart):"
   vsh 'sudo systemctl enable --now rke2-server.service; echo "systemctl enable --now exit code: $?"'
 
   step "diagnostic only (by hand, not the fix path): set the CIS sysctls without the etcd user"
@@ -157,6 +160,7 @@ cis_up() {
   vsh "ps -o args= -C kube-apiserver | tr ' ' '\n' | grep -E '^--(admission-control-config-file|audit-policy-file|audit-log-path|encryption-provider-config|anonymous-auth|profiling)='"
   vsh 'systemctl show rke2-server -p ActiveState -p SubState -p NRestarts'
   echo "refusals since the install started: $(journal "$1" | grep -c 'level=fatal' || true)"
+  vsh 'sudo ls /var/lib/rancher/rke2/server/manifests/'
 
   step "kubeconfig (scratch file, ~/.kube/config untouched)"
   run "$mod/scripts/kubeconfig.sh" add "$VM" "$CTX" "$PORT"
@@ -166,6 +170,25 @@ cis_up() {
   run "$repo/deploy/landing-zone/install.sh" rke2 "$CTX" cilium
   run kubectl --context "$CTX" get node -o wide
   run kubectl --context "$CTX" get pods -A
+  echo "packaged Traefik CRD chart (skipped by the common cloud-init) and the landing-zone Gateway API CRDs:"
+  run kubectl --context "$CTX" -n kube-system get helmcharts.helm.cattle.io
+  echo "gateway.networking.k8s.io CRDs: $(kubectl --context "$CTX" get crd -o name | grep -c 'gateway.networking.k8s.io')"
+}
+
+# Re-run the common path on the running server (what a target-onprem apply does after a cloud-init change):
+# the unit must keep its process (no stop, no start).
+cmd_rerun() {
+  [[ -s $WORK/cloud-config-cis.yaml ]] || render
+  local before after t0
+  step "re-run the common path on the running node: rke2-node.sh server again, same document"
+  before=$(vsh 'systemctl show rke2-server -p MainPID -p ActiveEnterTimestamp -p NRestarts' | tail -n +2 | sort | tr '\n' ' ')
+  echo "before: $before"
+  t0=$(date +%s)
+  run "$mod/scripts/rke2-node.sh" server "$VM" "$WORK/cloud-config-cis.yaml" "$PORT"
+  after=$(vsh 'systemctl show rke2-server -p MainPID -p ActiveEnterTimestamp -p NRestarts' | tail -n +2 | sort | tr '\n' ' ')
+  echo "after:  $after"
+  [[ $before == "$after" ]] && echo "same process, no restart: yes" || echo "same process, no restart: NO"
+  echo "rke2-server stop or start lines in the journal since the re-run: $(journal "$t0" | grep -c -E 'Stopping rke2-server|Started rke2-server|Starting rke2-server' || true)"
 }
 
 # S1 acceptance on a VM that never had RKE2: the common cloud-init as shipped, nothing else.
@@ -194,6 +217,7 @@ cmd_fix() {
 
   cis_up "$t0"
 
+  [[ ${BRAVO_CIS_DEMO_KUBE_BENCH:-1} == 1 ]] || return 0
   step "kube-bench rke2-cis-1.9 (deploy/platform/kube-bench/job-rke2.yaml, same job as the platform run)"
   local f; f="$here/kube-bench-$VM-$(date -u +%Y%m%dT%H%M%SZ).json"
   kubectl --context "$CTX" apply -f "$repo/deploy/platform/kube-bench/job-rke2.yaml" >/dev/null
@@ -217,7 +241,8 @@ case ${1:-} in
   refuse) cmd_refuse ;;
   refuse-result) refuse_result ;;
   accept) cmd_accept ;;
+  rerun) cmd_rerun ;;
   fix) cmd_fix ;;
   clean) cmd_clean ;;
-  *) echo "usage: run.sh refuse|refuse-result|fix|accept|clean" >&2; exit 2 ;;
+  *) echo "usage: run.sh refuse|refuse-result|fix|accept|rerun|clean" >&2; exit 2 ;;
 esac

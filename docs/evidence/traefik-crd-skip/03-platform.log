@@ -1,0 +1,40 @@
+## 2026-11-03 00:09:40 KST  bravo-platform-rke2 (EC2 i-08c0b121d702dca59, SSM AWS-RunShellScript): what removed the chart before
+$ ssm: grep -n -B1 -A2 traefik /etc/rancher/rke2/config.yaml /etc/rancher/rke2/config.yaml.d/30-platform.yaml; systemctl show rke2-server -p ActiveEnterTimestamp -p NRestarts
+/etc/rancher/rke2/config.yaml-10-disable-kube-proxy: true
+/etc/rancher/rke2/config.yaml:11:disable: [rke2-ingress-nginx, rke2-traefik]
+/etc/rancher/rke2/config.yaml-12-secrets-encryption: true
+/etc/rancher/rke2/config.yaml-13-agent-token-file: /etc/rancher/rke2/agent-token
+--
+/etc/rancher/rke2/config.yaml.d/30-platform.yaml-1-cni: none
+/etc/rancher/rke2/config.yaml.d/30-platform.yaml:2:# RKE2 still installs the Traefik CRD chart when rke2-traefik is disabled (collides with Gateway API CRDs).
+/etc/rancher/rke2/config.yaml.d/30-platform.yaml-3-disable+:
+/etc/rancher/rke2/config.yaml.d/30-platform.yaml:4:  - rke2-traefik-crd
+/etc/rancher/rke2/config.yaml.d/30-platform.yaml-5-kube-apiserver-arg+:
+/etc/rancher/rke2/config.yaml.d/30-platform.yaml-6-  - service-account-issuer=https://bravo-platform-oidc-721622471953.s3.ap-northeast-2.amazonaws.com
+NRestarts=0
+ActiveEnterTimestamp=Mon 2026-11-02 22:12:09 KST
+	
+(ssm status: Success)
+
+## 2026-11-03 00:09:44 KST  create the skip file (no rke2-traefik*.yaml manifest is present; the file keeps a new node and a restart in line with the common cloud-init)
+$ ssm: touch /var/lib/rancher/rke2/server/manifests/rke2-traefik-crd.yaml.skip && ls -l /var/lib/rancher/rke2/server/manifests/
+total 112
+-rw-r--r-- 1 root root 31267 2026-11-02T13:12:08+0000 rke2-coredns.yaml
+-rw-r--r-- 1 root root 19689 2026-11-02T13:12:08+0000 rke2-metrics-server.yaml
+-rw-r--r-- 1 root root  7551 2026-11-02T13:12:08+0000 rke2-runtimeclasses.yaml
+-rw-r--r-- 1 root root 22971 2026-11-02T13:12:08+0000 rke2-snapshot-controller-crd.yaml
+-rw-r--r-- 1 root root 23111 2026-11-02T13:12:08+0000 rke2-snapshot-controller.yaml
+-rw-r--r-- 1 root root    52 2026-11-02T13:12:08+0000 rke2-snapshot-validation-webhook.yaml
+-rw-r--r-- 1 root root     0 2026-11-02T15:09:44+0000 rke2-traefik-crd.yaml.skip
+	
+(ssm status: Success)
+
+## 2026-11-03 00:09:47 KST  nothing to delete: no HelmChart, Addon, Job or Pod for Traefik
+$ kubectl --context bravo-platform-rke2 -n kube-system get helmcharts.helm.cattle.io | grep -i traefik
+none
+$ kubectl --context bravo-platform-rke2 -n kube-system get addons.k3s.cattle.io | grep -i traefik
+none
+$ kubectl --context bravo-platform-rke2 -n kube-system get jobs | grep -i traefik
+none
+$ kubectl --context bravo-platform-rke2 -n kube-system get pods | grep -i traefik
+none

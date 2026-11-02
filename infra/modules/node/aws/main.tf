@@ -104,6 +104,8 @@ resource "aws_instance" "node" {
 
   lifecycle {
     # 새 Ubuntu AMI가 나와도 노드를 갈아 끼우지 않음. 교체는 판단해서 taint로.
+    # user_data: cloud-init은 첫 부팅에만 돎. 바뀐 user-data는 새 노드에만 적용됨. 무시하지 않으면 AWS provider가
+    # user_data 변경을 인스턴스 정지 · 시작으로 적용함(user_data_replace_on_change = false일 때).
     ignore_changes = [ami, user_data]
   }
 }

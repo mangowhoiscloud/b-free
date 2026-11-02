@@ -95,6 +95,16 @@ write_files:
       set -eu
       ROLE=${role}; VER='${rke2_version}'; SHA=${rke2_sha256}; ARCH=${arch}; NODE_NAME='${node_name}'
       log() { echo "bravo-rke2-bootstrap[$ROLE]: $*"; }
+      # Enable and start apart: `systemctl enable --now` exits 0 even when the start fails (systemd 255 on
+      # Ubuntu 24.04, measured 2026-11-02), so a CIS refusal went unreported. A refused start fails here at once.
+      start_unit() {
+        systemctl enable "$1.service"
+        systemctl start "$1.service" && return 0
+        log "$1 did not start. Last errors from its journal:"
+        journalctl -u "$1" --no-pager -o cat -n 300 | grep -E 'level=(fatal|error)' | tail -n 5 \
+          || journalctl -u "$1" --no-pager -o cat -n 10
+        exit 1
+      }
       # CIS host conditions.
       sysctl --system >/dev/null
       modprobe nbd 2>/dev/null || log "nbd module not loaded (RBD rbd-nbd mounts will fail)"
@@ -127,12 +137,16 @@ write_files:
       log "$(/usr/local/bin/rke2 --version | head -n1), node-ip $IP"
       if [ "$ROLE" = server ]; then
         [ -s /etc/rancher/rke2/agent-token ] || (umask 077; od -An -tx1 -N32 /dev/urandom | tr -d ' \n' > /etc/rancher/rke2/agent-token)
-        systemctl enable --now rke2-server.service
+        # Packaged Traefik CRD chart: disabling rke2-traefik does not stop it, and it collides with the landing-zone
+        # Gateway API CRDs (helm-install-rke2-traefik-crd CrashLoop). A .skip file stops a packaged manifest.
+        install -d -m 0700 /var/lib/rancher/rke2/server
+        install -d -m 0755 /var/lib/rancher/rke2/server/manifests
+        touch /var/lib/rancher/rke2/server/manifests/rke2-traefik-crd.yaml.skip
+        start_unit rke2-server
       else
-        systemctl enable rke2-agent.service >/dev/null 2>&1
         # Joins when the platform has piped the server URL and token into 20-join.yaml (no token in user-data).
-        if [ -s /etc/rancher/rke2/config.yaml.d/20-join.yaml ]; then systemctl start rke2-agent.service
-        else log "waiting for /etc/rancher/rke2/config.yaml.d/20-join.yaml"; fi
+        if [ -s /etc/rancher/rke2/config.yaml.d/20-join.yaml ]; then start_unit rke2-agent
+        else systemctl enable rke2-agent.service >/dev/null 2>&1; log "waiting for /etc/rancher/rke2/config.yaml.d/20-join.yaml"; fi
       fi
 runcmd:
   - [/usr/local/sbin/bravo-rke2-bootstrap.sh]
