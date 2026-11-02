@@ -13,10 +13,10 @@ cloudflare``) creates one tunnel per environment (``bravo-<app>-<env>``) and eit
 * LB mode (``lb_enabled = true``): a load balancer of the same name with one pool per environment and
   random steering. A shift walks pool weights 10 -> 50 -> 100 % to the target. Each step holds for
   ``hold_s`` while a metrics source collects samples; an error rate or p95 above the thresholds, or
-  fewer samples than ``min_samples``, reverts the target to 0 % at once.
-  NOT EXERCISED: the account has no Load Balancing subscription (``infra/envs/edge`` ``lb_enabled =
-  false``), so this path has never run against Cloudflare. It refuses to start unless the LB object
-  exists (it never falls back to pretending).
+  fewer samples than ``min_samples``, reverts the target to 0 % at once. Each step's judgement keeps
+  ``by_env``: how many probes each environment answered, so the weights are shown to steer traffic.
+  Exercised against Cloudflare on 2026-11-02 (deploy/pilot/runs/cloud-front-*). It refuses to start
+  unless the LB object exists (it never falls back to pretending).
 
 Every external change is described as (resource ID, action, call, observe) so the caller can wrap it
 in the effect ledger (``stages.EffectRunner``). The Cloudflare token comes from the platform OpenBao
@@ -144,10 +144,11 @@ class Judgement:
     error_rate: float | None
     p95_ms: float | None
     reasons: tuple[str, ...]
+    by_env: Mapping[str, int] = field(default_factory=dict)  # which environment answered each probe
 
     def as_dict(self) -> dict[str, Any]:
         return {"healthy": self.healthy, "samples": self.samples, "error_rate": self.error_rate,
-                "p95_ms": self.p95_ms, "reasons": list(self.reasons)}
+                "p95_ms": self.p95_ms, "reasons": list(self.reasons), "by_env": dict(self.by_env)}
 
 
 def judge(samples: Sequence[Sample], cfg: FrontConfig) -> Judgement:
@@ -163,7 +164,11 @@ def judge(samples: Sequence[Sample], cfg: FrontConfig) -> Judgement:
         reasons.append(f"ERROR_RATE({rate:.4f}>{cfg.max_error_rate})")
     if lat is not None and lat > cfg.max_p95_ms:
         reasons.append(f"P95({lat:.1f}ms>{cfg.max_p95_ms}ms)")
-    return Judgement(not reasons, n, rate, lat, tuple(reasons))
+    by_env: dict[str, int] = {}
+    for s in samples:
+        key = s.env_id or "none"
+        by_env[key] = by_env.get(key, 0) + 1
+    return Judgement(not reasons, n, rate, lat, tuple(reasons), by_env)
 
 
 @dataclass(frozen=True, slots=True)
@@ -472,7 +477,7 @@ class FrontSwitch:
                 "propagation", {}).get("propagation_ms")
             return summary
 
-        # LB mode (not exercised: no LB subscription; see module docstring)
+        # LB mode
         summary["mode"] = "lb"
         lb = await self.cf.load_balancer(self.front)
         if lb is None:
@@ -493,12 +498,14 @@ class FrontSwitch:
                 got = (now or {}).get("random_steering", {}).get("pool_weights")
                 return got == weights, {"pool_weights": got}
 
+            t_step = time.monotonic()
             evidence = await apply(
                 self.resource_lb(), f"WEIGHT_{target_env.upper()}_{step.weight}", set_weights, observe_weights
             )
             samples = await probe.collect(self.cfg.hold_s)
             verdict = judge(samples, self.cfg)
-            entry = {"weight": step.weight, "applied": True, "judgement": verdict.as_dict(), **evidence}
+            entry = {"weight": step.weight, "applied": True, "judgement": verdict.as_dict(),
+                     "step_ms": int((time.monotonic() - t_step) * 1000), **evidence}
             summary["steps"].append(entry)
             await record_step(f"front.step_{step.weight}", entry)
             if not verdict.healthy:
@@ -512,8 +519,10 @@ class FrontSwitch:
                     got = (now or {}).get("random_steering", {}).get("pool_weights")
                     return got == revert, {"pool_weights": got}
 
+                t_rev = time.monotonic()
                 ev = await apply(self.resource_lb(), f"REVERT_{target_env.upper()}_0", call_revert, observe_revert)
-                summary["reverted"] = {"at_weight": step.weight, "reasons": list(verdict.reasons), **ev}
+                summary["reverted"] = {"at_weight": step.weight, "reasons": list(verdict.reasons),
+                                       "step_ms": int((time.monotonic() - t_rev) * 1000), **ev}
                 await record_step("front.revert_0", summary["reverted"])
                 return summary
         return summary

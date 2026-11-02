@@ -45,20 +45,50 @@ def test_log_records_are_redacted(caplog) -> None:
     assert logging.getLogger("botocore").level == logging.WARNING
 
 
-def test_response_with_credential_material_is_withheld(monkeypatch) -> None:
+def test_response_is_masked_per_field_never_blocked() -> None:
     app = create_app(parse_registry({"environments": {}}))
 
     @app.get("/leak")
-    def leak() -> dict[str, str]:
-        return {"oops": SAMPLES["sigv4_signature"]}
+    def leak() -> dict[str, object]:
+        return {"oops": SAMPLES["sigv4_signature"], "ok": "plain", "list": [SAMPLES["password_kv"]],
+                "masked_already": "password=***"}
 
     with TestClient(app) as c:
         r = c.get("/leak")
-        assert r.status_code == 500 and r.json()["patterns"] == ["sigv4_signature"]
-        assert "X-Amz-Signature" not in r.text
+        assert r.status_code == 200
+        body = r.json()
+        assert "X-Amz-Signature=fff" not in r.text and "s3cr3t-value" not in r.text
+        assert body["ok"] == "plain" and body["masked_already"] == "password=***"
+        assert body["list"] == ["host=db <redacted:password_kv>"]
+        assert r.headers["x-bravo-credential-guard"] == "masked=2;withheld=0"
         assert c.get("/healthz").status_code == 200
 
 
+def test_masked_values_are_not_credentials() -> None:
+    assert find_credentials("password=***") == []
+    assert find_credentials("postgresql://a:***@x/chat") == []
+    assert find_credentials("aws_secret_access_key = <redacted:aws_secret_access_key>") == []
+
+
+def test_demo_fixture_does_not_block_inventory(tmp_path, monkeypatch) -> None:
+    """The exact fixture from apps/demo/tests/test_unit.py:84 stays a finding with file:line, masked."""
+    root = tmp_path / "demo"
+    (root / "tests").mkdir(parents=True)
+    (root / "src").mkdir()
+    (root / "src" / "app.py").write_text('import boto3\nsm = boto3.client("secretsmanager")\n')
+    lines = ["import pytest", ""] + ["# filler"] * 81 + ['    "host=x dbname=chat user=a password=secret",']
+    (root / "tests" / "test_unit.py").write_text("\n".join(lines) + "\n")
+    monkeypatch.setenv("BRAVO_INVENTORY_ROOT", str(root))
+    with TestClient(create_app(parse_registry({"environments": {}}))) as c:
+        r = c.get("/v1/inventory")
+        assert r.status_code == 200, r.text
+        inv = r.json()
+        fixture = [f for f in inv["test_findings"] if f["file"] == "tests/test_unit.py"]
+        assert fixture and all(f["line"] == 84 for f in fixture)
+        assert all("password=***" in f["evidence"] and "secret" not in f["evidence"] for f in fixture)
+        assert "password=secret" not in r.text
+        snap = c.get("/v1/inventory/snapshot")
+        assert snap.headers["x-bravo-inventory-digest"] == inv["input_digest"]
 def test_credential_source_label(monkeypatch) -> None:
     app = create_app(parse_registry({"environments": {}}))
     with TestClient(app) as c:

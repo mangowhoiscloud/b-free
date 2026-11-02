@@ -22,7 +22,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -89,6 +89,13 @@ class StageRecorder:
     @property
     def last_seq(self) -> int:
         return self._seq
+
+    async def record_done(self, name: str, ms: int, detail: dict[str, Any]) -> None:
+        """An OK stage whose work already ran (timed by the caller), e.g. a front step: change, then hold."""
+        self._seq += 1
+        self.timings_ms[name] = ms
+        started_at = self._wall() - timedelta(milliseconds=ms)
+        await self._ledger.record_stage(self._run_id, self._seq, name, started_at, ms, "OK", detail)
 
     @asynccontextmanager
     async def stage(self, name: str) -> AsyncIterator[StageHandle]:

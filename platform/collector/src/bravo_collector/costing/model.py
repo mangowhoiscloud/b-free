@@ -93,6 +93,7 @@ class Line:
     fixed_quantity: float | None = None   # quantity that is not time-allocated (recorded tokens of one run)
     fixed_subtotal: float | None = None   # recorded amount of one run (API-price equivalent)
     plan_id: str | None = None            # agent runs carry their plan
+    detail: dict[str, Any] | None = None  # extra recorded facts (token breakdown, endpoints); never secrets
 
     def quantity(self, w0: datetime, w1: datetime) -> float | None:
         if self.fixed_quantity is not None:

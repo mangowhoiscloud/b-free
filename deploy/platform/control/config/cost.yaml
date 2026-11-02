@@ -1,0 +1,32 @@
+# Cost receipt config for platform/collector GET /v1/cost (T1, NFR-8, docs/architecture/15-r2-contracts.md 8절).
+# No secrets. Cloudflare account/zone ids and the read token come from the environment (Secret collector-cloudflare,
+# piped from platform OpenBao, D-26). A price is written here only with an official page cited; otherwise null.
+aws:
+  regions: [ap-northeast-2]
+  # ce:UpdateCostAllocationTagsStatus attempts (deploy/platform/scripts/cost-tag.sh, lead approved 2026-11-02).
+  cost_tag_activation_attempts:
+    - {at: "2026-11-02T13:16:00Z", result: "ValidationException: Tag keys not found: component"}
+gcp:
+  project: b-free-target-20261102
+  regions: [asia-northeast1]
+cloudflare:
+  zero_trust_plan: free
+  zero_trust_since: "2026-11-02T11:50:00Z" # CLOUD-E2E-CONTRACT 7: Zero Trust Free 활성 20:5x KST
+llm:
+  subscriptions:
+    - id: claude-subscription
+      name: Claude 구독(팀장, Agent SDK claude_subscription 경로)
+      provider: anthropic
+      plan: null
+      monthly_usd: null
+      price_url: https://claude.com/pricing
+      price_reason: 구독 등급이 기록되어 있지 않아 월 금액을 쓰지 않음(공식 가격표 https://claude.com/pricing)
+      used_by: rehearsal agents (claude_subscription)
+    - id: chatgpt-pro
+      name: ChatGPT Pro (openai_agents ChatGPT 계정 모드)
+      provider: openai
+      plan: Pro
+      monthly_usd: null
+      price_url: https://chatgpt.com/pricing
+      price_reason: 공식 가격 페이지를 읽지 못함(2026-11-02 HTTP 403). Pro 등급이 둘이라는 보도가 있어 금액을 정하지 않음
+      used_by: rehearsal agents (openai_agents, chatgpt mode)

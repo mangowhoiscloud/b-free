@@ -67,6 +67,11 @@ def test_judge_healthy_step() -> None:
     assert j.healthy and j.error_rate == 0.0 and j.p95_ms == 100.0 and j.reasons == ()
 
 
+def test_judge_counts_which_environment_answered() -> None:
+    samples = [*_ok(9), Sample(5.0, True, 90.0, "aws", 200), Sample(5.5, False, 900.0, None, 502)]
+    assert judge(samples, CFG).as_dict()["by_env"] == {"onprem": 9, "aws": 1, "none": 1}
+
+
 def test_judge_reverts_on_error_rate() -> None:
     samples = _ok(18) + [Sample(10.0, False, 30.0, None, 502), Sample(10.5, False, 30.0, None, None)]
     j = judge(samples, CFG)

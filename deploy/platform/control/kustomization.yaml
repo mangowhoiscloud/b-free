@@ -51,7 +51,7 @@ images:
     digest: sha256:bf7f65bb554a902b55d82b0ed37838a3c1d1fefb33f031c79a6ff14e1f97738e
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
-    digest: sha256:0893095f8918634f43617befe09bfd38e0ba53d7a5f2b108b796cde7d4ecacc7 # snapshot-20261102T125122Z (collector lane: /v1/inventory/snapshot)
+    digest: sha256:9f675c2da30daa49cfe75694c1b6745987881378a1f3fb5d56af2689a3fdf09b # guard-20261102T132858Z (collector lane: field-level credential guard)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
     digest: sha256:bf05cadf543d1372820fda4e096015588037ae5743db53b4ad18427e47877e55 # cloud-202611022213 (data/cutover lane: spike fixes, repl_setup/ops with file secrets in executor-0)

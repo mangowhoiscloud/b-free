@@ -57,8 +57,14 @@ front_shift() {  # front_shift <env> <tag>
 }
 
 # ---- 1. checks --------------------------------------------------------------------------
+# executor-0 reaches every DB, PgBouncer, k8s API and write-block switch through the D-16 links; the
+# laptop keeps one forward, for the load generator only (link.sh load, labelled 임시 링크).
+"$CLOUD_DIR/link.sh" load
+for _ in $(seq 1 30); do
+  jq -e '.state == "up"' "$STATE/src-pgb.json" >/dev/null 2>&1 && break; sleep 1
+done
 "$CLOUD_DIR/link.sh" status > "$EV/link-before.jsonl" || true
-jq -e 'select(.state != null) | .state == "up"' "$EV/link-before.jsonl" >/dev/null || fail "link is not up (link.sh status)"
+jq -e '.state == "up"' "$STATE/src-pgb.json" >/dev/null || fail "loadgen forward src-pgb is not up (link.sh load)"
 curl -fsS "$URL/healthz" > "$EV/healthz.json" || fail "executor-0 not reachable"
 jq -e '.observe_only == false' "$EV/healthz.json" >/dev/null || fail "executor is observe-only: $(cat "$EV/healthz.json")"
 curl -fsS "$URL/v1/readiness" > "$EV/readiness-before.json"; jq -c . "$EV/readiness-before.json"
@@ -126,27 +132,24 @@ curl -fsS "$URL/v1/readiness" > "$EV/readiness-after.json" || true
 if [ "$fb_status" = "DONE" ]; then
   cut_last="$(jq '.receipt.sequences[] | select(.name == "messages_id_seq") | .origin_last' "$EV/cutover-run.json")"
   fb_last="$(jq '.receipt.sequences[] | select(.name == "messages_id_seq") | .origin_last' "$EV/failback-run.json")"
-  "$BAO_SH" with-executor -- env BRAVO_TOPOLOGY_FILE="$STATE/topology.json" CUT_LAST="$cut_last" FB_LAST="$fb_last" \
-    "$REPO/platform/executor/.venv/bin/python" - > "$EV/s4-ac1.json" <<'PY'
+  # Read inside executor-0 (in-cluster topology, delivered secrets, D-16 DB links), as executor_observe.
+  kubectl --context "$PLATFORM_CONTEXT" -n bravo-control exec -i executor-0 -c executor -- \
+    env CUT_LAST="$cut_last" FB_LAST="$fb_last" python - > "$EV/s4-ac1.json" <<'PY'
 import asyncio, json, os
 from pathlib import Path
 from psycopg import AsyncConnection
-from bravo_executor.topology import settings_from_topology
-from bravo_executor.vault import SecretBroker
+from bravo_executor.topology import FileSecrets, settings_from_topology
 
 async def main() -> None:
-    broker = SecretBroker.from_env()
-    try:
-        s = await settings_from_topology(Path(os.environ["BRAVO_TOPOLOGY_FILE"]), broker.field, "unused")
-    finally:
-        await broker.close()
+    secrets = FileSecrets(Path(os.environ["BRAVO_SECRETS_DIR"]))
+    s = await settings_from_topology(Path(os.environ["BRAVO_TOPOLOGY_FILE"]), secrets.field, "unused")
     q = ("SELECT count(*), coalesce(sum(hashtext(idem_key::text)::bigint), 0) FROM messages "
          "WHERE id > %s AND id <= %s")
     out = {}
     for side, dsn in (("dst", s.dst_observe_dsn), ("src", s.src_observe_dsn)):
         async with await AsyncConnection.connect(dsn, autocommit=True) as c:
             row = await (await c.execute(q, (int(os.environ["CUT_LAST"]), int(os.environ["FB_LAST"])))).fetchone()
-            out[side] = {"rows": row[0], "key_hash_sum": row[1]}
+            out[side] = {"rows": row[0], "key_hash_sum": int(row[1])}
     out["match"] = out["dst"] == out["src"] and out["dst"]["rows"] > 0
     print(json.dumps(out))
 

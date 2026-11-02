@@ -135,6 +135,10 @@ async def _run_shift(app: Any, run_id: uuid.UUID, body: ShiftBody, cfg: FrontCon
         return await fx.apply(resource, action, call, observe)
 
     async def record_step(name: str, detail: dict[str, Any]) -> None:
+        # An LB step is written after its change and hold: its own step_ms is the stage time.
+        if isinstance(detail.get("step_ms"), int):
+            await rec.record_done(name, detail["step_ms"], detail)
+            return
         async with rec.stage(name) as st:
             st.detail.update(detail)
 

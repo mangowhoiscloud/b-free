@@ -3,7 +3,9 @@
 Three layers use the same patterns:
     redact(text)            masks credential-shaped substrings in error strings (``model.failed``)
     install_log_filter()    masks them in every log record and keeps SDK debug logs off
-    find_credentials(text)  the HTTP middleware withholds any response body that still contains one
+    guard_json(value)       the HTTP middleware masks every string field of a JSON response; a field that is
+                            still credential-shaped after masking is replaced by a "<withheld: …>" reason.
+                            The rest of the response is returned (a test fixture never blocks a response).
 """
 
 from __future__ import annotations
@@ -12,14 +14,18 @@ import logging
 import re
 
 # (name, pattern). Patterns match the credential value, not the surrounding text.
+# A value that is already masked (``***``, ``<redacted:…>``, ``<withheld…>``) is not a credential.
+_NOT_MASKED = r"(?!\*{3}|<redacted|<withheld)"
+
 PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("aws_access_key_id", re.compile(r"\b(?:AKIA|ASIA|AROA|AIDA)[0-9A-Z]{16}\b")),
-    ("aws_secret_access_key", re.compile(r"(?i)aws_secret_access_key\s*[=:]\s*\S+")),
-    ("aws_session_token", re.compile(r"(?i)aws_session_token\s*[=:]\s*\S+")),
+    ("aws_secret_access_key", re.compile(r"(?i)aws_secret_access_key\s*[=:]\s*" + _NOT_MASKED + r"\S+")),
+    ("aws_session_token", re.compile(r"(?i)aws_session_token\s*[=:]\s*" + _NOT_MASKED + r"\S+")),
     ("eks_bearer_token", re.compile(r"k8s-aws-v1\.[A-Za-z0-9_\-]{20,}")),
-    ("sigv4_signature", re.compile(r"(?i)X-Amz-(?:Signature|Credential|Security-Token)=[^&\s\"']+")),
+    ("sigv4_signature", re.compile(r"(?i)X-Amz-(?:Signature|Credential|Security-Token)=" + _NOT_MASKED
+                                   + r"[^&\s\"']+")),
     ("bearer_header", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-~+/]{16,}=*")),
-    ("password_kv", re.compile(r"(?i)\bpassword\s*=\s*[^\s'\"]+")),
+    ("password_kv", re.compile(r"(?i)\bpassword\s*=\s*" + _NOT_MASKED + r"[^\s'\"]+")),
     ("private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
 )
 
@@ -79,3 +85,29 @@ CONTENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 def find_content_credentials(text: str) -> list[str]:
     """Names of credential patterns present in a file's text (values are never returned)."""
     return sorted({name for name, pat in CONTENT_PATTERNS if pat.search(text)})
+
+
+def guard_json(value: object, path: str = "$") -> tuple[object, list[dict[str, object]]]:
+    """Mask credential-shaped substrings in every string of a JSON value; withhold a field only if masking
+    did not remove the shape. Returns (clean value, actions) where actions name the JSON path, never a value."""
+    actions: list[dict[str, object]] = []
+
+    def walk(v: object, p: str) -> object:
+        if isinstance(v, str):
+            hits = find_credentials(v)
+            if not hits:
+                return v
+            masked = redact(v)
+            left = find_credentials(masked)
+            if left:
+                actions.append({"path": p, "action": "withheld", "patterns": left})
+                return f"<withheld: credential material ({', '.join(left)}) survived masking>"
+            actions.append({"path": p, "action": "masked", "patterns": hits})
+            return masked
+        if isinstance(v, dict):
+            return {k: walk(x, f"{p}.{k}") for k, x in v.items()}
+        if isinstance(v, list):
+            return [walk(x, f"{p}[{i}]") for i, x in enumerate(v)]
+        return v
+
+    return walk(value, path), actions

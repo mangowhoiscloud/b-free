@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Temporary link "임시 링크(D-16 전)" (CLOUD-E2E-CONTRACT.md 7, 9): laptop port-forwards and the
 # reverse relay agent, each supervised by tools/link (restart, end-to-end health, status JSON).
-#   link.sh up | down | status | bao | reverse | relay-deploy | relay-delete
+#   link.sh up | down | status | bao | load | reverse | relay-deploy | relay-delete
+# Since D-16, executor-0 and replication use the platform links (bravo-link, env-link) and none of these.
+# `load` keeps only the source PgBouncer forward that the laptop load generator writes through.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 (cd "$REPO/tools/link" && uv sync --quiet)
 LINK_BIN="$REPO/tools/link/.venv/bin/bravo-link"
@@ -25,6 +27,10 @@ case "${1:-status}" in
     # Platform OpenBao on the platform EKS (keys.sh migrate-to-platform), for executor-bao.sh users.
     start bao forward --name bao --context "$PLATFORM_CONTEXT" --namespace openbao --resource pod/openbao-0 \
       --remote-port 8200 --local-port "$BAO_LOCAL_PORT" --bind-address 127.0.0.1 --probe tcp
+    ;;
+  load)
+    # 임시 링크 (부하 생성기 전용): laptop loadgen -> source PgBouncer. Not on any platform path.
+    fwd src-pgb "$SRC_CONTEXT" "$PGBOUNCER_SERVICE" 6432 "$SRC_PGB_PORT" tcp
     ;;
   up)
     ctx_ok "$SRC_CONTEXT" || fail "kubectl context $SRC_CONTEXT missing"

@@ -47,23 +47,22 @@ def _snapshot(argv: list[str]) -> int:
 
 
 def _cost(argv: list[str]) -> int:
-    from datetime import date
-
-    from .cost import cost_report, default_period
+    from .costing import receipt_for_request
 
     p = argparse.ArgumentParser(prog="bravo-collector cost",
-                                description="T1: cost by component tag and by service (Cost Explorer, read-only; "
-                                            "each Cost Explorer request is billed USD 0.01)")
-    p.add_argument("--start", help="YYYY-MM-DD (default: first day of this month, UTC)")
-    p.add_argument("--end", help="YYYY-MM-DD, exclusive (default: tomorrow, UTC)")
-    p.add_argument("--tag", default="component")
+                                description="T1 cost receipt cost/v1 (same as GET /v1/cost). Read-only; Cost Explorer "
+                                            "requests are billed USD 0.01 each and cached 1 h per process")
+    p.add_argument("--config", help="cost config YAML (default: $BRAVO_COST_CONFIG)")
+    p.add_argument("--start", help="ISO date/time UTC (default: month start, or plan created - 24h)")
+    p.add_argument("--end", help="ISO date/time UTC (default: now)")
+    p.add_argument("--plan-id")
+    p.add_argument("--plan-created-at")
+    p.add_argument("--plan-done-at")
     args = p.parse_args(argv)
-    start, end = default_period()
-    if args.start:
-        start = date.fromisoformat(args.start)
-    if args.end:
-        end = date.fromisoformat(args.end)
-    json.dump(cost_report(start, end, args.tag), sys.stdout, ensure_ascii=False, indent=2, default=str)
+    receipt = receipt_for_request(start=args.start, end=args.end, plan_id=args.plan_id,
+                                  plan_created_at=args.plan_created_at, plan_done_at=args.plan_done_at,
+                                  config_path=args.config)
+    json.dump(receipt, sys.stdout, ensure_ascii=False, indent=2, default=str)
     sys.stdout.write("\n")
     return 0
 

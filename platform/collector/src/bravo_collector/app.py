@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,10 +16,11 @@ from . import __version__
 from .clusters import ClusterView
 from .environments import Registry, load_registry
 from .inventory import ROOT_ENV, scan
-from .redact import find_credentials
+from .redact import find_credentials, guard_json
 from .service import SOURCES, collect, configured_sources
 
 CREDENTIAL_SOURCE_ENV = "BRAVO_CREDENTIAL_SOURCE"
+log = logging.getLogger("bravo_collector")
 
 
 def credential_source() -> dict[str, Any]:
@@ -40,18 +43,32 @@ def create_app(registry: Registry | None = None, cluster_view: ClusterView | Non
     app.state.cluster_view = cluster_view if cluster_view is not None else ClusterView()
 
     @app.middleware("http")
-    async def withhold_credentials(request: Request, call_next):
-        """Last line of defence: a JSON body that contains credential material is not sent."""
+    async def guard_credentials(request: Request, call_next):
+        """Last line of defence on every JSON response: mask credential-shaped values field by field, and
+        replace a field with a "<withheld: …>" reason only if masking could not remove the shape. The response
+        itself is always returned; the header X-Bravo-Credential-Guard counts masked/withheld fields."""
         response = await call_next(request)
         if not response.headers.get("content-type", "").startswith("application/json"):
             return response
         body = b"".join([chunk async for chunk in response.body_iterator])
-        hits = find_credentials(body.decode("utf-8", errors="replace"))
-        if hits:
-            return JSONResponse(status_code=500, content={"detail": "response withheld: credential material",
-                                                          "patterns": hits})
-        return Response(content=body, status_code=response.status_code, headers=dict(response.headers),
-                        media_type=response.media_type)
+        headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+        text = body.decode("utf-8", errors="replace")
+        if not find_credentials(text):
+            return Response(content=body, status_code=response.status_code, headers=headers,
+                            media_type=response.media_type)
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return JSONResponse(status_code=500, content={"detail": "response withheld: credential material in a "
+                                                          "non-JSON body"})
+        clean, actions = guard_json(data)
+        masked = sum(1 for a in actions if a["action"] == "masked")
+        withheld = [a for a in actions if a["action"] == "withheld"]
+        log.warning("credential guard: %d field(s) masked, %d withheld on %s %s (%s)", masked, len(withheld),
+                    request.method, request.url.path, ", ".join(str(a["path"]) for a in withheld)[:300])
+        headers["X-Bravo-Credential-Guard"] = f"masked={masked};withheld={len(withheld)}"
+        return Response(content=json.dumps(clean, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+                        status_code=response.status_code, headers=headers, media_type="application/json")
 
     def reg(request: Request) -> Registry:
         return request.app.state.registry
@@ -113,6 +130,26 @@ def create_app(registry: Registry | None = None, cluster_view: ClusterView | Non
             "Cache-Control": "no-store",
             "Content-Disposition": 'attachment; filename="repo-snapshot.tar.gz"',
         })
+
+    @app.get("/v1/cost")
+    def cost(
+        start: str | None = Query(default=None, description="ISO date/time UTC; default month start, or plan - 24h"),
+        end: str | None = Query(default=None, description="ISO date/time UTC; default now (never later than now)"),
+        plan_id: str | None = None,
+        plan_created_at: str | None = None,
+        plan_done_at: str | None = None,
+        plan_state: str | None = None,
+        workload: str | None = None,
+    ) -> dict[str, Any]:
+        """Cost receipt ``cost/v1`` (T1, NFR-8). Read-only; Cost Explorer cached 1 h, inventory 5 min."""
+        from .costing import receipt_for_request
+        from .costing.receipt import CostRequestError
+
+        try:
+            return receipt_for_request(start=start, end=end, plan_id=plan_id, plan_created_at=plan_created_at,
+                                       plan_done_at=plan_done_at, plan_state=plan_state, workload=workload)
+        except CostRequestError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/v1/inventory")
     def inventory() -> dict[str, Any]:

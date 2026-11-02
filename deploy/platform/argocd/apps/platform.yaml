@@ -1,8 +1,10 @@
 # Argo CD Applications for the platform RKE2 node (spec §7.2). Repo over SSH with a read-only deploy key
 # (Secret argocd/repo-b-free from OpenBao secret/envs/platform/argocd-repo).
-# Sync is MANUAL for now: origin/main lags the digests deployed from the working tree between checkpoint pushes,
-# and an automated sync would roll live images back. Turn on `automated` (prune: false) once main holds the
-# deployed digests (each app should show Synced before that). (app-of-apps root: ../root.yaml).
+# Automated sync (prune: false, selfHeal: true) since checkpoint 59173a2 (2026-11-02 22:3x): rendered manifests at that
+# commit matched live for every app with no image change. Exceptions stay manual: cilium (render-time certificates)
+# and control (live collector newer than main).
+# Out-of-Git Secrets (piped from OpenBao) are never pruned. The root app (root.yaml) stays manual until this file is
+# on main, so it cannot revert these children. (app-of-apps root: ../root.yaml).
 # Git: https://github.com/mangowhoiscloud/b-free.git main. Out-of-Git objects (Secrets piped from OpenBao) are never pruned: prune is off.
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -22,6 +24,9 @@ spec:
     targetRevision: main
     path: deploy/platform/gateway-api
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -48,6 +53,9 @@ spec:
     - repoURL: git@github.com:mangowhoiscloud/b-free.git
       targetRevision: main
       ref: values
+  # Manual on purpose: the chart generates the Cilium CA and Hubble TLS certificates at render time, so every
+  # reconcile differs and an automated sync would roll the agents and rotate certificates each time. Apply chart
+  # or value changes (e.g. the landing-zone Hubble metrics at 59173a2) with a deliberate manual sync.
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
@@ -69,6 +77,9 @@ spec:
     targetRevision: main
     path: deploy/platform/storage
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -94,6 +105,9 @@ spec:
           config:
             clusterWide: true
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -115,6 +129,9 @@ spec:
     targetRevision: main
     path: deploy/platform/openbao
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -135,6 +152,9 @@ spec:
     targetRevision: main
     path: deploy/platform/observability
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -154,6 +174,8 @@ spec:
     repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/control
+  # Manual (2026-11-02 22:3x): live collector 9f675c2d (collector lane, masking fix) is newer than main (0893095f);
+  # an automated sync would roll it back. Re-enable once main pins the live collector digest.
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
@@ -175,6 +197,9 @@ spec:
     targetRevision: main
     path: deploy/platform/edge
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -195,6 +220,9 @@ spec:
     targetRevision: main
     path: deploy/platform/link/d16
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -221,6 +249,9 @@ spec:
       targetRevision: main
       ref: values
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -247,3 +278,6 @@ spec:
       targetRevision: main
       ref: values
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
