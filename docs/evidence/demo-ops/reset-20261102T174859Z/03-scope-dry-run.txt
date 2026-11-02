@@ -1,0 +1,8 @@
+[reset-demo] 시작 2026-11-03 02:49:47 KST, 모드 dry-run, 계획 277d2eb5-4aa8-488f-9ac9-3e2385ece3af, 단계 rehearsal,approvals, 플랫폼 bravo-platform-rke2
+[reset-demo] rehearsal source                     ALREADY       계획 277d2eb5의 리허설 · 검증 네임스페이스 0개
+[reset-demo] rehearsal onprem                     OTHER         다른 계획 · 시험의 Trial 네임스페이스(지우지 않음): rehearsal-0ther000-1
+[reset-demo] rehearsal onprem                     PLAN          삭제할 것: rehearsal-277d2eb5-1 verify-277d2eb5-1
+[reset-demo] rehearsal gke                        ALREADY       계획 277d2eb5의 리허설 · 검증 네임스페이스 0개
+[reset-demo] approvals plan:277d2eb5              ALREADY       열린 승인 · 승인 요청 0건
+[reset-demo] 요약: DONE 0, ALREADY 3, PLAN 1, NOT_CONNECTED 0, FAIL 0, INFO/OTHER 1. 걸린 시간 1s
+deploy/scripts/reset-demo.sh --dry-run --plan "$P" --only rehearsal,approvals  0.39s user 0.19s system 55% cpu 1.037 total

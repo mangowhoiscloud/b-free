@@ -1,62 +1,57 @@
 #!/usr/bin/env bash
-# 데모 시작 상태로 되돌립니다(T28, 스펙 §10). 실제 대상만 다룹니다: 출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS.
-# 노트북 Compose 파일럿은 쓰지 않습니다(deploy/CLOUD-E2E-CONTRACT.md 6.1). 예외는 키 보관소 platform-bao 하나입니다.
+# 데모 시작 상태로 되돌립니다(T28, 스펙 §10, 감사 B19). 실제 대상만 다룹니다: 출발지 EKS, 온프렘 RKE2, GKE,
+# 플랫폼 RKE2(EC2 1대, 컨텍스트 bravo-platform-rke2). Executor는 플랫폼의 executor-0이고 D-16 링크로 닿습니다.
+# 노트북 Executor · 임시 링크(127.0.0.1:8085, 18081/28081)는 쓰지 않습니다.
 # 같은 명령을 여러 번 돌려도 끝 상태가 같습니다(멱등). 대상마다 한 일, 이미 된 일, 못 한 이유를 한 줄씩 냅니다.
-# 일어나지 않은 결과는 내지 않습니다. 닿지 않는 대상은 NOT_CONNECTED와 이유입니다.
 #
-#   deploy/scripts/reset-demo.sh --dry-run             읽기만 함(kubectl get, 공개 HTTP GET). 할 일을 PLAN으로 냄
-#   deploy/scripts/reset-demo.sh                       실제로 되돌림
-#   deploy/scripts/reset-demo.sh --only front,writes   일부 단계만(rehearsal, approvals, front, data, writes)
+#   deploy/scripts/reset-demo.sh --dry-run [--plan PLAN_ID]   읽기만 함. 실제 실행과 같은 읽기를 하고 바꿀 것만 PLAN
+#   deploy/scripts/reset-demo.sh --plan PLAN_ID                실제로 되돌림(그 데모 계획의 리허설 · 검증 NS만 지움)
+#   deploy/scripts/reset-demo.sh --plan PLAN_ID --only front,writes
 #
-# 단계(이 순서로 돎)
-#   rehearsal  리허설 · 검증 네임스페이스 삭제. 라벨 bravo.dev/trial-id 또는 bravo.io/tier=rehearsal|verify
-#   approvals  플랫폼 DB에 열린 승인 · 승인 요청이 0건인지 확인. 승인 기록은 지우지 않음(감사 기록, append-only).
-#              열린 것이 있으면 만료까지 기다림(승인은 계획 · revision · 게이트 판정에 묶여 새 계획에 쓰이지 않음)
-#   front      고객 앱 대표 이름(b-free-chat)을 출발지로. Executor POST /v1/front/shift {"target_env":"src"}
-#   data       PgBouncer 활성 대상을 target-src.ini로(rollout restart, init 컨테이너가 복사),
-#              복제를 컷오버 전 상태로(Executor repl_setup rearm: 구독 · 슬롯 정리, 목적지 표 비움, 다시 복사)
-#   writes     모든 환경의 쓰기 차단 끔. chat-admin PUT /admin/writes {"blocked": false}
+# 단계(이 순서로 돎). 시작할 때 executor-0의 repl_setup status를 한 번 읽어 컷오버 뒤인지 봅니다(guard).
+# 컷오버 뒤(목적지 writer LOGIN 또는 역방향 구독 켜짐)면 front · data · writes는 FAIL로 멈춥니다. 되돌리기는 콘솔에서
+# 사람이 승인하고 시작합니다(D-18). 스크립트는 failback을 시작하지 않습니다.
+#   rehearsal  그 계획(--plan)의 리허설 · 검증 네임스페이스만 삭제: 이름 rehearsal-<계획 ID 앞 8자>-* · verify-<같음>-*이고
+#              라벨 bravo.dev/trial-id가 있는 것(platform/rehearsal cluster.Names). 다른 계획의 것은 OTHER로 보이기만 함
+#   approvals  플랫폼 DB에서 그 계획의 열린 승인 · 승인 요청을 셈(읽기 전용). 기다리지도 지우지도 않음(append-only).
+#              승인은 계획 revision에 묶여 새 계획에 쓰이지 않으므로 다음 데모를 막지 않음. 결과는 ALREADY 또는 INFO
+#   front      고객 앱 대표 이름을 출발지로. executor-0 GET /v1/front가 src가 아니면 POST /v1/front/shift {"target_env":"src"}
+#   data       PgBouncer 활성 대상이 target-src.ini가 아니면 rollout restart(init 컨테이너가 복사).
+#              복제가 컷오버 전 기준과 다르면 executor-0에서 repl_setup rearm(구독 · 슬롯 정리, 목적지 표 비움, 다시 복사)
+#   writes     모든 환경의 쓰기 차단 끔. executor-0 안에서 chat-admin GET /admin/writes, blocked면 PUT {"blocked": false}
 #
-# 입력(환경 변수. 비밀 없음)
-#   기본값은 deploy/cloud/cloud.env(클라우드 E2E 설정, 비밀 없음)에서 읽고, 아래 RESET_* 가 앞섭니다.
-#   RESET_SRC_CONTEXT       출발지 EKS 컨텍스트(기본 cloud.env SRC_CONTEXT, 없으면 bravo-source)
-#   RESET_ONPREM_CONTEXT    온프렘 K3s 컨텍스트(기본 cloud.env DST_CONTEXT)
-#   RESET_GKE_CONTEXT       GKE 컨텍스트(기본 없음)
-#   RESET_PLATFORM_CONTEXT  플랫폼 컨텍스트(기본 bravo-platform = 결정 전 EKS 판). 승인 확인에 씀.
-#                           플랫폼은 EC2 1대 + RKE2로 바뀜(ADR 0010). RKE2 컨텍스트가 생기면 이 값으로 줌
-#   RESET_PLATFORM_NS       플랫폼 네임스페이스(기본 bravo-control, docs/architecture/10-cluster-overview.md)
-#   RESET_PLATFORM_DB       플랫폼 DB CNPG Cluster 이름(기본 platform-db). RESET_PLATFORM_DB_NAME(기본 bravo)
-#   RESET_EXECUTOR_URL      Executor 주소(기본 cloud.env LINK_BIND:EXECUTOR_PORT, deploy/cloud/executor.sh)
-#   RESET_TOPOLOGY_FILES    Executor 토폴로지 JSON, 목적지마다 하나, 콜론으로 구분(기본 $BRAVO_TOPOLOGY_FILE,
-#                           없으면 deploy/cloud/render_topology.sh가 쓴 deploy/pilot/runs/cloud-state/topology.json).
-#                           형식은 platform/executor/src/bravo_executor/topology.py. data · writes 단계가 씀
-#   RESET_FRONT_HOST        고객 앱 대표 이름(기본: infra/envs/edge 출력 front_hostname)
-#   RESET_SRC_ENV_ID        출발지 앱의 GET /api/config env.id(기본 cloud.env SRC_APP_ENV_ID, 없으면 aws)
-#   RESET_APPROVAL_WAIT_S   열린 승인의 만료를 기다리는 상한(기본 900 = BRAVO_APPROVAL_TTL_S 기본값)
+# 입력(환경 변수, 비밀 없음)
+#   RESET_PLAN_ID            --plan과 같음
+#   RESET_PLATFORM_CONTEXT   플랫폼 컨텍스트(기본 bravo-platform-rke2). RESET_PLATFORM_NS(기본 bravo-control)
+#   RESET_SRC_CONTEXT · RESET_ONPREM_CONTEXT  기본 bravo-source · bravo-onprem. GKE는 deploy/scripts/demo-lib.sh(kc gke)
+#   RESET_FRONT_HOST         고객 앱 대표 이름(기본 b-free-chat.mangowhois.ai). RESET_SRC_ENV_ID(기본 aws)
 #
-# 비밀: 토큰과 비밀번호는 플랫폼 OpenBao에서 executor AppRole로, 자식 프로세스 안에서만 읽습니다
-# (deploy/pilot/scripts/executor-bao.sh with-executor, D-26). 이 스크립트는 비밀 값을 출력하거나 파일에 쓰지 않습니다.
-# executor-bao.sh는 BAO_ADDR(기본 https://127.0.0.1:8200)로 닿습니다. 금고가 플랫폼 EKS(ns openbao)에 있으면
-# 먼저 port-forward 합니다. 닿지 않으면 data · writes는 NOT_CONNECTED입니다.
+# 비밀: chat-admin 토큰과 DB 비밀번호는 executor-0에 이미 전달된 파일(BRAVO_SECRETS_DIR)에서 그 Pod 안에서만 읽습니다.
+# 이 스크립트는 비밀 값을 출력하거나 파일에 쓰지 않습니다.
 #
 # 종료 코드: 0 모든 대상이 처음 상태(또는 dry-run 계획만 있음), 1 실패한 대상 있음, 2 사용법,
-#            3 실패는 없지만 연결 안 된 대상 있음
+#            3 실패는 없지만 연결 안 된 대상 있음. INFO · OTHER는 종료 코드에 영향 없음
 set -Eeuo pipefail
 umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BAO_SH="$REPO/deploy/pilot/scripts/executor-bao.sh"
-EXECUTOR_PROJECT="$REPO/platform/executor"
+export BRAVO_PLATFORM_CONTEXT="${RESET_PLATFORM_CONTEXT:-${BRAVO_PLATFORM_CONTEXT:-bravo-platform-rke2}}"
+export BRAVO_SOURCE_CONTEXT="${RESET_SRC_CONTEXT:-${BRAVO_SOURCE_CONTEXT:-bravo-source}}"
+export BRAVO_ONPREM_CONTEXT="${RESET_ONPREM_CONTEXT:-${BRAVO_ONPREM_CONTEXT:-bravo-onprem}}"
+# shellcheck source=deploy/scripts/demo-lib.sh
+source "$SCRIPT_DIR/demo-lib.sh"
 
 DRY=0
 ONLY=""
-usage() { sed -n '2,40p' "${BASH_SOURCE[0]}"; }
+PLAN="${RESET_PLAN_ID-}"
+usage() { sed -n '2,36p' "${BASH_SOURCE[0]}"; }
 while (($#)); do
   case "$1" in
     --dry-run) DRY=1 ;;
     --only) ONLY="${2-}"; shift ;;
     --only=*) ONLY="${1#--only=}" ;;
+    --plan) PLAN="${2-}"; shift ;;
+    --plan=*) PLAN="${1#--plan=}" ;;
     -h | --help) usage; exit 0 ;;
     *) echo "reset-demo.sh: 모르는 인자 $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -67,424 +62,274 @@ for s in ${ONLY//,/ }; do
     *) echo "reset-demo.sh: 모르는 단계 $s" >&2; exit 2 ;;
   esac
 done
-
+if [[ -n $PLAN && ! $PLAN =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+  echo "reset-demo.sh: --plan은 계획 UUID(콘솔 #/plan 또는 GET /v1/plans)" >&2; exit 2
+fi
+want() { [[ -z $ONLY || ",$ONLY," == *",$1,"* ]]; }
+if ((!DRY)) && [[ -z $PLAN ]] && { want rehearsal || want approvals; }; then
+  echo "reset-demo.sh: 실제 실행에는 --plan PLAN_ID가 필요합니다(지울 네임스페이스와 볼 승인을 그 데모 계획으로 한정, B19)." >&2
+  echo "              계획 없이 front · data · writes만 하려면 --only front,data,writes" >&2
+  exit 2
+fi
 for bin in kubectl curl jq; do
   command -v "$bin" >/dev/null || { echo "reset-demo.sh: $bin 없음" >&2; exit 2; }
 done
 
-# 기본값은 클라우드 E2E 설정(deploy/cloud/cloud.env, 비밀 없음, Git 제외)에서 읽음. RESET_* 가 앞섬.
-CLOUD_ENV="$REPO/deploy/cloud/cloud.env"
-cloud_get() {
-  [[ -f $CLOUD_ENV ]] || return 0
-  local v
-  v="$(sed -n "s/^$1=//p" "$CLOUD_ENV" | tail -n 1)"
-  v="${v%$'\r'}"; v="${v#\"}"; v="${v%\"}"
-  printf '%s' "$v"
-}
-CLOUD_EXECUTOR_PORT="$(cloud_get EXECUTOR_PORT)"
-CLOUD_BIND="$(cloud_get LINK_BIND)"
-CLOUD_STATE_TOPOLOGY="$REPO/deploy/pilot/runs/cloud-state/topology.json" # deploy/cloud/render_topology.sh가 씀
-
-SRC_CTX="${RESET_SRC_CONTEXT-$(cloud_get SRC_CONTEXT)}"
-SRC_CTX="${SRC_CTX:-bravo-source}"
-ONPREM_CTX="${RESET_ONPREM_CONTEXT-$(cloud_get DST_CONTEXT)}"
-GKE_CTX="${RESET_GKE_CONTEXT-}"
-PLATFORM_CTX="${RESET_PLATFORM_CONTEXT-bravo-platform}"
 PLATFORM_NS="${RESET_PLATFORM_NS:-bravo-control}"
-PLATFORM_DB="${RESET_PLATFORM_DB:-platform-db}"
-PLATFORM_DB_NAME="${RESET_PLATFORM_DB_NAME:-bravo}"
-EXECUTOR_URL="${RESET_EXECUTOR_URL-}"
-if [[ -z $EXECUTOR_URL && -n $CLOUD_EXECUTOR_PORT ]]; then
-  EXECUTOR_URL="http://${CLOUD_BIND:-127.0.0.1}:$CLOUD_EXECUTOR_PORT" # deploy/cloud/executor.sh의 주소
-fi
-EXECUTOR_URL="${EXECUTOR_URL%/}"
-# 경로에 공백이 있을 수 있어 콜론(:)으로 나눔
-TOPOLOGY_FILES=()
-IFS=':' read -r -a TOPOLOGY_FILES <<<"${RESET_TOPOLOGY_FILES:-${BRAVO_TOPOLOGY_FILE-}}"
-if ((${#TOPOLOGY_FILES[@]} == 0)) && [[ -r $CLOUD_STATE_TOPOLOGY ]]; then TOPOLOGY_FILES=("$CLOUD_STATE_TOPOLOGY"); fi
-SRC_ENV_ID="${RESET_SRC_ENV_ID:-$(cloud_get SRC_APP_ENV_ID)}"
-SRC_ENV_ID="${SRC_ENV_ID:-aws}"
-APPROVAL_WAIT_S="${RESET_APPROVAL_WAIT_S:-900}"
+FRONT="${RESET_FRONT_HOST:-b-free-chat.mangowhois.ai}"
+SRC_ENV_ID="${RESET_SRC_ENV_ID:-aws}"
+SHORT="${PLAN//-/}"; SHORT="${SHORT:0:8}"
 RUN_TAG="$(date -u +%Y%m%dT%H%M%SZ)"
-
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/reset-demo.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+T0=$SECONDS
 
-declare -i N_DONE=0 N_ALREADY=0 N_PLAN=0 N_NC=0 N_FAIL=0
+declare -i N_DONE=0 N_ALREADY=0 N_PLAN=0 N_NC=0 N_FAIL=0 N_INFO=0
 report() {
   local step=$1 target=$2 st=$3
   shift 3
-  printf '[reset-demo] %-9s %-24s %-13s %s\n' "$step" "$target" "$st" "$*"
+  printf '[reset-demo] %-9s %-26s %-13s %s\n' "$step" "$target" "$st" "$*"
   case "$st" in
     DONE) N_DONE+=1 ;; ALREADY) N_ALREADY+=1 ;; PLAN) N_PLAN+=1 ;;
-    NOT_CONNECTED) N_NC+=1 ;; FAIL) N_FAIL+=1 ;;
+    NOT_CONNECTED) N_NC+=1 ;; FAIL) N_FAIL+=1 ;; INFO | OTHER) N_INFO+=1 ;;
   esac
 }
-want() { [[ -z $ONLY || ",$ONLY," == *",$1,"* ]]; }
 
-k() { local ctx=$1; shift; kubectl --context "$ctx" --request-timeout=15s "$@"; }
+# Executor-0 on the platform: commands run inside the pod (in-cluster topology and secret files, D-16 links).
+# No --request-timeout here: rearm and a front shift run for minutes inside one exec stream.
+ex() { kubectl --context "$BRAVO_PLATFORM_CONTEXT" -n "$PLATFORM_NS" exec executor-0 -c executor -- "$@" </dev/null; }
+exi() { kubectl --context "$BRAVO_PLATFORM_CONTEXT" -n "$PLATFORM_NS" exec -i executor-0 -c executor -- "$@"; }
+ex_ok() { kc platform -n "$PLATFORM_NS" exec executor-0 -c executor -- true </dev/null >/dev/null 2>&1; }
 
-# 컨텍스트가 있고 API가 답하는지. 아니면 REASON에 이유를 둠.
-REASON=""
-ctx_ok() {
-  local ctx=$1
-  if [[ -z $ctx ]]; then REASON="컨텍스트 미설정"; return 1; fi
-  if ! kubectl config get-contexts -o name 2>/dev/null | grep -qxF "$ctx"; then
-    REASON="kubeconfig에 컨텍스트 $ctx 없음"; return 1
+# ---- guard: 복제 상태(읽기). 컷오버 뒤면 front · data · writes를 하지 않음 ------------------------------------------
+REPL_ST=""      # last status JSON line from repl_setup
+POST_CUTOVER=0
+repl_status() { ex python -m bravo_executor.repl_setup status 2>"$TMP/repl.err" | grep '^{' | jq -c 'select(.event == "status")' | tail -n 1; }
+# Pre-cutover baseline (same as repl_setup.rearm): forward subscription flowing into the destination, reverse
+# subscription ready but disabled on the source, only the source writer can log in, attachment stores not frozen.
+PRE_CUTOVER_JQ='(.dst.subscriptions.bravo_fwd_sub.enabled == true and .dst.subscriptions.bravo_fwd_sub.worker_pid != null)
+  and (.src.subscriptions.bravo_rev_sub.exists == true and .src.subscriptions.bravo_rev_sub.enabled == false)
+  and .src.writer.login == true and .dst.writer.login == false
+  and .src.attachment_store.frozen == false and .dst.attachment_store.frozen == false'
+guard() {
+  if ! ex_ok; then GUARD="NOT_CONNECTED executor-0에 exec 못 함($BRAVO_PLATFORM_CONTEXT $PLATFORM_NS)"; return; fi
+  REPL_ST="$(repl_status || true)"
+  if [[ -z $REPL_ST ]]; then GUARD="FAIL repl_setup status를 읽지 못함: $(tail -n 1 "$TMP/repl.err" | head -c 200)"; return; fi
+  if jq -e '.dst.writer.login == true or .src.subscriptions.bravo_rev_sub.enabled == true' >/dev/null <<<"$REPL_ST"; then
+    POST_CUTOVER=1
+    GUARD="FAIL 컷오버 뒤 상태(목적지 writer LOGIN 또는 역방향 구독 켜짐). 되돌리기는 콘솔에서 사람이 승인 · 시작(D-18)"
+    return
   fi
-  if ! k "$ctx" get --raw /readyz >/dev/null 2>&1; then REASON="API 응답 없음($ctx)"; return 1; fi
-  return 0
+  GUARD="OK"
 }
 
-env_ctx() {
-  case "$1" in
-    source-aws) printf '%s' "$SRC_CTX" ;;
-    target-onprem) printf '%s' "$ONPREM_CTX" ;;
-    target-gcp) printf '%s' "$GKE_CTX" ;;
-  esac
-}
-ENVS=(source-aws target-onprem target-gcp)
-
-# ---- rehearsal: 리허설 · 검증 네임스페이스 ----------------------------------------------------------
+# ---- rehearsal: 그 계획의 리허설 · 검증 네임스페이스 --------------------------------------------------------------
 step_rehearsal() {
-  local env ctx names a b
-  for env in "${ENVS[@]}"; do
-    ctx="$(env_ctx "$env")"
-    if ! ctx_ok "$ctx"; then report rehearsal "$env" NOT_CONNECTED "$REASON"; continue; fi
-    if ! a="$(k "$ctx" get ns -l bravo.dev/trial-id -o name 2>"$TMP/err")" \
-      || ! b="$(k "$ctx" get ns -l 'bravo.io/tier in (rehearsal,verify)' -o name 2>>"$TMP/err")"; then
-      report rehearsal "$env" FAIL "네임스페이스 목록 실패: $(head -c 200 "$TMP/err")"; continue
+  local a names mine others ns err
+  for a in source onprem gke; do
+    if ! names="$(kc "$a" get ns -l bravo.dev/trial-id -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>"$TMP/err")"; then
+      report rehearsal "$a" NOT_CONNECTED "네임스페이스 목록 실패: $(head -c 160 "$TMP/err")"; continue
     fi
-    names="$(printf '%s\n%s\n' "$a" "$b" | sed '/^$/d' | sort -u | tr '\n' ' ')"
-    names="${names% }"
-    if [[ -z $names ]]; then report rehearsal "$env" ALREADY "리허설 · 검증 네임스페이스 0개"; continue; fi
-    if ((DRY)); then report rehearsal "$env" PLAN "삭제할 것: $names"; continue; fi
+    mine=""; others=""
+    while read -r ns; do
+      [[ -n $ns ]] || continue
+      if [[ -n $SHORT && ( $ns == rehearsal-$SHORT-* || $ns == verify-$SHORT-* ) ]]; then mine+="$ns "; else others+="$ns "; fi
+    done <<<"$names"
+    [[ -n $others ]] && report rehearsal "$a" OTHER "다른 계획 · 시험의 Trial 네임스페이스(지우지 않음): ${others% }"
+    if [[ -z $PLAN ]]; then report rehearsal "$a" INFO "--plan 없음: 지울 대상을 정하지 않음"; continue; fi
+    if [[ -z $mine ]]; then report rehearsal "$a" ALREADY "계획 ${SHORT}의 리허설 · 검증 네임스페이스 0개"; continue; fi
+    if ((DRY)); then report rehearsal "$a" PLAN "삭제할 것: ${mine% }"; continue; fi
     # shellcheck disable=SC2086
-    if k "$ctx" delete $names --wait=true --timeout=180s >/dev/null 2>"$TMP/err"; then
-      report rehearsal "$env" DONE "삭제함: $names"
+    if kc "$a" delete ns ${mine% } --wait=true --timeout=180s >/dev/null 2>"$TMP/err"; then
+      report rehearsal "$a" DONE "삭제함: ${mine% }"
     else
-      report rehearsal "$env" FAIL "삭제 실패: $(head -c 200 "$TMP/err")"
+      report rehearsal "$a" FAIL "삭제 실패: $(head -c 200 "$TMP/err")"
     fi
   done
 }
 
-# ---- approvals: 플랫폼 DB의 열린 승인(읽기만) -----------------------------------------------------------
-APPROVAL_SQL="WITH o AS (
-  SELECT expires_at AS t FROM approvals WHERE consumed_at IS NULL AND expires_at > now()
-  UNION ALL
-  SELECT p.approval_request_expires_at FROM plans p
-   WHERE p.approval_request_id IS NOT NULL AND p.approval_request_expires_at > now()
-     AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.approval_request_id = p.approval_request_id))
-SELECT count(*), coalesce(ceil(extract(epoch FROM max(t) - now()))::int, 0) FROM o"
-
-open_approvals() { # 출력: "<열린 건수> <가장 늦은 만료까지 초>"
-  k "$PLATFORM_CTX" -n "$PLATFORM_NS" exec "$1" -c postgres -- \
-    psql -X -q -At -F ' ' -d "$PLATFORM_DB_NAME" \
-    -c 'SET default_transaction_read_only = on' -c "$APPROVAL_SQL"
-}
-
+# ---- approvals: 그 계획의 열린 승인 · 요청(읽기만, 기다리지 않음) --------------------------------------------------
 step_approvals() {
-  local pod out n wait_s
-  if ! ctx_ok "$PLATFORM_CTX"; then report approvals platform-eks NOT_CONNECTED "$REASON(플랫폼 EKS)"; return; fi
-  pod="$(k "$PLATFORM_CTX" -n "$PLATFORM_NS" get pod \
-    -l "cnpg.io/cluster=$PLATFORM_DB,cnpg.io/instanceRole=primary" -o name 2>/dev/null | head -n 1)"
-  if [[ -z $pod ]]; then
-    report approvals platform-eks NOT_CONNECTED "플랫폼 DB 주 Pod 없음($PLATFORM_NS/$PLATFORM_DB)"; return
+  local pod out n first last where
+  pod="$(kc platform -n "$PLATFORM_NS" get pod -l "cnpg.io/cluster=platform-db,cnpg.io/instanceRole=primary" -o name 2>/dev/null | head -n 1)"
+  if [[ -z $pod ]]; then report approvals platform NOT_CONNECTED "플랫폼 DB 주 Pod 없음($BRAVO_PLATFORM_CONTEXT $PLATFORM_NS)"; return; fi
+  where="${PLAN:+AND plan_id = '$PLAN'}"
+  if ! out="$(kc platform -n "$PLATFORM_NS" exec "${pod#pod/}" -c postgres -- psql -X -q -At -F ' ' -d bravo \
+    -c 'SET default_transaction_read_only = on' -c "WITH o AS (
+      SELECT plan_id, expires_at AS t FROM approvals WHERE consumed_at IS NULL AND expires_at > now() $where
+      UNION ALL
+      SELECT p.plan_id, p.approval_request_expires_at FROM plans p
+       WHERE p.approval_request_id IS NOT NULL AND p.approval_request_expires_at > now() ${PLAN:+AND p.plan_id = '$PLAN'}
+         AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.approval_request_id = p.approval_request_id))
+      SELECT count(*), count(DISTINCT plan_id), coalesce(to_char(max(t) AT TIME ZONE 'Asia/Seoul', 'MM-DD HH24:MI:SS'), '-') FROM o" 2>"$TMP/err")"; then
+    report approvals platform FAIL "조회 실패: $(head -c 200 "$TMP/err")"; return
   fi
-  if ((DRY)); then
-    report approvals platform-eks PLAN "열린 승인 · 요청을 읽기 전용 SELECT로 셈. 남으면 만료까지 기다림(최대 ${APPROVAL_WAIT_S}s). 지우지 않음"
-    return
-  fi
-  if ! out="$(open_approvals "$pod" 2>"$TMP/err")"; then
-    report approvals platform-eks FAIL "조회 실패: $(head -c 200 "$TMP/err")"; return
-  fi
-  read -r n wait_s <<<"$(tail -n 1 <<<"$out")"
-  if [[ $n == 0 ]]; then report approvals platform-eks ALREADY "열린 승인 · 승인 요청 0건"; return; fi
-  if ((wait_s > APPROVAL_WAIT_S)); then
-    report approvals platform-eks FAIL "열린 승인 · 요청 ${n}건, 만료까지 ${wait_s}s(상한 ${APPROVAL_WAIT_S}s). 지우지 않음"
-    return
-  fi
-  printf '[reset-demo] approvals 열린 승인 · 요청 %s건의 만료(%ss 뒤)를 기다립니다. 기록은 지우지 않습니다\n' "$n" "$wait_s"
-  sleep $((wait_s + 2)) # 만료를 기다린 뒤 DB를 다시 읽어 판정함
-  out="$(open_approvals "$pod" 2>"$TMP/err")" || { report approvals platform-eks FAIL "재조회 실패"; return; }
-  read -r n wait_s <<<"$(tail -n 1 <<<"$out")"
-  if [[ $n == 0 ]]; then
-    report approvals platform-eks DONE "만료로 닫힘. 다시 읽은 열린 건수 0"
+  read -r n first last <<<"$(tail -n 1 <<<"$out")"
+  if [[ -z $PLAN ]]; then
+    report approvals platform INFO "--plan 없음. 모든 계획의 열린 승인 · 요청 ${n}건(계획 ${first}개, 마지막 만료 $last KST). 기다리지 않음"
+  elif [[ $n == 0 ]]; then
+    report approvals "plan:$SHORT" ALREADY "열린 승인 · 승인 요청 0건"
   else
-    report approvals platform-eks FAIL "다시 읽어도 열린 건수 ${n}"
+    report approvals "plan:$SHORT" INFO "열린 승인 · 요청 ${n}건(만료 $last KST). 계획 revision에 묶여 새 계획에 쓰이지 않음. 기다리지 · 지우지 않음"
   fi
 }
 
-# ---- front: 고객 앱 대표 이름을 출발지로 ------------------------------------------------------------------
-FRONT="${RESET_FRONT_HOST-}"
-probe_front() { # 출력: "<HTTP 코드> <env.id 또는 ->"
+# ---- front: 대표 이름을 출발지로(executor-0) ---------------------------------------------------------------------
+FRONT_PY='import json, sys, time, urllib.request
+base = "http://127.0.0.1:8081"
+def call(path, body=None, key=None):
+    req = urllib.request.Request(base + path, method="POST" if body is not None else "GET",
+                                 data=None if body is None else json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", **({"Idempotency-Key": key} if key else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+mode = sys.argv[1]
+code, st = call("/v1/front")
+if mode == "get" or code != 200:
+    print(json.dumps({"code": code, "state": st})); sys.exit(0)
+code, acc = call("/v1/front/shift", {"target_env": "src"}, sys.argv[2])
+if code != 202:
+    print(json.dumps({"code": code, "shift": acc})); sys.exit(0)
+run = acc["run_id"]; deadline = time.time() + 240; status = "RUNNING"
+while status == "RUNNING" and time.time() < deadline:
+    time.sleep(2)
+    c, r = call("/v1/runs/" + run); status = r.get("status", "RUNNING")
+c, after = call("/v1/front")
+print(json.dumps({"code": 202, "run_id": run, "status": status, "state": after}))'
+
+probe_front() { # "<HTTP 코드> <env.id 또는 ->"
   local code id="-"
   code="$(curl -sS -o "$TMP/front.json" -w '%{http_code}' --max-time 10 "https://$FRONT/api/config" 2>/dev/null)" || code="${code:-000}"
-  if [[ $code == 200 ]]; then id="$(jq -r '.env.id // "-"' "$TMP/front.json" 2>/dev/null || echo -)"; fi
+  [[ $code == 200 ]] && id="$(jq -r '.env.id // "-"' "$TMP/front.json" 2>/dev/null || echo -)"
   printf '%s %s' "${code:-000}" "$id"
 }
 
 step_front() {
-  local code id route body run_id status deadline
-  if [[ -z $FRONT ]]; then
-    FRONT="$(terraform -chdir="$REPO/infra/envs/edge" output -raw front_hostname 2>/dev/null || true)"
+  local out active mode pid pcode code id
+  if [[ $GUARD != OK ]]; then report front "$FRONT" "${GUARD%% *}" "${GUARD#* }"; return; fi
+  out="$(exi python - get <<<"$FRONT_PY" 2>"$TMP/err")" || { report front "$FRONT" FAIL "executor-0 GET /v1/front 실패: $(head -c 200 "$TMP/err")"; return; }
+  if [[ $(jq -r .code <<<"$out") != 200 ]]; then report front "$FRONT" FAIL "GET /v1/front: $(head -c 200 <<<"$out")"; return; fi
+  # Judge by the Executor's own probe from the platform (GET /v1/front), not by the operator laptop's network.
+  active="$(jq -r '.state.active_env // "-"' <<<"$out")"; mode="$(jq -r '.state.mode // "-"' <<<"$out")"
+  pcode="$(jq -r '.state.probe.status // "-"' <<<"$out")"; pid="$(jq -r '.state.probe.env_id // "-"' <<<"$out")"
+  if [[ $active == src && $pid == "$SRC_ENV_ID" ]]; then
+    report front "$FRONT" ALREADY "mode=$mode active_env=src, Executor 탐침 HTTP $pcode env.id=$pid"; return
   fi
-  if [[ -z $FRONT ]]; then report front front NOT_CONNECTED "대표 이름을 모름(RESET_FRONT_HOST, edge 출력 없음)"; return; fi
-  read -r code id <<<"$(probe_front)"
-  if [[ $code == 200 && $id == "$SRC_ENV_ID" ]]; then
-    report front "$FRONT" ALREADY "GET /api/config env.id=$id(출발지)"; return
-  fi
-  if [[ -z $EXECUTOR_URL ]]; then
-    report front "$FRONT" NOT_CONNECTED "지금 HTTP $code env.id=$id. Executor 주소 없음(RESET_EXECUTOR_URL)"; return
-  fi
-  # 길 확인: POST만 있는 경로에 OPTIONS를 보내면 405(경로 있음), 없으면 404. 아무것도 바꾸지 않음
-  route="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X OPTIONS "$EXECUTOR_URL/v1/front/shift")" || true
-  route="${route:-000}"
-  if [[ $route == 000 ]]; then
-    report front "$FRONT" NOT_CONNECTED "지금 HTTP $code env.id=$id. Executor $EXECUTOR_URL 응답 없음(deploy/cloud/executor.sh start)"; return
-  fi
-  if [[ $route == 404 ]]; then
-    report front "$FRONT" NOT_CONNECTED "지금 HTTP $code env.id=$id. Executor에 /v1/front/shift 없음(HTTP 404)"; return
+  if [[ $active == src ]]; then  # already pointed at the source: a shift cannot fix a failing source app
+    report front "$FRONT" FAIL "이미 active_env=src인데 Executor 탐침 HTTP $pcode env.id=$pid: 출발지 앱 문제(전환하지 않음)"; return
   fi
   if ((DRY)); then
-    report front "$FRONT" PLAN "지금 HTTP $code env.id=$id. Executor POST /v1/front/shift {\"target_env\":\"src\"} 뒤 env.id=$SRC_ENV_ID 확인"
+    report front "$FRONT" PLAN "지금 mode=$mode active_env=$active, Executor 탐침 HTTP $pcode env.id=$pid. executor-0 POST /v1/front/shift {\"target_env\":\"src\"}"
     return
   fi
-  if ! body="$(curl -sS --max-time 20 -X POST "$EXECUTOR_URL/v1/front/shift" \
-    -H 'Content-Type: application/json' -H "Idempotency-Key: reset-demo-front-$RUN_TAG" \
-    -d '{"target_env":"src"}' 2>"$TMP/err")"; then
-    report front "$FRONT" FAIL "전환 요청 실패: $(head -c 200 "$TMP/err")"; return
-  fi
-  run_id="$(jq -r '.run_id // empty' <<<"$body" 2>/dev/null || true)"
-  if [[ -z $run_id ]]; then report front "$FRONT" FAIL "전환 요청 거절: $(head -c 200 <<<"$body")"; return; fi
-  deadline=$((SECONDS + 240))
-  status=RUNNING
-  while [[ $status == RUNNING ]] && ((SECONDS < deadline)); do
-    sleep 2 # 실행 기록을 다시 읽는 간격. 결과는 아래에서 앞단을 다시 재서 판정함
-    status="$(curl -sS --max-time 10 "$EXECUTOR_URL/v1/runs/$run_id" | jq -r '.status // "RUNNING"' 2>/dev/null || echo RUNNING)"
-  done
+  out="$(exi python - shift "reset-demo-front-$RUN_TAG" <<<"$FRONT_PY" 2>"$TMP/err")" || { report front "$FRONT" FAIL "전환 요청 실패: $(head -c 200 "$TMP/err")"; return; }
+  pid="$(jq -r '.state.probe.env_id // "-"' <<<"$out")"
   read -r code id <<<"$(probe_front)"
-  if [[ $code == 200 && $id == "$SRC_ENV_ID" ]]; then
-    report front "$FRONT" DONE "run $run_id status=$status. 다시 잰 env.id=$id"
+  if [[ $(jq -r '.state.active_env // ""' <<<"$out") == src && $pid == "$SRC_ENV_ID" ]]; then
+    report front "$FRONT" DONE "run $(jq -r .run_id <<<"$out") status=$(jq -r .status <<<"$out"). Executor 탐침 env.id=$pid, 노트북 HTTP $code env.id=$id"
   else
-    report front "$FRONT" FAIL "run $run_id status=$status. 다시 잰 HTTP $code env.id=$id"
+    report front "$FRONT" FAIL "$(jq -c '{code, run_id, status, shift}' <<<"$out" | head -c 200). Executor 탐침 env.id=$pid, 노트북 HTTP $code env.id=$id"
   fi
 }
 
-# ---- data: PgBouncer 대상과 복제 방향 -----------------------------------------------------------------
-# 토폴로지가 없을 때도 클러스터마다 무엇이 빠졌는지 읽어서 알려 줌(계약 3 · 9절의 이름).
-cluster_gaps() {
-  local ctx=$1 gaps=() r
-  k "$ctx" get ns chat -o name >/dev/null 2>&1 || { printf 'ns chat 없음'; return; }
-  for r in clusters.postgresql.cnpg.io/chat-db deploy/chat-pgbouncer svc/chat-admin; do
-    k "$ctx" -n chat get "$r" -o name >/dev/null 2>&1 || gaps+=("$r")
-  done
-  k "$ctx" -n cf-edge get deploy/cloudflared -o name >/dev/null 2>&1 || gaps+=("cf-edge/cloudflared")
-  if ((${#gaps[@]})); then printf '없음: %s' "${gaps[*]}"; fi
-}
-
-POOLS_MISSING=0
-pool_reset() {
-  local name=$1 ctx=$2 ns=$3 wl=$4 a b
-  if ! ctx_ok "$ctx"; then report data "pool:$name" NOT_CONNECTED "$REASON"; POOLS_MISSING=1; return; fi
-  if ! k "$ctx" -n "$ns" get "$wl" -o name >/dev/null 2>&1; then
-    report data "pool:$name" NOT_CONNECTED "$ctx $ns/$wl 없음"; POOLS_MISSING=1; return
-  fi
-  if ((DRY)); then
-    report data "pool:$name" PLAN "active.ini를 target-src.ini와 비교. 다르면 $wl rollout restart(init 컨테이너가 target-src.ini 복사)"
-    return
-  fi
-  a="$(k "$ctx" -n "$ns" exec "$wl" -- cat /run/pgbouncer/active.ini 2>/dev/null)" || a="(읽기 실패)"
-  b="$(k "$ctx" -n "$ns" exec "$wl" -- cat /etc/pgbouncer/targets/target-src.ini 2>/dev/null)" || b="(읽기 실패)"
-  if [[ $b != "(읽기 실패)" && $a == "$b" ]]; then report data "pool:$name" ALREADY "활성 대상 = target-src.ini"; return; fi
-  if ! k "$ctx" -n "$ns" rollout restart "$wl" >/dev/null 2>"$TMP/err" \
-    || ! k "$ctx" -n "$ns" rollout status "$wl" --timeout=180s >/dev/null 2>>"$TMP/err"; then
+# ---- data: PgBouncer 대상과 복제 ---------------------------------------------------------------------------------
+pool_reset() { # name alias namespace selector
+  local name=$1 a=$2 ns=$3 sel=$4 pod dep x y
+  pod="$(kc "$a" -n "$ns" get pod -l "$sel" --field-selector=status.phase=Running -o name 2>/dev/null | head -n 1)"
+  if [[ -z $pod ]]; then report data "pool:$name" NOT_CONNECTED "$a $ns에 $sel Pod 없음"; return; fi
+  x="$(kc "$a" -n "$ns" exec "${pod#pod/}" -c pgbouncer -- cat /run/pgbouncer/active.ini 2>/dev/null)" || x="(읽기 실패)"
+  y="$(kc "$a" -n "$ns" exec "${pod#pod/}" -c pgbouncer -- cat /etc/pgbouncer/targets/target-src.ini 2>/dev/null)" || y="(읽기 실패)"
+  if [[ $y != "(읽기 실패)" && $x == "$y" ]]; then report data "pool:$name" ALREADY "활성 대상 = target-src.ini"; return; fi
+  dep="$(kc "$a" -n "$ns" get deploy -l "$sel" -o name 2>/dev/null | head -n 1)"; dep="${dep:-deployment/chat-pgbouncer}"
+  if ((DRY)); then report data "pool:$name" PLAN "활성 대상이 target-src.ini와 다름. $dep rollout restart"; return; fi
+  if ! kc "$a" -n "$ns" rollout restart "$dep" >/dev/null 2>"$TMP/err" \
+    || ! kc "$a" -n "$ns" rollout status "$dep" --timeout=180s >/dev/null 2>>"$TMP/err"; then
     report data "pool:$name" FAIL "rollout 실패: $(head -c 200 "$TMP/err")"; return
   fi
-  a="$(k "$ctx" -n "$ns" exec "$wl" -- cat /run/pgbouncer/active.ini 2>/dev/null)" || a="(읽기 실패)"
-  if [[ $a == "$b" ]]; then report data "pool:$name" DONE "재시작 뒤 활성 대상 = target-src.ini"
+  pod="$(kc "$a" -n "$ns" get pod -l "$sel" --field-selector=status.phase=Running -o name 2>/dev/null | head -n 1)"
+  x="$(kc "$a" -n "$ns" exec "${pod#pod/}" -c pgbouncer -- cat /run/pgbouncer/active.ini 2>/dev/null)" || x="(읽기 실패)"
+  if [[ $x == "$y" ]]; then report data "pool:$name" DONE "재시작 뒤 활성 대상 = target-src.ini"
   else report data "pool:$name" FAIL "재시작 뒤에도 활성 대상이 target-src.ini와 다름"; fi
 }
 
-# 금고에 닿는지 실행 모드에서 한 번만 확인(값은 읽지 않음). executor-bao.sh는 BAO_ADDR(기본 https://127.0.0.1:8200)로 닿음.
-# 금고가 플랫폼 EKS(ns openbao)에 있으면 먼저 port-forward 합니다.
-BAO_STATE=""
-bao_ok() {
-  if [[ -z $BAO_STATE ]]; then
-    if [[ -x $BAO_SH ]] && "$BAO_SH" status >/dev/null 2>&1; then BAO_STATE=ok; else BAO_STATE=down; fi
-  fi
-  [[ $BAO_STATE == ok ]]
-}
-
-repl() { # repl_setup 명령 하나. 비밀은 executor AppRole로 자식 안에서만 읽음
-  BRAVO_TOPOLOGY_FILE="$1" "$BAO_SH" with-executor -- \
-    uv run --quiet --project "$EXECUTOR_PROJECT" python -m bravo_executor.repl_setup "$2"
-}
-
-# 컷오버 전 상태: 목적지 정방향 구독이 켜져 흐르고, 출발지 역방향 구독은 꺼진 채 준비,
-# 쓰기 역할은 출발지만 LOGIN, 첨부 저장소는 각자 자기 것이고 얼어 있지 않음(repl_setup.rearm과 같은 기준).
-PRE_CUTOVER_JQ='select(.event == "status")
-  | (.dst.subscriptions.bravo_fwd_sub.enabled == true and .dst.subscriptions.bravo_fwd_sub.worker_pid != null)
-    and (.src.subscriptions.bravo_rev_sub.exists == true and .src.subscriptions.bravo_rev_sub.enabled == false)
-    and .src.writer.login == true and .dst.writer.login == false
-    and .src.attachment_store.active_store == $s and .src.attachment_store.frozen == false
-    and .dst.attachment_store.active_store == $d and .dst.attachment_store.frozen == false'
-
-status_line() { grep '^{' | jq -c 'select(.event == "status")' 2>/dev/null | tail -n 1; }
-failed_line() { grep '^{' | jq -r 'select(.event == "failed") | "\(.error): \(.detail)"' 2>/dev/null | tail -n 1; }
-
-repl_reset() {
-  local f=$1 tag s d out st
-  tag="repl:$(basename "$f" .json)"
-  s="$(jq -r '.store_ids.src // "src"' "$f")"
-  d="$(jq -r '.store_ids.dst // "dst"' "$f")"
-  if ((POOLS_MISSING)); then
-    report data "$tag" NOT_CONNECTED "PgBouncer가 없는 클러스터가 있어 복제를 다루지 않음(위 pool 줄)"; return
-  fi
-  if ((DRY)); then
-    report data "$tag" PLAN "repl_setup status를 읽고 컷오버 전 상태가 아니면 rearm(구독 · 슬롯 정리, 목적지 표 비움, 다시 복사). 링크: $(jq -r '.label // "-"' "$f")"
-    return
-  fi
-  bao_ok || { report data "$tag" NOT_CONNECTED "플랫폼 금고에 닿지 못함($BAO_SH status 실패)"; return; }
-  out="$(repl "$f" status 2>"$TMP/err")" || true
-  st="$(status_line <<<"$out")"
-  if [[ -z $st ]]; then
-    # 상태를 읽지 못하면 rearm(목적지 표를 비움)을 하지 않음. 불명확하면 멈춤(NFR-3과 같은 쪽)
-    report data "$tag" FAIL "status를 읽지 못함: $(failed_line <<<"$out" | head -c 200)$(tail -n 1 "$TMP/err" | head -c 200)"
-    return
-  fi
-  if jq -e --arg s "$s" --arg d "$d" "$PRE_CUTOVER_JQ" <<<"$st" >/dev/null; then
-    report data "$tag" ALREADY "정방향 흐름, 역방향 준비(꺼짐), 쓰기는 출발지만"; return
-  fi
-  out="$(repl "$f" rearm 2>"$TMP/err")" || true
-  st="$(status_line <<<"$out")"
-  if [[ -z $st ]]; then
-    # rearm은 구독이 켜져 있으면(컷오버 뒤, 되돌리기 전) 거부함. 되돌리기는 콘솔에서 사람이 시작함(D-18)
-    report data "$tag" FAIL "rearm 거부 · 실패: $(failed_line <<<"$out" | head -c 240)"; return
-  fi
-  if jq -e --arg s "$s" --arg d "$d" "$PRE_CUTOVER_JQ" <<<"$st" >/dev/null; then
-    report data "$tag" DONE "rearm 뒤 다시 읽은 상태가 컷오버 전 기준과 같음"
-  else
-    report data "$tag" FAIL "rearm은 끝났지만 다시 읽은 상태가 기준과 다름"
-  fi
-}
-
 step_data() {
-  local env ctx gaps f name pctx ns wl
-  if ((${#TOPOLOGY_FILES[@]} == 0)); then
-    for env in "${ENVS[@]}"; do
-      ctx="$(env_ctx "$env")"
-      if ! ctx_ok "$ctx"; then report data "$env" NOT_CONNECTED "$REASON"; continue; fi
-      gaps="$(cluster_gaps "$ctx")"
-      report data "$env" NOT_CONNECTED "토폴로지 파일 없음(RESET_TOPOLOGY_FILES, 계약 9절)${gaps:+. $gaps}"
-    done
-    return
+  local topo name ctx ns wl a st
+  if [[ $GUARD != OK ]]; then report data repl "${GUARD%% *}" "${GUARD#* }"; return; fi
+  topo="$(ex cat /etc/bravo/topology/topology.json 2>/dev/null)" || { report data topology NOT_CONNECTED "executor-0의 토폴로지를 읽지 못함"; return; }
+  while IFS=$'\t' read -r name ctx ns wl; do
+    case $ctx in "$BRAVO_SOURCE_CONTEXT") a=source ;; "$BRAVO_ONPREM_CONTEXT") a=onprem ;; *) report data "pool:$name" NOT_CONNECTED "모르는 컨텍스트 $ctx"; continue ;; esac
+    pool_reset "$name" "$a" "$ns" "${wl#selector:}"
+  done < <(jq -r '.pools[]? | [.name, .switch.context, .switch.namespace, .switch.workload] | @tsv' <<<"$topo")
+  if jq -e "$PRE_CUTOVER_JQ" >/dev/null <<<"$REPL_ST"; then
+    report data repl ALREADY "정방향 흐름, 역방향 준비(꺼짐), 쓰기는 출발지만, 첨부 저장소 얼지 않음"; return
   fi
-  for f in "${TOPOLOGY_FILES[@]}"; do
-    if [[ ! -r $f ]]; then report data "$(basename "$f")" NOT_CONNECTED "파일 없음: $f"; continue; fi
-    POOLS_MISSING=0
-    while IFS=$'\t' read -r name pctx ns wl; do
-      pool_reset "$name" "$pctx" "$ns" "$wl"
-    done < <(jq -r '.pools[]? | [.name, .switch.context, .switch.namespace, .switch.workload] | @tsv' "$f")
-    repl_reset "$f"
-  done
+  if ((DRY)); then report data repl PLAN "컷오버 전 기준과 다름. executor-0 repl_setup rearm(구독 · 슬롯 정리, 목적지 표 비움, 다시 복사)"; return; fi
+  ex python -m bravo_executor.repl_setup rearm >"$TMP/rearm.out" 2>"$TMP/err" || true
+  st="$(repl_status || true)"
+  if [[ -n $st ]] && jq -e "$PRE_CUTOVER_JQ" >/dev/null <<<"$st"; then
+    report data repl DONE "rearm 뒤 다시 읽은 상태가 컷오버 전 기준과 같음"
+  else
+    report data repl FAIL "rearm 뒤에도 기준과 다름: $(grep '^{' "$TMP/rearm.out" | jq -r 'select(.event == "failed") | "\(.error): \(.detail)"' 2>/dev/null | tail -n 1 | head -c 200)"
+  fi
 }
 
-# ---- writes: 쓰기 차단 끄기 ---------------------------------------------------------------------------
-# 토큰은 OpenBao secret/<entries[].secret>의 token. 자식 Python 안에서만 씀. 출력은 상태(blocked, since)뿐.
-cat >"$TMP/write_block.py" <<'PY'
-import json, os, ssl, sys, urllib.request
-
-secret_path, base = sys.argv[1], sys.argv[2].rstrip("/")
-addr = os.environ["BRAVO_BAO_ADDR"].rstrip("/")
-ctx = ssl.create_default_context(cafile=os.environ.get("BRAVO_BAO_CACERT") or None)
-
-
-def call(url, method="GET", body=None, headers=None, tls=None):
-    data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(url, data=data, method=method,
-                                 headers={"Content-Type": "application/json", **(headers or {})})
-    with urllib.request.urlopen(req, timeout=15, context=tls) as r:
-        raw = r.read()
-        return json.loads(raw) if raw else {}
-
-
-login = call(f"{addr}/v1/auth/approle/login", "POST",
-             {"role_id": os.environ["BRAVO_BAO_ROLE_ID"], "secret_id": os.environ["BRAVO_BAO_SECRET_ID"]}, tls=ctx)
-vtok = login["auth"]["client_token"]
-try:
-    token = call(f"{addr}/v1/secret/data/{secret_path}", headers={"X-Vault-Token": vtok}, tls=ctx)["data"]["data"]["token"]
-    auth = {"Authorization": f"Bearer {token}"}
-    before = call(f"{base}/admin/writes", headers=auth)
-    if before.get("blocked") is True:
-        after = call(f"{base}/admin/writes", "PUT", {"blocked": False}, headers=auth)
-        again = call(f"{base}/admin/writes", headers=auth)
-        print(json.dumps({"action": "done", "before": before, "after": after, "read_back": again}))
-    else:
-        print(json.dumps({"action": "already", "before": before}))
-finally:
+# ---- writes: 쓰기 차단 끄기(executor-0 안에서, 토큰은 그 Pod의 전달된 파일) --------------------------------------------
+WRITES_PY='import json, os, sys, urllib.request
+mode, topo = sys.argv[1], json.load(open(os.environ["BRAVO_TOPOLOGY_FILE"]))
+root = os.environ["BRAVO_SECRETS_DIR"]
+def call(url, tok, method="GET", body=None):
+    req = urllib.request.Request(url, method=method, data=None if body is None else json.dumps(body).encode(),
+                                 headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read() or b"{}")
+for e in topo.get("entries", []):
+    out = {"name": e["name"], "url": e["url"]}
     try:
-        call(f"{addr}/v1/auth/token/revoke-self", "POST", {}, headers={"X-Vault-Token": vtok}, tls=ctx)
-    except Exception:  # noqa: BLE001 - token TTL ends it anyway
-        pass
-PY
+        tok = open(os.path.join(root, e["secret"].replace("/", "__"), "token")).read().strip()
+        before = call(e["url"] + "/admin/writes", tok)
+        out["before"] = before
+        if before.get("blocked") is True and mode == "apply":
+            call(e["url"] + "/admin/writes", tok, "PUT", {"blocked": False})
+            out["after"] = call(e["url"] + "/admin/writes", tok)
+        tok = ""
+    except Exception as exc:
+        out["error"] = type(exc).__name__ + ": " + str(exc)[:160]
+    print(json.dumps(out))'
 
 step_writes() {
-  local env ctx f name side url secret code out
-  if ((${#TOPOLOGY_FILES[@]} == 0)); then
-    for env in "${ENVS[@]}"; do
-      ctx="$(env_ctx "$env")"
-      if ! ctx_ok "$ctx"; then report writes "$env" NOT_CONNECTED "$REASON"; continue; fi
-      if k "$ctx" -n chat get svc/chat-admin -o name >/dev/null 2>&1; then
-        report writes "$env" NOT_CONNECTED "svc/chat-admin 있음. 토폴로지 entries(관리 주소 · 비밀 경로)가 없음"
-      else
-        report writes "$env" NOT_CONNECTED "chat/svc chat-admin 없음(앱 배포 전)"
-      fi
-    done
-    return
-  fi
-  for f in "${TOPOLOGY_FILES[@]}"; do
-    if [[ ! -r $f ]]; then report writes "$(basename "$f")" NOT_CONNECTED "파일 없음: $f"; continue; fi
-    while IFS=$'\t' read -r name side url secret; do
-      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url/admin/writes" || true)"
-      if [[ -z $code || $code == 000 ]]; then
-        report writes "entry:$name" NOT_CONNECTED "$url 닿지 않음(임시 링크 port-forward가 없음)"; continue
-      fi
-      if ((DRY)); then
-        report writes "entry:$name" PLAN "GET $url/admin/writes(토큰 OpenBao $secret), blocked면 PUT {\"blocked\": false} 뒤 다시 읽음"
-        continue
-      fi
-      if ! bao_ok; then report writes "entry:$name" NOT_CONNECTED "플랫폼 금고에 닿지 못함($BAO_SH status 실패)"; continue; fi
-      if out="$("$BAO_SH" with-executor -- python3 -I "$TMP/write_block.py" "$secret" "$url" 2>"$TMP/err")"; then
-        case "$(jq -r '.action' <<<"$out")" in
-          already) report writes "entry:$name" ALREADY "blocked=false since=$(jq -r '.before.since // "-"' <<<"$out")" ;;
-          done)
-            if [[ $(jq -r '.read_back.blocked' <<<"$out") == false ]]; then
-              report writes "entry:$name" DONE "blocked true에서 false. 다시 읽음 false"
-            else
-              report writes "entry:$name" FAIL "PUT 뒤 다시 읽어도 blocked"
-            fi ;;
-          *) report writes "entry:$name" FAIL "알 수 없는 응답" ;;
-        esac
-      else
-        report writes "entry:$name" FAIL "관리 API 또는 금고 실패: $(tail -n 1 "$TMP/err" | head -c 200)"
-      fi
-    done < <(jq -r '.entries[]? | [.name, .side, .url, .secret] | @tsv' "$f")
-  done
+  local out line name
+  if [[ $GUARD != OK ]]; then report writes all "${GUARD%% *}" "${GUARD#* }"; return; fi
+  out="$(exi python - "$( ((DRY)) && echo read || echo apply)" <<<"$WRITES_PY" 2>"$TMP/err")" \
+    || { report writes all FAIL "executor-0에서 실행 실패: $(head -c 200 "$TMP/err")"; return; }
+  while read -r line; do
+    [[ -n $line ]] || continue
+    name="entry:$(jq -r .name <<<"$line")"
+    if jq -e .error >/dev/null <<<"$line"; then report writes "$name" FAIL "$(jq -r '"\(.url): \(.error)"' <<<"$line")"
+    elif jq -e '.before.blocked == false' >/dev/null <<<"$line"; then
+      report writes "$name" ALREADY "blocked=false since=$(jq -r '.before.since // "-"' <<<"$line")"
+    elif ((DRY)); then report writes "$name" PLAN "blocked=true. PUT {\"blocked\": false} 뒤 다시 읽음"
+    elif jq -e '.after.blocked == false' >/dev/null <<<"$line"; then report writes "$name" DONE "blocked true에서 false. 다시 읽음 false"
+    else report writes "$name" FAIL "PUT 뒤 다시 읽어도 blocked"; fi
+  done <<<"$out"
 }
 
-# ---- 실행 --------------------------------------------------------------------------------------------
-printf '[reset-demo] 시작 %s, 모드 %s, 단계 %s\n' "$RUN_TAG" "$( ((DRY)) && echo dry-run || echo 실행)" "${ONLY:-전체}"
-# 단계 함수는 `want && step` 꼴로 부름. 이 꼴에서는 errexit가 함수 안에 걸리지 않아, 한 대상이 실패해도
-# 다음 대상과 단계로 넘어감. 실패는 함수 안에서 명시적으로 FAIL로 셈.
+# ---- 실행 --------------------------------------------------------------------------------------------------------
+printf '[reset-demo] 시작 %s, 모드 %s, 계획 %s, 단계 %s, 플랫폼 %s\n' "$(kst_now)" "$( ((DRY)) && echo dry-run || echo 실행)" \
+  "${PLAN:-없음}" "${ONLY:-전체}" "$BRAVO_PLATFORM_CONTEXT"
+GUARD="OK"
+if want front || want data || want writes; then guard; fi
+# `want && step` 꼴: errexit가 함수 안에 걸리지 않아 한 대상이 실패해도 다음으로 넘어감. 실패는 함수 안에서 FAIL로 셈.
 want rehearsal && step_rehearsal
 want approvals && step_approvals
 want front && step_front
 want data && step_data
 want writes && step_writes
 
-printf '[reset-demo] 요약: DONE %d, ALREADY %d, PLAN %d, NOT_CONNECTED %d, FAIL %d\n' \
-  "$N_DONE" "$N_ALREADY" "$N_PLAN" "$N_NC" "$N_FAIL"
+printf '[reset-demo] 요약: DONE %d, ALREADY %d, PLAN %d, NOT_CONNECTED %d, FAIL %d, INFO/OTHER %d. 걸린 시간 %ds\n' \
+  "$N_DONE" "$N_ALREADY" "$N_PLAN" "$N_NC" "$N_FAIL" "$N_INFO" "$((SECONDS - T0))"
 if ((N_FAIL)); then exit 1; fi
 if ((N_NC)); then exit 3; fi
 exit 0

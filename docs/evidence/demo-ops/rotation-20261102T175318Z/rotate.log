@@ -1,0 +1,42 @@
+[rotate] 02:53:27   keys.sh: custody admin_token: renewed, expires 2026-11-09T17:53:26Z
+[rotate] 02:53:27   keys.sh: custody edge_issuer_token: renewed, expires 2026-11-09T17:53:27Z
+[rotate] 02:53:27   keys.sh: custody executor_issuer_token: renewed, expires 2026-11-09T17:53:27Z
+[rotate] 02:53:27   keys.sh: custody signer_issuer_token: renewed, expires 2026-11-09T17:53:27Z
+[rotate] 02:53:27   keys.sh: custody rgw_kms_issuer[target-onprem]: renewed, expires 2026-11-09T17:53:27Z
+[rotate] 02:53:27 OK   custody: 주기 토큰 모두 renew-self
+[rotate] 02:53:27 요약: OK 1, FAIL 0
+[rotate] 02:53:32   keys.sh: stored secret/envs/target-onprem/k8s-gate field token from stdin (value not shown)
+[rotate] 02:53:33   gate-credentials: Secret bravo-control/gate-onprem-kubeconfig from secret/envs/target-onprem/k8s-gate (168h, values not shown)
+[rotate] 02:53:36 OK   k8s k8s-gate: 새 토큰 = system:serviceaccount:kube-system:bravo-gate, 게이트(온프렘 읽기): 만료 11-10 02:53 KST (168.0h 남음), 전달본 bravo-control/gate-onprem-kubeconfig 같음
+[rotate] 02:53:36 요약: OK 1, FAIL 0
+[rotate] 02:53:41   keys.sh: stored secret/envs/target-onprem/collector-k8s field token from stdin (value not shown)
+[rotate] 02:53:42   keys.sh: stored secret/envs/target-onprem/k8s-executor field token from stdin (value not shown)
+[rotate] 02:53:44   keys.sh: stored secret/envs/target-onprem/k8s-rehearsal field token from stdin (value not shown)
+[rotate] 02:53:45   onprem-tokens: Secret bravo-control/onprem-kubeconfig from secret/envs/target-onprem/collector-k8s (values not shown)
+[rotate] 02:53:46   onprem-tokens: Secret bravo-control/rehearsal-kubeconfig from secret/envs/target-onprem/k8s-rehearsal (values not shown)
+[rotate] 02:53:53 OK   k8s collector-k8s: 새 토큰 = system:serviceaccount:kube-system:bravo-collector, 수집기(온프렘 API 읽기): 만료 11-10 02:53 KST (168.0h 남음), 전달본 bravo-control/onprem-kubeconfig 같음
+[rotate] 02:53:56 OK   k8s k8s-executor: 새 토큰 = system:serviceaccount:chat:bravo-executor, Executor(온프렘 exec): 만료 11-10 02:53 KST (168.0h 남음), 전달본 bravo-control/bx-envs-target-onprem-k8s-executor 같음
+[rotate] 02:53:59 OK   k8s k8s-rehearsal: 새 토큰 = system:serviceaccount:kube-system:bravo-rehearsal, 리허설 서비스(온프렘): 만료 11-10 02:53 KST (168.0h 남음), 전달본 bravo-control/rehearsal-kubeconfig 같음
+[rotate] 02:54:01 OK   executor-0 마운트 토큰으로 링크 dst-k8s 경유 SelfSubjectReview = system:serviceaccount:chat:bravo-executor
+[rotate] 02:54:01 요약: OK 4, FAIL 0
+[rotate] 02:54:23 CHECK executor-0 마운트 토큰: SelfSubjectReview/지문 = system:serviceaccount:chat:bravo-executor 79bf6b82, OpenBao 지문 = 79bf6b82, 같음
+[rotate] 02:54:29   keys.sh: service token cd56a1d1-36bf-4091-8fcb-dc2a4ed2a142 (platform/cf-link-dst-s3http): new client secret -> OpenBao (not shown); the old secret stops at 2026-11-02T18:09:28Z
+[rotate] 02:54:29   keys.sh: service token cd56a1d1-36bf-4091-8fcb-dc2a4ed2a142 (platform/cf-link-dst-s3http): expiry refreshed to 2026-11-09T17:54:29Z
+[rotate] 02:54:36 FAIL service-token platform/cf-link-dst-s3http → platform bravo-link/link-dst-s3http 링크 확인 실패: FAIL HTTP 000 1222ms(옛 비밀 유예 15분 안에 고칠 것)
+[rotate] 02:54:36 요약: OK 0, FAIL 1
+[rotate] 02:55:16 CHECK 위 FAIL 뒤 같은 링크를 다시 잼(새 비밀 그대로, 재시작 없음):
+[rotate] 02:55:16   link_probe platform bravo-link/link-dst-s3http: OK HTTP 200 684ms
+[rotate] 02:55:17   link_probe platform bravo-link/link-dst-s3http: OK HTTP 200 613ms
+[rotate] link-dst-s3http 로그(17:54Z = 02:54 KST):
+[rotate]   2026-11-02T17:54:33Z INF Start Websocket listener host=0.0.0.0:8080
+[rotate]   2026-11-02T17:54:34Z ERR failed to connect to origin error="websocket: bad handshake" originURL=https://t1-dst-s3http.mangowhois.ai
+[rotate]   2026-11-02T17:54:35Z ERR failed to connect to origin error="websocket: bad handshake" originURL=https://t1-dst-s3http.mangowhois.ai
+[rotate]   2026-11-02T17:54:35Z ERR failed to connect to origin error="websocket: bad handshake" originURL=https://t1-dst-s3http.mangowhois.ai
+[rotate]   2026-11-02T17:54:40Z ERR failed to connect to origin error="websocket: bad handshake" originURL=https://t1-dst-s3http.mangowhois.ai
+[rotate]   2026-11-02T17:54:40Z ERR failed to connect to origin error="websocket: bad handshake" originURL=https://t1-dst-s3http.mangowhois.ai
+[rotate] 02:55:24 고친 순서(전파 대기 30초 → 재시작 → 재시도 확인)로 같은 링크를 한 번 더 회전
+[rotate] 02:55:26   keys.sh: service token cd56a1d1-36bf-4091-8fcb-dc2a4ed2a142 (platform/cf-link-dst-s3http): new client secret -> OpenBao (not shown); the old secret stops at 2026-11-02T18:10:26Z
+[rotate] 02:55:27   keys.sh: service token cd56a1d1-36bf-4091-8fcb-dc2a4ed2a142 (platform/cf-link-dst-s3http): expiry refreshed to 2026-11-09T17:55:27Z
+[rotate] 02:55:29   새 비밀이 Cloudflare에 퍼지도록 30초 기다린 뒤 재시작(옛 비밀은 유예 중)
+[rotate] 02:56:03 OK   service-token platform/cf-link-dst-s3http → platform bravo-link/link-dst-s3http 링크 왕복 HTTP 200 877ms(재시작 뒤 1번째 시도, 1초)
+[rotate] 02:56:03 요약: OK 1, FAIL 0

@@ -136,3 +136,15 @@
 | G8 | 높음 | 스펙 §8.5 시험과 게이트 질문이 1:1이 아니고 시험 방법이 보이지 않음(리뷰 B12 · P16) | 2026-11-03 L3. 대응표 `docs/architecture/16-gate-test-map.md`, 행마다 `method` · `src_method` · `dst_method` · 도구 · `spec_test`. 새 질문 SEC-GIT-PLAINTEXT(gitleaks), NET-EXTERNAL-SCAN(바깥 TCP 스캔), OBJ-PLAIN-EGRESS. kube-bench 요약은 보고서 `cis_benchmark`(판정 안 함). 나머지는 DEVIATIONS D-29. 게이트 `c841a75e`, 미리 보기 `platform-gate-20261102T175426Z`. push 필요 |
 | G9 | 높음 | 데모 목적지 `bravo-onprem`에서 kube-bench를 돌린 적 없음(리뷰 P17) | 2026-11-03 02:31–02:34 L3. 러너가 SA 토큰을 붙이게 고침(5.1.x 도구 오류 제거). FAIL 4.3.1 해당 없음, 5.1.3 예외, 5.1.5 고침(공통 랜딩 존 `sa_automount` + Kyverno MutatingPolicy), 5.1.6 37 → 26 + 예외. `docs/evidence/kube-bench/onprem-20261103/` |
 | G10 | 중간 | GKE 앱만 다른 빌드(`df08e969…`) | 2026-11-03 02:52 L3. 출발지 digest `b5c0e764…`를 skopeo로 Artifact Registry에 복사, GKE 롤아웃, 게이트 VAP 고정 갱신. `up.sh`는 이제 빌드 대신 digest 복사(`images.sh`). `docs/evidence/gke-same-digest-20261103/` |
+
+운영 준비 갈래(2026-11-03 03:0x KST, 리뷰 24 L4). 증거 `docs/evidence/demo-ops/`, 점검표 `docs/demo/ONSITE-CHECKLIST.md`.
+
+| # | 리뷰 | 문제 | 상태 |
+|---|---|---|---|
+| O1 | B16 | 7일 안에 끝나는 자격 증명, 회전 연습 없음, TTL · 갱신 경보 없음 | 고침(연습까지). `deploy/scripts/rotate-credentials.sh`(plan · run · one), `keys.sh rotate-service-token` · `refresh-service-token` · `custody-renew`. 03:0x 측정: 11/9 06:00 KST 전에 끝나는 것 없음, 가장 이른 것 링크 토큰 8개 11/9 20:50. 경로마다 실제 1회: custody 5개, TokenRequest 4개(소비자 확인 포함), 서비스 토큰 1개(`plat-dst-s3http`, 2회). Prometheus에 TTL 지표가 없어 경보는 preflight `cred` 그룹. 남음: 11/6 전체 회전(점검표 3절), RGW 토큰 회전(무대 밖), Cloudflare API 토큰 11/9 23:59(사람) |
+| O2 | B17 | RGW SSE-KMS가 OpenBao 링크 · 토큰에 기댐 | 사전 점검에 넣음: 링크 `plat-bao-link` 실제 왕복, RGW 토큰 갱신(CronJob 마지막 성공 · lease), 최대 수명, 암호화 객체 실제 GET(03:01 PASS 382 ms). 키 복제 없음 |
+| O3 | B18 | Mac 한 대 · 플랫폼 노드 하나 · Cloudflare에 장애가 몰림 | 점검표와 사전 점검 `host` 그룹(Lima VM, 절전, 전원, 디스크 · 메모리, TCP 포트). 노트북 loadgen이 포트를 채워 kubectl이 실패한 것을 측정(02:44). 남음: 플랫폼 노드 · Lima 재기동 시간 측정 없음 |
+| O4 | B19 | reset의 옛 컨텍스트, 900초 대기, dry-run 기대값, NS 삭제 범위 | 고침. 플랫폼 `bravo-platform-rke2`, executor-0(D-16 링크)만 씀, `--plan` 계획 범위만 삭제, 승인은 세기만 하고 기다리지 않음, dry-run이 실제와 같은 읽기를 하고 바꿀 것만 PLAN, 컷오버 뒤면 멈춤. 실측: 깨끗한 상태 실제 실행 9초, dry-run 22–29초, 범위 시험 통과. 남음: 데모 뒤 상태에서 잰 reset 시간 |
+| O5 | B20 · P23 | 증거가 OutOfSync 때 찍힘, 동결 절차 없음 | 고침. `deploy/scripts/demo-freeze.sh`(태그 + 이미지 digest + ConfigMap + Argo revision 기록과 비교), `deploy/scripts/argo-state.sh`(증거마다 Argo 상태), `run-platform-gate.sh`가 `argo-state.txt`를 남김. 남음: `deploy/cloud/*` 실행 스크립트에 같은 한 줄(데이터 · 컷오버 갈래 파일), 진짜 동결 태그(데모 전날) |
+| O6 | P9 | 운영자 역할은 첫 로그인 뒤에만, OTP, 세션 24시간 | 사전 점검 `console` 그룹: 플랫폼 DB 신원 · 역할(읽기), 쿠키가 있으면 `/v1/me`. 03:01 측정 naver(운영자) 신원 없음 FAIL. 남음: 사람이 첫 로그인 |
+| O7 | P6 | 링크 위 복제 끊김 준비 판정 | 사전 점검 `repl` 그룹: `latest_end_time` 경과(PASS 45초, 2배까지 WARN), 역방향 구독 상태, 슬롯 보존 WAL. 측정: 역방향 슬롯 보존 WAL이 부하 중 약 3.6 MB/분으로 늘어 약 7시간이면 2GB 한도. 컷오버 준비 판정(Executor) 안의 경과 기준은 데이터 · 컷오버 갈래 몫 |

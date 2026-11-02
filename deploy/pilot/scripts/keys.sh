@@ -11,6 +11,10 @@
 #   keys.sh issue-tunnel-token ENV TUNNEL_ID [NAME]  tunnel token -> secret/envs/ENV/NAME (default cf-tunnel)
 #   keys.sh issue-service-token ENV NAME [SECRET] [DUR]  Access service token -> secret/envs/ENV/SECRET
 #                                   (default cf-access-service-token, 168h); prints only the token ID
+#   keys.sh rotate-service-token ENV SECRET [GRACE_MIN]  new client secret (same token ID, old one valid GRACE_MIN,
+#                                   default 15) + expiry refresh -> secret/envs/ENV/SECRET; values not shown
+#   keys.sh refresh-service-token ENV SECRET   expiry only (now + duration), secret unchanged
+#   keys.sh custody-renew                      renew-self the periodic custody tokens (admin, issuers; 168h)
 #   keys.sh generate-root | revoke-root        break-glass root token (custody only) and its revocation
 #   keys.sh env-generate ENV NAME FIELD [BYTES] random value -> secret/envs/ENV/NAME (only if absent)
 #   keys.sh env-pipe ENV NAME FIELD -- CMD      CMD receives secret/envs/ENV/NAME FIELD on stdin only
@@ -492,6 +496,86 @@ cmd_issue_service_token() {
   log "service token $tname id $tid (expires $(jq -r .result.expires_at <<<"$resp")) -> secret/envs/$env/$sname (client_id, client_secret not shown)"
   resp=""
   edge_logout
+}
+
+# keys.sh rotate-service-token ENV SECRET_NAME [GRACE_MINUTES]   (B16, deploy/scripts/rotate-credentials.sh)
+# New client secret for the Access service token whose token_id is in secret/envs/ENV/SECRET_NAME (Cloudflare
+# .../service_tokens/<id>/rotate). The token ID stays, so the Service Auth policies and Terraform do not change. The old
+# secret keeps working for GRACE_MINUTES (default 15, previous_client_secret_expires_at) while the consumer restarts.
+# Then .../refresh moves the expiry to now + the token's duration. OpenBao gets client_id, client_secret, expires_at,
+# rotated_at, previous_secret_valid_until (PATCH, other fields kept). Prints only the token ID and times.
+# keys.sh refresh-service-token ENV SECRET_NAME: only the expiry; the secret does not change, consumers need nothing.
+service_token_id() { # ENV SECRET_NAME ADMIN -> token_id
+  [[ $1 =~ ^[a-z0-9][a-z0-9-]{0,62}$ && $2 =~ ^cf-[a-z0-9-]{1,60}$ ]] \
+    || die "usage: keys.sh rotate-service-token|refresh-service-token <env> <cf-secret-name> (a-z 0-9 -)"
+  local tid
+  tid="$(api GET "secret/data/envs/$1/$2" "$3" | jq -r '.data.data.token_id // ""')" || die "secret/envs/$1/$2 not found"
+  [[ $tid =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || die "secret/envs/$1/$2 has no token_id"
+  printf '%s' "$tid"
+}
+
+service_token_refresh() { # ENV SECRET_NAME TOKEN_ID ADMIN (CF_* loaded)
+  local resp exp
+  resp="$(printf '{}' | cf_call POST "/accounts/$CF_ACCOUNT/access/service_tokens/$3/refresh")" || die "Cloudflare API unreachable (refresh)"
+  if ! printf '%s' "$resp" | jq -e '.success == true and (.result.expires_at // "" | length > 0)' >/dev/null 2>&1; then
+    printf 'keys.sh: Cloudflare: %s\n' "$(printf '%s' "$resp" | cf_errors)" >&2; die "refresh refused for token $3"
+  fi
+  exp="$(printf '%s' "$resp" | jq -r .result.expires_at)"
+  jq -n --arg e "$exp" '{data: {expires_at: $e}}' | api -p PATCH "secret/data/envs/$1/$2" "$4" >/dev/null \
+    || die "Cloudflare expiry is now $exp but OpenBao secret/envs/$1/$2 expires_at was not updated"
+  log "service token $3 ($1/$2): expiry refreshed to $exp"
+}
+
+cmd_refresh_service_token() {
+  local env=${1-} sname=${2-} admin tid
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  tid="$(service_token_id "$env" "$sname" "$admin")"
+  edge_login; cf_load; edge_logout
+  service_token_refresh "$env" "$sname" "$tid" "$admin"
+}
+
+cmd_rotate_service_token() {
+  local env=${1-} sname=${2-} grace=${3:-15} admin tid until resp cid_old
+  [[ $grace =~ ^[0-9]{1,3}$ ]] && ((grace <= 120)) || die "grace minutes must be 0-120"
+  need_custody; need_unsealed
+  admin="$(custody_get .admin_token)"
+  tid="$(service_token_id "$env" "$sname" "$admin")"
+  cid_old="$(api GET "secret/data/envs/$env/$sname" "$admin" | jq -r '.data.data.client_id // ""')"
+  edge_login; cf_load; edge_logout
+  until="$(jq -rn --argjson m "$grace" 'now + $m * 60 | floor | todate')"
+  resp="$(jq -n --arg t "$until" '{previous_client_secret_expires_at: $t}' \
+    | cf_call POST "/accounts/$CF_ACCOUNT/access/service_tokens/$tid/rotate")" || die "Cloudflare API unreachable (nothing rotated)"
+  if ! printf '%s' "$resp" | jq -e '.success == true and (.result.client_secret // "" | length > 0)' >/dev/null 2>&1; then
+    printf 'keys.sh: Cloudflare: %s\n' "$(printf '%s' "$resp" | cf_errors)" >&2; resp=""; die "rotate refused; the old secret is unchanged"
+  fi
+  if ! printf '%s' "$resp" | jq --arg at "$(now)" --arg u "$until" '{data: ({client_secret: .result.client_secret,
+        rotated_at: $at, previous_secret_valid_until: $u} + (if (.result.client_id // "") != "" then {client_id: .result.client_id} else {} end))}' \
+      | api -p PATCH "secret/data/envs/$env/$sname" "$admin" >/dev/null; then
+    resp=""; die "OpenBao write FAILED after rotate: the new secret is lost, the old one works until $until. Run rotate-service-token again"
+  fi
+  [[ $(printf '%s' "$resp" | jq -r '.result.client_id // ""') == "${cid_old:-x}" ]] \
+    || log "note: Cloudflare returned a different client_id; OpenBao has the new one (consumers get both fields)"
+  resp=""; cid_old=""
+  log "service token $tid ($env/$sname): new client secret -> OpenBao (not shown); the old secret stops at $until"
+  service_token_refresh "$env" "$sname" "$tid" "$admin"
+}
+
+# keys.sh custody-renew: renew-self every periodic token in custody (platform-admin, edge / executor / signer / rgw-kms
+# issuers; period 168h, they expire after a week without use). Prints the new expiry only.
+cmd_custody_renew() {
+  need_custody; need_unsealed
+  local name tok r
+  while IFS=$'\t' read -r name tok; do
+    if r="$(api POST auth/token/renew-self "$tok" 2>/dev/null)"; then
+      log "custody $name: renewed, expires $(printf '%s' "$r" | jq -r '(now + .auth.lease_duration) | floor | todate')"
+    else
+      log "custody $name: renew-self FAILED (expired or revoked: re-issue with the matching keys.sh init command)"
+    fi
+  done < <(jq -r '(to_entries[] | select((.key | endswith("_token")) and .key != "root_token" and (.value // "") != "")
+      | [.key, .value]), ((.rgw_kms_issuer // {}) | to_entries[] | select(.value.token) | ["rgw_kms_issuer[\(.key)]", .value.token])
+      | @tsv' "$CUSTODY")
+  tok=""
 }
 
 # A new root token from the shares, written to custody only. OpenBao 2.7 disables the
@@ -1236,6 +1320,9 @@ case $cmd in
   issue-tunnel-token) cmd_issue_tunnel_token "$@" ;;
   env-delete) cmd_env_delete "$@" ;;
   issue-service-token) cmd_issue_service_token "$@" ;;
+  rotate-service-token) cmd_rotate_service_token "$@" ;;
+  refresh-service-token) cmd_refresh_service_token "$@" ;;
+  custody-renew) cmd_custody_renew ;;
   generate-root) cmd_generate_root ;;
   revoke-root) cmd_revoke_root ;;
   env-generate) cmd_env_generate "$@" ;;

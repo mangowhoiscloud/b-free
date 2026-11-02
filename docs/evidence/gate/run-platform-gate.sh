@@ -18,6 +18,8 @@ for _ in $(seq 1 40); do curl -sf "http://127.0.0.1:$port/healthz" >/dev/null &&
   kubectl --context "$CTX" -n bravo-control get deploy gate -o jsonpath='deployment image: {.spec.template.spec.containers[0].image}{"\n"}'
   [[ $TARGET == pod/* ]] && kubectl --context "$CTX" -n bravo-control get "$TARGET" -o jsonpath='pod image: {.spec.containers[0].image}{"\n"}'
   kubectl --context "$CTX" -n argocd get app control -o jsonpath='argocd control: {.status.sync.revision} {.status.sync.status}{"\n"}'
+  # B20: every app's sync/health/revision vs origin main at the time of this run (full block in argo-state.txt)
+  BRAVO_PLATFORM_CONTEXT="$CTX" "$HERE/../../../deploy/scripts/argo-state.sh" | tee "$OUT/argo-state.txt" | grep -E '^(판정|FAIL|WARN)' || true
   curl -s "http://127.0.0.1:$port/v1/environments"; echo
 } >"$OUT/run.txt"
 for t in target-onprem target-gcp; do

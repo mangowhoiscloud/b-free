@@ -1,0 +1,41 @@
+[rotate] 02:56:28 회전 전 만료(기준 2026-11-09T21:00:00+09:00)
+[rotate] 02:56:28   종류         대상                                 만료             run(2026-11-09T21:00:00+09:00 전이면 회전)
+[rotate] 02:56:28   cf-api-token   platform/cloudflare                    11-09 23:59 KST    그대로
+[rotate] 02:56:28   custody        admin_token                            11-10 02:53 KST    그대로
+[rotate] 02:56:28   custody        edge_issuer_token                      11-10 02:56 KST    그대로
+[rotate] 02:56:28   custody        executor_issuer_token                  11-10 02:53 KST    그대로
+[rotate] 02:56:28   custody        rgw_kms_issuer[target-onprem]          11-10 02:53 KST    그대로
+[rotate] 02:56:28   custody        signer_issuer_token                    11-10 02:53 KST    그대로
+[rotate] 02:56:28   k8s            collector-k8s                          11-10 02:53 KST    그대로
+[rotate] 02:56:28   k8s            k8s-executor                           11-10 02:53 KST    그대로
+[rotate] 02:56:28   k8s            k8s-gate                               11-10 02:53 KST    그대로
+[rotate] 02:56:28   k8s            k8s-rehearsal                          11-10 02:53 KST    그대로
+[rotate] 02:56:28   rgw-kms        target-onprem                          11-10 00:41 KST    그대로
+[rotate] 02:56:28   service-token  platform/cf-link-dst-admin             11-09 22:04 KST    그대로
+[rotate] 02:56:28   service-token  platform/cf-link-dst-db                11-09 20:50 KST    회전 대상
+[rotate] 02:56:28   service-token  platform/cf-link-dst-k8s               11-09 20:50 KST    회전 대상
+[rotate] 02:56:28   service-token  platform/cf-link-dst-pgb               11-09 20:50 KST    회전 대상
+[rotate] 02:56:28   service-token  platform/cf-link-dst-s3                11-09 22:50 KST    그대로
+[rotate] 02:56:28   service-token  platform/cf-link-dst-s3http            11-10 02:55 KST    그대로
+[rotate] 02:56:28   service-token  platform/cf-link-gke-db                11-10 01:05 KST    그대로
+[rotate] 02:56:28   service-token  platform/cf-link-gke-k8s               11-10 01:27 KST    그대로
+[rotate] 02:56:28   service-token  platform/cf-link-src-admin             11-09 22:04 KST    그대로
+[rotate] 02:56:28   service-token  platform/cf-link-src-db                11-09 20:50 KST    회전 대상
+[rotate] 02:56:28   service-token  platform/cf-link-src-k8s               11-09 20:50 KST    회전 대상
+[rotate] 02:56:28   service-token  platform/cf-link-src-pgb               11-09 20:50 KST    회전 대상
+[rotate] 02:56:28   service-token  source-aws/cf-link-dst-db              11-09 20:50 KST    회전 대상
+[rotate] 02:56:28   service-token  source-aws/cf-link-plat-otel           11-09 22:02 KST    그대로
+[rotate] 02:56:28   service-token  target-gcp/cf-link-plat-bao            11-09 21:55 KST    그대로
+[rotate] 02:56:28   service-token  target-gcp/cf-link-plat-otel           11-09 21:55 KST    그대로
+[rotate] 02:56:28   service-token  target-gcp/cf-link-src-db              11-09 21:55 KST    그대로
+[rotate] 02:56:29   service-token  target-onprem/cf-link-plat-bao         11-10 00:23 KST    그대로
+[rotate] 02:56:29   service-token  target-onprem/cf-link-plat-otel        11-09 22:02 KST    그대로
+[rotate] 02:56:29   service-token  target-onprem/cf-link-src-db           11-09 20:50 KST    회전 대상
+[rotate] 02:56:29 PLAN service-token platform/cf-link-dst-db: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인
+[rotate] 02:56:29 PLAN service-token platform/cf-link-dst-k8s: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인
+[rotate] 02:56:29 PLAN service-token platform/cf-link-dst-pgb: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인
+[rotate] 02:56:29 PLAN service-token platform/cf-link-src-db: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인
+[rotate] 02:56:29 PLAN service-token platform/cf-link-src-k8s: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인
+[rotate] 02:56:29 PLAN service-token platform/cf-link-src-pgb: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인
+[rotate] 02:56:29 PLAN service-token source-aws/cf-link-dst-db: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인
+[rotate] 02:56:29 PLAN service-token target-onprem/cf-link-src-db: rotate-service-token(유예 15분) → 소비자 Secret → restart → 링크 확인

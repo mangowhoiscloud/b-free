@@ -1,0 +1,116 @@
+PASS	kube	platform API	노드 Ready 1/1, v1.36.5+rke2r1
+WARN	kube	platform Pod	bravo-control/rehearsal-preview-s2full(Running) 
+PASS	kube	source API	노드 Ready 1/1, v1.36.5-eks-6e7947a
+PASS	kube	source Pod	데모 네임스페이스의 Pod 모두 Ready
+PASS	kube	onprem API	노드 Ready 2/2, v1.36.5+rke2r1
+PASS	kube	onprem Pod	데모 네임스페이스의 Pod 모두 Ready
+PASS	kube	gke API	노드 Ready 1/1, v1.36.4-gke.2377000
+PASS	kube	gke Pod	데모 네임스페이스의 Pod 모두 Ready
+PASS	argo	앱 argocd	Synced/Healthy rev -, 마지막 동기화 2026-11-02T13:29:40Z
+WARN	argo	앱 cilium	OutOfSync/Healthy rev -, OutOfSync 3개: Secret/cilium-ca Secret/hubble-relay-client-certs Secret/hubble-server-certs — Cilium Helm이 비교 때마다 새로 만드는 인증서 Secret, 마지막 동기화 2026-11-02T13:43:22Z
+PASS	argo	앱 cnpg-operator	Synced/Healthy rev -, 마지막 동기화 2026-11-02T13:29:26Z
+FAIL	argo	앱 control	OutOfSync/Healthy rev 305945af (main 75af013b와 다름), OutOfSync 6개: ConfigMap/cost-config-45f46tm8ct(prune 대상) ConfigMap/environments-d25cmt4h87(prune 대상) ConfigMap/environments-fm6k9fbm9g(prune 대상) ConfigMap/environments-hh5mgc22k2(prune 대상) — 고아 리소스만 남음: argocd app sync control --prune, 마지막 동기화 2026-11-02T17:08:18Z
+PASS	argo	앱 ebs-csi	Synced/Healthy rev -, 마지막 동기화 2026-11-02T13:29:23Z
+FAIL	argo	앱 edge	Synced/Healthy rev 305945af (main 75af013b와 다름), 마지막 동기화 2026-11-02T13:29:24Z
+PASS	argo	앱 gateway-api-crds	Synced/Healthy rev 75af013b, 마지막 동기화 2026-11-02T13:26:10Z
+FAIL	argo	앱 link-d16	Synced/Healthy rev 305945af (main 75af013b와 다름), 마지막 동기화 2026-11-02T16:53:44Z
+FAIL	argo	앱 observability	Synced/Healthy rev 305945af (main 75af013b와 다름), 마지막 동기화 2026-11-02T13:29:26Z
+FAIL	argo	앱 openbao	Synced/Healthy rev 305945af (main 75af013b와 다름), 마지막 동기화 2026-11-02T16:54:10Z
+FAIL	argo	앱 platform-root	Synced/Healthy rev 305945af (main 75af013b와 다름), 마지막 동기화 2026-11-02T13:48:35Z
+PASS	argo	앱 storage	Synced/Healthy rev 75af013b, 마지막 동기화 2026-11-02T13:26:09Z
+FAIL	argo	main revision	origin main 75af013b, 배포 305945afa87f347eb4ae734c8efc00e11e9cbd09 75af013b023f8ffdc4a6eb15d3d67e6a645a87f0: deploy/platform이 바뀐 커밋을 아직 배포하지 않음(Argo 동기화 대기 또는 실패), 로컬 HEAD 75af013b
+PASS	bao	봉인 상태	sealed=False version=2.7.2 storage=raft
+PASS	cred	custody admin_token	만료 11-10 02:53 KST (167.9h 남음), 주기 168h, renew-self로 연장
+PASS	cred	custody edge_issuer_token	만료 11-10 02:56 KST (168.0h 남음), 주기 168h, renew-self로 연장
+PASS	cred	custody executor_issuer_token	만료 11-10 02:53 KST (167.9h 남음), 주기 168h, renew-self로 연장
+PASS	cred	custody rgw_kms_issuer[target-onprem]	만료 11-10 02:53 KST (167.9h 남음), 주기 168h, renew-self로 연장
+PASS	cred	custody signer_issuer_token	만료 11-10 02:53 KST (167.9h 남음), 주기 168h, renew-self로 연장
+PASS	cred	RGW 토큰 최대 수명(168h)	재발급 필요 시각 11-10 00:41 KST (165.7h 남음), 발급 11-03 00:41 KST
+PASS	cred	RGW 토큰 갱신(15분 주기)	마지막 성공 11-03 02:52 KST (6분 전, 마지막 예약 11-03 02:52 KST), lease 3600s, TTL 끝 11-03 03:52 KST. 갱신이 1시간 멈추면 첨부 PUT/GET 500
+PASS	cred	온프렘 토큰 collector-k8s	수집기(온프렘 API 읽기): 만료 11-10 02:53 KST (167.9h 남음), 전달본 bravo-control/onprem-kubeconfig 같음
+PASS	cred	온프렘 토큰 k8s-executor	Executor(온프렘 exec): 만료 11-10 02:53 KST (167.9h 남음), 전달본 bravo-control/bx-envs-target-onprem-k8s-executor 같음
+PASS	cred	온프렘 토큰 k8s-rehearsal	리허설 서비스(온프렘): 만료 11-10 02:53 KST (167.9h 남음), 전달본 bravo-control/rehearsal-kubeconfig 같음
+PASS	cred	온프렘 토큰 k8s-gate	게이트(온프렘 읽기): 만료 11-10 02:53 KST (167.9h 남음), 전달본 bravo-control/gate-onprem-kubeconfig 같음
+PASS	cred	llm-claude	저장됨 v1, 갱신 11-02 21:04 KST, 만료는 값을 써야 알 수 있음(claude setup-token 발급분). 사용량 한도 상태는 알 수 없음
+PASS	cred	llm-openai	저장됨 v3, 갱신 11-02 21:31 KST, 접근 토큰 만료 11-12 21:31 KST(워커가 refresh_token으로 갱신), 마지막 refresh 11-02 21:31 KST
+PASS	cred	Cloudflare API 토큰	status=active 만료 11-09 23:59 KST
+PASS	cred	서비스 토큰 plat-dst-admin	만료 11-09 22:04 KST (163.1h 남음), 마지막 사용 11-03 02:55 KST, secret/envs/platform/cf-link-dst-admin
+PASS	cred	서비스 토큰 plat-dst-db	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/platform/cf-link-dst-db
+PASS	cred	서비스 토큰 plat-dst-k8s	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/platform/cf-link-dst-k8s
+PASS	cred	서비스 토큰 plat-dst-pgb	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/platform/cf-link-dst-pgb
+PASS	cred	서비스 토큰 plat-dst-s3	만료 11-09 22:50 KST (163.9h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/platform/cf-link-dst-s3
+PASS	cred	서비스 토큰 plat-dst-s3http	만료 11-10 02:55 KST (168.0h 남음), 마지막 사용 11-03 02:55 KST, secret/envs/platform/cf-link-dst-s3http
+PASS	cred	서비스 토큰 plat-gke-db	만료 11-10 01:05 KST (166.1h 남음), 마지막 사용 11-03 02:55 KST, secret/envs/platform/cf-link-gke-db
+PASS	cred	서비스 토큰 plat-gke-k8s	만료 11-10 01:27 KST (166.5h 남음), 마지막 사용 11-03 02:54 KST, secret/envs/platform/cf-link-gke-k8s
+PASS	cred	서비스 토큰 plat-src-admin	만료 11-09 22:04 KST (163.1h 남음), 마지막 사용 11-03 02:54 KST, secret/envs/platform/cf-link-src-admin
+PASS	cred	서비스 토큰 plat-src-db	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:55 KST, secret/envs/platform/cf-link-src-db
+PASS	cred	서비스 토큰 plat-src-k8s	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/platform/cf-link-src-k8s
+PASS	cred	서비스 토큰 plat-src-pgb	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/platform/cf-link-src-pgb
+PASS	cred	서비스 토큰 plat-src-access	만료 11-09 20:47 KST (161.8h 남음), 마지막 사용 -, secret/envs/source-aws/cf-access-service-token (어느 정책에도 없는 시험 토큰)
+PASS	cred	서비스 토큰 src-dst-db	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:56 KST, secret/envs/source-aws/cf-link-dst-db
+PASS	cred	서비스 토큰 src-plat-otel	만료 11-09 22:02 KST (163.1h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/source-aws/cf-link-plat-otel
+PASS	cred	서비스 토큰 dst-plat-bao	만료 11-10 00:23 KST (165.4h 남음), 마지막 사용 11-03 02:56 KST, secret/envs/target-onprem/cf-link-plat-bao
+PASS	cred	서비스 토큰 dst-plat-otel	만료 11-09 22:02 KST (163.1h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/target-onprem/cf-link-plat-otel
+PASS	cred	서비스 토큰 dst-src-db	만료 11-09 20:50 KST (161.9h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/target-onprem/cf-link-src-db
+PASS	cred	서비스 토큰 gke-plat-bao	만료 11-09 21:55 KST (163.0h 남음), 마지막 사용 11-03 02:55 KST, secret/envs/target-gcp/cf-link-plat-bao
+PASS	cred	서비스 토큰 gke-plat-otel	만료 11-09 21:55 KST (163.0h 남음), 마지막 사용 11-03 02:55 KST, secret/envs/target-gcp/cf-link-plat-otel
+PASS	cred	서비스 토큰 gke-src-db	만료 11-09 21:55 KST (163.0h 남음), 마지막 사용 11-03 02:57 KST, secret/envs/target-gcp/cf-link-src-db
+PASS	link	소비자 GKE ClusterSecretStore	Ready True Valid store validated
+PASS	link	gke bravo-observability/platform-otel	Ready 2/2, :4317 HTTP 415 303ms (토큰 secret/envs/target-gcp/cf-link-plat-otel)
+PASS	link	platform bravo-link/link-src-pgb	Ready 2/2, :6432 accepting connections 504ms (토큰 secret/envs/platform/cf-link-src-pgb)
+PASS	link	platform bravo-link/link-dst-s3http	Ready 2/2, :8080 HTTP 200 638ms (토큰 secret/envs/platform/cf-link-dst-s3http)
+PASS	link	onprem bravo-observability/platform-otel	Ready 2/2, :4317 HTTP 415 1474ms (토큰 secret/envs/target-onprem/cf-link-plat-otel)
+PASS	link	gke external-secrets/openbao	Ready 2/2, :8200 HTTP 200 410ms (토큰 secret/envs/target-gcp/cf-link-plat-bao)
+PASS	link	platform bravo-link/link-src-admin	Ready 2/2, :8081 HTTP 401 749ms (토큰 secret/envs/platform/cf-link-src-admin)
+PASS	link	source bravo-observability/platform-otel	Ready 2/2, :4317 HTTP 415 640ms (토큰 secret/envs/source-aws/cf-link-plat-otel)
+PASS	link	platform bravo-link/link-dst-admin	Ready 2/2, :8081 HTTP 401 826ms (토큰 secret/envs/platform/cf-link-dst-admin)
+PASS	link	gke chat/src-db-link	Ready 2/2, :5432 accepting connections 609ms (토큰 secret/envs/target-gcp/cf-link-src-db)
+PASS	link	platform bravo-link/link-gke-db	Ready 2/2, :5432 accepting connections 956ms (토큰 secret/envs/platform/cf-link-gke-db)
+PASS	link	platform bravo-link/link-dst-k8s	Ready 2/2, :6443 HTTP 401 970ms (토큰 secret/envs/platform/cf-link-dst-k8s)
+PASS	link	platform bravo-link/link-src-k8s	Ready 2/2, :6443 HTTP 200 864ms (토큰 secret/envs/platform/cf-link-src-k8s)
+PASS	link	onprem rook-ceph/plat-bao-link	Ready 2/2, :8200 HTTP 200 1914ms (토큰 secret/envs/target-onprem/cf-link-plat-bao)
+PASS	link	platform bravo-link/link-dst-s3	Ready 2/2, :8443 HTTP 200 1037ms (토큰 secret/envs/platform/cf-link-dst-s3)
+PASS	link	platform bravo-link/link-dst-pgb	Ready 2/2, :6432 accepting connections 1082ms (토큰 secret/envs/platform/cf-link-dst-pgb)
+PASS	link	platform bravo-link/link-dst-db	Ready 2/2, :5432 accepting connections 1249ms (토큰 secret/envs/platform/cf-link-dst-db)
+PASS	link	platform bravo-link/link-src-db	Ready 2/2, :5432 accepting connections 1479ms (토큰 secret/envs/platform/cf-link-src-db)
+PASS	link	platform bravo-link/link-gke-k8s	Ready 2/2, :6443 HTTP 200 1433ms (토큰 secret/envs/platform/cf-link-gke-k8s)
+PASS	link	onprem chat/src-db-link	Ready 1/1, :5432 accepting connections 2581ms (토큰 secret/envs/target-onprem/cf-link-src-db)
+PASS	link	source chat/dst-db-link	Ready 1/1, :5432 accepting connections 1832ms (토큰 secret/envs/source-aws/cf-link-dst-db)
+PASS	link	소비자 수집기 → source-aws	status=ok v1.36.5-eks-577a51e 
+PASS	link	소비자 수집기 → target-gcp	status=ok v1.36.4-gke.2377000 
+PASS	link	소비자 수집기 → target-onprem	status=ok v1.36.5+rke2r1 
+PASS	link	소비자 Executor /v1/readiness	sub_state=streaming direction=forward lag_bytes=14624 rows src 25393 dst 25421, 스키마 해시 같음
+PASS	repl	정방향 구독 bravo_fwd_sub	streaming pid 1737, latest_end_time 0s 전(PASS 상한 45s), 마지막 메시지 0s 전
+PASS	repl	역방향 구독 bravo_rev_sub(출발지)	있음, 꺼짐(컷오버 전 상태)
+PASS	repl	슬롯 bravo_rev_sub(onprem)	active=f, 보존 WAL 515 MB, wal_status=reserved, 남은 여유 1548MB(max_slot_wal_keep_size 2GB)
+PASS	repl	슬롯 bravo_fwd_sub(source)	active=t, 보존 WAL 725 kB, wal_status=reserved, 남은 여유 4107MB(max_slot_wal_keep_size 4GB)
+PASS	rgw	버킷 기본 암호화	{'SSEAlgorithm': 'aws:kms', 'KMSMasterKeyID': 'rgw-target-onprem'}
+PASS	rgw	암호화 객체 읽기	GET _gate/canary HTTP 200, 39/39 bytes, aws:kms, 381 ms (링크 t1-plat-bao → OpenBao transit)
+PASS	rgw	평문 객체	0개 / 확인한 4개
+PASS	s1	심은 퇴행(열린 버킷, OBJ-01)	상태 planted(기대 planted): Sid 있음, Block Public Access 꺼짐, 서명 없는 GET _gate/canary HTTP 200
+PASS	edge	터널 bravo-b-free-chat-dst	status=healthy, 연결 8
+PASS	edge	터널 bravo-b-free-chat-gke	status=healthy, 연결 8
+PASS	edge	터널 bravo-b-free-chat-src	status=healthy, 연결 8
+PASS	edge	터널 bravo-platform	status=healthy, 연결 8
+PASS	edge	터널 t1-dst-mgmt	status=healthy, 연결 8
+PASS	edge	터널 t1-gke-mgmt	status=healthy, 연결 8
+PASS	edge	터널 t1-src-mgmt	status=healthy, 연결 8
+PASS	edge	LB b-free-chat.mangowhois.ai	enabled=True steering=random fallback=bravo-b-free-chat-src
+WARN	edge	LB pool bravo-b-free-chat-dst	정상 POP 296/296, enabled=True, 가중치 0.9 (시작 기대값 0, PREFLIGHT_EXPECT_ACTIVE=src)
+WARN	edge	LB pool bravo-b-free-chat-src	정상 POP 296/296, enabled=True, 가중치 0.1 (시작 기대값 1, PREFLIGHT_EXPECT_ACTIVE=src)
+PASS	http	b-free.mangowhois.ai	HTTP 302 → https://falling-rain-1f1c.cloudflareaccess.com/cdn-cgi/access/login/b-free.mangowhois.ai(로그인 없이는 Access 로그인으로 가야 함)
+FAIL	http	b-free-chat.mangowhois.ai	GET /api/config HTTP 200 1.10s env.id=onprem(기대 aws)
+PASS	http	b-free-chat-src.mangowhois.ai	GET /api/config HTTP 200 0.75s env.id=aws(기대 aws)
+PASS	http	b-free-chat-dst.mangowhois.ai	GET /api/config HTTP 200 1.09s env.id=onprem(기대 onprem)
+PASS	http	b-free-chat-gke.mangowhois.ai	GET /api/config HTTP 200 1.04s env.id=gcp(기대 gcp)
+FAIL	console	operator 신원(@naver.com)	플랫폼 DB에 신원 없음. 그 계정으로 https://b-free.mangowhois.ai 첫 로그인(One-time PIN)하면 members.json 역할이 붙음
+PASS	console	approver 신원(@gmail.com)	플랫폼 DB 역할 approver,viewer (첫 로그인 11-02 21:49)
+WARN	console	operator 세션 /v1/me	PREFLIGHT_OPERATOR_COOKIE 없음: 그 브라우저에서 로그인 상태와 역할을 직접 확인(세션 24시간, T-60분에 새로 로그인)
+WARN	console	approver 세션 /v1/me	PREFLIGHT_APPROVER_COOKIE 없음: 그 브라우저에서 로그인 상태와 역할을 직접 확인(세션 24시간, T-60분에 새로 로그인)
+PASS	host	Lima bravo-onprem-server	Running, 디스크 / 사용 28%, 메모리 available 4727MB
+PASS	host	Lima bravo-onprem-agent	Running, 디스크 / 사용 32%, 메모리 available 10636MB
+WARN	host	Mac 절전	pmset sleep 1분, caffeinate 없음: caffeinate -dimsu & 또는 sudo pmset -a sleep 0
+PASS	host	Mac 전원	'AC Power'
+PASS	host	Mac 디스크 · 메모리	디스크 / 사용 4%, 메모리 여유 48%
+PASS	host	Mac TCP 포트	TIME_WAIT 248, ESTABLISHED 380 / 임시 포트 16384개. 가득 차면 kubectl · 브라우저 연결이 실패(노트북 loadgen을 무대 Mac에서 돌리지 말 것)
+WARN	freeze	동결 태그	demo-freeze-* 태그 없음: deploy/scripts/demo-freeze.sh create(데모 전날)

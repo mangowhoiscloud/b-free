@@ -1,0 +1,13 @@
+[reset-demo] 시작 2026-11-03 02:49:28 KST, 모드 실행, 계획 c3328110-7362-4a5c-9f9b-2b8a75ad784d, 단계 전체, 플랫폼 bravo-platform-rke2
+[reset-demo] rehearsal source                     ALREADY       계획 c3328110의 리허설 · 검증 네임스페이스 0개
+[reset-demo] rehearsal onprem                     ALREADY       계획 c3328110의 리허설 · 검증 네임스페이스 0개
+[reset-demo] rehearsal gke                        ALREADY       계획 c3328110의 리허설 · 검증 네임스페이스 0개
+[reset-demo] approvals plan:c3328110              ALREADY       열린 승인 · 승인 요청 0건
+[reset-demo] front     b-free-chat.mangowhois.ai  ALREADY       mode=lb active_env=src, Executor 탐침 HTTP 200 env.id=aws
+[reset-demo] data      pool:src                   ALREADY       활성 대상 = target-src.ini
+[reset-demo] data      pool:dst                   ALREADY       활성 대상 = target-src.ini
+[reset-demo] data      repl                       ALREADY       정방향 흐름, 역방향 준비(꺼짐), 쓰기는 출발지만, 첨부 저장소 얼지 않음
+[reset-demo] writes    entry:aws                  ALREADY       blocked=false since=2026-11-02T12:04:38.276489+00:00
+[reset-demo] writes    entry:onprem               ALREADY       blocked=false since=2026-11-02T13:00:50.264516+00:00
+[reset-demo] 요약: DONE 0, ALREADY 10, PLAN 0, NOT_CONNECTED 0, FAIL 0, INFO/OTHER 0. 걸린 시간 9s
+deploy/scripts/reset-demo.sh --plan "$P"  1.39s user 0.62s system 21% cpu 9.135 total
