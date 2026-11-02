@@ -64,7 +64,9 @@
       "secret": "envs/source-aws/object-store"
     },
     "dst": {
-      "secret": "envs/target-onprem/object-store"
+      "secret": "envs/target-onprem/object-store",
+      "endpoint_url": "https://127.0.0.1:18443",
+      "addressing_style": "path"
     }
   },
   "replication": {

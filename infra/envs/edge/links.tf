@@ -25,7 +25,7 @@ locals {
   link_tenant = "t1"
 
   # 02-network.md 4.2 표. 원본 이름은 CLOUD-E2E-CONTRACT.md 3절(chat-db-rw, chat-pgbouncer)을 따름.
-  # dst-s3(첨부 복사) 링크는 목적지 저장소 Service 이름이 확인되지 않아(D-22) 아직 넣지 않음.
+  # dst-s3(첨부 복사, T8): 온프렘 RGW Service rook-ceph-rgw-bravo(443, TLS). 2026-11-02 22:5x 추가.
   link_exposing_envs = {
     src = {
       environment_id = "source-aws"
@@ -44,6 +44,8 @@ locals {
         db    = { service = "tcp://chat-db-rw.chat.svc:5432", clients = ["plat", "src"] }
         pgb   = { service = "tcp://chat-pgbouncer.chat.svc:6432", clients = ["plat"] }
         admin = { service = "tcp://chat-admin.chat.svc:8081", clients = ["plat"] }
+        # Attachment copy S3 -> RGW (T8, D-22): the Executor's object-store endpoint on the destination.
+        s3 = { service = "tcp://rook-ceph-rgw-bravo.rook-ceph.svc:443", clients = ["plat"] }
       }
     }
   }

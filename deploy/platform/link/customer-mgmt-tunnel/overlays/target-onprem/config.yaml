@@ -9,4 +9,6 @@ ingress:
     service: tcp://chat-pgbouncer.chat.svc:6432
   - hostname: t1-dst-admin.mangowhois.ai
     service: tcp://chat-admin.chat.svc:8081
+  - hostname: t1-dst-s3.mangowhois.ai
+    service: tcp://rook-ceph-rgw-bravo.rook-ceph.svc:443
   - service: http_status:404

@@ -71,3 +71,9 @@ variable "node_instance_type" {
   type        = string
   default     = "t4g.xlarge"
 }
+
+variable "source_attachments_bucket" {
+  description = "출발지 첨부 S3 버킷 이름(Executor 첨부 복사 T8, 읽기만). null이면 권한을 만들지 않음"
+  type        = string
+  default     = null
+}

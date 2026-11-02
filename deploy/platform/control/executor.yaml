@@ -8,6 +8,12 @@
 #   source EKS token from this pod's web identity role executor-ctl (python -m bravo_executor.ekstoken),
 #   on-prem token file from OpenBao secret/envs/target-onprem/k8s-executor. CA files: ConfigMap executor-kube-ca
 #   (public cluster CAs, deploy/platform/scripts/cluster-cas.sh).
+# Attachment copy S3 -> RGW (T8): destination RGW through the D-16 link dst-s3 (t1-dst-s3, Access service token).
+#   The sidecar s3-local listens on 127.0.0.1:18443 and splices to dst-s3.bravo-link.svc:443, so the endpoint is
+#   https://127.0.0.1:18443 and TLS is end to end with the RGW certificate (SANs include 127.0.0.1). The trust
+#   bundle is the botocore default CAs + the RGW CA (OpenBao envs/target-onprem/object-store ca_pem), so AWS
+#   (STS, source S3) keeps verifying. Source S3: the web identity role executor-ctl, read on the source attachments
+#   bucket only. HTTPS only on both sides.
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: executor, namespace: bravo-control}
@@ -32,6 +38,55 @@ spec:
       automountServiceAccountToken: false
       nodeSelector: {bravo.io/pool: core}
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        - name: ca-bundle
+          image: bravo/executor
+          command: ["python", "-c"]
+          args:
+            - |
+              import certifi, os
+              out = "/var/run/bravo-ca/bundle.pem"
+              ca = "/etc/bravo/secrets/envs__target-onprem__object-store/ca_pem"
+              data = open(certifi.where()).read()
+              if os.path.exists(ca) and os.path.getsize(ca) > 0:
+                  data += "\n" + open(ca).read().strip() + "\n"
+                  print("ca-bundle: default CAs + RGW CA")
+              else:
+                  print("ca-bundle: default CAs only (no RGW CA in OpenBao yet)")
+              open(out, "w").write(data)
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 5m, memory: 32Mi}, limits: {memory: 64Mi}}
+          volumeMounts:
+            - {name: ca-bundle, mountPath: /var/run/bravo-ca}
+            - {name: s-envs-target-onprem-object-store, mountPath: /etc/bravo/secrets/envs__target-onprem__object-store, readOnly: true}
+        # Local listener for the destination object store (see header). Native sidecar: starts before executor.
+        - name: s3-local
+          image: bravo/executor
+          restartPolicy: Always
+          command: ["python", "-c"]
+          args:
+            - |
+              import asyncio
+              UP = ("dst-s3.bravo-link.svc.cluster.local", 443)
+              async def pipe(r, w):
+                  try:
+                      while (b := await r.read(65536)):
+                          w.write(b); await w.drain()
+                  finally:
+                      w.close()
+              async def handle(cr, cw):
+                  try:
+                      ur, uw = await asyncio.wait_for(asyncio.open_connection(*UP), 15)
+                  except Exception as exc:
+                      print(f"s3-local: upstream {UP[0]}:{UP[1]} failed: {type(exc).__name__}", flush=True); cw.close(); return
+                  await asyncio.gather(pipe(cr, uw), pipe(ur, cw), return_exceptions=True)
+              async def main():
+                  srv = await asyncio.start_server(handle, "127.0.0.1", 18443)
+                  print("s3-local: 127.0.0.1:18443 -> dst-s3.bravo-link.svc.cluster.local:443", flush=True)
+                  async with srv: await srv.serve_forever()
+              asyncio.run(main())
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 5m, memory: 32Mi}, limits: {memory: 96Mi}}
       containers:
         - name: executor
           image: bravo/executor
@@ -58,6 +113,8 @@ spec:
             # Executor 역할(제어): eks:DescribeCluster on bravo-source + EKS access entry group bravo-executor.
             - {name: AWS_ROLE_ARN, value: "arn:aws:iam::721622471953:role/bravo-platform-executor-ctl-c996b0ed62fdaf4d3a2dc3c712"}
             - {name: AWS_WEB_IDENTITY_TOKEN_FILE, value: /var/run/secrets/sts.amazonaws.com/serviceaccount/token}
+            - {name: AWS_CA_BUNDLE, value: /var/run/bravo-ca/bundle.pem}
+            - {name: BRAVO_ATT_DST_S3_ENDPOINT_URL, value: "https://127.0.0.1:18443"}
           ports: [{name: http, containerPort: 8081}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
@@ -69,6 +126,7 @@ spec:
             - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
             - {name: aws-token, mountPath: /var/run/secrets/sts.amazonaws.com/serviceaccount, readOnly: true}
             - {name: tmp, mountPath: /tmp}
+            - {name: ca-bundle, mountPath: /var/run/bravo-ca, readOnly: true}
             - {name: s-envs-source-aws-chat-db, mountPath: /etc/bravo/secrets/envs__source-aws__chat-db, readOnly: true}
             - {name: s-envs-target-onprem-chat-db, mountPath: /etc/bravo/secrets/envs__target-onprem__chat-db, readOnly: true}
             - {name: s-envs-source-aws-chat-admin, mountPath: /etc/bravo/secrets/envs__source-aws__chat-admin, readOnly: true}
@@ -90,6 +148,7 @@ spec:
             sources:
               - serviceAccountToken: {audience: sts.amazonaws.com, expirationSeconds: 3600, path: token}
         - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+        - {name: ca-bundle, emptyDir: {sizeLimit: 2Mi}}
         - {name: s-envs-source-aws-chat-db, secret: {secretName: bx-envs-source-aws-chat-db, optional: true, defaultMode: 0440}}
         - {name: s-envs-target-onprem-chat-db, secret: {secretName: bx-envs-target-onprem-chat-db, optional: true, defaultMode: 0440}}
         - {name: s-envs-source-aws-chat-admin, secret: {secretName: bx-envs-source-aws-chat-admin, optional: true, defaultMode: 0440}}

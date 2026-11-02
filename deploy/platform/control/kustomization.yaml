@@ -57,7 +57,7 @@ images:
     digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
-    digest: sha256:be1e69fd48d4fdeb8da4110987fe164c19bd5e71bbe398d8a01856d75834b49d # cost-20261102T133456Z (obs/cost lane: GET /v1/cost; built from the working tree with the collector lane redact.py)
+    digest: sha256:ddeb284ba1bbf773c9dc78fdbcf8f85f1903a4293b178566b09e85c95c9592ae # cost-20261102T135034Z (obs/cost lane: GET /v1/cost with stale-while-revalidate caches and start-up warm-up)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
     digest: sha256:98f57c71e87884577b4a83e51101a791635995df2feacc8b14524140cb89c34d # cloud-202611022246 (data/cutover lane: + front judge TARGET_SHARE, LB failover no longer passes as DONE)

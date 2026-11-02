@@ -296,3 +296,43 @@ resource "aws_iam_role_policy" "collector_cost_read" {
   role   = aws_iam_role.web_identity["collector-ro"].id
   policy = data.aws_iam_policy_document.collector_cost_read.json
 }
+
+# Executor 첨부 복사(T8): 출발지 첨부 버킷 읽기만(객체 · 목록), 앱 KMS 키 복호화는 S3 경유로만. 쓰기는 목적지 RGW(링크 t1-dst-s3,
+# RGW 사용자 키는 OpenBao). 출발지 버킷 정책의 객체 거부 예외에도 이 역할이 들어가야 함(source-aws bucket_admin_principal_arns).
+data "aws_kms_alias" "source_app" {
+  count = var.source_attachments_bucket == null ? 0 : 1
+  name  = "alias/${var.source_cluster_name}-app"
+}
+
+data "aws_iam_policy_document" "executor_source_attachments" {
+  count = var.source_attachments_bucket == null ? 0 : 1
+
+  statement {
+    sid       = "ListSourceAttachments"
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    resources = ["arn:aws:s3:::${var.source_attachments_bucket}"]
+  }
+  statement {
+    sid       = "ReadSourceAttachmentObjects"
+    actions   = ["s3:GetObject", "s3:GetObjectVersion"]
+    resources = ["arn:aws:s3:::${var.source_attachments_bucket}/*"]
+  }
+  statement {
+    sid       = "DecryptViaS3Only"
+    actions   = ["kms:Decrypt"]
+    resources = [data.aws_kms_alias.source_app[0].target_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["s3.${var.region}.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "executor_source_attachments" {
+  count = var.source_attachments_bucket == null ? 0 : 1
+
+  name   = "source-attachments-read"
+  role   = aws_iam_role.web_identity["executor-ctl"].id
+  policy = data.aws_iam_policy_document.executor_source_attachments[0].json
+}

@@ -25,7 +25,7 @@ ENV_ID=${BRAVO_ENV_ID:-source-aws}
 EKS_GATEWAY_API_VERSION=${EKS_GATEWAY_API_VERSION:-v1.6.3}
 # Demo app 0.3.0 (APP_ENV_ID required, /readyz reads the DB through PgBouncer, attachments after HeadBucket).
 EKS_DEMO_IMAGE_TAG=${EKS_DEMO_IMAGE_TAG:-0.3.0}
-EKS_DEMO_IMAGE_DIGEST=${EKS_DEMO_IMAGE_DIGEST:-sha256:df08e969193efd318299864c6fd34e3e6e64c1a8d171e67ebfd109e60477ed57}
+EKS_DEMO_IMAGE_DIGEST=${EKS_DEMO_IMAGE_DIGEST:-sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6}
 # QR target: the customer front name (CNAME to the active environment's tunnel, contract §6), so phones
 # follow the cutover instead of staying on the source.
 PUBLIC_URL=${PUBLIC_URL:-https://b-free-chat.mangowhois.ai}

@@ -37,6 +37,14 @@ spec:
           protocol: TCP
         - port: 8081
           protocol: TCP
+    # Object store link (t1-dst-s3, on-prem only): RGW HTTPS in rook-ceph.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: rook-ceph
+      ports:
+        - port: 443
+          protocol: TCP
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
