@@ -23,7 +23,7 @@ echo "obsolete: use deploy/cloud (Compose pilot is down)" >&2; exit 2
 # The roundtrip also writes attachment rows through PgBouncer (no objects: object stores are not
 # configured here) to exercise the D-04 freeze, store switch and the v1.1 uuid-PK receipt hash.
 #
-# Settings come from deploy/pilot/.env (SMOKE_* entries, see .env.example).
+# Pilot-only (Compose retired 2026-11-02): settings came from deploy/pilot/.env (SMOKE_* entries, see .env.example).
 # SMOKE_FRESH=1 removes the project's containers and volumes first (destroys pilot data).
 # Evidence is written to deploy/pilot/runs/smoke-<timestamp>/ (gitignored).
 set -Eeuo pipefail
