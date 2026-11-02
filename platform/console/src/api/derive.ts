@@ -140,6 +140,7 @@ export function emptyPlan(planId: string): Plan {
     approval: null,
     run: null,
     dependencies: null,
+    analysis: null,
     state_reason: null,
   };
 }

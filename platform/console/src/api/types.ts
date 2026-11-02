@@ -41,8 +41,6 @@ export const ROLES: readonly Role[] = ['operator', 'approver', 'viewer'];
  */
 export type EventMode = 'live' | 'recorded' | 'unknown';
 
-/** States the pilot does not enter (team lead decision 11/2): shown as out of scope. */
-export const OUT_OF_SCOPE_STATES: readonly PlanState[] = ['ANALYZE', 'PROPOSE', 'REHEARSE'];
 export type ActorKind = 'console' | 'mcp' | 'system';
 
 export type EventKind =
@@ -186,6 +184,20 @@ export interface Plan {
   approval: Approval | null;
   run: Run | null;
   dependencies: DependencyCounts | null;
+  /** plan.analysis (GET /v1/plans/{id}): inventory status and gaps. Null until ANALYZE has run. */
+  analysis: PlanAnalysis | null;
+}
+
+/** service.py `_apply_analysis`: inventory {status, reason, …}, gaps[], control_differences[]. */
+export interface PlanAnalysis {
+  inventoryStatus: string | null;
+  inventoryReason: string | null;
+  filesScanned: number | null;
+  dependencies: number | null;
+  byGrade: Record<string, number>;
+  gaps: number;
+  controlDifferences: string[];
+  analyzedAt: string | null;
 }
 
 /** POST /v1/plans body (platform/api models.PlanCreate, extra fields rejected). */

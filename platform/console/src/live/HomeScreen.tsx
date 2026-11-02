@@ -19,6 +19,7 @@ import { fmtLatency, fmtMoney, fmtTs, shortId } from '../lib/format';
 import { extraNote, extraOf } from './costExtra';
 import { idemKey, releaseIdemKey } from '../lib/idem';
 import { useApi, type Session } from '../state';
+import { reasonText } from '../components/StateProgress';
 import { distroOf, parseClusters, type Cluster, type ClustersResp } from './ClustersScreen';
 import { Block, DataTable, KpiRow, Screen, StatusBar, StatusText, Val, type Health } from './ScreenFrame';
 import { Fresh, liveReason, NotConnected, Tag, useConfig, useLive } from './live';
@@ -206,7 +207,18 @@ export function HomeScreen({ session, onOpenPlan }: { session: Session; onOpenPl
           ),
         },
         { key: 'app', header: '앱', render: (p) => <span className="mono">{p.workload ?? '—'}</span> },
-        { key: 's', header: '상태', render: (p) => (p.state ? <StatusText h={ALERT.has(p.state) ? 'bad' : DONE.has(p.state) ? 'ok' : 'run'} text={p.state} /> : <Val v={null} />) },
+        {
+          key: 's', header: '상태', weight: 2,
+          render: (p) =>
+            p.state ? (
+              <VStack gap={0}>
+                <StatusText h={ALERT.has(p.state) ? 'bad' : p.stateReason ? 'warn' : DONE.has(p.state) ? 'ok' : 'run'} text={p.stateReason ? `${p.state} · 멈춤` : p.state} />
+                {p.stateReason && <span className="meta">{reasonText(p.stateReason)}</span>}
+              </VStack>
+            ) : (
+              <Val v={null} />
+            ),
+        },
         { key: 'st', header: '출발 · 목적', weight: 3, render: (p) => <span className="mono">{p.source ?? '—'} · {p.target ?? '—'}</span> },
         { key: 'a', header: '승인 대기', render: (p) => (p.awaiting ? <StatusText h="warn" text={STAGE_TEXT[p.awaiting] ?? p.awaiting} /> : <span className="meta">없음</span>) },
         { key: 't', header: '생성', numeric: true, px: 180, render: (p) => <span className="meta">{fmtTs(p.created_at)}</span> },

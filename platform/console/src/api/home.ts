@@ -17,6 +17,8 @@ export interface Me {
 export interface PlanSummary {
   plan_id: string;
   state: string | null;
+  /** Why the plan holds in its state (e.g. collector_unconfigured in ANALYZE, audit A4). */
+  stateReason: string | null;
   workload: string | null;
   source: string | null;
   target: string | null;
@@ -78,6 +80,7 @@ export function parsePlans(body: unknown): PlanSummary[] {
       return {
         plan_id: id,
         state: asStr(o.state),
+        stateReason: asStr(o.state_reason),
         workload: asStr(o.workload),
         source: nameOf(o.source_name) ?? nameOf(o.source) ?? asStr(o.source_environment_id),
         target: nameOf(o.target_name) ?? nameOf(o.target) ?? asStr(o.target_environment_id),

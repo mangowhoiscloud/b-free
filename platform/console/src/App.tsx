@@ -13,14 +13,14 @@ import { ObservabilityScreen } from './live/ObservabilityScreen';
 import { WorkflowScreen } from './live/WorkflowScreen';
 import { errorText } from './api/client';
 import { deriveView } from './api/derive';
-import type { DependencyCounts } from './api/types';
+import type { PlanAnalysis } from './api/types';
 import { ApprovalPanel } from './components/ApprovalPanel';
 import { ErrorLine, Panel } from './components/bits';
 import { CutoverPanel } from './components/CutoverPanel';
 import { EventStream } from './components/EventStream';
 import { GatePanel } from './components/GatePanel';
 import { Header, PlanPicker } from './components/Header';
-import { StateProgress } from './components/StateProgress';
+import { reasonText, StateProgress } from './components/StateProgress';
 import { useApi, usePlanParam, usePlanStream, useSession } from './state';
 
 const SCREENS = [
@@ -175,7 +175,7 @@ export function App() {
             <div className="grid">
               <div className="col col--main">
                 <GatePanel planId={planId} view={view} user={session.user} />
-                <DependencyPanel deps={planQ.data?.plan.dependencies ?? null} />
+                <DependencyPanel analysis={planQ.data?.plan.analysis ?? null} state={view.state} stateReason={view.stateReason} />
               </div>
               <div className="col col--side">
                 <ApprovalPanel planId={planId} view={view} user={session.user} />
@@ -195,26 +195,36 @@ export function App() {
   );
 }
 
-function DependencyPanel({ deps }: { deps: DependencyCounts | null }) {
-  const rows: { k: keyof DependencyCounts; label: string; help: string }[] = [
-    { k: 'config', label: '설정 교체', help: '접속 문자열 같은 설정만 바꿈' },
-    { k: 'adapter', label: '어댑터 추가', help: '코드는 두고 어댑터를 더함' },
-    { k: 'code', label: '코드 수정', help: '앱 코드를 고쳐야 함' },
-  ];
+const GRADE_TEXT: Record<string, string> = { config_swap: '설정 교체', adapter: '어댑터 추가', code_change: '코드 수정', no_change: '이전 불필요', unclassified: '미분류' };
+
+/** ANALYZE result from plan.analysis (audit A4): inventory status first; a missing inventory is never "no gaps". */
+function DependencyPanel({ analysis, state, stateReason }: { analysis: PlanAnalysis | null; state: string; stateReason: string | null }) {
+  const inv = analysis?.inventoryStatus ?? null;
   return (
-    <Panel id="deps" step="분석" title="의존성 3등급" className="panel--deps">
-      {deps ? (
-        <ul className="deps">
-          {rows.map((r) => (
-            <li key={r.k} className="deps__item">
-              <span className="deps__num mono">{deps[r.k] ?? '—'}</span>
-              <span className="deps__label">{r.label}</span>
-              <span className="deps__help muted">{r.help}</span>
-            </li>
-          ))}
-        </ul>
+    <Panel id="deps" step="분석" title="의존성 분석 (ANALYZE)" className="panel--deps">
+      {!analysis ? (
+        <p className="empty">
+          {state === 'COLLECT' ? '아직 분석 전입니다(COLLECT 단계).' : '계획 응답에 분석 결과(analysis)가 없습니다.'}
+          {stateReason ? ` state_reason=${stateReason}` : ''}
+        </p>
+      ) : inv !== 'ok' ? (
+        <p className="empty" role="status">
+          ○ 분석 안 됨 · 인벤토리 {inv ?? '상태 없음'} · {analysis.inventoryReason ? reasonText(analysis.inventoryReason) : '이유 없음'}. 의존성 공백이 없다고 보지 않고 ANALYZE에 머뭅니다.
+        </p>
       ) : (
-        <p className="empty">계획 응답에 의존성 목록이 없습니다. 이 계획은 ANALYZE에 들어가지 않았습니다.</p>
+        <>
+          <ul className="deps">
+            {Object.entries(analysis.byGrade).map(([k, v]) => (
+              <li key={k} className="deps__item">
+                <span className="deps__num mono">{v}</span>
+                <span className="deps__label">{GRADE_TEXT[k] ?? k}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted">
+            공백(코드 수정 · 미분류) {analysis.gaps}건 · 통제 차이 {analysis.controlDifferences.length ? analysis.controlDifferences.join(', ') : '없음'} · 파일 {analysis.filesScanned ?? '—'}개 · 분석 {analysis.analyzedAt ?? '—'}
+          </p>
+        </>
       )}
     </Panel>
   );

@@ -16,6 +16,7 @@ import {
   type GateResult,
   type HashPair,
   type Plan,
+  type PlanAnalysis,
   type PlanEvent,
   type ReadinessRow,
   type Receipt,
@@ -321,6 +322,24 @@ export function parsePlan(v: unknown): Plan {
     approval: parseApproval(o.approval),
     run,
     dependencies: dependencies(o.dependencies ?? o.dependency_counts),
+    analysis: parseAnalysis(o.analysis),
+  };
+}
+
+function parseAnalysis(v: unknown): PlanAnalysis | null {
+  const a = asObj(v);
+  if (!a) return null;
+  const inv = asObj(a.inventory) ?? {};
+  const grades = asObj(inv.by_grade) ?? {};
+  return {
+    inventoryStatus: asStr(inv.status),
+    inventoryReason: asStr(inv.reason),
+    filesScanned: typeof inv.files_scanned === 'number' ? inv.files_scanned : null,
+    dependencies: typeof inv.dependencies === 'number' ? inv.dependencies : null,
+    byGrade: Object.fromEntries(Object.entries(grades).filter(([, n]) => typeof n === 'number')) as Record<string, number>,
+    gaps: Array.isArray(a.gaps) ? a.gaps.length : 0,
+    controlDifferences: Array.isArray(a.control_differences) ? a.control_differences.filter((x): x is string => typeof x === 'string') : [],
+    analyzedAt: asStr(a.analyzed_at),
   };
 }
 

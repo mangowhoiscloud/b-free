@@ -105,10 +105,10 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                 <tr>
                   <th scope="col">통제 ID · 질문</th>
                   <th scope="col">
-                    원본 <span className="th-sub">AWS</span>
+                    원본 <span className="th-sub">출발 환경</span>
                   </th>
                   <th scope="col">
-                    대상 <span className="th-sub">온프렘</span>
+                    대상 <span className="th-sub">목적 환경</span>
                   </th>
                   <th scope="col">판정</th>
                 </tr>
