@@ -18,6 +18,7 @@ deleted again; the cleanup result is part of the evidence.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -229,6 +230,14 @@ class ObjectStoreProbe:
         anon = _client(self.s, None)
         r = _attempt(lambda: anon.put_object(Bucket=self.s.bucket, Key=ANON_PUT_KEY, Body=b""))
         ev = self._ev(request="unsigned PUT", key=ANON_PUT_KEY, response=r.detail)
+        if r.kind == "error" and r.detail.endswith("InvalidArgument"):
+            # S3 with SSE-KMS bucket default refuses an unsigned PUT before authorisation ("SSE-KMS requires SigV4").
+            # An anonymous writer can ask for SSE-S3 instead, which reaches the authorisation decision (measured
+            # 2026-11-03: AccessDenied). Both answers are kept.
+            ev["first_response"] = r.detail
+            r = _attempt(lambda: anon.put_object(Bucket=self.s.bucket, Key=ANON_PUT_KEY, Body=b"",
+                                                 ServerSideEncryption="AES256"))
+            ev.update(request="unsigned PUT with x-amz-server-side-encryption: AES256", response=r.detail)
         if r.kind == "ok":
             return failed("anonymous_write_allowed", written_key=ANON_PUT_KEY, cleanup=self._cleanup(ANON_PUT_KEY),
                           **ev)
@@ -308,7 +317,13 @@ class ObjectStoreProbe:
             if key:
                 kms = sess.client("kms", region_name=region)
                 key_arn = kms.describe_key(KeyId=key)["KeyMetadata"]["Arn"]
-                key_policy = kms.get_key_policy(KeyId=key_arn, PolicyName="default")["Policy"]
+                # In a key policy "Resource": "*" means this key; the simulator only takes ARNs, so it is read as
+                # the key ARN (otherwise InvalidInput "ResourceNames are not in a valid ARN format: *").
+                kp = json.loads(kms.get_key_policy(KeyId=key_arn, PolicyName="default")["Policy"])
+                for st in kp.get("Statement", []):
+                    if st.get("Resource") in ("*", ["*"]):
+                        st["Resource"] = key_arn
+                key_policy = json.dumps(kp)
                 decisions.update(sim(["kms:GenerateDataKey", "kms:Decrypt"], key_arn, key_policy, base_ctx + [
                     {"ContextKeyName": "kms:ViaService", "ContextKeyValues": [f"s3.{region}.amazonaws.com"],
                      "ContextKeyType": "string"}]))
