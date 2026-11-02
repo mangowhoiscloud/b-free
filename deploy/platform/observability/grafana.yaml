@@ -2,7 +2,7 @@
 # 1. Cloudflare Access app bravo-platform covers the whole host, so no request reaches the Gateway without login.
 # 2. Grafana itself accepts the Access JWT (header Cf-Access-Jwt-Assertion, RS256 keys from the team JWKS, aud =
 #    console AUD, iss = team domain) and signs the person in as Viewer. No anonymous access, no public route.
-# Route: HTTPRoute grafana in bravo-control (observability/cross-namespace) -> ReferenceGrant here -> Service grafana.
+# Route: HTTPRoute bravo-observe/grafana on Gateway bravo-gateway (deploy/platform/edge/gateway.yaml, platform lane).
 # The admin password comes from Secret grafana-admin (key admin_password). That Secret is not in Git:
 # keys.sh pipes OpenBao secret/platform/grafana (field admin_password) into it (D-26). Without it the pod does not start.
 # Data (users, preferences) on PVC grafana-data (bravo-general); datasources are provisioned from Git.

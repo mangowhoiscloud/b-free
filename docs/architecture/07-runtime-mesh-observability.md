@@ -40,7 +40,7 @@ OTLP로 모으면 백엔드를 바꿔도 계측 코드가 그대로입니다. �
 |---|---|---|---|
 | `bravo-control` | 제어면 | API, 운영자 MCP 서버(`operator-mcp`, D-18), 상태 머신, 게이트, 수집기, 콘솔, 플랫폼 DB, 리허설 서비스(Harbor 오케스트레이터 + 환경 어댑터 + 도구 계층), LLM 게이트웨이, Executor | 등록. **Executor와 플랫폼 DB Pod는 제외**(`istio.io/dataplane-mode: none`) |
 | `bravo-agents` | 실행면 | Trial마다 에이전트 Pod(Agent SDK) | 등록 |
-| `bravo-observe` | 관측 | 관측 백엔드(Collector 포함 올인원 1개) | 제외 |
+| `bravo-observe` | 관측 | OTel Collector, Prometheus, Tempo, Loki, Grafana(각각 1개, `deploy/platform/observability`) | 제외 |
 | `istio-system` | 메시 | istiod, istio-cni, ztunnel | - |
 | `cf-edge` | 바깥 연결 | 콘솔 · MCP 호스트를 내놓는 cloudflared(복제본 2). 바깥 방향 연결만 엶 | 등록. 받는 쪽 인가 정책이 이 신원을 호출 주체로 씀 |
 | `bravo-link`(제안 D-16) | 연결 | 상대 환경 서비스를 로컬 이름으로 받는 링크 Pod(`cloudflared access tcp`). `02-network.md` 4절 | 제외 |
@@ -247,7 +247,12 @@ sequenceDiagram
 
 ## 6. 관측성
 
-**경로는 하나입니다.** 모든 신호를 OTLP로 `bravo-observe`의 관측 백엔드에 보냅니다. 데모 백엔드는 Grafana의 올인원 이미지 하나이고, 이 이미지 안에 OTel Collector가 들어 있습니다. 그래서 Collector를 따로 두지 않습니다. 운영 권장은 별도 Collector와 각 클라우드 사업자의 OTLP 수용 백엔드이고, 보내는 쪽 설정은 그대로입니다.
+**경로는 하나입니다.** 모든 신호를 OTLP로 `bravo-observe`의 OTel Collector(0.164.0)에 보냅니다. Collector가 트레이스는 Tempo(2.10.10), 지표는 Prometheus(3.15.1, OTLP 수신), 로그는 Loki(3.7.9)로 나누고, Grafana(13.3.0)가 셋을 읽습니다. 판은 `docs/spec/TECH-STACK-SPEC.md` 2.6절이고 이미지는 digest로 고정합니다. 개발용 올인원 이미지(`grafana/otel-lgtm`)는 쓰지 않습니다. 데이터는 플랫폼 StorageClass `bravo-general` 볼륨에 둡니다.
+
+- 고객 환경(출발지 EKS, 온프렘 RKE2, GKE)은 랜딩 존의 `otel-agent`가 앱 OTLP와 Hubble 지표를 모아 D-16 링크 `t1-plat-otel`(Access 서비스 토큰)로 플랫폼 Collector에 보냅니다. 에이전트가 붙이는 `bravo.env`로 환경을 나눕니다.
+- 플랫폼 Collector는 `span_metrics` 연결기로 SERVER span에서 RED 지표를 만들고, `http_check` 수신기로 플랫폼 서비스 상태를 15초마다 확인합니다.
+- 콘솔 관측 화면의 질의와 값이 없을 때의 뜻은 `15-r2-contracts.md` 7절입니다. Grafana는 `https://b-free.mangowhois.ai/grafana/`(Access 뒤, Access JWT로 Viewer 로그인)입니다.
+- 운영 권장은 같은 Collector 앞에 각 클라우드 사업자의 OTLP 수용 백엔드를 두는 것이고, 보내는 쪽 설정은 그대로입니다.
 
 | 신호 | 출처 | 보내는 방법 |
 |---|---|---|
@@ -256,6 +261,8 @@ sequenceDiagram
 | 도구 호출 span | 도구 계층 | GenAI 규약의 `execute_tool {도구 이름}` span. 허용 · 거부와 규칙 이름을 속성으로 |
 | 플랫폼 서비스 트레이스 | API, 상태 머신, 게이트, 리허설 서비스 | OpenTelemetry Python 자동 계측. W3C `traceparent` 전파 |
 | 메시 L4 메트릭 | ztunnel | 백엔드의 Prometheus 수집 |
+| 환경 흐름 · 드롭 | 각 환경 Cilium Hubble 지표(`hubble.metrics`, 포트 9965) | 환경 `otel-agent`가 수집해 링크로 보냄 |
+| 데모 앱 RED · 쓰기율 | 데모 앱 OTel SDK(`http.server.request.duration`, `chat.writes`) | 환경 `otel-agent` 경유 |
 | 컷오버 지표 사본 | Executor, 부하 생성기 | 대시보드용 사본. 판정 근거는 아님(아래) |
 
 **GenAI span 트리는 서버 쪽에서 완성합니다.** Claude Code 트레이스는 beta라 구조가 바뀔 수 있습니다. 그래서 Trial 하나의 트리는 우리 서비스가 GenAI 규약 이름으로 직접 만듭니다. 규약은 아직 Development 상태이므로, 이름이 바뀌면 이 표만 고칩니다.

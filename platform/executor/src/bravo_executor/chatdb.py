@@ -33,10 +33,32 @@ SCHEMA_TABLES: tuple[str, ...] = (
 )
 
 
+# Session settings the receipt hash and psycopg's type parsing depend on (audit: a role-level
+# DateStyle of 'SQL, DMY' on a managed DB stopped the digest). Set on every control/observe session
+# after connect, so they hold whatever the server, database or role defaults are.
+PINNED_GUCS: tuple[tuple[str, str], ...] = (
+    ("DateStyle", "ISO, MDY"),
+    ("IntervalStyle", "postgres"),
+    ("TimeZone", "UTC"),
+    ("extra_float_digits", "3"),
+    ("bytea_output", "hex"),
+    ("client_encoding", "UTF8"),
+    ("standard_conforming_strings", "on"),
+)
+
+
+async def pin_session(conn: AsyncConnection) -> None:
+    for name, value in PINNED_GUCS:
+        await conn.execute("SELECT set_config(%s, %s, false)", (name, value))
+
+
 async def connect(dsn: str, timeout_s: float = 5.0) -> AsyncConnection:
-    return await AsyncConnection.connect(
-        dsn, autocommit=True, connect_timeout=max(1, int(timeout_s)), application_name="bravo-executor"
+    conn = await AsyncConnection.connect(
+        dsn, autocommit=True, connect_timeout=max(1, int(timeout_s)), application_name="bravo-executor",
+        prepare_threshold=None,
     )
+    await pin_session(conn)
+    return conn
 
 
 @dataclass(frozen=True, slots=True)

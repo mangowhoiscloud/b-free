@@ -47,6 +47,13 @@ Lookup = Callable[[str, str], Awaitable[str]]
 log = logging.getLogger(__name__)
 
 
+def _hostport(conninfo: str) -> tuple[str, str]:
+    from psycopg.conninfo import conninfo_to_dict
+
+    d = conninfo_to_dict(conninfo)
+    return str(d.get("host", "")), str(d.get("port", "5432"))
+
+
 def _need(doc: Mapping[str, Any], key: str, where: str) -> Any:
     if key not in doc:
         raise ConfigError(f"topology: {where}.{key} is required")
@@ -121,6 +128,13 @@ async def settings_from_topology(
             continue
         entries.append(EntrySpec(name=_need(en, "name", "entries[]"), side=_need(en, "side", "entries[]"),
                                  url=_need(en, "url", "entries[]").rstrip("/"), token=token))
+    # The control path (db link) must not be the app path (pgb link): ending app sessions in step 4
+    # must never take the Executor's control session down (audit: one dropped connection killed a
+    # shared kubectl port-forward). Separate link endpoints are required.
+    control = {(_hostport(d["conninfo"])) for d in (db["src"], db["dst"])}
+    for p in doc.get("pools", []):
+        if _hostport(p["conninfo"]) in control:
+            raise ConfigError(f"topology: pool {p['name']} shares a link endpoint with a control DB connection")
     store_ids = _need(doc, "store_ids", "topology")
     stores: list[tuple[str, StoreConfig]] = []
     for side, od in (doc.get("object_stores") or {}).items():

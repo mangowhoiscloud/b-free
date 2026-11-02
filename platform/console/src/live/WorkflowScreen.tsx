@@ -32,8 +32,8 @@ export function WorkflowScreen({ planId, view, events, status, detail }: { planI
   const trials = foldTrials(events);
   return (
     <Screen
-      title="CI/CD · 워크플로우"
-      lead="계획 상태 기계 진행, 게이트 실행, 리허설 시험, 승인, 컷오버 · 페일백 영수증을 계획 이벤트 흐름으로 봅니다. 승인은 콘솔에서만 하고 승인자는 요청자와 달라야 합니다."
+      title="워크플로우"
+      lead="어느 단계가 끝났고 어디서 멈췄는가"
       aside={planId ? <StreamBadge status={status} detail={detail} /> : undefined}
     >
       <Block title="연결 상태">
@@ -57,7 +57,7 @@ export function WorkflowScreen({ planId, view, events, status, detail }: { planI
         />
       </Block>
       {!planId || !view ? (
-        <NotConnected title="계획이 열려 있지 않음" endpoint="GET /v1/plans/{plan_id} · /events (SSE)" reason="계획별 진행은 계획을 열어야 보입니다. 홈의 이전 계획 표에서 계획을 고르세요." />
+        <NotConnected title="계획이 열려 있지 않음" endpoint="GET /v1/plans/{plan_id} · /events (SSE)" reason="계획별 진행은 계획을 열어야 보입니다. 홈의 계획 표에서 계획을 고르세요." />
       ) : (
         <>
           <StateProgress view={view} />

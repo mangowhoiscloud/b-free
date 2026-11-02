@@ -1,0 +1,26 @@
+# Write-block switch (spec r2 §8.10, CLOUD-E2E-CONTRACT 8): chat-admin:8081 is not on the user tunnel; the platform
+# Executor reaches it only through the D-16 link t1-<env>-admin, whose origin side is this management connector.
+# Additive to the app chart's own policy (which admits cf-edge on the app port 8000 only).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-admin-from-mgmt-connector
+  namespace: chat
+  labels:
+    app.kubernetes.io/part-of: cf-edge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bravo-demo
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cf-edge
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared-mgmt
+      ports:
+        - port: 8081
+          protocol: TCP

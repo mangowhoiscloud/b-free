@@ -10,6 +10,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 export interface Series {
   id: string;
   label: string;
+  /** Fixed color slot for this entity (environment); keeps color when filters drop other series. */
+  colorIndex?: number;
   /** [epoch ms, value] sorted by time. */
   points: [number, number][];
 }
@@ -17,6 +19,12 @@ export interface Series {
 export interface Band {
   from: number;
   to: number;
+  label: string;
+}
+
+/** A plan event drawn as a vertical line on the shared time axis. */
+export interface Marker {
+  t: number;
   label: string;
 }
 
@@ -46,7 +54,9 @@ function niceMax(v: number): number {
   return 10 * p;
 }
 
-const hhmm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+const hhmmFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false });
+const mdhmFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const hhmm = (t: number) => hhmmFmt.format(new Date(t));
 
 export function fmtValue(v: number | null | undefined, digits = 2): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
@@ -54,13 +64,14 @@ export function fmtValue(v: number | null | undefined, digits = 2): string {
 }
 
 /** Line chart over time. Colors follow the series' position in `series` (fixed order, never re-ranked). */
-export function LineChart({ title, series, unit, digits = 2, height = 200, bands = [], empty }: { title: string; series: Series[]; unit: string; digits?: number; height?: number; bands?: Band[]; empty: string }) {
+export function LineChart({ title, series, unit, digits = 2, height = 200, bands = [], markers = [], domain, format, empty }: { title: string; series: Series[]; unit: string; digits?: number; height?: number; bands?: Band[]; markers?: Marker[]; domain?: [number, number]; format?: (v: number) => string; empty: string }) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const times = useMemo(() => [...new Set(series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b), [series]);
   const hasData = times.length > 0;
-  const t0 = times[0] ?? 0;
-  const t1 = times[times.length - 1] ?? 1;
+  const t0 = domain?.[0] ?? times[0] ?? 0;
+  const t1 = domain?.[1] ?? times[times.length - 1] ?? 1;
+  const fmt = format ?? ((v: number) => `${fmtValue(v, digits)} ${unit}`);
   const yMax = niceMax(Math.max(0, ...series.flatMap((s) => s.points.map((p) => p[1])).filter(Number.isFinite)));
   const iw = Math.max(10, width - M.left - M.right);
   const ih = height - M.top - M.bottom;
@@ -68,6 +79,7 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
   const y = (v: number) => M.top + ih - (v / yMax) * ih;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * yMax);
   const xTicks = hasData ? [0, 0.25, 0.5, 0.75, 1].map((f) => t0 + f * (t1 - t0)) : [];
+  const spanMin = (t1 - t0) / 60_000;
   const hoverT = hover !== null ? times[hover] : undefined;
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
@@ -104,7 +116,7 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
             {series.map((s, i) => (
               <span key={s.id} className="chart__key">
                 <svg width="14" height="8" aria-hidden="true">
-                  <line x1="0" y1="4" x2="14" y2="4" stroke={SERIES_VARS[i] ?? 'var(--ink-3)'} strokeWidth="2" strokeLinecap="round" />
+                  <line x1="0" y1="4" x2="14" y2="4" stroke={SERIES_VARS[s.colorIndex ?? i] ?? 'var(--ink-3)'} strokeWidth="2" strokeLinecap="round" />
                 </svg>
                 {s.label}
               </span>
@@ -136,6 +148,16 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
                   </text>
                 </g>
               ))}
+              {markers
+                .filter((m) => m.t >= t0 && m.t <= t1)
+                .map((m, i) => (
+                  <g key={`${m.t}-${i}`}>
+                    <line x1={x(m.t)} x2={x(m.t)} y1={M.top} y2={M.top + ih} className="chart__marker" />
+                    <text x={x(m.t) + 3} y={M.top + 12 + (i % 3) * 12} className="chart__bandlabel">
+                      {m.label}
+                    </text>
+                  </g>
+                ))}
               {yTicks.map((v) => (
                 <g key={v}>
                   <line x1={M.left} x2={M.left + iw} y1={y(v)} y2={y(v)} className="chart__grid" />
@@ -146,7 +168,7 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
               ))}
               {xTicks.map((t, i) => (
                 <text key={t} x={x(t)} y={height - 6} textAnchor={i === 0 ? 'start' : i === xTicks.length - 1 ? 'end' : 'middle'} className="chart__tick">
-                  {hhmm(t)}
+                  {spanMin > 1440 ? mdhmFmt.format(new Date(t)) : hhmm(t)}
                 </text>
               ))}
               {series.map((s, i) => (
@@ -154,7 +176,7 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
                   key={s.id}
                   d={s.points.filter((p) => Number.isFinite(p[1])).map((p, j) => `${j === 0 ? 'M' : 'L'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}
                   fill="none"
-                  stroke={SERIES_VARS[i] ?? 'var(--ink-3)'}
+                  stroke={SERIES_VARS[s.colorIndex ?? i] ?? 'var(--ink-3)'}
                   strokeWidth={2}
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -165,7 +187,7 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
                   <line x1={x(hoverT)} x2={x(hoverT)} y1={M.top} y2={M.top + ih} className="chart__cross" />
                   {series.map((s, i) => {
                     const p = s.points.find((q) => q[0] === hoverT);
-                    return p && Number.isFinite(p[1]) ? <circle key={s.id} cx={x(p[0])} cy={y(p[1])} r={4} fill={SERIES_VARS[i] ?? 'var(--ink-3)'} className="chart__dot" /> : null;
+                    return p && Number.isFinite(p[1]) ? <circle key={s.id} cx={x(p[0])} cy={y(p[1])} r={4} fill={SERIES_VARS[s.colorIndex ?? i] ?? 'var(--ink-3)'} className="chart__dot" /> : null;
                   })}
                 </g>
               )}
@@ -178,11 +200,9 @@ export function LineChart({ title, series, unit, digits = 2, height = 200, bands
                   return (
                     <div key={s.id} className="chart__tiprow">
                       <svg width="12" height="8" aria-hidden="true">
-                        <line x1="0" y1="4" x2="12" y2="4" stroke={SERIES_VARS[i] ?? 'var(--ink-3)'} strokeWidth="2" strokeLinecap="round" />
+                        <line x1="0" y1="4" x2="12" y2="4" stroke={SERIES_VARS[s.colorIndex ?? i] ?? 'var(--ink-3)'} strokeWidth="2" strokeLinecap="round" />
                       </svg>
-                      <b className="num">
-                        {fmtValue(p?.[1], digits)} {unit}
-                      </b>
+                      <b className="num">{p && Number.isFinite(p[1]) ? fmt(p[1]) : '—'}</b>
                       <span>{s.label}</span>
                     </div>
                   );
@@ -293,6 +313,141 @@ export function Timeline({ title, spans, highlight }: { title: string; spans: Sp
           </div>
         )}
       </div>
+    </figure>
+  );
+}
+
+export interface StackDay {
+  day: string;
+  /** component -> amount */
+  parts: Record<string, number>;
+}
+
+/** Daily stacked bars (OpenCost). Components keep a fixed color order; more than 4 fold into "기타". */
+export function StackedBars({ title, days, unit, format }: { title: string; days: StackDay[]; unit: string; format: (v: number) => string }) {
+  const [wrapRef, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<string | null>(null);
+  const totals = new Map<string, number>();
+  for (const d of days) for (const [k, v] of Object.entries(d.parts)) totals.set(k, (totals.get(k) ?? 0) + v);
+  const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const keep = ranked.slice(0, ranked.length > 4 ? 3 : 4).sort();
+  const keys = ranked.length > 4 ? [...keep, '기타'] : keep;
+  const fold = (parts: Record<string, number>) => {
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parts)) {
+      const key = keep.includes(k) ? k : '기타';
+      out[key] = (out[key] ?? 0) + v;
+    }
+    return out;
+  };
+  const folded = days.map((d) => ({ day: d.day, parts: fold(d.parts) }));
+  const yMax = niceMax(Math.max(0, ...folded.map((d) => Object.values(d.parts).reduce((a, b) => a + b, 0))));
+  const height = 200;
+  const ih = height - M.top - M.bottom;
+  const iw = Math.max(10, width - M.left - M.right);
+  const bw = folded.length ? Math.max(6, Math.min(48, iw / folded.length - 8)) : 0;
+  const y = (v: number) => (v / yMax) * ih;
+  const hov = hover ? hover.split('|') : null;
+  return (
+    <figure className="chart">
+      <figcaption className="chart__head">
+        <span className="chart__title">{title}</span>
+        <span className="chart__unit">단위: {unit}</span>
+        <span className="chart__legend">
+          {keys.map((k, i) => (
+            <span key={k} className="chart__key">
+              <svg width="10" height="10" aria-hidden="true">
+                <rect width="10" height="10" rx="2" fill={SERIES_VARS[i] ?? 'var(--ink-3)'} />
+              </svg>
+              {k}
+            </span>
+          ))}
+        </span>
+      </figcaption>
+      <div className="chart__plot" ref={wrapRef}>
+        <svg width={width} height={height} role="img" aria-label={`${title}, ${folded.length}일`}>
+          {[0, 0.5, 1].map((f) => (
+            <g key={f}>
+              <line x1={M.left} x2={M.left + iw} y1={M.top + ih - f * ih} y2={M.top + ih - f * ih} className="chart__grid" />
+              <text x={M.left - 6} y={M.top + ih - f * ih + 4} textAnchor="end" className="chart__tick">
+                {format(f * yMax)}
+              </text>
+            </g>
+          ))}
+          {folded.map((d, i) => {
+            const cx = M.left + (iw / folded.length) * (i + 0.5);
+            let acc = 0;
+            return (
+              <g key={d.day}>
+                {keys.map((k, ki) => {
+                  const v = d.parts[k] ?? 0;
+                  if (v <= 0) return null;
+                  const h = Math.max(1, y(v) - 2);
+                  const top = M.top + ih - y(acc + v);
+                  acc += v;
+                  return (
+                    <rect
+                      key={k}
+                      x={cx - bw / 2}
+                      y={top}
+                      width={bw}
+                      height={h}
+                      rx={2}
+                      fill={SERIES_VARS[ki] ?? 'var(--ink-3)'}
+                      tabIndex={0}
+                      className={hover === `${d.day}|${k}` ? 'chart__bar chart__bar--on' : 'chart__bar'}
+                      onPointerEnter={() => setHover(`${d.day}|${k}`)}
+                      onPointerLeave={() => setHover(null)}
+                      onFocus={() => setHover(`${d.day}|${k}`)}
+                      onBlur={() => setHover(null)}
+                      aria-label={`${d.day} ${k} ${format(v)}`}
+                    />
+                  );
+                })}
+                <text x={cx} y={height - 6} textAnchor="middle" className="chart__tick">
+                  {d.day.slice(5)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+        {hov && (
+          <div className="chart__tip" role="status">
+            <div className="chart__tiptime">{hov[0]}</div>
+            <div className="chart__tiprow">
+              <b className="num">{format(folded.find((d) => d.day === hov[0])?.parts[hov[1] ?? ''] ?? 0)}</b>
+              <span>{hov[1]}</span>
+            </div>
+          </div>
+        )}
+      </div>
+      <details className="chart__table">
+        <summary>표로 보기</summary>
+        <table className="plain">
+          <thead>
+            <tr>
+              <th scope="col">날짜</th>
+              {keys.map((k) => (
+                <th key={k} scope="col" className="td-end">
+                  {k}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {folded.map((d) => (
+              <tr key={d.day}>
+                <td className="num">{d.day}</td>
+                {keys.map((k) => (
+                  <td key={k} className="td-end num">
+                    {d.parts[k] !== undefined ? format(d.parts[k]!) : '—'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
     </figure>
   );
 }

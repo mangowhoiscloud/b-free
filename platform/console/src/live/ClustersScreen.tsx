@@ -3,7 +3,8 @@
  * (the platform's own services are not probed here).
  */
 import { VStack } from '@astryxdesign/core/Stack';
-import { Block, DataTable, Facts, Screen, Val } from './ScreenFrame';
+import { Block, DataTable, Facts, HEALTH_TEXT, Screen, StatusBar, StatusText, Val, type Health } from './ScreenFrame';
+import { useHashParam } from './hashQuery';
 import { asArray, asRecord, Fresh, LiveGate, NotConnected, num, str, Tag, useLive } from './live';
 
 interface Node { name: string; ready: boolean; kubelet_version: string | null; instance_type: string | null; zone: string | null; roles: string[] }
@@ -124,7 +125,7 @@ function ClusterCard({ c }: { c: Cluster }) {
             empty="랜딩 존 규칙이 없습니다."
             cols={[
               { key: 'c', header: '랜딩 존 구성 요소 (11-landing-zone §2)', weight: 2, render: (l) => l.component },
-              { key: 'p', header: '상태', render: (l) => (!l.present ? <span className="foot">없음</span> : <Tag variant={l.ready ? 'success' : 'warning'} label={l.ready ? '정상' : l.ready === false ? '준비 중' : '있음'} />) },
+              { key: 'p', header: '상태', render: (l) => (!l.present ? <span className="foot">없음</span> : (l.ready === null ? <span className="meta">있음 · 준비 여부 판단 없음</span> : <StatusText h={l.ready ? 'ok' : 'warn'} />)) },
               { key: 'd', header: '판단 근거', weight: 3, render: (l) => <span className="foot">{[l.namespace, l.detail].filter(Boolean).join(' · ') || '—'}</span> },
             ]}
           />
@@ -134,47 +135,113 @@ function ClusterCard({ c }: { c: Cluster }) {
   );
 }
 
+interface Row {
+  id: string;
+  distro: string | null;
+  nodes: string | null;
+  workloads: string | null;
+  lz: string | null;
+  health: Health;
+  note: string;
+  cluster: Cluster | null;
+}
+
+export function healthOf(c: Cluster): Health {
+  if (c.status !== 'ok') return 'bad';
+  const nodesOk = c.nodes.length > 0 && c.nodes.every((n) => n.ready);
+  const wlOk = c.workloads.every((w) => w.ready >= w.desired);
+  return nodesOk && wlOk ? 'ok' : 'warn';
+}
+
+function rowsOf(d: ClustersResp): Row[] {
+  const rows: Row[] = d.clusters.map((c) => {
+    const ok = c.status === 'ok';
+    return {
+      id: c.cluster_id,
+      distro: ok ? distroOf(c) : c.provider,
+      nodes: ok ? `${c.nodes.filter((n) => n.ready).length}/${c.nodes.length}` : null,
+      workloads: ok ? `${c.workloads.filter((w) => w.ready >= w.desired).length}/${c.workloads.length}` : null,
+      lz: ok ? `${c.landing_zone.filter((l) => l.present).length}/${c.landing_zone.length}` : null,
+      health: healthOf(c),
+      note: ok ? '' : c.error ?? '닿지 않음',
+      cluster: c,
+    };
+  });
+  for (const n of d.not_configured) rows.push({ id: n.cluster_id, distro: null, nodes: null, workloads: null, lz: null, health: 'none', note: n.reason, cluster: null });
+  return rows;
+}
+
 export function ClustersScreen() {
   const live = useLive('collector', 'v1/clusters', 5000, parseClusters);
+  const [hf, setHf] = useHashParam('health', '');
+  const [sel, setSel] = useHashParam('env', '');
   return (
-    <Screen
-      title="클러스터 실시간"
-      lead="환경마다 노드 · 네임스페이스 · 워크로드 준비 상태 · 랜딩 존 구성 요소를 수집기(읽기 전용 get/list)로 5초마다 읽습니다. Secret은 읽지 않습니다."
-      aside={<Fresh at={live.updatedAt} label="수집" />}
-    >
+    <Screen title="클러스터" lead="환경마다 클러스터가 건강하고 원하는 상태인가" aside={<Fresh at={live.updatedAt} label="수집" />}>
       <LiveGate live={live} title="클러스터 수집 연결 안 됨">
-        {(d) => (
-          <VStack gap={4}>
-            <Block title="환경 사이 링크 (수집기가 보는 link 워크로드)">
-              <DataTable
-                rows={linkWorkloads(d)}
-                rowKey={(w) => `${w.cluster}/${w.namespace}/${w.name}`}
-                empty="수집기가 읽는 클러스터에 이름에 link가 들어간 워크로드가 없습니다. 플랫폼 클러스터의 링크는 수집기 등록부에 없으면 여기 보이지 않습니다."
-                cols={[
-                  { key: 'c', header: '클러스터', render: (w) => <span className="mono">{w.cluster}</span> },
-                  { key: 'w', header: '워크로드', weight: 3, render: (w) => <span className="mono">{w.namespace}/{w.kind}/{w.name}</span> },
-                  { key: 's', header: '상태', render: (w) => <Tag variant={w.desired > 0 && w.ready >= w.desired ? 'success' : 'warning'} label={w.desired > 0 && w.ready >= w.desired ? '정상' : '준비 중'} /> },
-                  { key: 'r', header: 'Ready', numeric: true, render: (w) => `${w.ready} / ${w.desired}` },
-                ]}
-              />
-            </Block>
-            {d.clusters.map((c) => (
-              <ClusterCard key={c.cluster_id} c={c} />
-            ))}
-            {d.not_configured.map((n) => (
-              <Block key={n.cluster_id} title={`클러스터 · ${n.cluster_id}`} meta={<Tag variant="neutral" label="연결 안 됨" />}>
-                <Facts
-                  columns="single"
-                  items={[
-                    { label: '이유', value: n.reason },
-                    { label: '시도한 곳', value: <span className="mono">GET /svc/collector/v1/clusters → not_configured</span> },
-                    { label: '프로비저닝 상태', value: provisionLine('클러스터를 읽지 못함.') },
+        {(d) => {
+          const rows = rowsOf(d);
+          const counts = rows.reduce<Partial<Record<Health, number>>>((a, r) => ({ ...a, [r.health]: (a[r.health] ?? 0) + 1 }), {});
+          const shown = rows.filter((r) => !hf || r.health === hf);
+          const picked = rows.find((r) => r.id === sel) ?? null;
+          return (
+            <VStack gap={4}>
+              <StatusBar counts={counts} label="클러스터 건강" />
+              <div className="chips" role="group" aria-label="건강 필터">
+                <button type="button" className="chip" aria-pressed={!hf} onClick={() => setHf(null)}>
+                  전체 {rows.length}
+                </button>
+                {(['ok', 'warn', 'bad', 'none'] as Health[]).filter((h) => counts[h]).map((h) => (
+                  <button key={h} type="button" className="chip" aria-pressed={hf === h} onClick={() => setHf(h)}>
+                    {HEALTH_TEXT[h]} {counts[h]}
+                  </button>
+                ))}
+              </div>
+              <Block title="환경별 클러스터">
+                <DataTable
+                  rows={shown}
+                  rowKey={(r) => r.id}
+                  empty="이 필터에 맞는 클러스터가 없습니다."
+                  cols={[
+                    {
+                      key: 'id', header: '환경', weight: 2,
+                      render: (r) => (
+                        <button type="button" className="rowbtn mono" aria-current={sel === r.id} onClick={() => setSel(sel === r.id ? null : r.id)}>
+                          {r.id}
+                        </button>
+                      ),
+                    },
+                    { key: 'd', header: '배포판', render: (r) => r.distro ?? <Val v={null} /> },
+                    { key: 'n', header: '노드', numeric: true, render: (r) => <Val v={r.nodes} /> },
+                    { key: 'w', header: '준비 워크로드', numeric: true, px: 120, render: (r) => <Val v={r.workloads} /> },
+                    { key: 'l', header: '랜딩 존', numeric: true, render: (r) => <Val v={r.lz} /> },
+                    { key: 'h', header: '건강', weight: 2, render: (r) => <VStack gap={0}><StatusText h={r.health} />{r.note && <span className="meta">{r.note}</span>}</VStack> },
+                    { key: 's', header: '동기화', render: () => <span className="meta" title="원하는 상태와 비교할 상태 원장이 콘솔에 열려 있지 않습니다">○ 연결 안 됨</span> },
                   ]}
                 />
+                <p className="meta">건강 = API 응답 · 노드 Ready · 워크로드 준비(수집기 get/list). 동기화 = 원하는 상태와 같은가(Argo CD식 두 번째 축)로, 상태 원장이 열리기 전까지 연결 안 됨입니다. 줄의 환경 이름을 누르면 아래에 자세히 보입니다.</p>
               </Block>
-            ))}
-          </VStack>
-        )}
+              {picked?.cluster ? <ClusterCard c={picked.cluster} /> : picked ? (
+                <Block title={`클러스터 · ${picked.id}`}>
+                  <NotConnected endpoint="GET /svc/collector/v1/clusters → not_configured" reason={picked.note} />
+                </Block>
+              ) : null}
+              <Block title="환경 사이 링크 · 수집기가 보는 link 워크로드">
+                <DataTable
+                  rows={linkWorkloads(d)}
+                  rowKey={(w) => `${w.cluster}/${w.namespace}/${w.name}`}
+                  empty="수집기가 읽는 클러스터에 이름에 link가 들어간 워크로드가 없습니다."
+                  cols={[
+                    { key: 'c', header: '클러스터', render: (w) => <span className="mono">{w.cluster}</span> },
+                    { key: 'w', header: '워크로드', weight: 3, render: (w) => <span className="mono">{w.namespace}/{w.kind}/{w.name}</span> },
+                    { key: 's', header: '상태', render: (w) => <StatusText h={w.desired > 0 && w.ready >= w.desired ? 'ok' : 'warn'} /> },
+                    { key: 'r', header: 'Ready', numeric: true, render: (w) => `${w.ready}/${w.desired}` },
+                  ]}
+                />
+                <p className="meta">플랫폼 클러스터의 링크 서비스는 수집기 등록부에 없으면 여기 보이지 않습니다.</p>
+              </Block>
+            </VStack>
+          );
+        }}
       </LiveGate>
     </Screen>
   );

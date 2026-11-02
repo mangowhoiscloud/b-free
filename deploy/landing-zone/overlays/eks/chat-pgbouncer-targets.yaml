@@ -1,15 +1,15 @@
 # PgBouncer targets on the EKS source (CLOUD-E2E-CONTRACT §9). Each file holds only [databases];
 # the Executor copies one of them to /run/pgbouncer/active.ini (pods/exec) and sends RELOAD.
 #   target-src.ini: the local CNPG chat-db (default, copied by the init container).
-#   target-dst.ini: the destination DB through the reverse relay Service dst-db-link
-#                   (tools/link/k8s/reverse-relay.yaml, temporary link before D-16).
+#   target-dst.ini: the destination DB through the D-16 env link Service dst-db-link
+#                   (deploy/cloud/env-link, cloudflared access tcp, token src-dst-db).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: chat-pgbouncer-targets
   namespace: chat
   annotations:
-    bravo.dev/link: "임시 링크(D-16 전)"
+    bravo.dev/link: "D-16 환경 간 링크(cloudflared access tcp, 토큰 src-dst-db)"
 data:
   target-src.ini: |
     [databases]

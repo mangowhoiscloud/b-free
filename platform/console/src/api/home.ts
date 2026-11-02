@@ -60,7 +60,8 @@ export function parseMe(body: unknown): Me {
   const roleRaw = asStr(o.role) ?? asStr(p.role) ?? asStr(rolesArr[0]) ?? null;
   return {
     email: asStr(o.email) ?? asStr(p.email) ?? null,
-    role: roleRaw && ROLES.includes(roleRaw) ? (roleRaw as Role) : null,
+    // security_approver approves too; the UI treats it as approver and shows the raw role.
+    role: roleRaw === 'security_approver' ? 'approver' : roleRaw && ROLES.includes(roleRaw) ? (roleRaw as Role) : null,
     roleRaw,
     tenant: asStr(o.tenant) ?? asStr(o.tenant_id) ?? asStr(p.tenant_id) ?? null,
   };

@@ -16,7 +16,7 @@
 #   platform/cf-tunnel token               -> cf-edge/cf-tunnel: token
 #   <env>/chat-db, <env>/chat-pgbouncer    -> bravo-control/executor-pgpass: pgpass (only the fields that exist)
 #   platform/cf-link-<env>-<svc>           -> bravo-link/cf-link-<env>-<svc>: client_id, client_secret (D-16 links)
-#   platform/argocd-repo token             -> argocd/repo-b-free (Argo CD repository credential; GitHub read-only token)
+#   platform/argocd-repo ssh_private_key   -> argocd/repo-b-free (Argo CD repository credential: read-only deploy key, SSH)
 #   executor topology paths (deploy/cloud/in-cluster/topology.json) -> bravo-control/bx-<path>: every field that
 #     exists, mounted at BRAVO_SECRETS_DIR/<path with / as __>/<field> (executor topology.FileSecrets)
 set -euo pipefail
@@ -112,12 +112,21 @@ cmd_deliver() {
   for l in src-k8s src-db src-pgb src-admin dst-k8s dst-db dst-pgb dst-admin; do
     secret bravo-link "cf-link-$l" Opaque "client_id=platform/cf-link-$l/client_id" "client_secret=platform/cf-link-$l/client_secret"
   done
-  if [[ -n $("$KEYS" env-fields platform argocd-repo) ]]; then
-    secret argocd repo-b-free Opaque literal:type=git literal:url=https://github.com/mangowhoiscloud/b-free.git \
-      literal:username=x-access-token password=platform/argocd-repo/token
-    kubectl --context "$CTX" -n argocd label secret repo-b-free argocd.argoproj.io/secret-type=repository --overwrite >/dev/null
+  # Argo CD repository credential: read-only deploy key (SSH) for the private repo, kept only in OpenBao
+  # secret/envs/platform/argocd-repo field ssh_private_key (GitHub deploy key id 168472040).
+  if "$KEYS" env-fields platform argocd-repo | grep -qx ssh_private_key; then
+    local repo
+    repo="$("$KEYS" env-pipe platform argocd-repo ssh_private_key -- jq -Rs '{
+      apiVersion: "v1", kind: "Secret", type: "Opaque",
+      metadata: {name: "repo-b-free", namespace: "argocd",
+        labels: {"argocd.argoproj.io/secret-type": "repository", "app.kubernetes.io/managed-by": "bravo-keys", "bravo.io/source": "openbao"}},
+      data: {type: ("git" | @base64), name: ("b-free" | @base64),
+             url: ("git@github.com:mangowhoiscloud/b-free.git" | @base64),
+             sshPrivateKey: ((if endswith("\n") then . else . + "\n" end) | @base64)}}')"
+    printf '%s\n' "$repo" | kubectl --context "$CTX" apply -f - >/dev/null; repo=""
+    log "Secret argocd/repo-b-free: ssh deploy key for git@github.com:mangowhoiscloud/b-free.git (value not shown)"
   else
-    log "argocd repo credential: secret/envs/platform/argocd-repo (field token) is not in OpenBao; Argo CD cannot read the private repo yet"
+    log "argocd repo credential: secret/envs/platform/argocd-repo (field ssh_private_key) is not in OpenBao; Argo CD cannot read the private repo yet"
   fi
   local ns
   for ns in bravo-control; do

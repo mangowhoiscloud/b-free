@@ -250,12 +250,19 @@ class OpenBao:
     def __repr__(self) -> str:
         return f"OpenBao(addr={self.cfg.addr!r}, logged_in={self._token is not None})"
 
-    @property
-    def logged_in(self) -> bool:
-        """A usable identity right now (an AppRole/Kubernetes token, or a token file to read)."""
-        if self._token and self._token_exp - time.time() > 30:
-            return True
-        return self.cfg.token_file is not None and self.cfg.token_file.is_file()
+    async def check(self) -> str:
+        """``ok`` when a token is usable now, else the reason. Kubernetes auth logs in on first use and again after
+        its lease ends, so holding no token between uses is not a fault."""
+        if not self.configured:
+            return "openbao_unconfigured"
+        try:
+            async with self._client() as http:
+                await self._current_token(http)
+        except ToolBlocked as exc:
+            return exc.reason
+        except httpx.HTTPError:
+            return "openbao_unreachable"
+        return "ok"
 
     @property
     def configured(self) -> bool:

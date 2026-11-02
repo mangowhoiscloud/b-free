@@ -78,7 +78,9 @@ resource "aws_instance" "node" {
   iam_instance_profile        = aws_iam_instance_profile.node.name
   associate_public_ip_address = false
   user_data                   = var.user_data
-  user_data_replace_on_change = true
+  # The node is stateful (etcd, OpenBao, CNPG volumes): a cloud-init change does not replace it by itself.
+  # Apply a changed drop-in on the live node (SSM) or replace deliberately: terraform apply -replace=<this resource>.
+  user_data_replace_on_change = false
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -102,6 +104,6 @@ resource "aws_instance" "node" {
 
   lifecycle {
     # 새 Ubuntu AMI가 나와도 노드를 갈아 끼우지 않음. 교체는 판단해서 taint로.
-    ignore_changes = [ami]
+    ignore_changes = [ami, user_data]
   }
 }

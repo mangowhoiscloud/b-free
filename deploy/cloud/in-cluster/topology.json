@@ -49,13 +49,13 @@
     {
       "name": "aws",
       "side": "src",
-      "url": "k8s-pf://bravo-source/chat/app.kubernetes.io/name=bravo-demo/8081",
+      "url": "http://src-admin.bravo-link.svc.cluster.local:8081",
       "secret": "envs/source-aws/chat-admin"
     },
     {
       "name": "onprem",
       "side": "dst",
-      "url": "k8s-pf://bravo-onprem/chat/app.kubernetes.io/name=bravo-demo/8081",
+      "url": "http://dst-admin.bravo-link.svc.cluster.local:8081",
       "secret": "envs/target-onprem/chat-admin"
     }
   ],

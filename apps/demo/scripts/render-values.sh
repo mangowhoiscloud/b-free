@@ -50,6 +50,8 @@ case "$target" in
 image: {repository: "$repo", digest: "$digest"}
 environment: {id: aws, label: AWS, labelJa: AWS}
 publicUrl: "$public_url"
+# Landing-zone OTel agent (deploy/landing-zone/scripts/otel-link.sh), forwarded to the platform over t1-plat-otel.
+otel: {endpoint: "http://otel-agent.bravo-observability.svc.cluster.local:4317"}
 db:
   dsnSecret: {name: bravo-demo-db, key: dsn}
   passwordSource: aws-secrets-manager

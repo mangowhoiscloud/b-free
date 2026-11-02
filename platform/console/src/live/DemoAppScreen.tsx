@@ -5,7 +5,7 @@
  */
 import { VStack } from '@astryxdesign/core/Stack';
 import type { ConsoleView } from '../api/derive';
-import { fmtDateTime, fmtMs, shortId } from '../lib/format';
+import { fmtClock, fmtDateTime, fmtMs, shortId } from '../lib/format';
 import { distroOf, parseClusters, type ClustersResp } from './ClustersScreen';
 import { EdgeBlock } from './EdgeBlock';
 import { Block, DataTable, Facts, Screen, Val } from './ScreenFrame';
@@ -52,10 +52,10 @@ export function DemoAppScreen({ view }: { view: ConsoleView | null }) {
   const clusters = useLive('collector', 'v1/clusters', 5000, parseClusters);
   const receipt = view?.run?.receipt ?? null;
   const run = view?.run ?? null;
-  const at = clusters.updatedAt ? new Date(clusters.updatedAt).toLocaleTimeString('ko-KR', { hour12: false }) : null;
+  const at = clusters.updatedAt ? `${fmtClock(clusters.updatedAt)} UTC+9` : null;
 
   return (
-    <Screen title="데모 앱 상태" lead="고객 데모 앱이 도는 실제 환경마다 한 줄입니다. 위치와 준비 상태는 수집기가 각 클러스터의 ns chat에서 읽고, 공개 이름은 설정(BRAVO_APP_ENVS)에서 옵니다.">
+    <Screen title="데모 앱" lead="고객 트래픽은 지금 어느 환경으로 가는가">
       <Block title="환경별 상태" meta={<Fresh at={clusters.updatedAt} label="수집" />}>
         {clusters.error ? (
           <NotConnected endpoint={clusters.endpoint} reason={`수집기에 닿지 못해 환경을 알 수 없습니다. ${liveReason(clusters.error)}`} />
@@ -104,7 +104,7 @@ export function DemoAppScreen({ view }: { view: ConsoleView | null }) {
 
       <Block title="마지막 컷오버 영수증" meta={receipt ? <Tag variant={receipt.verdict === 'MATCH' ? 'success' : 'error'} label={receipt.verdict} /> : undefined}>
         {!view ? (
-          <NotConnected title="계획 없음" endpoint="GET /v1/plans/{plan_id}" reason="영수증은 계획에 붙습니다. 홈의 이전 계획 표에서 계획을 고르세요." />
+          <NotConnected title="계획 없음" endpoint="GET /v1/plans/{plan_id}" reason="영수증은 계획에 붙습니다. 홈의 계획 표에서 계획을 고르세요." />
         ) : !receipt ? (
           <p className="foot">이 계획에는 컷오버 영수증이 아직 없습니다{run ? ` (실행 ${shortId(run.run_id)} · ${run.status})` : ''}.</p>
         ) : (

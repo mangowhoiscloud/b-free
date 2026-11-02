@@ -45,7 +45,7 @@ images:
     digest: sha256:832b16cdf3ea143fec05b942bc18314179dd2c11176e5c4c5619af35a3c0070d # r2-20261102T130026Z (platform-API lane: + inventory_root_empty, GET /v1/me, migration 0007 owner RLS fix)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:868196daccbd3a670c740f4f618e1c94718cfa9f43109c9f916d14956c0bad61 # obs-cost-r5 (console lane: observability charts, cost receipt, Access-only login)
+    digest: sha256:077fb8c8209228797fcebc6566e1229a4a6a6018d3247601094a69b535000805 # redesign-r8 (console lane: DESIGN-REFERENCE IA, type scale, time range, KPI, receipt, health/sync)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:bf7f65bb554a902b55d82b0ed37838a3c1d1fefb33f031c79a6ff14e1f97738e
@@ -54,7 +54,7 @@ images:
     digest: sha256:0893095f8918634f43617befe09bfd38e0ba53d7a5f2b108b796cde7d4ecacc7 # snapshot-20261102T125122Z (collector lane: /v1/inventory/snapshot)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
-    digest: sha256:32c2b92b0f6c6852def8273ecd535b7dd013d728d9d99bc176e531f6822d8262 # cloud-202611022104 (data/cutover lane)
+    digest: sha256:bf05cadf543d1372820fda4e096015588037ae5743db53b4ad18427e47877e55 # cloud-202611022213 (data/cutover lane: spike fixes, repl_setup/ops with file secrets in executor-0)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
-    digest: sha256:b3cdf76800451a253848888db8f18e346bea357abf733c71ac24ce7f5f32d012 # r2-20261102T124840Z (built from the working tree, arm64)
+    digest: sha256:929b414d3658b07ce0c3489620f6268333555ed0fd4474a5f4691103a3321614 # readyz-20261102T131522Z (rehearsal lane: worker imports via site-packages .pth, no PYTHONPATH; /readyz checks a usable OpenBao token; arm64)

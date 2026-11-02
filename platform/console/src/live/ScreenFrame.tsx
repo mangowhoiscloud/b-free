@@ -5,6 +5,7 @@ import { Heading, Text } from '@astryxdesign/core/Text';
 import { HStack, VStack } from '@astryxdesign/core/Stack';
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table';
 
+/** A screen answers one question (DESIGN-REFERENCE §3): title, the question in one line, then the tools. */
 export function Screen({ title, lead, aside, children }: { title: string; lead: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
     <section className="screen" aria-labelledby="screen-title">
@@ -13,9 +14,7 @@ export function Screen({ title, lead, aside, children }: { title: string; lead: 
           <Heading level={2} id="screen-title">
             {title}
           </Heading>
-          <Text type="supporting" color="secondary" as="p">
-            {lead}
-          </Text>
+          <p className="screen__q">{lead}</p>
         </div>
         {aside && <div className="screen__aside">{aside}</div>}
       </header>
@@ -97,5 +96,61 @@ export function Val({ v, unit, why }: { v: string | number | null | undefined; u
       {v}
       {unit && <span className="unit">{unit}</span>}
     </span>
+  );
+}
+
+export interface Kpi {
+  label: string;
+  value: ReactNode;
+  note?: ReactNode;
+}
+
+/** KPI row: one surface, the only 24px figures on a screen. */
+export function KpiRow({ items, label }: { items: Kpi[]; label: string }) {
+  return (
+    <div className="kpis" role="group" aria-label={label}>
+      {items.map((k) => (
+        <div key={k.label} className="kpi">
+          <span className="kpi__label">{k.label}</span>
+          <span className="kpi__value">{k.value}</span>
+          {k.note && <span className="kpi__note">{k.note}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export type Health = 'ok' | 'warn' | 'bad' | 'none' | 'run';
+export const HEALTH_TEXT: Record<Health, string> = { ok: '정상', warn: '준비 중', bad: '응답 없음', none: '연결 안 됨', run: '진행 중' };
+
+/** Status dot + word: color never alone. */
+export function StatusText({ h, text }: { h: Health; text?: string }) {
+  return (
+    <span className="nowrap">
+      <span className={`dot dot--${h}`} aria-hidden="true" />
+      {text ?? HEALTH_TEXT[h]}
+    </span>
+  );
+}
+
+/** Ratio bar of health counts (Argo CD), with the counts in text. */
+export function StatusBar({ counts, label }: { counts: Partial<Record<Health, number>>; label: string }) {
+  const order: Health[] = ['ok', 'run', 'warn', 'bad', 'none'];
+  const total = order.reduce((a, h) => a + (counts[h] ?? 0), 0);
+  return (
+    <div className="statusbar" role="group" aria-label={label}>
+      <div className="statusbar__track" aria-hidden="true">
+        {total > 0 &&
+          order.map((h) =>
+            counts[h] ? <span key={h} className={`statusbar__seg--${h === 'run' ? 'ok' : h}`} style={{ flexGrow: counts[h] }} /> : null,
+          )}
+      </div>
+      <div className="statusbar__legend">
+        {order.filter((h) => counts[h]).map((h) => (
+          <StatusText key={h} h={h} text={`${HEALTH_TEXT[h]} ${counts[h]}`} />
+        ))}
+        {total === 0 && <span>표시할 대상 없음</span>}
+      </div>
+    </div>
   );
 }

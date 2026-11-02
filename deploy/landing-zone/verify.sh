@@ -131,7 +131,12 @@ ss="$(k get clustersecretstore bravo-platform-openbao -o jsonpath='{.metadata.la
 [[ $ss == pending* ]] && pend eso.store "ClusterSecretStore bravo-platform-openbao: link=$ss (D-16 link not built; secrets piped by keys.sh)" \
   || { [[ $ss == *True* ]] && pass eso.store "$ss" || fail eso.store "${ss:-absent}"; }
 check otel.agent "deploy/otel-agent available (bravo-observability, 4317/4318)" k -n bravo-observability rollout status deploy/otel-agent --timeout=5s
-pend otel.export "otel-agent exports to its debug log only until the link to the platform Collector exists"
+if k -n bravo-observability get deploy platform-otel >/dev/null 2>&1; then
+  check otel.link "deploy/platform-otel (D-16 link t1-plat-otel to the platform Collector) available" \
+    k -n bravo-observability rollout status deploy/platform-otel --timeout=5s
+else
+  pend otel.link "no deploy/platform-otel: run deploy/landing-zone/scripts/otel-link.sh <overlay> <ctx> <env-id>"
+fi
 
 # --- reachability from a pod (restricted PSA) ----------------------------------------------------
 probe="bravo-verify-probe-$RANDOM"

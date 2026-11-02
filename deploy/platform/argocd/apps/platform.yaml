@@ -1,4 +1,8 @@
-# Argo CD Applications for the platform RKE2 node (spec §7.2) (app-of-apps root: ../root.yaml).
+# Argo CD Applications for the platform RKE2 node (spec §7.2). Repo over SSH with a read-only deploy key
+# (Secret argocd/repo-b-free from OpenBao secret/envs/platform/argocd-repo).
+# Sync is MANUAL for now: origin/main lags the digests deployed from the working tree between checkpoint pushes,
+# and an automated sync would roll live images back. Turn on `automated` (prune: false) once main holds the
+# deployed digests (each app should show Synced before that). (app-of-apps root: ../root.yaml).
 # Git: https://github.com/mangowhoiscloud/b-free.git main. Out-of-Git objects (Secrets piped from OpenBao) are never pruned: prune is off.
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -14,13 +18,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: default
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/gateway-api
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -44,13 +45,10 @@ spec:
       helm:
         releaseName: cilium
         valueFiles: [$values/deploy/landing-zone/overlays/rke2/cilium-values.yaml]
-    - repoURL: https://github.com/mangowhoiscloud/b-free.git
+    - repoURL: git@github.com:mangowhoiscloud/b-free.git
       targetRevision: main
       ref: values
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -67,13 +65,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: default
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/storage
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -99,9 +94,6 @@ spec:
           config:
             clusterWide: true
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -119,13 +111,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: openbao
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/openbao
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -142,13 +131,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: bravo-observe
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/observability
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -165,13 +151,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: bravo-control
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/control
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -188,13 +171,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: bravo-edge
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/edge
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -211,13 +191,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: bravo-link
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/link/d16
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -240,13 +217,10 @@ spec:
       helm:
         releaseName: argocd
         valueFiles: [$values/deploy/platform/argocd/values.yaml]
-    - repoURL: https://github.com/mangowhoiscloud/b-free.git
+    - repoURL: git@github.com:mangowhoiscloud/b-free.git
       targetRevision: main
       ref: values
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -269,10 +243,7 @@ spec:
       helm:
         releaseName: aws-ebs-csi-driver
         valueFiles: [$values/deploy/platform/ebs-csi/values.yaml]
-    - repoURL: https://github.com/mangowhoiscloud/b-free.git
+    - repoURL: git@github.com:mangowhoiscloud/b-free.git
       targetRevision: main
       ref: values
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true

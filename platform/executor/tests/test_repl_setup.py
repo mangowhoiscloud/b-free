@@ -72,7 +72,7 @@ def pair() -> Iterator[dict[str, Any]]:
             "replication": {"fwd_conninfo": f"host={names['src']} port=5432",
                             "rev_conninfo": f"host={names['dst']} port=5432"},
         }
-        yield {"topo": topo, "pw": pw, "ports": ports}
+        yield {"topo": topo, "pw": pw, "ports": ports, "names": names}
     finally:
         for n in names.values():
             subprocess.run(["docker", "rm", "-f", n], capture_output=True, check=False)
@@ -129,3 +129,25 @@ async def test_setup_streams_forward_and_prepares_reverse(pair: dict[str, Any], 
 
 async def test_setup_is_idempotent(tool: ReplSetup) -> None:
     await tool.setup(sync_timeout_s=60)  # second run: both subscriptions exist, nothing recreated
+
+
+async def test_a_failing_create_subscription_leaves_no_password_in_the_server_log(
+    pair: dict[str, Any]
+) -> None:
+    """Audit: a failed statement put a connection string with a password into the RDS log."""
+    topo = {**pair["topo"], "replication": {**pair["topo"]["replication"],
+                                            "rev_conninfo": "host=no-such-host.invalid port=5432"}}
+    broken = ReplSetup(topo, DictSecrets(pair["pw"]))  # type: ignore[arg-type]
+    # Drop the reverse subscription so setup() tries to create it again, against an unreachable host.
+    dsn = (f"host=127.0.0.1 port={pair['ports']['src']} dbname=chat user=executor_ctl "
+           f"password={pair['pw']['src']['executor_ctl']}")
+    async with await AsyncConnection.connect(dsn, autocommit=True) as c:
+        await c.execute("ALTER SUBSCRIPTION bravo_rev_sub SET (slot_name = NONE)")
+        await c.execute("DROP SUBSCRIPTION bravo_rev_sub")
+    with pytest.raises(Exception):  # noqa: B017 - any failure; the point is the log
+        await broken.setup(sync_timeout_s=30)
+    logs = await asyncio.to_thread(subprocess.run, ["docker", "logs", pair["names"]["src"]],
+                                   capture_output=True, text=True, check=False)
+    combined = logs.stdout + logs.stderr
+    assert "CREATE SUBSCRIPTION" not in combined
+    assert pair["pw"]["dst"]["replicator"] not in combined

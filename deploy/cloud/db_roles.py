@@ -181,6 +181,8 @@ def main() -> int:
                       "-tAc", "SELECT rolname FROM pg_roles WHERE rolname IN "
                       "('executor_ctl','executor_observe','replicator')").split()
     sql = "".join(f"ALTER ROLE {r} PASSWORD '{scram_verifier(fields[r])}';\n" for r in ROLES if r in present)
+    if "executor_ctl" in present:  # for schemas applied before this grant was in 02_roles.sql
+        sql += "GRANT SET ON PARAMETER log_min_error_statement, log_statement TO executor_ctl;\n"
     if sql and not schema_applied:
         kubectl(a.context, a.namespace, *psql, "-f", "-", stdin=sql)
     print(json.dumps({"env": a.env, "secret": f"secret/{path}",

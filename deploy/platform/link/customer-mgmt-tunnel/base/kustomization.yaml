@@ -5,3 +5,4 @@ resources:
   - deployment.yaml
   - networkpolicy.yaml
   - cilium-apiserver.yaml
+  - chat-admin-from-mgmt.yaml

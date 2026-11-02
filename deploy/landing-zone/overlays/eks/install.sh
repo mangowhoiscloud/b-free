@@ -230,8 +230,8 @@ step_eso() {
 
 step_app() {
   # ci/eks-values.yaml is render-test only (EXAMPLE values); the deployable values come from
-  # apps/demo/scripts/render-values.sh eks (terraform output + the ECR digest). No OTel collector runs
-  # here yet, so otel.endpoint stays at the chart default "" (exporter off).
+  # apps/demo/scripts/render-values.sh eks (terraform output + the ECR digest). otel.endpoint is the
+  # landing-zone agent (deploy/landing-zone/scripts/otel-link.sh eks <ctx> source-aws installs it and the link).
   log "demo app: Helm release chat (values from render-values.sh eks)"
   check_image "$DEMO_IMAGE_REPO" "$EKS_DEMO_IMAGE_TAG" "$DEMO_IMAGE_DIGEST"
   local gen="$repo/apps/demo/chart/values-eks.generated.yaml"

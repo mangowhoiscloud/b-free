@@ -181,6 +181,11 @@ class CutoverRunner:
                 st.detail["long_transactions"] = long_tx
                 if long_tx:
                     raise StepFailed("LONG_TRANSACTION", {"count": long_tx})
+                # Before the write stop: no PgBouncer server may still be logging in when PAUSE comes
+                # (see PgBouncerAdmin.wait_no_logins). Not part of the write pause.
+                st.detail["pause_guard"] = {
+                    pool.name: await admin.wait_no_logins(pool.db_name, s.pause_guard_s) for pool, admin in sides.pools
+                }
                 # Write pause (NFR-1) starts right before the first write restriction.
                 pause_start_ns = self._clock_ns()
                 st.detail["entries"] = await self._block_entries(fx, applied)

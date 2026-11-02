@@ -67,3 +67,21 @@ spec:
       backendRefs:
         - name: chat-bravo-demo
           port: 80
+---
+# The Gateway's Envoy reaches the app pods as Cilium identity `ingress`. Once any policy selects the app
+# pods (chat-admin-from-mgmt-connector, deploy/platform/link), that identity is denied unless allowed here.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: chat-app-from-gateway
+  namespace: chat
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: bravo-demo
+  ingress:
+    - fromEntities: [ingress]
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP

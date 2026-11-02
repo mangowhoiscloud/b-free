@@ -69,6 +69,10 @@ locals {
     AZ=$(curl -sf -H "X-aws-ec2-metadata-token: $T" http://169.254.169.254/latest/meta-data/placement/availability-zone)
     cat > /etc/rancher/rke2/config.yaml.d/30-platform.yaml <<EOF
     cni: none
+    # RKE2 still installs the Traefik CRD chart when rke2-traefik is disabled; it collides with the Gateway API
+    # CRDs v1.6.3 the platform installs (helm-install-rke2-traefik-crd CrashLoop, 2026-11-02).
+    disable+:
+      - rke2-traefik-crd
     kube-apiserver-arg+:
       - service-account-issuer=${local.oidc_issuer}
       - service-account-jwks-uri=${local.oidc_issuer}/openid/v1/jwks

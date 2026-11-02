@@ -1,3 +1,6 @@
+# NOT USED on the spec platform (EC2 + RKE2): Cilium there is the landing zone RKE2 values
+# (deploy/landing-zone/overlays/rke2/cilium-values.yaml, cni: none). Kept as the record of the interim platform EKS
+# (AWS VPC CNI chaining), retired 2026-11-02.
 # Cilium 1.20.4 on the platform EKS: AWS VPC CNI chaining (TECH-STACK-SPEC 1, D-21, 09-cni-csi.md).
 # VPC CNI keeps ENI/IPAM (its own policy agent is off: modules/cluster/eks network_policy_engine = cilium).
 # Cilium attaches eBPF to the same veth for NetworkPolicy enforcement, Hubble flow records and the

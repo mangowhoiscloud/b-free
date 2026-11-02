@@ -24,21 +24,24 @@ import { StateProgress } from './components/StateProgress';
 import { useApi, usePlanParam, usePlanStream, useSession } from './state';
 
 const SCREENS = [
-  { id: 'home', label: '홈', group: 'operate' },
-  { id: 'plan', label: '계획 · 승인 콘솔', group: 'operate' },
-  { id: 'approvals', label: '승인 (change · cutover · failback)', group: 'operate' },
-  { id: 'agents', label: '에이전트 실시간', group: 'watch' },
-  { id: 'clusters', label: '클러스터 실시간', group: 'watch' },
-  { id: 'workflow', label: 'CI/CD · 워크플로우', group: 'watch' },
-  { id: 'demo', label: '데모 앱 상태', group: 'watch' },
-  { id: 'observe', label: '관측', group: 'watch' },
-  { id: 'ending', label: '마무리 장면', group: 'watch' },
-  { id: 'cost', label: '비용 영수증', group: 'watch' },
+  { id: 'home', label: '홈', group: '개요' },
+  { id: 'plan', label: '계획 · 승인', group: '이전' },
+  { id: 'approvals', label: '승인 기록', group: '이전' },
+  { id: 'workflow', label: '워크플로우', group: '이전' },
+  { id: 'cost', label: '비용 영수증', group: '이전' },
+  { id: 'clusters', label: '클러스터', group: '환경' },
+  { id: 'demo', label: '데모 앱', group: '환경' },
+  { id: 'observability', label: '관측', group: '관측' },
+  { id: 'agents', label: '에이전트', group: '관측' },
+  { id: 'ending', label: '마무리', group: '증거' },
 ] as const;
+const GROUPS = ['개요', '이전', '환경', '관측', '증거'] as const;
+const ALIASES: Record<string, string> = { observe: 'observability' };
 type ScreenId = (typeof SCREENS)[number]['id'];
 
 const screenFromHash = (): ScreenId => {
-  const h = window.location.hash.replace(/^#\/?/, '');
+  const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? '';
+  const h = ALIASES[raw] ?? raw;
   const found = SCREENS.find((s) => s.id === h)?.id;
   if (found) return found;
   // No screen in the hash: a plan URL (/plans/<id>, or #approve) opens the plan; anything else opens home.
@@ -54,7 +57,9 @@ function useScreen(): ScreenId {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   useEffect(() => {
-    if (screenFromHash() !== screen) history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${screen}`);
+    const raw = window.location.hash.replace(/^#\/?/, '');
+    if ((raw.split('?')[0] ?? '') !== screen && screenFromHash() !== screen) history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${screen}`);
+    else if (ALIASES[raw.split('?')[0] ?? '']) history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${screen}${raw.includes('?') ? `?${raw.split('?')[1]}` : ''}`);
   });
   return screen;
 }
@@ -88,13 +93,13 @@ export function App() {
       header={
         <div className="shell-brand">
           <span className="shell-brand__mark">BRAVO</span>
-          <span className="shell-brand__name">플랫폼 실시간 콘솔</span>
+          <span className="shell-brand__name">이전 플랫폼 콘솔</span>
         </div>
       }
-      footer={<div className="shell-foot">읽기 전용 화면 · 승인은 콘솔에서만</div>}
+      footer={<div className="shell-foot">시각 표시 UTC+9 (KST · JST)</div>}
     >
-      {(['operate', 'watch'] as const).map((g) => (
-        <SideNavSection key={g} title={g === 'operate' ? '운영' : '실시간 보기'}>
+      {GROUPS.map((g) => (
+        <SideNavSection key={g} title={g}>
           {SCREENS.filter((s) => s.group === g).map((s) => (
             <SideNavItem
               key={s.id}
@@ -120,11 +125,11 @@ export function App() {
       <Header session={session} />
       {screen !== 'plan' && (
         <div className="screen-wrap">
-          {screen === 'agents' && <AgentsScreen planId={planId} events={events} status={stream.status} detail={stream.detail} />}
+          {screen === 'agents' && <AgentsScreen planId={planId} events={events} status={stream.status} detail={stream.detail} session={session} onOpenPlan={setPlanId} />}
           {screen === 'clusters' && <ClustersScreen />}
           {screen === 'workflow' && <WorkflowScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} />}
           {screen === 'demo' && <DemoAppScreen view={view} />}
-          {screen === 'observe' && <ObservabilityScreen view={view} planId={planId} />}
+          {screen === 'observability' && <ObservabilityScreen view={view} planId={planId} events={events} />}
           {screen === 'home' && (
             <HomeScreen
               session={session}

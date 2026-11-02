@@ -86,6 +86,20 @@ class ReplSetup:
                 await db.close()
         return out
 
+    @staticmethod
+    async def _quiet(db: ChatDb) -> None:
+        """CREATE SUBSCRIPTION carries the replicator password in its connection string. Before sending
+        it, this session must not log statement text on error or otherwise (audit: a failed statement
+        leaked a password into the RDS log). Needs GRANT SET ON PARAMETER ... TO executor_ctl
+        (02_roles.sql, deploy/cloud/db_roles.py). If the server refuses, nothing is sent."""
+        await db.conn.execute("SET log_min_error_statement = panic")
+        await db.conn.execute("SET log_statement = 'none'")
+
+    @staticmethod
+    async def _loud(db: ChatDb) -> None:
+        await db.conn.execute("RESET log_min_error_statement")
+        await db.conn.execute("RESET log_statement")
+
     async def setup(self, sync_timeout_s: float) -> None:
         src, dst = await self._db("src"), await self._db("dst")
         try:
@@ -93,10 +107,14 @@ class ReplSetup:
                 emit("fwd_exists", side="dst")
             else:
                 conninfo = await self._conninfo("fwd_conninfo", "src")
-                await dst.conn.execute(
-                    sql.SQL("CREATE SUBSCRIPTION bravo_fwd_sub CONNECTION {} PUBLICATION bravo_fwd "
-                            "WITH (origin = none)").format(sql.Literal(conninfo))
-                )
+                await self._quiet(dst)
+                try:
+                    await dst.conn.execute(
+                        sql.SQL("CREATE SUBSCRIPTION bravo_fwd_sub CONNECTION {} PUBLICATION bravo_fwd "
+                                "WITH (origin = none)").format(sql.Literal(conninfo))
+                    )
+                finally:
+                    await self._loud(dst)
                 emit("fwd_created", side="dst", label=self.label)
             deadline = time.monotonic() + sync_timeout_s
             while True:
@@ -121,6 +139,7 @@ class ReplSetup:
                     await dst.conn.execute("SELECT pg_create_logical_replication_slot('bravo_rev_sub', 'pgoutput')")
                     emit("rev_slot_created", side="dst")
                 conninfo = await self._conninfo("rev_conninfo", "dst")
+                await self._quiet(src)
                 try:
                     await src.conn.execute(
                         sql.SQL("CREATE SUBSCRIPTION bravo_rev_sub CONNECTION {} PUBLICATION bravo_rev WITH "
@@ -129,8 +148,10 @@ class ReplSetup:
                     )
                 except Exception as exc:
                     emit("rev_not_created", reason="reverse link unreachable or rejected",
-                         error=type(exc).__name__, detail=str(exc)[:200])
+                         error=type(exc).__name__, sqlstate=getattr(exc, "sqlstate", None))
                     raise
+                finally:
+                    await self._loud(src)
                 emit("rev_created", side="src", enabled=False, label=self.label)
         finally:
             await src.close()
@@ -182,7 +203,11 @@ class ReplSetup:
 
 async def _main(args: argparse.Namespace) -> int:
     topo = json.loads(await asyncio.to_thread(Path(os.environ["BRAVO_TOPOLOGY_FILE"]).read_text, encoding="utf-8"))
-    broker = SecretBroker.from_env()
+    # In executor-0 (kubectl exec): the secrets the platform delivered; on a laptop: the AppRole.
+    from .topology import FileSecrets
+
+    secrets_dir = os.environ.get("BRAVO_SECRETS_DIR", "").strip()
+    broker: Any = FileSecrets(Path(secrets_dir)) if secrets_dir else SecretBroker.from_env()
     try:
         tool = ReplSetup(topo, broker)
         if args.cmd == "status":
@@ -195,7 +220,14 @@ async def _main(args: argparse.Namespace) -> int:
             emit("status", **(await tool.status()))
         return 0
     except Exception as exc:  # noqa: BLE001 - reported as one JSON line, non-zero exit
-        emit("failed", error=type(exc).__name__, detail=str(exc)[:300])
+        # psycopg messages can quote statement text (LINE 1: ...), which may hold a connection string:
+        # only the type and SQLSTATE go out for database errors.
+        import psycopg
+
+        if isinstance(exc, psycopg.Error):
+            emit("failed", error=type(exc).__name__, sqlstate=exc.sqlstate)
+        else:
+            emit("failed", error=type(exc).__name__, detail=str(exc)[:300])
         return 1
     finally:
         await broker.close()

@@ -9,5 +9,4 @@ labels:
       app.kubernetes.io/component: observability
     includeSelectors: false
 resources:
-  - grafana-route.yaml
   - health-probes.yaml

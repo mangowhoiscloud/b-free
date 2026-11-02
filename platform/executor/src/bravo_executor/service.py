@@ -122,7 +122,7 @@ class ExecutorService:
         for name, dsn in self.settings.pool_stats_dsns:
             db_name = next((p.db_name for p in self.settings.pools if p.name == name), self.settings.chat_db)
             try:
-                conn = await AsyncConnection.connect(dsn, autocommit=True, connect_timeout=3)
+                conn = await AsyncConnection.connect(dsn, autocommit=True, connect_timeout=3, prepare_threshold=None)
             except Exception as exc:  # noqa: BLE001
                 out[name] = {"reachable": False, "error": type(exc).__name__}
                 continue

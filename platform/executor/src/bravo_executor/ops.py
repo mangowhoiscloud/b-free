@@ -34,7 +34,10 @@ async def _main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 2
     kind, name, action = argv
-    broker = SecretBroker.from_env()
+    from .topology import FileSecrets
+
+    secrets_dir = os.environ.get("BRAVO_SECRETS_DIR", "").strip()
+    broker: Any = FileSecrets(Path(secrets_dir)) if secrets_dir else SecretBroker.from_env()
     try:
         s = await settings_from_topology(Path(os.environ["BRAVO_TOPOLOGY_FILE"]), broker.field, "unused",
                                          require_entries=False)
@@ -44,7 +47,7 @@ async def _main(argv: list[str]) -> int:
     if kind == "db":
         dsn = s.src_observe_dsn if name == "src" else s.dst_observe_dsn
         if action == "fence":
-            async with await AsyncConnection.connect(dsn, autocommit=True) as conn:
+            async with await AsyncConnection.connect(dsn, autocommit=True, prepare_threshold=None) as conn:
                 row = await (await conn.execute("SELECT epoch FROM bravo_fence WHERE id = 1")).fetchone()
                 out["epoch"] = None if row is None else int(row[0])
         elif action == "e4":
@@ -78,7 +81,7 @@ async def _main(argv: list[str]) -> int:
         if action not in ("current", "resume", "show", "hold"):
             return 2
         if action == "hold":
-            async with await AsyncConnection.connect(pool.admin_dsn, autocommit=True) as conn:
+            async with await AsyncConnection.connect(pool.admin_dsn, autocommit=True, prepare_threshold=None) as conn:
                 await conn.execute(b"SHOW VERSION")
                 await asyncio.sleep(180)
             out["held_s"] = 180
@@ -86,12 +89,12 @@ async def _main(argv: list[str]) -> int:
             out["active_side"] = await pool.switch.current_side()
             out["files"] = await pool.switch.preflight()
         if action == "resume":
-            async with await AsyncConnection.connect(pool.admin_dsn, autocommit=True) as conn:
+            async with await AsyncConnection.connect(pool.admin_dsn, autocommit=True, prepare_threshold=None) as conn:
                 await conn.execute(f"RESUME {pool.db_name}".encode())
             out["resume_sent"] = True
         if action in ("resume", "show"):
             dsn = dict(s.pool_stats_dsns)[name]
-            async with await AsyncConnection.connect(dsn, autocommit=True) as conn:
+            async with await AsyncConnection.connect(dsn, autocommit=True, prepare_threshold=None) as conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute(b"SHOW DATABASES")
                     out["row"] = next((
@@ -115,7 +118,7 @@ async def _e4_db(dsn: str) -> dict[str, Any]:
     """Each statement must fail with a privilege error; a REVOKE that "succeeds" with no effect is
     checked by reading the privilege afterwards."""
     out: dict[str, Any] = {}
-    async with await AsyncConnection.connect(dsn, autocommit=True) as conn:
+    async with await AsyncConnection.connect(dsn, autocommit=True, prepare_threshold=None) as conn:
         for label, stmt in E4_DB.items():
             try:
                 await conn.execute(stmt.encode())
@@ -133,7 +136,7 @@ async def _e4_db(dsn: str) -> dict[str, Any]:
 
 async def _e4_pgb(dsn: str) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    async with await AsyncConnection.connect(dsn, autocommit=True) as conn:
+    async with await AsyncConnection.connect(dsn, autocommit=True, prepare_threshold=None) as conn:
         for label, stmt in (("pause", b"PAUSE"), ("reload", b"RELOAD")):
             try:
                 await conn.execute(stmt)

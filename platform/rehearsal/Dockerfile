@@ -15,7 +15,7 @@ COPY agent/src ./agent/src
 COPY rehearsal/pyproject.toml rehearsal/uv.lock ./rehearsal/
 WORKDIR /app/rehearsal
 # Every package from uv.lock (hash-checked); bravo-agents installed from source, not editable.
-# The project itself is not installed here: its source is copied to /app/src below (PYTHONPATH).
+# The project itself is not installed here: its source is copied to /app/src below (.pth in site-packages).
 RUN uv sync --frozen --no-dev --extra service --no-editable --no-install-project
 
 FROM ${PYTHON_IMAGE}
@@ -30,7 +30,12 @@ COPY --chown=root:root rehearsal/tasks ./tasks
 COPY --chown=root:root rehearsal/sql ./sql
 COPY --chown=root:root agent/allowlists ./agent/allowlists
 COPY --chown=root:root agent/harbor ./agent/harbor
-ENV PATH="/app/.venv/bin:${PATH}" PYTHONPATH=/app/src PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+# The package is importable through a .pth in the venv's site-packages, not PYTHONPATH: the agent worker is
+# started with an environment built from scratch (no PYTHONPATH) and must still run `-m bravo_rehearsal.worker`.
+RUN /app/.venv/bin/python -c "import pathlib, sysconfig; \
+pathlib.Path(sysconfig.get_paths()['purelib'], 'bravo_rehearsal_src.pth').write_text('/app/src\n')" \
+ && env -i /app/.venv/bin/python -c "import bravo_rehearsal.worker, bravo_rehearsal.service"
+ENV PATH="/app/.venv/bin:${PATH}" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     BRAVO_AGENT_ALLOWLISTS_DIR=/app/agent/allowlists BRAVO_AGENT_HARBOR_DIR=/app/agent/harbor \
     BRAVO_REHEARSAL_TRIALS_DIR=/var/lib/bravo/runs HOME=/var/lib/bravo
 USER bravo:bravo

@@ -6,6 +6,7 @@ without parameters through the simple protocol, and autocommit avoids BEGIN.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import tempfile
@@ -90,7 +91,11 @@ class PgBouncerAdmin:
 
     @classmethod
     async def connect(cls, dsn: str, timeout_s: float = 5.0) -> PgBouncerAdmin:
-        conn = await AsyncConnection.connect(dsn, autocommit=True, connect_timeout=max(1, int(timeout_s)))
+        # prepare_threshold=None: psycopg would otherwise prepare the 6th identical command, i.e. switch
+        # to the extended protocol, which the admin console rejects (audit, spk05-admin-autoprepare).
+        conn = await AsyncConnection.connect(
+            dsn, autocommit=True, connect_timeout=max(1, int(timeout_s)), prepare_threshold=None
+        )
         return cls(conn)
 
     async def close(self) -> None:
@@ -109,6 +114,28 @@ class PgBouncerAdmin:
         async with self._conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(b"SHOW DATABASES")
             return list(await cur.fetchall())
+
+    async def servers(self, db_name: str) -> list[dict[str, Any]]:
+        async with self._conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(b"SHOW SERVERS")
+            return [r for r in await cur.fetchall() if r.get("database") == db_name]
+
+    async def wait_no_logins(self, db_name: str, timeout_s: float, interval_s: float = 0.02) -> dict[str, Any]:
+        """Wait until no server of ``db_name`` is still logging in (state new/login).
+
+        PAUSE closes such servers; PgBouncer then records a login failure ("pause mode") and, for
+        server_login_retry, fails waiting clients with "cached error: pause mode" instead of queueing
+        them (audit, RDS spike spk05; reproduced in deploy/pilot/runs/cloud-pause-experiment-*)."""
+        import time
+
+        start = time.monotonic()
+        while True:
+            rows = await self.servers(db_name)
+            logging_in = [r for r in rows if str(r.get("state")) in ("new", "login")]
+            if not logging_in or time.monotonic() - start >= timeout_s:
+                return {"waited_ms": round((time.monotonic() - start) * 1000), "servers": len(rows),
+                        "logging_in": len(logging_in)}
+            await asyncio.sleep(interval_s)
 
     async def database(self, db_name: str) -> dict[str, Any] | None:
         for row in await self.show_databases():

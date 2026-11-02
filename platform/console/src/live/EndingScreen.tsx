@@ -3,8 +3,10 @@
  * dependency map. The dependency map is live from the collector's static inventory (FR-2);
  * the others show "연결 안 됨" until their source exists.
  */
-import { Block, DataTable, Facts, Screen } from './ScreenFrame';
-import { asArray, asRecord, Fresh, LiveGate, liveReason, num, str, Tag, useLive } from './live';
+import { Block, DataTable, Facts, KpiRow, Screen } from './ScreenFrame';
+import { useQuery } from '@tanstack/react-query';
+import { fmtMoney } from '../lib/format';
+import { asArray, asRecord, Fresh, LiveGate, liveReason, num, str, Tag, useConfig, useLive } from './live';
 
 interface Finding { id: string; rule: string; tier: string; tierCode: string; service: string; file: string; line: number | null; reason: string }
 interface Inventory { rulesVersion: string | null; digest: string | null; files: number | null; summary: [string, number][]; findings: Finding[] }
@@ -28,15 +30,45 @@ const parseInventory = (v: unknown): Inventory => {
 // Color only for state: code changes block a clean move (경고); the rest are plain labels.
 const TIER_VARIANT: Record<string, 'warning' | 'neutral'> = { code_change: 'warning' };
 
+/** The ending scene shows only the migration's extra cost, large (DESIGN-REFERENCE §4.3 rule). */
+function ExtraCost() {
+  const { apiBase } = useConfig();
+  const q = useQuery({
+    queryKey: ['cost-ending'],
+    retry: 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const res = await fetch(`${apiBase}/v1/cost`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const o = (await res.json()) as Record<string, unknown>;
+      const t = (o.totals ?? {}) as Record<string, unknown>;
+      return { extra: typeof t.migration_extra === 'number' ? t.migration_extra : typeof o.migration_extra === 'number' ? o.migration_extra : null, currency: typeof o.currency === 'string' ? o.currency : 'USD' };
+    },
+  });
+  return (
+    <KpiRow
+      label="이전 비용"
+      items={[
+        {
+          label: '이전 중 추가 비용',
+          value: q.data?.extra != null ? fmtMoney(q.data.extra, q.data.currency) : '—',
+          note: q.error ? `연결 안 됨 · GET /v1/cost · ${q.error instanceof Error ? q.error.message : ''}` : q.data && q.data.extra === null ? '응답에 migration_extra 없음' : '자세한 품목은 비용 영수증',
+        },
+      ]}
+    />
+  );
+}
+
 export function EndingScreen() {
   const inv = useLive('collector', 'v1/inventory', 10_000, parseInventory);
   const residual = (inv.data?.findings ?? []).filter((f) => f.tierCode !== 'no_change');
   return (
-    <Screen title="마무리 장면" lead="FR-14 · NFR-8: 감사 기록, 구성 요소 태그별 비용, 남은 클라우드 의존 지도를 한 화면에 둡니다. 출처가 없는 항목은 이유와 함께 '연결 안 됨'으로 둡니다.">
+    <Screen title="마무리" lead="잠금에서 벗어났음을 무엇으로 증명하는가 (FR-14 · NFR-8)">
+      <ExtraCost />
       <Block title="출처 상태">
         <DataTable
           rows={[
-            { k: '감사 기록 (T24)', ok: false, why: '이 콘솔은 감사 기록을 읽는 출처가 없습니다. 계획별 이벤트는 CI/CD · 워크플로우 화면에 있습니다.' },
+            { k: '감사 기록 (T24)', ok: false, why: '이 콘솔은 감사 기록을 읽는 출처가 없습니다. 계획별 이벤트는 워크플로우 화면에 있습니다.' },
             { k: '구성 요소 태그별 비용 (T1)', ok: false, why: '이 콘솔은 태그별 비용을 읽는 출처가 없습니다. 브라우저는 AWS 자격을 쓰지 않습니다.' },
             { k: '남은 의존 지도', ok: !inv.error && inv.data !== undefined, why: inv.error ? `${liveReason(inv.error)} · ${inv.endpoint}` : '수집기 GET /v1/inventory (정적 분석, FR-2)' },
           ]}

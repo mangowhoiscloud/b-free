@@ -325,6 +325,7 @@ async def test_openbao_approle_login_is_single_use_and_policy_is_narrow(stack: S
     again = OpenBao(OpenBaoConfig(addr=stack.bao_addr, kv_mount="secret", role_id=stack.ids["role_id"],
                                   secret_id=stack.ids["secret_id"]))
     assert await blocked(again.login()) == "openbao_denied"
+    assert await bao.check() == "ok" and await again.check() == "openbao_denied"  # /readyz: a usable token now
     assert await blocked(again.read("envs/aws-src/collector-ro")) == "openbao_denied"
     await bao.renew()  # periodic token renews
     assert bao._period > 0 and (await bao.read("platform/rehearsal-synthetic-db"))["user"] == "rehearse_rw"

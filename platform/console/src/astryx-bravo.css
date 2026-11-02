@@ -556,3 +556,49 @@ h1, h2, h3 {
 .nowrap {
   white-space: nowrap;
 }
+
+.chart__marker {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+.sumtable {
+  border-collapse: collapse;
+  min-width: 480px;
+  font-size: 14px;
+}
+.sumtable th,
+.sumtable td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.sumtable thead th {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.sumtable .td-end {
+  text-align: right;
+}
+.receipt__extra {
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.receipt__lines {
+  font-size: 14px;
+}
+.receipt__lines tfoot th,
+.receipt__lines tfoot td {
+  border-top: 2px solid var(--ink);
+}
+.receipt-line--group td {
+  background: var(--panel-2);
+}
+
+/* Header now carries only identity and theme; the side nav owns the brand. */
+.topbar {
+  justify-content: flex-end;
+}

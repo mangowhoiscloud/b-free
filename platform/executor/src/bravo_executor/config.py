@@ -75,6 +75,7 @@ class Settings:
     probe_room: str = "bravo-probe"
     lock_lease_s: float = 600.0
     freeze_lock_timeout_ms: int = 2000
+    pause_guard_s: float = 3.0  # before the write stop: wait for PgBouncer server logins to finish
     fault_crash_after: str | None = None
 
     @classmethod
@@ -137,6 +138,7 @@ def tuning_from_env(e: Mapping[str, str]) -> dict[str, Any]:
         "probe_timeout_s": _float(e, "BRAVO_PROBE_TIMEOUT_S", 10.0),
         "lock_lease_s": _float(e, "BRAVO_LOCK_LEASE_S", 600.0),
         "freeze_lock_timeout_ms": int(_float(e, "BRAVO_FREEZE_LOCK_TIMEOUT_MS", 2000)),
+        "pause_guard_s": _float(e, "BRAVO_PAUSE_GUARD_S", 3.0),
         "fault_crash_after": _fault_flag(e),
     }
 

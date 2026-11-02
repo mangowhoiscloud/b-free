@@ -184,16 +184,16 @@ spec:
       ports:
         - { protocol: TCP, port: 8200 }
 ---
-# Grafana at /grafana/ on the platform front: only the Gateway (Cilium Envoy, reserved identity "ingress").
+# Prometheus scrapes the platform node's Hubble metrics (cilium-agent, host network, port 9965). Cilium gives node
+# addresses the reserved identity "host", which a Kubernetes NetworkPolicy ipBlock does not match.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: grafana-from-gateway
-  namespace: bravo-observe
+  name: prometheus-hubble-scrape
 spec:
   endpointSelector:
-    matchLabels: { app.kubernetes.io/name: grafana }
-  ingress:
-    - fromEntities: ["ingress"]
+    matchLabels: { app.kubernetes.io/name: prometheus }
+  egress:
+    - toEntities: ["host", "remote-node"]
       toPorts:
-        - ports: [{ port: "3000", protocol: TCP }]
+        - ports: [{ port: "9965", protocol: TCP }]

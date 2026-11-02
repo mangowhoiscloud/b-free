@@ -36,8 +36,10 @@ spec:
           args:
             - |
               set -u
-              umask 077
-              install -m 0600 /etc/bravo/git-key/ssh-privatekey /tmp/key 2>/dev/null || { echo "no deploy key" > /srv/app/.checkout-error; exit 0; }
+              umask 022   # checked-out files must be readable by the collector (uid 10001); the key is chmod 600
+              # The key comes from OpenBao without its final newline, which OpenSSH needs: add it back.
+              [ -s /etc/bravo/git-key/ssh-privatekey ] || { echo "no deploy key" > /srv/app/.checkout-error; exit 0; }
+              { cat /etc/bravo/git-key/ssh-privatekey; echo; } > /tmp/key && chmod 0600 /tmp/key
               export GIT_SSH_COMMAND="ssh -i /tmp/key -o IdentitiesOnly=yes -o UserKnownHostsFile=/etc/bravo/git/known_hosts -o StrictHostKeyChecking=yes"
               export HOME=/tmp
               r=/srv/app
@@ -52,7 +54,8 @@ spec:
               rm -f /tmp/key
           envFrom:
             - configMapRef: {name: customer-app-source}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}, runAsUser: 10001, runAsGroup: 10001}
+          # OpenSSH refuses a uid without a passwd entry ("No user exists for uid 10001"); alpine has nobody (65534).
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}, runAsUser: 65534, runAsGroup: 65534}
           resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 256Mi}}
           volumeMounts:
             - {name: app, mountPath: /srv/app}
@@ -205,6 +208,9 @@ spec:
             - {name: BRAVO_REHEARSAL_TOOL_LAYER_URL, value: "http://127.0.0.1:8090"}
             - {name: BRAVO_REHEARSAL_KUBECONFIG, value: /etc/bravo/rehearsal/kubeconfig}
             - {name: BRAVO_REHEARSAL_KUBE_CONTEXT, value: target-onprem}
+            # Digest-pinned images present on the on-prem RKE2 nodes (rehearsal lane, platform/rehearsal/docs/evidence/rke2-2026-11-02).
+            - {name: BRAVO_REHEARSAL_SANDBOX_IMAGE, value: "python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159"}
+            - {name: BRAVO_REHEARSAL_VERIFIER_IMAGE, value: "python:3.12-slim-bookworm@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753"}
             - {name: BRAVO_LLM_PROVIDER, value: claude_subscription}
             - {name: BRAVO_MODEL_OPUS, value: claude-opus-5-5}
             - {name: BRAVO_MODEL_HAIKU, value: claude-haiku-5-5}

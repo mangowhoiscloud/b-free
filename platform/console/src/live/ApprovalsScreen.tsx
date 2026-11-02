@@ -59,12 +59,12 @@ export function ApprovalsScreen({ planId, view, events, status, detail, user }: 
   const granted = eventsOf(events, ['approval.granted']);
   return (
     <Screen
-      title="승인 · change · cutover · failback"
-      lead="승인은 이 콘솔에서만 합니다. 승인자는 요청자와 달라야 하며(직무 분리) API가 이를 강제합니다. 승인 기록은 계획 이벤트 흐름에서 실시간으로 받습니다."
+      title="승인 기록"
+      lead="누가 무엇을 승인했고, 무엇이 승인을 기다리는가 (change · cutover · failback, 요청자 ≠ 승인자)"
       aside={planId ? <StreamBadge status={status} detail={detail} /> : undefined}
     >
       {!planId || !view ? (
-        <NotConnected title="계획이 열려 있지 않음" endpoint="GET /v1/plans/{plan_id} · /events (SSE)" reason="승인은 계획마다 있습니다. 홈의 이전 계획 표에서 계획을 고르세요." />
+        <NotConnected title="계획이 열려 있지 않음" endpoint="GET /v1/plans/{plan_id} · /events (SSE)" reason="승인은 계획마다 있습니다. 홈의 계획 표에서 계획을 고르세요." />
       ) : (
         <>
           <Block title="승인 종류">

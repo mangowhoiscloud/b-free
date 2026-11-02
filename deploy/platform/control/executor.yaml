@@ -48,6 +48,11 @@ spec:
             - name: PLATFORM_DB_DSN
               value: postgresql://bravo_executor:$(PLATFORM_DB_PASSWORD)@platform-db-rw.bravo-control.svc:5432/bravo?sslmode=verify-full&sslrootcert=/etc/bravo/pg-ca/ca.crt
             - {name: BRAVO_LOCK_LEASE_S, value: "600"}
+            # Front switch (T17, data/cutover lane): customer app front only (b-free is the platform, refused
+            # in code). Cloudflare credentials: /etc/bravo/secrets/platform__cloudflare (bx-platform-cloudflare).
+            - {name: BRAVO_FRONT_APP, value: b-free-chat}
+            - {name: BRAVO_FRONT_ENV_IDS, value: "src=aws,dst=onprem"}
+            - {name: BRAVO_FRONT_LB_ENABLED, value: "1"}
             - {name: AWS_REGION, value: ap-northeast-2}
             - {name: AWS_STS_REGIONAL_ENDPOINTS, value: regional}
             # Executor 역할(제어): eks:DescribeCluster on bravo-source + EKS access entry group bravo-executor.
@@ -71,6 +76,7 @@ spec:
             - {name: s-envs-source-aws-object-store, mountPath: /etc/bravo/secrets/envs__source-aws__object-store, readOnly: true}
             - {name: s-envs-target-onprem-object-store, mountPath: /etc/bravo/secrets/envs__target-onprem__object-store, readOnly: true}
             - {name: s-envs-target-onprem-k8s-executor, mountPath: /etc/bravo/secrets/envs__target-onprem__k8s-executor, readOnly: true}
+            - {name: s-platform-cloudflare, mountPath: /etc/bravo/secrets/platform__cloudflare, readOnly: true}
       volumes:
         - {name: topology, configMap: {name: executor-topology}}
         - name: kube
@@ -91,6 +97,7 @@ spec:
         - {name: s-envs-source-aws-object-store, secret: {secretName: bx-envs-source-aws-object-store, optional: true, defaultMode: 0440}}
         - {name: s-envs-target-onprem-object-store, secret: {secretName: bx-envs-target-onprem-object-store, optional: true, defaultMode: 0440}}
         - {name: s-envs-target-onprem-k8s-executor, secret: {secretName: bx-envs-target-onprem-k8s-executor, optional: true, defaultMode: 0440}}
+        - {name: s-platform-cloudflare, secret: {secretName: bx-platform-cloudflare, optional: true, defaultMode: 0440}}
 ---
 apiVersion: v1
 kind: Service

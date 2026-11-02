@@ -8,13 +8,11 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
+    repoURL: git@github.com:mangowhoiscloud/b-free.git
     targetRevision: main
     path: deploy/platform/argocd/apps
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-  syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
+  # Manual until main holds the deployed digests (see apps/platform.yaml).
+  syncPolicy: {}

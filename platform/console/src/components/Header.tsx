@@ -15,16 +15,6 @@ export function Header({ session }: { session: Session }) {
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <span className="brand__mark" aria-hidden="true">
-          B
-        </span>
-        <div>
-          <h1 className="brand__name">Bravo 운영 콘솔</h1>
-          <p className="brand__sub">플랫폼 콘솔</p>
-        </div>
-      </div>
-
       <Identity session={session} />
 
       <button
@@ -185,8 +175,9 @@ function Identity({ session }: { session: Session }) {
   if (me.data?.email)
     return (
       <p className="user" aria-label="로그인한 사용자">
+        <span className="meta">UTC+9</span>
         <span className="user__email">{me.data.email}</span>
-        <span className="tag">{me.data.role ? `${ROLE_TEXT[me.data.role]} · ${me.data.role}` : `역할 ${me.data.roleRaw ?? '없음'}`}</span>
+        <span className="tag">{me.data.role ? `${ROLE_TEXT[me.data.role]} · ${me.data.roleRaw ?? me.data.role}` : `역할 ${me.data.roleRaw ?? '없음'}`}</span>
       </p>
     );
   return (

@@ -426,9 +426,7 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
         images_ok = all(img and _digest_pinned(img) for img in (settings.sandbox_image, settings.verifier_image))
         checks["images"] = "ok" if images_ok else "verifier_unconfigured"
         checks["tool_layer"] = "ok" if settings.token_key and settings.tool_layer_url else "tool_layer_unconfigured"
-        bao = server_tools.bao
-        checks["openbao"] = ("ok" if bao.logged_in else "openbao_unconfigured" if not bao.configured
-                             else "openbao_not_logged_in")
+        checks["openbao"] = await server_tools.bao.check()
         checks["gate"] = "ok" if server_tools.s.gate_url else "gate_unconfigured"
         # Whether the model credential is stored in OpenBao (KV metadata only, never the value).
         checks["llm_token"] = await orch.llm_credential()

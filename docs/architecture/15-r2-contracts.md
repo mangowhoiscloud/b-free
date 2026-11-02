@@ -10,6 +10,7 @@
 | 4. 콘솔 화면용 API(승인 2종, 첫 화면) | T10 → T21 | `platform/api/src/bravo_api/rest.py` |
 | 5. T31 반영 경로 · Executor 승인 확인 | T10 ↔ T31 `platform/apply`, T12 Executor | 마이그레이션 `0004_change_approval.sql` |
 | 6. 리허설 Trial 요청 · 저장소 스냅숏 | T10 → T15 `platform/rehearsal` | `platform/api/src/bravo_api/rehearsal.py`, `upstreams.py` |
+| 7. 관측 API(콘솔 관측 화면) | 플랫폼 관측 백엔드(T18) → T21 콘솔 | `deploy/platform/observability`, `deploy/landing-zone/base/otel-agent-values.yaml`, `deploy/landing-zone/observability` |
 
 ## 1. SSE 이벤트
 
@@ -200,6 +201,96 @@ API → `platform/rehearsal`. 순서: 수집기 인벤토리 → 수집기 스�
 - 스냅숏: `PUT` 본문 tar.gz, 헤더 `X-Bravo-Inventory-Digest: <input_digest>`, `Content-Type: application/gzip`. 200 `{tenant_id, plan_id, input_digest, files, withheld}`, 422 `{"error": "snapshot_digest_mismatch" | …}`.
 - 수집기 `GET /v1/inventory/snapshot`(2026-11-02 저녁 추가): 스캔한 파일만 tar.gz, 헤더 `X-Bravo-Inventory-Digest`. 파일이 없으면 503 `{"error": "inventory_root_empty"}`. 실제 수집기 → 실제 리허설 서비스까지 시험이 통과합니다(`tests/test_rehearsal.py::test_real_collector_snapshot_reaches_the_real_rehearsal_service`).
 - 시도로 세지 않는 "아무것도 돌지 않음" 이유: `llm_unconfigured`, `cluster_unconfigured`, `rehearsal_unreachable`, `task_unknown`, `verifier_unconfigured`, `tool_layer_unconfigured`, `role_task_mismatch`, `role_unknown`, `role_allowlist_missing`, `role_allowlist_invalid`, `unauthorized`, `envelope_invalid`, `state_not_allowed_for_role`, `agent_runtime_unavailable`, `openbao_unconfigured`, `openbao_unreachable`, `openbao_denied`, `llm_token_missing`, `bad_request`, `idempotency_key_reuse`, `inventory_unavailable`, `inventory_root_empty`, `collector_unreachable`, `collector_response_lost`, `collector_bad_response`, `snapshot_unavailable`, `snapshot_inventory_mismatch`, `snapshot_upload_failed`, 그리고 리허설 서비스의 스냅숏 거부 코드(`snapshot_*`, `bad_inventory_digest`, `bad_snapshot_key`, `inventory_digest_missing`).
+
+## 7. 관측 API(콘솔 관측 화면)
+
+콘솔 관측 화면은 플랫폼 Prometheus를 콘솔 nginx의 읽기 전용 프록시로 질의합니다. 새 서비스 코드는 없고, 값은 모두 각 환경에서 실제로 받은 OTLP와 Hubble 지표입니다. 2026-11-02 22:10 KST에 아래 질의를 실제로 돌린 결과를 `deploy/platform/observability/runs/console-promql-20261102T131033Z.jsonl`에 남겼습니다.
+
+### 7.1 경로
+
+| 출처 | 경로 | 상태(2026-11-02 22:10 KST) |
+|---|---|---|
+| 플랫폼 서비스(api, operator-mcp, executor 등) | OTLP를 `otel-collector.bravo-observe.svc:4317`로 바로 보냄 | 연결됨 |
+| 플랫폼 서비스 상태 | 플랫폼 Collector의 `http_check` 수신기가 15초마다 각 서비스의 상태 경로를 GET | 연결됨(8개) |
+| 출발지 EKS(`source-aws`) | 앱 → `otel-agent.bravo-observability` → `platform-otel`(cloudflared `access tcp`, 서비스 토큰 `src-plat-otel`) → `t1-plat-otel.mangowhois.ai` → 터널 `bravo-platform` → 플랫폼 Collector | 연결됨 |
+| 온프렘 RKE2(`target-onprem`) | 같은 경로, 서비스 토큰 `dst-plat-otel` | 연결됨 |
+| GKE(`target-gcp`) | 같은 경로, 서비스 토큰 `gke-plat-otel`(`deploy/platform/link/gke-consumer`, 플랫폼 갈래) | 연결됨 |
+
+- 링크 Access 앱 `t1-plat-otel`의 Service Auth 정책은 토큰 셋만 받습니다(`infra/envs/edge/terraform.tfvars`의 `platform_links.otel.token_ids`). 토큰 값은 OpenBao `secret/envs/<env>/cf-link-plat-otel`에만 있고, 설치 스크립트 `deploy/landing-zone/scripts/otel-link.sh`가 파이프로 Secret을 만듭니다. 토큰 만료는 2026-11-09 13:02 UTC(168시간)입니다.
+- 환경 에이전트는 모든 신호에 `bravo.env`를 붙입니다. 플랫폼 Collector는 이 값이 없을 때만 `platform`을 넣습니다. Prometheus 라벨 이름은 `bravo_env`입니다.
+- 노트북 프로세스는 이 경로에 없습니다. GKE의 옛 임시 링크(`links.sh`의 `platform-otel` 중계)는 플랫폼 갈래가 D-16 링크로 바꿨습니다.
+
+### 7.2 엔드포인트
+
+| 요청 | 뜻 |
+|---|---|
+| `GET /svc/prometheus/api/v1/query?query=<PromQL>[&time=<unix>]` | 즉시 질의. 응답은 Prometheus JSON `{status, data: {resultType: "vector", result: [{metric: {…}, value: [<unix>, "<값>"]}]}}` |
+| `GET /svc/prometheus/api/v1/query_range?query=<PromQL>&start=<unix>&end=<unix>&step=<초>` | 구간 질의. `result[].values`가 `[<unix>, "<값>"]`의 배열 |
+| 링크 `https://b-free.mangowhois.ai/grafana/` | 엔지니어용 Grafana(`BRAVO_GRAFANA_URL`). 같은 Access 앱 뒤에 있고, Grafana가 Access JWT(`Cf-Access-Jwt-Assertion`, 콘솔 AUD)로 Viewer 로그인을 만듦. Tempo 트레이스와 Loki 로그는 Grafana Explore에서 봄 |
+
+- 콘솔 출처(`b-free.mangowhois.ai`)와 같은 출처이고, Access 쿠키로 들어옵니다. 프록시는 GET과 HEAD만 받습니다. POST는 403입니다(2026-11-02 22:11 KST 확인).
+- 프록시 대상은 `BRAVO_PROMETHEUS_UPSTREAM=http://prometheus.bravo-observe.svc.cluster.local:9090`입니다. NetworkPolicy `prometheus-ingress`가 `bravo-control`의 콘솔 Pod만 9090으로 받습니다.
+
+### 7.3 라벨
+
+| 라벨 | 값 | 쓰는 곳 |
+|---|---|---|
+| `bravo_env` | `source-aws`, `target-onprem`, `target-gcp`, `platform` | 환경별 묶음. 모든 패널이 이 라벨로 나눔 |
+| `service_name` | 데모 앱 `bravo-demo`, 플랫폼 서비스 이름 | 앱 지표 고르기 |
+| `http_route`, `http_response_status_code`, `http_request_method` | OTel HTTP 의미 규약 | RED |
+| `http_url`, `http_status_code`, `http_status_class`, `error_message` | `http_check` 수신기 | 플랫폼 서비스 상태 |
+| `verdict`, `reason`, `source`, `destination`, `protocol` | Hubble(`source`, `destination`은 네임스페이스) | 흐름과 드롭 |
+| `deployment_environment_name` | 앱이 스스로 붙인 값(`aws`, `gcp`, `onprem`) | 묶음에 쓰지 않음. `bravo_env`를 씀 |
+
+### 7.4 패널과 PromQL
+
+데모 앱 RED는 앱이 내는 OTel HTTP 서버 지표 `http.server.request.duration`(Prometheus 이름 `http_server_request_duration_seconds`)에서 계산합니다. kubelet 프로브 경로(`/healthz`, `/readyz`)는 뺍니다. 채팅 메시지 쓰기는 WebSocket으로도 들어오므로 HTTP RED에 다 잡히지 않습니다. 그래서 쓰기율은 앱의 `chat.writes` 카운터로 따로 봅니다.
+
+| 패널 | PromQL | 단위 |
+|---|---|---|
+| 환경 연결(마지막 수신 뒤 경과) | `max by (bravo_env) (time() - timestamp(target_info{bravo_env!=""}))` | 초 |
+| 요청률 | `sum by (bravo_env) (rate(http_server_request_duration_seconds_count{service_name="bravo-demo", http_route!~"/healthz\|/readyz"}[1m]))` | 요청/초 |
+| 오류율(5xx 비율) | `sum by (bravo_env) (rate(http_server_request_duration_seconds_count{service_name="bravo-demo", http_route!~"/healthz\|/readyz", http_response_status_code=~"5.."}[5m])) / sum by (bravo_env) (rate(http_server_request_duration_seconds_count{service_name="bravo-demo", http_route!~"/healthz\|/readyz"}[5m]))` | 0부터 1까지의 비율 |
+| p50, p95, p99 | `histogram_quantile(0.95, sum by (bravo_env, le) (rate(http_server_request_duration_seconds_bucket{service_name="bravo-demo", http_route!~"/healthz\|/readyz"}[5m])))`(0.50, 0.99도 같은 식) | 초 |
+| 상태 코드별 요청 수 | `sum by (bravo_env, http_response_status_code) (increase(http_server_request_duration_seconds_count{service_name="bravo-demo", http_route!~"/healthz\|/readyz"}[15m]))` | 건(15분) |
+| 쓰기율 | `sum by (bravo_env, outcome) (rate(chat_writes_total{kind="message"}[1m]))` | 건/초 |
+| 쓰기 지연 p95 | `histogram_quantile(0.95, sum by (bravo_env, le) (rate(chat_write_duration_milliseconds_bucket[5m])))` | ms(쓰기 정지 대기 포함) |
+| 플랫폼 서비스 상태 | `max by (http_url) (httpcheck_status{http_status_class="2xx"})` | 1 정상, 0 비정상 |
+| 플랫폼 서비스 오류 원인 | `max by (http_url, error_message) (httpcheck_error)` | 지난 5분 안의 실패 |
+| 플랫폼 서비스 응답 시간 | `max by (http_url) (httpcheck_duration_milliseconds)` | ms |
+| Hubble 흐름 | `sum by (bravo_env, verdict) (rate(hubble_flows_processed_total[5m]))` | 흐름/초 |
+| Hubble 드롭(이유별) | `sum by (bravo_env, reason) (rate(hubble_drop_total[5m]))` | 드롭/초 |
+| Hubble 드롭(1시간, 네임스페이스 쌍) | `sum by (bravo_env, reason, source, destination) (increase(hubble_drop_total[1h]))` | 건 |
+| 에이전트 전송 실패 | `sum by (bravo_env) (increase(otelcol_exporter_send_failed_metric_points_total[5m]) or increase(otelcol_exporter_send_failed_spans_total[5m]))` | 건(5분) |
+| Executor 단계 시간(사본) | `sum by (span_name) (traces_span_metrics_duration_milliseconds_sum{service_name="executor", span_name=~"cutover\\.stage\\..*"}) / sum by (span_name) (traces_span_metrics_duration_milliseconds_count{service_name="executor", span_name=~"cutover\\.stage\\..*"})` | ms(평균) |
+
+상태 경로는 `api`와 `operator-mcp`가 `/readyz`, `collector`, `gate`, `rehearsal`, `executor`가 `/healthz`, `console`이 `/config.json`, OpenBao가 `/v1/sys/health`(200은 초기화 · 봉인 해제 · 활성)입니다.
+
+**측정 예(2026-11-02 13:10:33 UTC).** 환경 넷 모두 30초 안에 수신했습니다(`target-gcp` 7초, `source-aws` 27초, `target-onprem` 5초, `platform` 3초). 출발지 앱의 지연은 p50 2.5 ms, p95 4.75 ms, p99 4.95 ms였고, 15분 동안 프로브를 뺀 요청은 200 응답 8.5건과 404 응답 7.4건이었습니다(`increase`의 외삽 값이라 소수). 이 요청은 확인을 위해 사람이 보낸 GET 20건이고, 부하 생성기 기록이 아닙니다. 출발지 Hubble은 FORWARDED 초당 146.6건, DROPPED 초당 0.11건(이유 `UNSUPPORTED_L3_PROTOCOL`, ICMPv6)이었습니다. 플랫폼 서비스 8개가 2xx였고, 바로 앞 5분 안에 Executor가 연결 거부로 한 번 실패한 기록(`httpcheck_error`)이 있었습니다.
+
+### 7.5 컷오버 쓰기 정지와 단계 시간
+
+판정 근거는 Prometheus가 아니라 Executor 기록입니다(07 6절 "관측은 판정 근거가 아님"). 콘솔은 API를 씁니다.
+
+| 값 | 출처 |
+|---|---|
+| 쓰기 정지 ms | `GET /v1/plans/{id}`의 `run.write_pause_ms`. SSE `run.done`의 `write_pause_ms` |
+| 단계 시간 | `run.stages[]` {`seq`, `name`, `started_at`, `ms`, `result`}. SSE `run.stage` |
+| 영수증 | `run.receipt`(`receipt_id`, `verdict`, `body`). SSE `receipt.saved` |
+
+Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 Collector의 `span_metrics` 연결기가 이것을 `traces_span_metrics_duration_milliseconds`로 바꾸므로 7.4의 마지막 패널이 사본을 보입니다. 2026-11-02 22:10 KST에는 컷오버 실행 기록이 없어 이 패널은 비어 있습니다.
+
+### 7.6 값이 없을 때
+
+| 보이는 것 | 뜻 | 콘솔 문구 |
+|---|---|---|
+| 환경 연결 패널에 그 `bravo_env`가 없거나 120초를 넘음 | 그 환경 에이전트의 OTLP가 플랫폼에 오지 않음(링크, 토큰, 에이전트 중 하나) | 연결 안 됨: 환경 에이전트 OTLP 수신 없음(마지막 수신 N초 전) |
+| 환경은 연결됐는데 요청률 0, 오류율 · 분위수 없음(NaN) | 그 창 안에 프로브 밖 요청이 없음 | 트래픽 없음 |
+| 환경은 연결됐는데 `chat_writes_total` 계열이 없음 | 앱 카운터는 첫 쓰기 때 생김. Pod 시작 뒤 쓰기 0건 | 쓰기 0건(Pod 시작 뒤) |
+| `target-onprem`의 Hubble 계열 없음 | 온프렘 Cilium에 `hubble.metrics`가 아직 없음. `overlays/rke2/cilium-values.yaml`에는 넣었고, 랜딩 존 `cilium` 단계를 다시 돌리면 생김(온프렘 갈래) | 연결 안 됨: 온프렘 Hubble 지표 꺼짐 |
+| `target-gcp`의 Hubble 계열 없음 | GKE Dataplane V2는 Cilium 차트를 쓰지 않음. 관측 설정은 `enableRelay`만 켜져 있고 지표(`--enable-dataplane-v2-metrics`)는 꺼져 있음(2026-11-02 22:10 KST `gcloud container clusters describe`) | 연결 안 됨: GKE Dataplane V2 지표 꺼짐 |
+| `platform`의 Hubble 계열 없음 | 플랫폼 Cilium(`deploy/platform/cilium`)에 `hubble.metrics`가 없음. Prometheus 수집 작업 `hubble`은 준비돼 있음 | 연결 안 됨: 플랫폼 Hubble 지표 꺼짐 |
+| Executor 단계 패널이 빔 | 컷오버 실행이 아직 없거나 Executor가 span을 보내지 못함 | API의 `run.stages[]`를 봄 |
 
 ## 스펙 밖
 

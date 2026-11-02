@@ -15,14 +15,13 @@ import { HStack, VStack } from '@astryxdesign/core/Stack';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { ApiError, errorText } from '../api/client';
 import type { EnvSummary, PlanSummary } from '../api/home';
-import { fmtDateTime, shortId } from '../lib/format';
+import { fmtLatency, fmtMoney, fmtTs, shortId } from '../lib/format';
 import { idemKey, releaseIdemKey } from '../lib/idem';
 import { useApi, type Session } from '../state';
 import { distroOf, parseClusters, type Cluster, type ClustersResp } from './ClustersScreen';
-import { Block, DataTable, Facts, Screen, Val } from './ScreenFrame';
-import { Fresh, liveReason, NotConnected, Tag, useLive } from './live';
+import { Block, DataTable, KpiRow, Screen, StatusBar, StatusText, Val, type Health } from './ScreenFrame';
+import { Fresh, liveReason, NotConnected, Tag, useConfig, useLive } from './live';
 
-const ROLE_TEXT: Record<string, string> = { operator: '운영자', approver: '승인자', viewer: '조회자' };
 const STAGE_TEXT: Record<string, string> = { change: '변경 승인', cutover: '컷오버 승인', failback: '되돌리기 승인' };
 const ALERT = new Set(['SAFE_HOLD', 'ABORT_PRE_WRITE']);
 
@@ -89,7 +88,7 @@ function envRows(envs: EnvSummary[] | undefined, clusters: ClustersResp | undefi
   }
   for (const c of clusters?.clusters ?? []) {
     if (used.has(c.cluster_id)) continue;
-    rows.push({ key: `col:${c.cluster_id}`, name: c.display_name ?? c.cluster_id, role: null, inApi: false, apps: appsOf(c), secret: null, ...liveState(c) });
+    rows.push({ key: `col:${c.cluster_id}`, name: c.cluster_id, role: null, inApi: false, apps: appsOf(c), secret: null, ...liveState(c) });
   }
   for (const n of clusters?.not_configured ?? []) {
     if (used.has(n.cluster_id)) continue;
@@ -98,12 +97,6 @@ function envRows(envs: EnvSummary[] | undefined, clusters: ClustersResp | undefi
   return rows;
 }
 
-const CLUSTER_TAG: Record<EnvRow['cluster'], { v: 'success' | 'error' | 'neutral'; l: string }> = {
-  ok: { v: 'success', l: '정상' },
-  down: { v: 'error', l: '응답 없음' },
-  none: { v: 'neutral', l: '연결 안 됨' },
-  unknown: { v: 'neutral', l: '연결 안 됨' },
-};
 
 function NewMigration({ envs, clusters, token, onCreated }: { envs: EnvSummary[]; clusters: ClustersResp | undefined; token: string; onCreated: (id: string) => void }) {
   const api = useApi();
@@ -157,18 +150,48 @@ function NewMigration({ envs, clusters, token, onCreated }: { envs: EnvSummary[]
   );
 }
 
+const DONE = new Set(['WATCH']);
+
+/** GET /v1/cost totals for the KPI (same defensive reading as the cost screen). */
+function useCostTotal(apiBase: string) {
+  return useQuery({
+    queryKey: ['cost-kpi'],
+    retry: 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const res = await fetch(`${apiBase}/v1/cost`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`GET /v1/cost → ${res.status}`);
+      const o = (await res.json()) as Record<string, unknown>;
+      const t = (o.totals ?? {}) as Record<string, unknown>;
+      const extra = typeof t.migration_extra === 'number' ? t.migration_extra : typeof o.migration_extra === 'number' ? o.migration_extra : null;
+      return { extra, currency: typeof o.currency === 'string' ? o.currency : 'USD' };
+    },
+  });
+}
+
 export function HomeScreen({ session, onOpenPlan }: { session: Session; onOpenPlan: (id: string) => void }) {
   const api = useApi();
+  const { apiBase } = useConfig();
   const token = session.user?.token ?? '';
   const plans = useQuery({ queryKey: ['plans', token], queryFn: () => api.listPlans(token), refetchInterval: 5000, retry: 0 });
   const envs = useQuery({ queryKey: ['environments', token], queryFn: () => api.listEnvironments(token), refetchInterval: 10_000, retry: 0 });
   const clusters = useLive('collector', 'v1/clusters', 5000, parseClusters);
+  const cost = useCostTotal(apiBase);
+  // Last write pause: the newest plan that reached CUTOVER or later carries the run record.
+  const ranPlan = (plans.data ?? []).find((p) => p.state === 'CUTOVER' || p.state === 'WATCH' || p.state === 'SAFE_HOLD');
+  const ran = useQuery({ queryKey: ['plan', ranPlan?.plan_id, 'kpi'], enabled: Boolean(ranPlan), queryFn: () => api.getPlan(token, ranPlan?.plan_id ?? ''), retry: 0, staleTime: 15_000 });
 
   const me = session.me.data;
   const role = me?.role ?? session.user?.role ?? null;
-  const email = me?.email ?? session.user?.email ?? null;
   const rows = envRows(envs.data, clusters.data);
   const waiting = (plans.data ?? []).filter((p) => p.awaiting);
+  const active = (plans.data ?? []).filter((p) => p.state && !DONE.has(p.state));
+  const counts = rows.reduce<Partial<Record<Health, number>>>((acc, r) => {
+    const h: Health = r.cluster === 'ok' ? 'ok' : r.cluster === 'down' ? 'bad' : 'none';
+    acc[h] = (acc[h] ?? 0) + 1;
+    return acc;
+  }, {});
+  const pause = ran.data?.run?.write_pause_ms ?? null;
 
   const planTable = (list: PlanSummary[], empty: string) => (
     <DataTable
@@ -185,77 +208,88 @@ export function HomeScreen({ session, onOpenPlan }: { session: Session; onOpenPl
           ),
         },
         { key: 'app', header: '앱', render: (p) => <span className="mono">{p.workload ?? '—'}</span> },
-        { key: 's', header: '상태', render: (p) => (p.state ? <Tag variant={ALERT.has(p.state) ? 'error' : p.state === 'WATCH' ? 'success' : 'neutral'} label={p.state} /> : <Val v={null} />) },
-        { key: 'st', header: '출발 → 목적', weight: 3, render: (p) => <span>{p.source ?? '—'} → {p.target ?? '—'}</span> },
-        { key: 'a', header: '승인 대기', render: (p) => (p.awaiting ? <Tag variant="warning" label={STAGE_TEXT[p.awaiting] ?? p.awaiting} /> : <span className="foot">없음</span>) },
-        { key: 'by', header: '만든 사람', weight: 2, render: (p) => <span className="foot">{p.created_by ?? '—'}</span> },
-        { key: 't', header: '만든 시각', numeric: true, px: 150, render: (p) => fmtDateTime(p.created_at) },
+        { key: 's', header: '상태', render: (p) => (p.state ? <StatusText h={ALERT.has(p.state) ? 'bad' : DONE.has(p.state) ? 'ok' : 'run'} text={p.state} /> : <Val v={null} />) },
+        { key: 'st', header: '출발 · 목적', weight: 3, render: (p) => <span className="mono">{p.source ?? '—'} · {p.target ?? '—'}</span> },
+        { key: 'a', header: '승인 대기', render: (p) => (p.awaiting ? <StatusText h="warn" text={STAGE_TEXT[p.awaiting] ?? p.awaiting} /> : <span className="meta">없음</span>) },
+        { key: 't', header: '생성', numeric: true, px: 180, render: (p) => <span className="meta">{fmtTs(p.created_at)}</span> },
       ]}
     />
   );
 
   return (
-    <Screen title="홈" lead="환경 상태, 이전 계획, 내가 할 일을 한 화면에서 봅니다. 계획 ID를 몰라도 됩니다. 실시간 화면은 왼쪽 메뉴에서 바로 열립니다.">
-      <Block title="로그인">
-        {session.me.error && !session.user ? (
-          <NotConnected endpoint="GET /v1/me" reason={apiReason(session.me.error)} />
-        ) : (
-          <Facts
-            items={[
-              { label: '사용자', value: email ?? <Val v={null} why={session.me.loading ? '확인 중…' : '응답에 이메일 없음'} /> },
-              { label: '역할', value: role ? `${ROLE_TEXT[role] ?? role} (${role})` : <Val v={null} why={me?.roleRaw ? `알 수 없는 역할 ${me.roleRaw}` : '역할 없음'} /> },
-              { label: '확인 경로', value: <span className="mono">{me ? 'GET /v1/me' : session.user ? '개발용 토큰' : '—'}</span> },
-            ]}
-          />
-        )}
-      </Block>
+    <Screen title="홈" lead="이전은 어디까지 왔고, 내가 할 일이 있는가">
+      {envs.error && clusters.error ? (
+        <NotConnected title="환경 상태 연결 안 됨" endpoint="GET /v1/environments · /svc/collector/v1/clusters" reason={apiReason(envs.error)} />
+      ) : (
+        <StatusBar counts={counts} label="환경 상태" />
+      )}
+
+      <KpiRow
+        label="요약"
+        items={[
+          {
+            label: '진행 중 계획',
+            value: plans.error ? '—' : plans.data ? <span className="num">{active.length}</span> : '…',
+            note: plans.error ? `연결 안 됨 · GET /v1/plans · ${apiReason(plans.error)}` : active[0]?.state ? `가장 최근 ${active[0].state}` : '진행 중인 계획 없음',
+          },
+          {
+            label: '승인 대기',
+            value: plans.error ? '—' : plans.data ? <span className="num">{waiting.length}</span> : '…',
+            note: plans.error ? '연결 안 됨 · GET /v1/plans' : waiting[0]?.awaiting ? `${STAGE_TEXT[waiting[0].awaiting] ?? waiting[0].awaiting} · ${shortId(waiting[0].plan_id)}` : '없음',
+          },
+          {
+            label: '마지막 쓰기 정지',
+            value: pause !== null ? fmtLatency(pause) : '—',
+            note: !ranPlan ? (plans.error ? '연결 안 됨 · GET /v1/plans' : '컷오버한 계획 없음') : ran.error ? `연결 안 됨 · GET /v1/plans/${shortId(ranPlan.plan_id)}` : `계획 ${shortId(ranPlan.plan_id)} · ${ranPlan.state}`,
+          },
+          {
+            label: '이전 중 추가 비용',
+            value: cost.data?.extra != null ? fmtMoney(cost.data.extra, cost.data.currency) : '—',
+            note: cost.error ? `연결 안 됨 · ${cost.error instanceof Error ? cost.error.message : 'GET /v1/cost'}` : cost.data && cost.data.extra === null ? '응답에 migration_extra 없음' : '비용 영수증에서 자세히',
+          },
+        ]}
+      />
 
       {role === 'operator' && (
         <Block title="새 이전 시작">
           {envs.error ? (
             <NotConnected endpoint="GET /v1/environments" reason={`환경 목록이 있어야 출발 · 목적을 고를 수 있습니다. ${apiReason(envs.error)}`} />
           ) : !envs.data ? (
-            <p className="foot">환경 목록을 불러오는 중…</p>
+            <p className="meta">환경 목록을 불러오는 중…</p>
           ) : envs.data.length < 2 ? (
-            <p className="foot">등록된 환경이 {envs.data.length}개라 이전을 만들 수 없습니다. 출발과 목적 환경이 모두 등록되어야 합니다.</p>
+            <p className="meta">등록된 환경이 {envs.data.length}개라 이전을 만들 수 없습니다. 출발과 목적 환경이 모두 등록되어야 합니다.</p>
           ) : (
             <NewMigration envs={envs.data} clusters={clusters.data} token={token} onCreated={onOpenPlan} />
           )}
         </Block>
       )}
 
-      {role === 'approver' && (
-        <Block title={`내 승인 대기 (${waiting.length}건)`}>
-          {plans.error ? (
-            <NotConnected endpoint="GET /v1/plans" reason={apiReason(plans.error)} />
-          ) : (
-            planTable(waiting, '지금 승인을 기다리는 계획이 없습니다.')
-          )}
-          <p className="foot">승인은 계획 화면의 승인 칸에서 합니다. 계획을 만든 사람이나 승인을 요청한 사람은 승인할 수 없습니다(직무 분리).</p>
-        </Block>
-      )}
+      <Block title={role === 'approver' ? `내 승인 대기 ${waiting.length}건 · 전체 계획` : `계획${plans.data ? ` ${plans.data.length}건` : ''}`} meta={<Fresh at={plans.dataUpdatedAt} />}>
+        {plans.error ? (
+          <NotConnected endpoint="GET /v1/plans" reason={apiReason(plans.error)} />
+        ) : (
+          planTable(role === 'approver' ? [...waiting, ...(plans.data ?? []).filter((p) => !p.awaiting)] : plans.data ?? [], plans.isLoading ? '불러오는 중…' : '아직 계획이 없습니다.')
+        )}
+        {role === 'approver' && <p className="meta">승인은 계획 화면의 승인 칸에서 합니다. 계획을 만든 사람이나 승인을 요청한 사람은 승인할 수 없습니다(직무 분리).</p>}
+      </Block>
 
       <Block title="환경" meta={<Fresh at={Math.max(envs.dataUpdatedAt, clusters.updatedAt)} />}>
         {envs.error ? <NotConnected title="API 환경 목록 연결 안 됨" endpoint="GET /v1/environments" reason={apiReason(envs.error)} /> : null}
-        {clusters.error ? <NotConnected title="클러스터 상태 연결 안 됨" endpoint={clusters.endpoint} reason={`수집기에 닿지 못했습니다. ${liveReason(clusters.error)}`} /> : null}
+        {clusters.error ? <NotConnected title="클러스터 상태 연결 안 됨" endpoint={clusters.endpoint} reason={liveReason(clusters.error)} lastOk={clusters.updatedAt || undefined} /> : null}
         <DataTable
           rows={rows}
           rowKey={(r) => r.key}
           empty={envs.isLoading || clusters.isLoading ? '불러오는 중…' : '보여 줄 환경이 없습니다(API 목록과 수집기 모두 비어 있음).'}
           cols={[
-            { key: 'n', header: '환경', weight: 2, render: (r) => <VStack gap={0}><span className="mono">{r.name}</span><span className="foot">{r.inApi ? 'API 등록' : '수집기에만 있음'}</span></VStack> },
-            { key: 'r', header: '역할', render: (r) => (r.role ? <span className="mono">{r.role}</span> : <Val v={null} />) },
+            { key: 'n', header: '환경', weight: 2, render: (r) => <span className="mono">{r.name}</span> },
+            { key: 'r', header: '역할', render: (r) => (r.role ? r.role : <Val v={null} />) },
             { key: 'p', header: '배포판', render: (r) => (r.distro ? r.distro : <Val v={null} />) },
-            { key: 'c', header: '클러스터', weight: 2, render: (r) => <VStack gap={0}><span><Tag variant={CLUSTER_TAG[r.cluster].v} label={CLUSTER_TAG[r.cluster].l} /></span>{r.cluster !== 'ok' && <span className="foot">{r.clusterNote}</span>}</VStack> },
-            { key: 'nodes', header: '노드 Ready', numeric: true, render: (r) => <Val v={r.nodes} /> },
-            { key: 'apps', header: '업무 네임스페이스', weight: 2, render: (r) => (r.apps.length ? <span className="mono">{r.apps.join(', ')}</span> : <Val v={null} />) },
-            { key: 'sec', header: '비밀 참조', render: (r) => (r.secret ? <span className="mono">{r.secret}</span> : <Val v={null} />) },
+            { key: 'nodes', header: '노드', numeric: true, render: (r) => <Val v={r.nodes} /> },
+            { key: 'c', header: '클러스터', weight: 2, render: (r) => <VStack gap={0}><StatusText h={r.cluster === 'ok' ? 'ok' : r.cluster === 'down' ? 'bad' : 'none'} />{r.cluster !== 'ok' && <span className="meta">{r.clusterNote}</span>}</VStack> },
+            { key: 'sec', header: '비밀 참조', render: (r) => (r.secret ? <StatusText h={r.secret === 'resolved' ? 'ok' : 'warn'} text={r.secret} /> : <Val v={null} />) },
           ]}
         />
-      </Block>
-
-      <Block title={`이전 계획${plans.data ? ` (${plans.data.length}건)` : ''}`} meta={<Fresh at={plans.dataUpdatedAt} />}>
-        {plans.error ? <NotConnected endpoint="GET /v1/plans" reason={apiReason(plans.error)} /> : planTable(plans.data ?? [], plans.isLoading ? '불러오는 중…' : '아직 계획이 없습니다.')}
+        <p className="meta">출처: 환경 목록 GET /v1/environments, 클러스터 · 노드 · 배포판은 수집기 GET /v1/clusters(배포판은 노드 kubelet 버전에서 읽음).</p>
       </Block>
     </Screen>
   );

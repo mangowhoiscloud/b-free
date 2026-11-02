@@ -36,6 +36,9 @@ GRANT app_writer TO executor_ctl WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
 -- INHERIT FALSE: executor_ctl does not get chat_owner privileges in its own sessions. The
 -- Executor uses SET LOCAL ROLE chat_owner only to REVOKE/GRANT the writer's INSERT (03 4.2 step 4).
 GRANT chat_owner TO executor_ctl WITH INHERIT FALSE, SET TRUE;
+-- CREATE SUBSCRIPTION carries the replicator password in its connection string: the Executor's
+-- session turns statement logging off first (repl_setup.py _quiet), so no password reaches a log.
+GRANT SET ON PARAMETER log_min_error_statement, log_statement TO executor_ctl;
 
 GRANT SELECT, INSERT, UPDATE ON bravo_barrier, bravo_fence TO executor_ctl;
 GRANT SELECT ON messages TO executor_ctl;
