@@ -13,6 +13,9 @@
 | 7. 관측 API(콘솔 관측 화면) | 플랫폼 관측 백엔드(T18) → T21 콘솔 | `deploy/platform/observability`, `deploy/landing-zone/base/otel-agent-values.yaml`, `deploy/landing-zone/observability` |
 | 8. 비용 영수증 API(마무리 장면, NFR-8) | T1 수집기 → T10 API → T21 콘솔 | `platform/collector/src/bravo_collector/costing/`, `platform/api/src/bravo_api/service.py`(`cost`), `deploy/platform/control/config/cost.yaml` |
 | 9. 통제 예외(S1 5b) | T10 API ↔ T21 콘솔, T19 게이트 | `platform/api/src/bravo_api/exceptions.py`, `gate.py`, 마이그레이션 `0008_control_exceptions.sql`, `platform/gate/src/bravo_gate/controls.py` |
+| 10. SHIFT: 트래픽 전환 10/50/100과 컷오버 시작(S3, FR-8, T17) | T10 API ↔ T12 · T17 Executor, T21 콘솔 | `platform/api/src/bravo_api/statemachine.py`, `shift.py`, 마이그레이션 `0009_shift.sql`, `platform/executor/src/bravo_executor/front.py`, `front_api.py`, `approvals.py` |
+| 11. 무결성 영수증(`verdict_parts`, hash_rule v1, 검사 범위) | T12 Executor → T10 API → T21 콘솔 | `platform/executor/src/bravo_executor/cutover.py`, `hashing.py`, `attachment_copy.py`, `platform/api/src/bravo_api/events.py` |
+| 12. 기록 재생(`mode: recorded`) | T10 API → T21 콘솔 | `platform/api/src/bravo_api/service.py`(`replay`), `rest.py` |
 
 ## 1. SSE 이벤트
 
@@ -28,7 +31,7 @@
 
 - `id`: 계획마다 1부터 늘어나는 정수의 문자열. 계획 행 잠금 아래에서 매기므로 commit 순서 = `id` 순서.
 - `state`: 이벤트를 쓴 시점의 계획 상태(전이 이벤트는 바뀐 뒤 상태).
-- `mode`: `live`만 씁니다. `recorded`는 스키마에만 있고 쓰는 코드가 없습니다(감사 31).
+- `mode`: SSE 스트림은 `live`만 씁니다. `recorded`는 12절의 기록 재생 응답에만 나옵니다. 재생은 `events` 표에 쓰지 않습니다.
 - `actor.kind`: `console` · `mcp` · `system`. `principal`은 사람의 이메일(표시용), 시스템이면 `null`.
 
 `kind`별 `data`:
@@ -49,8 +52,8 @@
 | `change.prepared` | `change_id`, `image_repository`, `image_digest`, `sbom_digest`, `scan` {`scanner`, `version`, `db`, `counts`, `policy`}, `build`, `diff_digest`, `policy_diff_digest`, `policy_targets`, `artifact_digest` |
 | `change.applied` | `change_id`, `approval_id`, `approved_image_digest`, `deployed_digest`, `policies_applied`, `gate_recheck`, `signature` |
 | `change.prepare_failed` · `change.refused` · `change.failed` | `change_id`, `status`, `reason` |
-| `run.stage` | `seq`, `name`, `ms`, `result`, `started_at`(봉투 `run_id`) |
-| `run.done` | `status`(DONE · ABORT_PRE_WRITE · SAFE_HOLD), `write_pause_ms` |
+| `run.stage` | `seq`, `name`, `ms`, `result`, `started_at`(봉투 `run_id`). 이름이 `front.`로 시작하는 단계와 `failback.8_front_to_src`에는 `front`(10.4절)를 더함 |
+| `run.done` | `kind`(shift · cutover · failback), `status`(DONE · ABORT_PRE_WRITE · SAFE_HOLD), `write_pause_ms`(shift는 `null`) |
 | `receipt.saved` | `receipt_id`, `verdict`, `body`(Executor 영수증 그대로 + 콘솔 요약 키 `rows` · `pk_hash` · `content_hash` · `seq` · `summary_of`) |
 
 S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` PASS → `state.changed`(REHEARSE → REHEARSE, `change_requested`) → `change.requested` → `change.stage`* → `change.prepared` → `approval.requested`(change) → `approval.granted`(change) → `change.stage`* → `change.applied` → `state.changed`(REHEARSE → GATE) → `gate.verdict`(`change_recheck`) → `state.changed`(GATE → AWAIT_APPROVAL) → `approval.requested`(cutover).
@@ -542,6 +545,206 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 - 트리거 `bravo_control_exceptions_guard`: 요청 때 요청자 = 세션 주체, 목적지 = 계획의 목적지, 판정 = 계획의 마지막 판정이고 그 행이 `dst = FAIL`, `src ∈ {PASS, FAIL}`, 같은 digest인지 확인. 결속 값은 바꿀 수 없음. 허용 전이만(9.2). 승인 · 거절은 결정자 = 세션 주체, approver 멤버십, 결정자 ≠ 요청자 ≠ 계획 작성자. 승인은 만료 전이고 마지막 판정의 그 행이 아직 같을 때만.
 - 부분 유일 색인: 계획 · 통제마다 `requested` · `approved` 하나.
 - `gate_verdicts.exceptions`(jsonb, 기본 `[]`): 그 판정에 적용한 예외. `gate_verdicts.evidence_expires_at`: 게이트 증거 유효기간 끝. 승인 때 트리거가 지나지 않았는지도 봅니다.
+
+## 10. SHIFT: 트래픽 전환 10/50/100과 컷오버 시작(S3, FR-8, T17)
+
+컷오버 승인 뒤 운영자가 콘솔에서 시작하면 계획은 SHIFT로 갑니다. Executor가 Edge 가중치를 10%, 50%, 100% 순서로 올리고, 단계마다 목적지가 받은 실제 채팅 쓰기의 ACK, 오류, 지연으로 판정합니다. 세 단계를 모두 통과하면 시스템이 같은 승인으로 DB 컷오버를 시작합니다. 한 단계라도 기준을 넘으면 목적지를 바로 0%로 돌리고 AWAIT_APPROVAL로 돌아갑니다(S3 예외 1a). 이 절은 2026-11-03 리뷰 24(B02, B14, B04)를 닫는 계약이고, 실측은 10.6절에 붙입니다.
+
+### 10.1 상태와 전이
+
+| 지금 상태 | 계기(trigger) | 다음 상태 | 누가, 언제 |
+|---|---|---|---|
+| AWAIT_APPROVAL | `shift_started` | SHIFT | 콘솔 운영자. 만료 전의 컷오버 승인이 있어야 함 |
+| SHIFT | `shift_done` | CUTOVER | 시스템. shift 실행이 DONE(세 단계 통과, 목적지 100%) |
+| SHIFT | `shift_reverted` | AWAIT_APPROVAL | 시스템. shift 실행이 ABORT_PRE_WRITE(판정 실패로 0% 복귀, 또는 가중치 변경 전 거부). 새 1회용 컷오버 승인 요청을 냄 |
+| SHIFT | `run_safe_hold` | SAFE_HOLD | 시스템. 가중치 변경을 보냈는데 반영을 확인하지 못함 |
+| CUTOVER | 이전과 같음 | WATCH, ABORT_PRE_WRITE(→ AWAIT_APPROVAL), SAFE_HOLD | 시스템 |
+
+- AWAIT_APPROVAL에서 CUTOVER로 바로 가는 전이는 없앴습니다. DB 컷오버는 SHIFT를 거쳐야만 시작합니다.
+- 순서는 스펙 §8.2 상태 표를 따릅니다. AWAIT_APPROVAL의 다음 조건이 "승인 값이 현재 값과 같고 만료 전"이고, SHIFT의 다음 조건이 "단계마다 오류율 · p95 기준 이하"입니다. S3 기본 흐름 글은 전환 뒤에 승인하는 순서로도 읽혀서, 이 절에서 승인 → 콘솔 시작 → SHIFT → CUTOVER로 고정합니다.
+- 컷오버 승인 하나가 SHIFT와 CUTOVER를 함께 덮습니다. API는 SHIFT 시작 때 승인을 소비합니다(`consumed_at`, `consumed_by` = 시작한 운영자, `run_idem_key` = `cutover-<approval_id>`).
+- Executor 멱등 키는 shift가 `shift-<approval_id>`, 컷오버가 `cutover-<approval_id>`입니다.
+- 컷오버 실행이 쓰기 전에 실패하면(ABORT_PRE_WRITE) 가중치는 목적지 100%에 그대로 둡니다. 그 상태에서도 목적지 앱은 목적지 PgBouncer를 거쳐 출발지 DB에 씁니다. 다음 승인으로 SHIFT를 다시 시작하면 10%부터 다시 걷습니다.
+
+**Executor의 승인 확인(감사 A2, 5절에 더함).** shift와 컷오버 모두 아래를 모두 만족해야 실행합니다. 어긋나면 403과 코드로 거부하고 실행 행을 만들지 않습니다.
+
+| 확인 | 거부 코드 |
+|---|---|
+| 승인 행이 있고 같은 계획, `stage = cutover`(되돌리기는 `failback`) | `APPROVAL_NOT_FOUND`, `APPROVAL_PLAN_MISMATCH`, `APPROVAL_STAGE_MISMATCH` |
+| 승인자 ≠ 요청자, 만료 전 | `APPROVER_IS_REQUESTER`, `APPROVAL_EXPIRED` |
+| API가 콘솔 시작으로 소비함(`consumed_at` 있음). 이것이 "운영자 콘솔 시작"의 증거 | `APPROVAL_NOT_STARTED` |
+| 시작한 사람 ≠ 승인자(`consumed_by <> approver_id`) | `STARTER_IS_APPROVER` |
+| 같은 종류의 다른 실행이 이 승인을 쓰지 않음(shift 하나, 컷오버 하나) | `APPROVAL_ALREADY_USED` |
+| 컷오버만: 같은 승인의 shift 실행이 DONE | `SHIFT_NOT_DONE` |
+
+승인 행은 API만 만듭니다(콘솔 approver). Executor와 스크립트는 승인 행을 만들지 않습니다.
+
+### 10.2 콘솔 API
+
+| 요청 | 응답 |
+|---|---|
+| `POST /v1/plans/{id}/shift` (콘솔 operator) `{"stage": "cutover", "write_pause_budget_ms": 5000}` + `Idempotency-Key` | 202 `{"plan_id", "stage": "cutover", "approval_id", "epoch", "run_id", "run_kind": "shift", "state": "SHIFT", "reason": null}`. `run_id`는 shift 실행. 오류: 409 `state_mismatch` · `run_active` · `approval_missing` · `approval_stale`, 403 `insufficient_scope`(approver, MCP) |
+| `POST /v1/plans/{id}/shift` (콘솔 operator) `{"stage": "failback"}` | 이전과 같음(WATCH → FAILBACK). 응답에 `run_kind: "failback"`. 앞단 이동은 10.7절 |
+| `GET /v1/plans/{id}` | 더한 키: `shift`(아래), `run.write_pause_budget_ms`(시작 때 받은 값), `run.stages[].front`(10.4절). `run.kind`는 shift · cutover · failback 중 하나 |
+| `GET /v1/plans/{id}/runs/{run_id}/replay` | 12절 |
+
+`shift`는 이 계획의 마지막 shift 실행입니다. 없으면 `null`입니다.
+
+```json
+{"run_id": "<uuid>", "status": "RUNNING", "target_env": "dst", "current_weight": 50,
+ "started_at": "…", "ended_at": null,
+ "steps": [{"weight": 10, "healthy": true, "target_samples": 104, "target_errors": 0, "target_error_rate": 0.0,
+            "target_p95_ms": 212.4, "samples": 1003, "errors": 0, "error_rate": 0.0, "p95_ms": 88.1,
+            "by_env": {"aws": 899, "onprem": 104}, "hold_ms": 16800, "step_ms": 17400, "reasons": []}],
+ "reverted": null}
+```
+
+- `current_weight`: 마지막 `front.set_<w>` 단계의 값. 판정이 끝나기 전에도 화면이 지금 몇 %인지 보이게 합니다.
+- `reverted`: 1a로 돌렸으면 `{"at_weight": 10, "reasons": ["TARGET_ERROR_RATE(0.0472>0.01)"]}`.
+
+### 10.3 이벤트 순서
+
+| 순서 | kind | data |
+|---|---|---|
+| 1 | `state.changed` | AWAIT_APPROVAL → SHIFT, `trigger` `shift_started`, `approval_id`, `epoch`, `stage` cutover, `write_pause_budget_ms` |
+| 2 | `run.stage` | `front.preflight`(모드, 지금 가중치, 목적지 터널 연결 수) |
+| 3 | `run.stage` | 단계마다 두 번. `front.set_<w>`(가중치 반영 확인 직후, `front` {`weight`, `pool_weights`}), `front.step_<w>`(보유가 끝나 판정한 뒤, `front` {`weight`, `judgement`}). 판정 실패면 `result` FAILED |
+| 3a | `run.stage` | 1a면 `front.revert_0`(`front` {`at_weight`, `reasons`, `pool_weights`}) |
+| 4 | `run.stage` | `front.summary` |
+| 5 | `run.done` | `kind` shift, `status`, `write_pause_ms` null |
+| 6 | `state.changed` | SHIFT → CUTOVER(`shift_done`). 이어서 컷오버 실행의 `run.stage`*, `run.done`, `receipt.saved`, `state.changed` CUTOVER → WATCH, `approval.requested`(failback) |
+| 6a | `state.changed` | SHIFT → AWAIT_APPROVAL(`shift_reverted`, `reason` `shift_reverted:<첫 이유>`), 이어서 `approval.requested`(cutover) |
+
+### 10.4 단계 판정의 입력과 규칙
+
+판정 입력은 대표 이름(`b-free-chat.mangowhois.ai`)으로 들어온 실제 채팅 쓰기입니다. Executor가 보유 시간 동안 `POST /api/rooms/shift-probe/messages`를 일정 간격으로 보냅니다. 요청마다 새 `Idempotency-Key`를 쓰고, 본문은 `{"author": "bravo-shift", "body": "shift sample <run_id> <n>"}`입니다. 이 쓰기는 실제 DB 행이 됩니다. 목적지 앱이 받은 쓰기는 목적지 PgBouncer와 링크를 거쳐 출발지 DB에 씁니다(스펙 "전환 전 쓰기 경로").
+
+| 표본 판정 | 규칙 |
+|---|---|
+| 성공(ACK) | HTTP 200 또는 201, JSON `message.id`가 정수, `X-Served-By` 헤더 있음 |
+| 오류 | 그 밖의 모두. 5xx(장애 주입 `X-Bravo-Fault` 포함), 4xx, 503 `blocked`, 5초 시간 초과, 연결 오류. 다시 보내지 않음 |
+| 어느 환경 | `X-Served-By`(`aws` = 출발지, `onprem` = 목적지). 헤더 없는 오류(Cloudflare 52x, 연결 오류)는 목적지 오류로 셈(보수적) |
+
+| 값 | 기본값(환경 변수) | 이유 |
+|---|---|---|
+| 표본 쓰기 속도 | 초당 60건(`BRAVO_FRONT_WRITE_RATE`) | 10% 단계에서 목적지 100건을 약 17초에 모음 |
+| 방 | `shift-probe`(`BRAVO_FRONT_WRITE_ROOM`) | 심사위원 방(`consult-1`)과 섞이지 않음. 화면과 기록에서 표본임이 보임 |
+| 목적지 최소 표본 | 100건(`BRAVO_FRONT_MIN_TARGET_SAMPLES`) | 100건이면 오류 1건이 1.0%로 기준 안이고, 2건이 2.0%로 기준을 넘음. 100건보다 적으면 오류 1건만으로 1%를 넘어 우연이 판정을 정함 |
+| 최소 보유 | 5초(`BRAVO_FRONT_MIN_HOLD_S`) | Cloudflare LB 반영 지연 동안의 표본도 판정에 넣음 |
+| 최대 보유 | 30초(`BRAVO_FRONT_MAX_HOLD_S`) | 그 안에 목적지 100건을 못 모으면 `INSUFFICIENT_SAMPLES`로 0% 복귀 |
+| 목적지 오류율 | 1% 이하(`BRAVO_FRONT_MAX_ERROR_RATE`) | FR-8 |
+| 목적지 p95 | 800 ms 이하(`BRAVO_FRONT_MAX_P95_MS`) | 목적지 앱은 링크 너머 출발지 DB에 씀. 10.6절 실측으로 확인 |
+| 목적지 몫 | 계획 몫의 1/4 이상(`BRAVO_FRONT_MIN_TARGET_SHARE` 0.25) | 10% 단계면 표본의 2.5% 이상. Cloudflare pool 모니터가 목적지를 빼고 출발지로 넘기면 오류는 0이어도 목적지를 검증하지 못함(2026-11-02 가짜 DONE) |
+
+보유는 가중치 반영을 확인한 때부터 셉니다. 목적지 표본이 100건 이상이고 5초가 지나면 끝납니다. 출발지의 오류율과 p95는 `samples`, `error_rate`, `p95_ms`로 함께 보이지만 판정에는 쓰지 않습니다.
+
+`run.stages[].front.judgement`는 10.2절 `shift.steps[]`의 한 항목과 같은 키입니다.
+
+**판정 입력이 아닌 것.** `GET /api/config` 프로브는 `GET /v1/front` 상태 표시와 CNAME 모드 전파 시간에만 씁니다. Prometheus는 판정 근거가 아닙니다(7.5절).
+
+**부하 생성기(B15)와의 약속.** 부하 생성기(`tools/loadgen`)는 S3-AC1과 NFR-1(실패, 유실, 중복, 쓰기 정지)을 따로 잽니다. 그 출력(끝에 내는 JSON 한 줄)은 단계 판정의 입력이 아닙니다. 판정이 다른 프로세스에 기대면 그 프로세스가 멈췄을 때 판정 없이 전환하게 되고, 단계마다 표본 수를 정할 수 없어 보유 시간이 정해지지 않기 때문입니다. 두 쪽이 같은 시각에 돌면 부하 생성기 기록은 비교 증거로만 씁니다. 부하 생성기가 대표 이름으로 쓴다면 방을 `shift-probe` 밖으로 둡니다.
+
+### 10.5 기준을 넘으면(1a)
+
+Executor는 그 단계의 판정이 끝난 즉시 목적지 pool 가중치를 0, 출발지를 1로 바꾸고 반영을 확인합니다(`front.revert_0`). 실행 상태는 ABORT_PRE_WRITE입니다. DB는 건드리지 않았으므로 쓰기 전 실패와 같습니다. API는 SHIFT → AWAIT_APPROVAL로 옮기고 새 컷오버 승인 요청을 냅니다. 소비한 승인은 다시 쓸 수 없습니다. 0% 복귀 자체를 확인하지 못하면 SAFE_HOLD입니다.
+
+### 10.6 실측
+
+실측 기록은 `docs/evidence/shift/`에 둡니다. 측정 뒤 이 절에 편도 시간과 단계별 표본을 적습니다.
+
+### 10.7 S4 되돌리기의 앞단
+
+되돌리기 실행(`POST /v1/failback`)은 출발지 쓰기를 확인한 뒤 마지막 단계 `failback.8_front_to_src`에서 Edge를 출발지 100%, 목적지 0%로 한 번에 옮깁니다(스펙 S4 기본 흐름 4). 단계를 나누지 않고 0% 복귀도 하지 않습니다. 고장 난 쪽이 목적지이기 때문입니다. 반영 확인 뒤 5초 동안 같은 표본 쓰기를 보내 출발지 판정을 기록합니다. 앞단 이동이 실패해도 DB 되돌리기는 끝났으므로 실행은 DONE이고 그 단계만 FAILED입니다. 이때 계획은 DONE_ROLLED_BACK이 되고 `state_reason`이 `front_not_moved`입니다. 운영자는 `deploy/cloud/front_shift.sh src`로 앞단을 옮깁니다.
+
+### 10.8 장애 주입(S4의 계기)
+
+`deploy/cloud/t25.sh fault [비율]`은 목적지 앱 Pod마다 관리 포트 8081의 `PUT /admin/fault {"http_5xx_rate": 비율}`만 부릅니다(기본 0.3, `fault.sh`). 이어서 대표 이름으로 쓰기 20건을 보내 오류가 보이는지 기록합니다. 컷오버와 되돌리기는 부르지 않습니다. `t25.sh fault-clear`가 비율을 0으로 돌립니다. 되돌리기는 콘솔에서만 시작합니다. 승인자가 되돌리기 요청을 승인하고, 운영자가 시작합니다.
+
+### 10.9 Executor 직접 경로(도구)
+
+`POST /v1/front/shift`에 `plan_id`가 없으면 도구 실행입니다. T17 증거와 `deploy/cloud/front_shift.sh`가 이 경로를 씁니다. 승인을 보지 않고, 판정과 0% 복귀는 같습니다. `plan_id`를 주면 `approval_id`와 `stage`도 있어야 하고 10.1절의 확인을 모두 거칩니다. 본문: `{"target_env": "dst", "steps": [10, 50, 100], "plan_id", "epoch", "approval_id", "stage": "cutover"}`.
+
+## 11. 무결성 영수증: `verdict_parts`, hash_rule v1, 검사 범위
+
+영수증은 DB 표, 시퀀스, 첨부 객체를 따로 판정하고 셋을 합쳐 하나의 판정을 냅니다. 각 판정이 무엇을 검사했는지는 `scope`에 적습니다. 영수증은 목적지 쓰기를 열기 전에 저장합니다(S3-AC2).
+
+### 11.1 판정
+
+| `verdict` | 조건 |
+|---|---|
+| `MATCH` | `verdict_parts`의 `tables`, `sequences`, `objects`가 모두 MATCH |
+| `MATCH_PARTIAL` | `tables`와 `sequences`는 MATCH이고 `objects`가 `NOT_CHECKED`(객체 저장소가 설정되지 않음). DB는 맞았지만 첨부는 검사하지 않았다는 뜻 |
+| `MISMATCH` | 하나라도 MISMATCH. 컷오버는 확정 전에 취소(ABORT_PRE_WRITE) |
+
+```json
+{"verdict": "MATCH",
+ "verdict_parts": {"tables": "MATCH", "sequences": "MATCH", "objects": "MATCH"},
+ "scope": {"hash_rule": "v1.1",
+           "tables": ["messages", "bravo_barrier", "attachments"],
+           "sequences": ["messages_id_seq", "bravo_barrier_id_seq"],
+           "objects": {"checked": "target_head_after_final_copy", "referenced": 3,
+                       "reference_set_sha256": "…", "store_from": "…", "store_to": "…"}},
+ "tables": [{"name", "rows": {"src", "dst"}, "pk_hash": {…}, "content_hash": {…}, "match"}],
+ "sequences": [{"name", "origin_last", "target_before", "target_set", "match"}],
+ "objects": {"verdict", "referenced", "verified_on_target", "missing", "size_mismatch", "reference_set_sha256", …}}
+```
+
+`objects.checked`는 `target_head_after_final_copy`(검사함) 또는 `not_configured`(검사하지 않음)입니다.
+
+### 11.2 hash_rule v1
+
+스펙 hash_rule v1은 "PK 정렬, NULL 처리, 타입 직렬화 고정"입니다. 영수증의 `hash_rule: "v1.1"`은 v1에 uuid 기본 키(첨부 표)의 정렬만 더한 것입니다. 정수 기본 키 표의 해시는 v1과 바이트까지 같습니다. 규칙의 정본은 `platform/executor/src/bravo_executor/hashing.py` 머리 주석이고, 고정 값 시험은 `platform/executor/tests/test_hashing.py`입니다. 규칙을 바꾸면 이름을 올립니다(v1.2).
+
+| 항목 | 규칙 |
+|---|---|
+| 행 순서 | 기본 키 오름차순. 정수는 수 순서, uuid는 소문자 표준 문자열의 바이트 순서(`ORDER BY id::text COLLATE "C"`). 앞 키보다 크지 않은 키가 오면 해시하지 않고 오류 |
+| `rows` | 행 수 |
+| `pk_hash` | 행마다 `<pk>\n`의 SHA-256. 정수는 10진수, uuid는 8-4-4-4-12 소문자 |
+| `content_hash` | 행마다 선언 순서의 열을 `\|`로 잇고 `\n`으로 끝낸 줄의 SHA-256. `messages`는 `id\|room\|author\|body\|idem_key\|created_at` |
+| NULL | `\N` |
+| 문자열 | UTF-8. `\` → `\\`, `\|` → `\\|`, LF → `\n`, CR → `\r` |
+| timestamptz | UTC, `YYYY-MM-DDTHH:MM:SS.ffffffZ`(소수 6자리) |
+| bool, uuid, 정수 | `t`·`f`, 소문자 표준형, 10진수 |
+| 시퀀스 | 마지막으로 낸 값(`is_called`면 `last_value`, 아니면 `last_value - 1`). 목적지 값이 출발지 값 이상이면 MATCH |
+
+### 11.3 첨부 대조: 최종 참조 집합
+
+컷오버 1b 단계에서 출발지의 첨부 쓰기를 얼린 뒤(D-04) 다음을 합니다. 얼린 뒤에는 첨부 행이 바뀌지 않으므로 이때의 참조 집합이 최종입니다.
+
+1. 남은 객체를 목적지 저장소로 복사합니다(`attachment_copies` 원장).
+2. 출발지 DB의 참조 집합(`attachments`에서 출발지 저장소의 `object_key`, `sha256`, `size_bytes`)을 읽어 `reference_set_sha256`(키 순서로 `<object_key> <sha256> <size>\n`을 이은 SHA-256)을 냅니다.
+3. 참조 키마다 목적지 저장소에 HEAD를 보내 있음과 크기를 확인합니다. 객체 메타데이터에 `sha256`이 있으면 그 값도 봅니다.
+
+5단계(양쪽 쓰기 정지 중 비교)에서 참조 집합 해시를 다시 계산합니다. 1b의 값과 같고 3에서 빠진 객체가 없을 때만 `objects`가 MATCH입니다. 그래서 첨부 대조는 확정 지점(6b) 전에 끝납니다. HEAD는 쓰기 정지 전(1b)에 하므로 쓰기 정지 시간에 들어가지 않습니다.
+
+### 11.4 지난 영수증의 검사 범위
+
+`scope`가 없는 영수증(2026-11-03 이전 실행)에는 API가 `verification_scope`를 붙여 냅니다. 영수증 본문은 바꾸지 않습니다.
+
+| 영수증 | `verification_scope` |
+|---|---|
+| `scope` 있음 | `{"source": "receipt", …scope}` |
+| `verdict_parts`만 있음 | `{"source": "derived", "tables": […이름], "sequences": […이름], "objects": verdict_parts.objects}` |
+| 둘 다 없음 | `{"source": "derived", "tables": […이름], "sequences": […이름], "objects": "not_in_receipt"}`. 그때는 첨부 객체를 검사하지 않았다는 뜻 |
+
+## 12. 기록 재생(`mode: recorded`)
+
+대체 장면을 보일 때 콘솔은 지난 실행을 기록 재생으로만 보입니다. 재생 응답의 모든 이벤트가 `mode: "recorded"`와 원래 시각을 가지므로 화면이 실시간처럼 보이지 않습니다. 재생은 아무것도 쓰지 않습니다.
+
+`GET /v1/plans/{id}/runs/{run_id}/replay` (viewer 이상, 콘솔과 MCP):
+
+```json
+{"mode": "recorded", "plan_id": "<uuid>", "run_id": "<uuid>", "kind": "shift",
+ "status": "DONE", "recorded_at": "<실행 시작 시각>", "ended_at": "…", "generated_at": "<응답 시각>",
+ "events": [{"id": "r1", "plan_id": "…", "state": null, "kind": "run.stage", "at": "<원래 시각>",
+             "mode": "recorded", "run_id": "…", "actor": {"kind": "system", "principal": null},
+             "offset_ms": 0, "data": {…1절과 같은 run.stage data}}]}
+```
+
+- `events`: 실행의 `run_stages` 행마다 `run.stage` 하나, 끝났으면 `run.done` 하나, 영수증이 있으면 `receipt.saved` 하나. `data`는 1절의 실시간 이벤트와 같은 모양입니다.
+- `offset_ms`: 실행 시작부터의 경과. 콘솔은 이 값으로 같은 간격으로 재생할 수 있습니다.
+- 콘솔은 재생하는 동안 화면 위에 "기록 재생"과 `run_id`, `recorded_at`을 늘 보입니다.
+- 오류: 404 `run_not_found`(그 계획의 실행이 아님). 실행 중(RUNNING)인 실행은 409 `run_active`입니다.
 
 ## 스펙 밖
 
