@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,12 @@ def create_app(registry: Registry | None = None, cluster_view: ClusterView | Non
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.registry = registry if registry is not None else load_registry()
+        if os.environ.get("BRAVO_COST_CONFIG", "").strip():
+            # Warm the cost caches once (a cold read of every provider takes up to a minute; the console proxy
+            # waits 20 s). Read-only; a failure only leaves the cache empty for the first request.
+            from .costing.receipt import warm
+
+            threading.Thread(target=warm, name="cost-warm", daemon=True).start()
         yield
 
     app = FastAPI(title="bravo-collector", version=__version__, lifespan=lifespan)

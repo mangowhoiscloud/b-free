@@ -19,6 +19,48 @@ from ..environments import PostgresSection
 from ..result import Obs, error_text, failed, passed, unknown, worst
 
 NO_PASSWORD_METHODS = frozenset({"trust", "peer", "ident"})
+NETWORK_TYPES = frozenset({"host", "hostssl", "hostnossl", "hostgssenc", "hostnogssenc"})
+
+
+def judge_hba(rules: list[dict[str, Any]], role: str, dbname: str) -> Obs:
+    """DB-AUTH pg_hba rule scan. Judged:
+        network rules (host, hostssl, hostnossl, hostgssenc, hostnogssenc) that can match the app role and DB:
+            trust, ident, peer -> FAIL (no password over the network); any other method -> ok
+        ``trust`` on any rule type, ``local`` included -> FAIL (anyone with a shell in the pod logs in)
+    Not judged: ``local`` rules with peer or ident (CNPG's default ``local all all peer map=local``). They
+    authenticate the OS user of the Unix socket inside the DB pod, which is not a network path.
+    The evidence lists every rule with how it was judged. Parse errors -> UNKNOWN.
+    """
+    rows: list[dict[str, Any]] = []
+    bad: list[int] = []
+    errors = [r["line"] for r in rules if r.get("error")]
+    for r in rules:
+        typ, method = str(r.get("type") or "").lower(), str(r.get("method") or "").lower()
+        covers = (_covers(r.get("database"), dbname, {"all", "sameuser", "samerole"})
+                  and _covers(r.get("user_name"), role, {"all"}))
+        if r.get("error"):
+            judged = "unknown: parse error"
+        elif not covers:
+            judged = "not applicable: does not match the app role and database"
+        elif method == "trust":
+            judged = "FAIL: trust (no password)" + ("; local socket" if typ == "local" else "")
+        elif typ in NETWORK_TYPES and method in NO_PASSWORD_METHODS:
+            judged = f"FAIL: {method} on a network rule (no password)"
+        elif typ in NETWORK_TYPES:
+            judged = f"ok: {method} requires a credential"
+        elif typ == "local":
+            judged = f"not judged: local {method} (Unix socket inside the DB pod, not a network path)"
+        else:
+            judged = f"not judged: rule type {typ}"
+        if judged.startswith("FAIL"):
+            bad.append(int(r["line"]))
+        rows.append({"line": r.get("line"), "type": typ, "database": r.get("database"), "user": r.get("user_name"),
+                     "method": method, "judged": judged})
+    if errors:
+        return unknown("hba_parse_error", lines=errors, rules=rows)
+    if bad:
+        return failed("no_password_hba_rule", lines=bad, rules=rows)
+    return passed("hba_requires_password", rules=rows)
 TLS_OK = frozenset({"TLSv1.2", "TLSv1.3"})
 AUTH_REFUSED_MARKERS = ("password authentication failed", "no password supplied", "password is required",
                         "fe_sendauth", "authentication failed", "pg_hba.conf rejects")
@@ -143,17 +185,7 @@ class PostgresProbe:
         elif f["hba"] is None:
             parts.append(unknown("hba_unreadable", error=f["settings"].get("_hba_error")))
         else:
-            errs = [r["line"] for r in f["hba"] if r["error"]]
-            offending = [r for r in f["hba"] if str(r["method"]).lower() in NO_PASSWORD_METHODS
-                         and _covers(r["database"], self._target()["dbname"] or "", {"all", "sameuser", "samerole"})
-                         and _covers(r["user_name"], role, {"all"})]
-            if errs:
-                parts.append(unknown("hba_parse_error", lines=errs))
-            elif offending:
-                parts.append(failed("no_password_hba_rule", rules=[
-                    {k: r[k] for k in ("line", "type", "method")} for r in offending]))
-            else:
-                parts.append(passed("hba_requires_password", rules=len(f["hba"])))
+            parts.append(judge_hba(f["hba"], role, self._target()["dbname"] or ""))
             if f["settings"].get("password_encryption") != "scram-sha-256":
                 parts.append(failed("password_encryption_weak", value=f["settings"].get("password_encryption")))
         return worst(parts)

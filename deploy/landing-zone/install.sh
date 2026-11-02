@@ -261,6 +261,13 @@ step_rgw() {
   k -n rook-ceph wait --for=jsonpath='{.status.phase}'=Ready cephobjectstoreuser/bravo-gate-other --timeout=5m
   k -n rook-ceph get svc rook-ceph-rgw-bravo
   "$here/scripts/rgw-bucket.sh" "$ctx"
+  # T8 (D-26): the Executor's S3 -> RGW attachment copy reads the bucket credential from the platform
+  # OpenBao. OBC keys and the CA are regenerated with the cluster, so they are re-piped on every run.
+  { k -n chat get secret bravo-demo-attachments -o json; k -n chat get configmap bravo-rgw-ca -o json
+    k -n chat get configmap bravo-demo-attachments -o json; } \
+    | jq -sc '{access_key_id: (.[0].data.AWS_ACCESS_KEY_ID | @base64d), secret_access_key: (.[0].data.AWS_SECRET_ACCESS_KEY | @base64d),
+               endpoint: "https://rook-ceph-rgw-bravo.rook-ceph.svc", bucket: .[2].data.BUCKET_NAME, ca_pem: .[1].data["ca.crt"]}' \
+    | "$keys" env-put-json "$ENV_ID" object-store
 }
 
 step_kyverno() {

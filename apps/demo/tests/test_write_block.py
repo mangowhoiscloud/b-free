@@ -148,6 +148,22 @@ def test_admin_rejects_missing_or_wrong_token(pgb: Stack, tmp_path: Path) -> Non
         assert r.status_code == 400
 
 
+def test_fault_injection_answers_500_except_health(pgb: Stack, tmp_path: Path) -> None:
+    with app_process(pgb, tmp_path, env_id=_env_id(), token=_token()) as app:
+        assert httpx.put(f"{app.admin}/admin/fault", json={"http_5xx_rate": 1.0}).status_code == 401
+        for bad in ({"http_5xx_rate": 1.5}, {"http_5xx_rate": True}, {"rate": 1}):
+            assert httpx.put(f"{app.admin}/admin/fault", json=bad, headers=app.auth()).status_code == 400
+        r = httpx.put(f"{app.admin}/admin/fault", json={"http_5xx_rate": 1.0}, headers=app.auth())
+        assert r.json() == {"http_5xx_rate": 1.0, "scope": "process"}
+        r = httpx.get(f"{app.chat}/api/config")
+        assert r.status_code == 500 and r.json()["error"] == "injected_fault"
+        assert r.headers["X-Bravo-Fault"] == "injected"
+        assert httpx.get(f"{app.chat}/healthz").status_code == 200
+        assert httpx.get(f"{app.chat}/readyz").status_code == 200
+        httpx.put(f"{app.admin}/admin/fault", json={"http_5xx_rate": 0}, headers=app.auth())
+        assert httpx.get(f"{app.chat}/api/config").status_code == 200
+
+
 def test_block_rejects_new_writes_and_keeps_reads(pgb: Stack, tmp_path: Path) -> None:
     room = "t-" + uuid.uuid4().hex[:10]
     with app_process(pgb, tmp_path, env_id=_env_id(), token=_token()) as app:

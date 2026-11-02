@@ -23,6 +23,7 @@ import hashlib
 import io
 import json
 import logging
+import random
 import re
 import time
 import unicodedata
@@ -217,6 +218,15 @@ def create_app(settings: Settings) -> FastAPI:
             "max_body": MAX_BODY,
             "max_author": MAX_AUTHOR,
         }
+
+    @app.middleware("http")
+    async def injected_fault(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        # 장애 주입 (admin PUT /admin/fault): health paths stay up so the pod and the LB monitor keep it in.
+        rate = state.get("fault_5xx_rate", 0.0)
+        if rate and request.url.path not in ("/healthz", "/readyz") and random.random() < rate:  # noqa: S311
+            return JSONResponse({"error": "injected_fault", "env": settings.env_id}, status_code=500,
+                                headers={"X-Served-By": settings.env_id, "X-Bravo-Fault": "injected"})
+        return await call_next(request)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: RequestResponseEndpoint) -> Response:

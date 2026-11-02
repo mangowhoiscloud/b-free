@@ -54,7 +54,7 @@ images:
     digest: sha256:077fb8c8209228797fcebc6566e1229a4a6a6018d3247601094a69b535000805 # redesign-r8 (console lane: DESIGN-REFERENCE IA, type scale, time range, KPI, receipt, health/sync)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
-    digest: sha256:bf7f65bb554a902b55d82b0ed37838a3c1d1fefb33f031c79a6ff14e1f97738e
+    digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
     digest: sha256:be1e69fd48d4fdeb8da4110987fe164c19bd5e71bbe398d8a01856d75834b49d # cost-20261102T133456Z (obs/cost lane: GET /v1/cost; built from the working tree with the collector lane redact.py)

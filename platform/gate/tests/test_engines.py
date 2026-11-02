@@ -174,6 +174,59 @@ def test_db_auth_is_unknown_when_app_role_is_missing(pg_pair, monkeypatch: pytes
     assert o.verdict == "UNKNOWN" and o.reason == "app_role_missing", o
 
 
+def _lab_auth(lab, monkeypatch: pytest.MonkeyPatch):
+    from bravo_gate.probes.postgres import PostgresProbe
+
+    monkeypatch.setenv("T_LAB_DSN", lab.pg.probe_dsn)
+    monkeypatch.setenv("T_LAB_CA", lab.pg.ca_file)
+    monkeypatch.delenv("PGPASSWORD", raising=False)
+    monkeypatch.delenv("PGPASSFILE", raising=False)
+    sec = parse_registry({"environments": {"e": {"postgres": {
+        "dsn_env": "T_LAB_DSN", "app_role": "app_writer", "app_tables": ["messages"],
+        "tls": {"sslrootcert_env": "T_LAB_CA"}}}}}).get("e").postgres
+    return PostgresProbe(sec).auth()
+
+
+@pytest.mark.pg
+def test_db_auth_passes_on_cnpg_default_hba(pg_hba_lab, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CNPG's ``local all all peer map=local`` is the in-pod socket, not a network path: not judged."""
+    from conftest import CNPG_DEFAULT_HBA
+
+    pg_hba_lab.hba_file.write_text(CNPG_DEFAULT_HBA)
+    o = _lab_auth(pg_hba_lab, monkeypatch)
+    assert o.verdict == "PASS", o
+    hba = next(p for p in o.evidence["parts"] if p["reason"] == "hba_requires_password")
+    judged = {r["line"]: r["judged"] for r in hba["evidence"]["rules"]}
+    assert judged[2].startswith("not judged: local peer")
+    assert all(v.startswith(("ok:", "not applicable", "not judged")) for v in judged.values()), judged
+    assert any(v == "ok: scram-sha-256 requires a credential" for v in judged.values())
+
+
+@pytest.mark.pg
+def test_db_auth_fails_on_local_trust(pg_hba_lab, monkeypatch: pytest.MonkeyPatch) -> None:
+    from conftest import CNPG_DEFAULT_HBA
+
+    pg_hba_lab.hba_file.write_text("local all all trust\n" + CNPG_DEFAULT_HBA)
+    try:
+        o = _lab_auth(pg_hba_lab, monkeypatch)
+        assert o.verdict == "FAIL" and "no_password_hba_rule" in o.reason, o
+        hba = next(p for p in o.evidence["parts"] if p["reason"] == "no_password_hba_rule")
+        assert hba["evidence"]["lines"] == [1]
+        assert hba["evidence"]["rules"][0]["judged"] == "FAIL: trust (no password); local socket"
+    finally:
+        pg_hba_lab.hba_file.write_text(CNPG_DEFAULT_HBA)
+
+
+def test_judge_hba_network_ident_fails() -> None:
+    from bravo_gate.probes.postgres import judge_hba
+
+    rules = [{"line": 1, "type": "host", "database": ["all"], "user_name": ["all"], "method": "ident", "error": None},
+             {"line": 2, "type": "local", "database": ["all"], "user_name": ["all"], "method": "peer", "error": None}]
+    o = judge_hba(rules, "app_writer", "chat")
+    assert o.verdict == "FAIL" and o.evidence["lines"] == [1]
+    assert o.evidence["rules"][1]["judged"].startswith("not judged: local peer")
+
+
 def test_unconfigured_credentials_are_unknown_without_network() -> None:
     sec = parse_registry({"environments": {"e": {"object_store": {"bucket": "attachments"}}}}).get("e").object_store
     p = ObjectStoreProbe(sec)

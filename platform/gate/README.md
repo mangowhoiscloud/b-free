@@ -16,7 +16,7 @@
 | | OBJ-04 | 앱 자격으로 canary HEAD, `_gate/app-put-probe` PUT → 둘 다 200이면 PASS(대조군) | `object_store` |
 | | OBJ-05 | 다른 자격으로 canary GET → 403이면 PASS | `object_store` |
 | | DB-ANON-READ | `has_table_privilege('public', 표, 'SELECT')`가 거짓이면 PASS | `postgres` |
-| | DB-AUTH | 앱 역할로 비밀번호 없이 실제 로그인 → 거부, 그리고 `pg_hba`에 trust · peer · ident 규칙 없음, `scram-sha-256`. 앱 역할이 DB에 없으면 UNKNOWN(`app_role_missing`) | `postgres` |
+| | DB-AUTH | 앱 역할로 비밀번호 없이 실제 로그인 → 거부, `password_encryption=scram-sha-256`, 그리고 `pg_hba` 규칙 판정: 앱 역할 · DB에 닿는 네트워크 규칙(`host`, `hostssl`, `hostnossl`, `hostgssenc`, `hostnogssenc`)의 trust · ident · peer는 FAIL, `trust`는 `local`을 포함해 어디서나 FAIL. `local`의 peer · ident(CNPG 기본 `local all all peer map=local`, 파드 안 Unix 소켓)는 네트워크 경로가 아니라 판정하지 않음. 증거에 모든 규칙과 판정 이유를 남김. 앱 역할이 DB에 없으면 UNKNOWN(`app_role_missing`) | `postgres` |
 | SEC-01 · ENC-02 | SEC-SECRET-READ-K8S | 다른 서비스 계정의 Secret `get` · `list`를 SubjectAccessReview로 시험 → 거부면 PASS. `evaluationError`가 있으면 UNKNOWN. 앱 네임스페이스나 Secret이 없으면 UNKNOWN(메타데이터만 읽음) | `kubernetes` |
 | | SEC-SECRET-READ-AWS | 다른 IAM 주체(`other_principal_arns`, 또는 `other_principal_roles` 이름을 `iam:GetRole`로 풀어서)의 `secretsmanager:GetSecretValue`를 `iam:SimulatePrincipalPolicy`(자원 정책 포함)로 시험 | `aws` |
 | | OBJ-ENC | 첨부 버킷 기본 암호화가 고객 관리 키(`aws:kms`, AWS면 DescribeKey로 `KeyManager=CUSTOMER` 확인). `AES256`이나 설정 없음은 FAIL | `object_store` |

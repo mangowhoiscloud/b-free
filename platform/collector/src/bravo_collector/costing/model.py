@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -21,6 +22,9 @@ NOT_CONNECTED = "연결 안 됨"
 TAG_PENDING = "태그 활성화 대기"
 DAY_TZ = timedelta(hours=9)  # daily buckets in KST/JST (the team and the judges); stated in the response
 GCP_MONTH_HOURS = 730.0  # GCP list prices per month assume 730 hours (cloud.google.com pricing pages)
+
+
+log = logging.getLogger("bravo_collector.cost")
 
 
 def now_utc() -> datetime:
@@ -130,9 +134,23 @@ class TTLCache:
         with self._guard:
             return self._locks.setdefault(key, threading.Lock())
 
-    def get_or_fill(self, key: str, ttl_s: float, fill: Callable[[], Any]) -> tuple[Any, datetime, bool]:
-        """Value, the time it was filled, and whether this call filled it."""
-        with self._lock(key):
+    def get_or_fill(
+        self, key: str, ttl_s: float, fill: Callable[[], Any], *, stale_ok: bool = False
+    ) -> tuple[Any, datetime, bool]:
+        """Value, the time it was filled, and whether this call filled it.
+
+        ``stale_ok``: an expired value is returned at once and one background thread refills it (the console proxy
+        waits 20 s; a cold inventory read takes longer). Without a value the call waits for the fill.
+        """
+        lock = self._lock(key)
+        hit = self._data.get(key)
+        if hit and time.monotonic() - hit[0] < ttl_s:
+            return hit[2], hit[1], False
+        if hit and stale_ok:
+            if lock.acquire(blocking=False):
+                threading.Thread(target=self._refill, args=(key, lock, fill), daemon=True).start()
+            return hit[2], hit[1], False
+        with lock:
             hit = self._data.get(key)
             if hit and time.monotonic() - hit[0] < ttl_s:
                 return hit[2], hit[1], False
@@ -140,6 +158,15 @@ class TTLCache:
             filled = now_utc()
             self._data[key] = (time.monotonic(), filled, value)
             return value, filled, True
+
+    def _refill(self, key: str, lock: threading.Lock, fill: Callable[[], Any]) -> None:
+        try:
+            value = fill()
+            self._data[key] = (time.monotonic(), now_utc(), value)
+        except Exception:  # noqa: BLE001 - keep the last good value; the next request tries again
+            log.warning("cost cache refill failed for %s", key.split(":", 1)[0])
+        finally:
+            lock.release()
 
     def clear(self) -> None:
         with self._guard:

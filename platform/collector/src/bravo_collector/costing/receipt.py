@@ -6,6 +6,7 @@ config, fills the caches (inventory 5 min, prices 24 h, Cost Explorer 1 h) and c
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -413,7 +414,7 @@ def receipt_for_request(
         raise CostRequestError("period longer than 62 days")
 
     cfg = load_config(config_path)
-    inv, inv_at, _ = CACHE.get_or_fill("cost-inventory", INVENTORY_TTL_S, lambda: collect_inventory(cfg))
+    inv, inv_at, _ = CACHE.get_or_fill("cost-inventory", INVENTORY_TTL_S, lambda: collect_inventory(cfg), stale_ok=True)
     actuals = None
     if (cfg.get("aws") or {}).get("regions"):
         from .actuals import billed_lines, cached_actuals
@@ -449,3 +450,11 @@ def receipt_for_request(
         sources=sources,
         observed_at=inv["observed_at"],
     )
+
+
+def warm() -> None:
+    """Fill the inventory, price and Cost Explorer caches at start-up (one billed fill, as any first request)."""
+    try:
+        receipt_for_request()
+    except Exception:  # noqa: BLE001 - start-up warm-up only; requests report their own errors
+        logging.getLogger("bravo_collector.cost").warning("cost warm-up failed")

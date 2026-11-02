@@ -8,6 +8,14 @@ when it opens writes again. The state is a row per environment in the write data
 (table write_block), so every replica behind the Service sees the same switch, and the check
 runs inside each write transaction (db.py `_guard_writes`).
 
+장애 주입 (fault injection, spec S4 "목적지 앱 오류 응답"), test use only:
+
+  GET /admin/fault                          -> {"http_5xx_rate": float, "scope": "process"}
+  PUT /admin/fault {"http_5xx_rate": 0..1}  -> that share of chat-port HTTP requests answer 500
+                                               {"error": "injected_fault"}; /healthz and /readyz never do
+
+The rate lives in this process only (a restart clears it); deploy/cloud/fault.sh sets it on every pod.
+
 Authentication: `Authorization: Bearer <token>`. The token is read from ADMIN_TOKEN_FILE (Secret
 chat-admin, key token, delivered by the platform from OpenBao) on every request, so a rotated
 Secret applies without a restart. Fail closed: without a usable token every request is refused.
@@ -98,5 +106,23 @@ def create_admin_app(settings: Settings, state: dict[str, Any], instruments: Ins
                    "client": request.client.host if request.client else None},
         )
         return JSONResponse(current.public())
+
+    @admin.get("/admin/fault")
+    async def get_fault() -> Response:
+        return JSONResponse({"http_5xx_rate": state.get("fault_5xx_rate", 0.0), "scope": "process"})
+
+    @admin.put("/admin/fault")
+    async def put_fault(request: Request) -> Response:
+        try:
+            doc = await request.json()
+        except ValueError:
+            return JSONResponse({"error": "invalid_json"}, status_code=400)
+        rate = doc.get("http_5xx_rate") if isinstance(doc, dict) and set(doc) == {"http_5xx_rate"} else None
+        if isinstance(rate, bool) or not isinstance(rate, int | float) or not 0 <= rate <= 1:
+            return JSONResponse({"error": "body_must_be_{\"http_5xx_rate\": 0..1}"}, status_code=400)
+        state["fault_5xx_rate"] = float(rate)
+        log.warning("장애 주입 (fault injection) http_5xx_rate set",
+                    extra={"http_5xx_rate": float(rate), "env_id": settings.env_id, "instance": settings.instance_id})
+        return JSONResponse({"http_5xx_rate": float(rate), "scope": "process"})
 
     return admin

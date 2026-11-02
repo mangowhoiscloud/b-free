@@ -89,7 +89,7 @@ def _make_certs(d: Path) -> Path:
     return d / "ca.crt"
 
 
-def _start_pg(tls_dir: Path | None) -> tuple[str, Pg]:
+def _start_pg(tls_dir: Path | None, *, ident: bool = False) -> tuple[str, Pg]:
     su_pw, ro_pw, app_pw = (secrets.token_urlsafe(18) for _ in range(3))
     # No --rm: if the server exits during startup, the container (and its log) stays for the error below.
     args = ["run", "-d", "-P", "-e", f"POSTGRES_PASSWORD={su_pw}", "-e", "POSTGRES_DB=chat",
@@ -102,7 +102,8 @@ def _start_pg(tls_dir: Path | None) -> tuple[str, Pg]:
                  "install -o postgres -m 644 /certs/server.crt /tmp/server.crt && "
                  "exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt "
                  "-c ssl_key_file=/tmp/server.key -c ssl_min_protocol_version=TLSv1.2 "
-                 "-c hba_file=/certs/pg_hba.conf -c log_connections=on"]
+                 "-c hba_file=/certs/pg_hba.conf -c log_connections=on"
+                 + (" -c ident_file=/certs/pg_ident.conf" if ident else "")]
     cid = _docker(*args)
     try:
         port = _host_port(cid, "5432/tcp")
@@ -192,3 +193,44 @@ def s3_target() -> S3Target:
         app_env=app if all(os.environ.get(v) for v in app) else None,
         other_env=other if all(os.environ.get(v) for v in other) else None,
     )
+
+
+# CloudNativePG's generated pg_hba.conf (operator defaults, user rules empty): local peer through the "local"
+# ident map, client certificates for replication and the pooler, scram-sha-256 for every other host connection.
+CNPG_DEFAULT_HBA = """\
+# Grant local access ('local' user map)
+local all all peer map=local
+
+# Require client certificate authentication for the streaming_replica user
+hostssl postgres streaming_replica all cert
+hostssl replication streaming_replica all cert
+hostssl all cnpg_pooler_pgbouncer all cert
+
+# Default authentication method
+host all all all scram-sha-256
+"""
+
+
+@dataclass(frozen=True)
+class HbaLab:
+    pg: Pg
+    hba_file: Path  # host path of the server's pg_hba.conf (pg_hba_file_rules reads it at query time)
+
+
+@pytest.fixture(scope="session")
+def pg_hba_lab(tmp_path_factory: pytest.TempPathFactory) -> Iterator[HbaLab]:
+    """A TLS-enabled postgres:16 whose pg_hba.conf is CNPG's default (ssl is needed for the hostssl lines)."""
+    reason = _docker_reason()
+    if reason:
+        pytest.skip(f"PostgreSQL tests need real postgres:16 containers: {reason}")
+    d = tmp_path_factory.mktemp("hbalab")
+    _make_certs(d)
+    (d / "pg_hba.conf").write_text(CNPG_DEFAULT_HBA)
+    (d / "pg_ident.conf").write_text("local postgres postgres\n")
+    for f in d.iterdir():
+        f.chmod(0o644)
+    cid, pg = _start_pg(d, ident=True)
+    try:
+        yield HbaLab(pg, d / "pg_hba.conf")
+    finally:
+        subprocess.run(["docker", "rm", "-f", cid], capture_output=True, check=False, timeout=60)  # noqa: S603,S607

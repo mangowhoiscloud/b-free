@@ -222,6 +222,29 @@ def test_ttl_cache_fills_once_under_concurrency():
     assert cache.get_or_fill("k", 0, fill)[0] == 2  # expired -> refilled
 
 
+def test_stale_value_is_served_while_one_background_refill_runs():
+    cache = TTLCache()
+    release = threading.Event()
+    calls = []
+
+    def slow_fill():
+        calls.append(1)
+        if len(calls) > 1:
+            release.wait(5)
+        return len(calls)
+
+    assert cache.get_or_fill("k", 3600, slow_fill)[0] == 1
+    # Expired: both calls return the old value at once; only one refill starts.
+    assert cache.get_or_fill("k", 0, slow_fill, stale_ok=True)[0] == 1
+    assert cache.get_or_fill("k", 0, slow_fill, stale_ok=True)[0] == 1
+    release.set()
+    for _ in range(50):
+        if cache.get_or_fill("k", 3600, slow_fill)[0] == 2:
+            break
+        threading.Event().wait(0.05)
+    assert len(calls) == 2 and cache.get_or_fill("k", 3600, slow_fill)[0] == 2
+
+
 class _RecordingCe:
     """Counts Cost Explorer requests; answers with the shapes the real API returns for an inactive tag."""
 

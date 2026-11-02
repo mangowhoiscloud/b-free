@@ -113,7 +113,7 @@ def fetch(start: date, end: date, tag_key: str = "component", session: boto3.Ses
 def cached_actuals(session: boto3.Session | None = None, today: date | None = None) -> dict[str, Any]:
     start, end = month_period(today)
     value, filled_at, filled_now = CACHE.get_or_fill(
-        f"ce:{start}:{end}", CE_TTL_S, lambda: fetch(start, end, session=session)
+        f"ce:{start}:{end}", CE_TTL_S, lambda: fetch(start, end, session=session), stale_ok=True
     )
     return {
         **value,
