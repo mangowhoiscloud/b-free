@@ -112,6 +112,11 @@ spec:
             # before cutover the dst app writes to the source DB over the D-16 link; one round trip is 290–340 ms
             # (KT -> Cloudflare DFW), dst write p95 668–956 ms vs src 260 ms. 800 ms would revert every shift on this path.
             - {name: BRAVO_FRONT_MAX_P95_MS, value: "1500"}
+            # Probe step rate min(120, 20 / weight) writes/s: 10 % at 120, 50 % at 40, 100 % at 20 (coordinator decision
+            # 2026-11-03). The new side's share at 10 % measured 3.9-9.2 % for tens of seconds after a weight change
+            # (docs/evidence/shift/pgbouncer-warm-pool-20261103): at 60/s the 05:00 return step got 90 < 100 samples in
+            # the 40 s hold; at 120/s 100 samples take about 9-21 s. Hold 40 s, 100 samples, 1 % and 1,500 ms unchanged.
+            - {name: BRAVO_FRONT_WRITE_RATE, value: "120"}
             # SHIFT step judgement from the load generator's series when a load run is active (contract 15 §10.4);
             # the Executor's own write probe otherwise. Ingress rule: observability/networkpolicy.yaml.
             - {name: BRAVO_FRONT_PROM_URL, value: "http://prometheus.bravo-observe.svc.cluster.local:9090"}
