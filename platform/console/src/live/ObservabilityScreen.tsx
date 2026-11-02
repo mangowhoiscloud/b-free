@@ -273,8 +273,8 @@ export function ObservabilityScreen({ view, planId, events }: { view: ConsoleVie
               </div>
               <p className="meta">
                 Hubble 지표가 없는 환경:{' '}
-                {allEnvs.filter((e) => !(flows.data ?? []).some((r) => envOf(r.labels) === e)).map((e) => (e === 'target-onprem' ? '온프렘(Hubble 지표 꺼짐)' : e === 'target-gcp' ? 'GKE(Dataplane V2 지표 꺼짐)' : e === 'platform' ? '플랫폼(Hubble 지표 꺼짐)' : e)).join(' · ') || '없음'}
-                . 출처 15-r2-contracts §7.6.
+                {allEnvs.filter((e) => !(flows.data ?? []).some((r) => envOf(r.labels) === e)).join(' · ') || '없음'}
+                . 이 범위에 hubble_flows_processed_total 계열이 없는 환경입니다(원인 목록은 15-r2-contracts §7.6).
               </p>
             </>
           )}
