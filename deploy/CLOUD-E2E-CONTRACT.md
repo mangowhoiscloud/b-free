@@ -78,9 +78,12 @@
 
 ## 7. 환경 사이 링크
 
-- D-16 목표는 Cloudflare Tunnel + Access 서비스 토큰입니다. Zero Trust Free가 2026-11-02 20:5x에 켜졌고, Cloudflare 쪽(Access 앱, Service Auth 정책, 관리 Tunnel, DNS)은 적용했습니다(`infra/envs/edge/links.tf`, `infra/modules/edge_link/cloudflare`). 클러스터 쪽(관리 Tunnel 커넥터, `bravo-link`)은 아직입니다. 그때까지 아래 임시 링크를 씁니다.
-- 그전까지 쓰는 임시 링크는 플랫폼(노트북)의 `kubectl port-forward`입니다. 목적지(Lima VM 위 클러스터)는 `host.lima.internal`로 노트북 포트에 닿습니다.
-- 임시 링크는 문서와 콘솔에 "임시 링크(D-16 전)"로 표시합니다.
+- D-16 목표는 Cloudflare Tunnel + Access 서비스 토큰입니다. Zero Trust Free가 2026-11-02 20:5x에 켜졌고, Cloudflare 쪽(Access 앱, Service Auth 정책, 관리 Tunnel, DNS)은 적용했습니다(`infra/envs/edge/links.tf`, `infra/modules/edge_link/cloudflare`).
+- 클러스터 쪽도 올라가 있습니다(2026-11-02 23:3x 확인). 노출 환경의 관리 Tunnel 커넥터 `cf-edge/cloudflared-mgmt`(출발지 EKS, 온프렘 RKE2 각 2/2)와 플랫폼의 `bravo-link` 링크(`deploy/platform/link/d16`, Argo CD 앱 `link-d16`, 링크마다 2/2)입니다.
+- 플랫폼에서 두 클러스터 API로 가는 길은 D-16 링크뿐입니다. 출발지 EKS API는 `src-k8s.bravo-link.svc:443`(`t1-src-k8s`)입니다. 수집기(`GET /v1/clusters`, 스냅숏)와 Executor가 씁니다. 인증은 바뀌지 않았습니다. EKS IAM 토큰(웹 아이덴티티 역할 + access entry `bravo-collector` · `bravo-executor`)입니다. TLS는 EKS CA로 확인합니다. 확인하는 이름은 수집기가 실제 EKS 엔드포인트 호스트(`eks:DescribeCluster`), Executor가 `kubernetes.default.svc`입니다. 둘 다 EKS API 인증서의 SAN에 있습니다. 온프렘 API는 `dst-k8s.bravo-link.svc:443`(`t1-dst-k8s`)이고 수집기, 리허설 서비스, Executor가 씁니다.
+- 출발지 EKS 공개 엔드포인트 허용 목록에는 운영자 노트북 IP 하나만 있습니다. 플랫폼 NAT IP(`43.200.202.252/32`)는 2026-11-02 23:44 KST에 뺐습니다(`infra/envs/source-aws`, 증거 `docs/evidence/d16-source-k8s/`). 뺀 뒤에도 콘솔의 클러스터 화면 데이터(`GET /v1/clusters`)가 출발지를 읽습니다.
+- 플랫폼 게이트에는 클러스터 자격이 없습니다. 그래서 출발지 K8s 질문(SEC-SECRET-READ-K8S, NET-DEFAULT-DENY, DR-RESTORE)은 링크 전후 모두 UNKNOWN(`*_not_configured`)입니다. 링크와 무관한 남은 일입니다.
+- 아직 남은 임시 링크(노트북 `kubectl port-forward`, `deploy/cloud/link.sh`)는 문서와 콘솔에 "임시 링크(D-16 전)"로 표시합니다. 플랫폼에서 클러스터 API로 가는 길에는 없습니다.
 
 **링크 이름과 토큰(D-16, 2026-11-02 20:5x).** 호스트는 `t1-<노출 환경>-<서비스>.mangowhois.ai`, 토큰은 `<소비>-<노출 환경>-<서비스>`(`02-network.md` 4.1)입니다. 토큰은 `keys.sh issue-service-token`이 만들어 OpenBao에만 씁니다. 필드 `client_id`, `client_secret`, `token_id`, `name`, `expires_at`. 만료 2026-11-09 11:50 UTC(168시간). Terraform에는 ID만 들어갑니다.
 

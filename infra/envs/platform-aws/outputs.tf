@@ -14,7 +14,7 @@ output "ci_trusted_subject" {
 }
 
 output "nat_gateway_id" {
-  description = "플랫폼 Regional NAT(VPC ②). 출발지 EKS API 허용 목록에 이 NAT 공인 IP가 있음(수집기 · Executor의 EKS 토큰 경로, 임시 링크(D-16 전))"
+  description = "플랫폼 Regional NAT(VPC ②). 출발지 EKS API 허용 목록에는 이 NAT 공인 IP가 없음(2026-11-02 뺌). 플랫폼은 출발지 EKS API에 D-16 링크 src-k8s로 닿음"
   value       = module.network.nat_gateway_id
 }
 

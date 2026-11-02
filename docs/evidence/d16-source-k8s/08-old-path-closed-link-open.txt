@@ -1,0 +1,15 @@
+# Negative control after NAT removal: collector pod collector-744ff9d5c6-zccb5 (image 8de337b9) dials the EKS public endpoint directly (old path).
+# kubectl --context bravo-platform-rke2 -n bravo-control exec -i collector-744ff9d5c6-zccb5 -c collector -- python - < natprobe.py
+at 2026-11-02T14:45:44+00:00
+dns ['13.209.107.84', '15.164.33.52']
+public_endpoint_tcp FAILED TimeoutError timed out after_s 16.0
+# Same pod, same minute, link path (linkprobe.py):
+caller_arn arn:aws:sts::721622471953:assumed-role/bravo-platform-collector-ro-25e58db04e5bb0ea1f58d7f626/botocore-session-1793630761
+eks_endpoint_host 4085fe75e8bd75e727bd03fbb9729334.gr7.ap-northeast-2.eks.amazonaws.com
+tls_verified TLSv1.3 subject {'commonName': 'kube-apiserver'}
+san_has_eks_host True
+wrong_name_rejected Hostname mismatch, certificate is not valid for 'wrong.example.com'.
+server_version v1.36.5-eks-577a51e ms 423
+nodes ['ip-10-10-11-107.ap-northeast-2.compute.internal']
+namespaces 12
+at 2026-11-02T14:46:04+00:00

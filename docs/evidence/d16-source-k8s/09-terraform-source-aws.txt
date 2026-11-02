@@ -1,0 +1,60 @@
+# Terraform infra/envs/source-aws, 2026-11-02 (KST). tfvars is gitignored; only bootstrap_public_cidrs changed.
+
+## 1. Baseline plan (before the tfvars change), ~23:36 KST
+No changes. Your infrastructure matches the configuration.
+
+## 2. tfvars change
+bootstrap_public_cidrs = ["121.134.131.104/32", "43.200.202.252/32"]  ->  ["121.134.131.104/32"]
+
+## 3. Full plan with the change: 7 to change. The EKS add-ons show addon_version -> (known after apply) only because their
+##    aws_eks_addon_version data sources depend on the cluster resource that has a pending change. Not applied.
+  # module.cluster.aws_eks_addon.after_nodes["coredns"] will be updated in-place
+  # module.cluster.aws_eks_addon.after_nodes["snapshot-controller"] will be updated in-place
+  # module.cluster.aws_eks_addon.before_nodes["eks-pod-identity-agent"] will be updated in-place
+  # module.cluster.aws_eks_addon.before_nodes["kube-proxy"] will be updated in-place
+  # module.cluster.aws_eks_addon.before_nodes["vpc-cni"] will be updated in-place
+  # module.cluster.aws_eks_addon.ebs_csi will be updated in-place
+  # module.cluster.aws_eks_cluster.this will be updated in-place
+Plan: 0 to add, 7 to change, 0 to destroy.
+
+## 4. Targeted plan (-target=module.cluster.aws_eks_cluster.this), saved to a plan file and applied as is
+Terraform will perform the following actions:
+
+  # module.cluster.aws_eks_cluster.this will be updated in-place
+  ~ resource "aws_eks_cluster" "this" {
+        id                            = "bravo-source"
+        name                          = "bravo-source"
+        tags                          = {
+            "component"  = "source"
+            "env"        = "source-aws"
+            "managed-by" = "terraform"
+        }
+        # (14 unchanged attributes hidden)
+
+      ~ vpc_config {
+          ~ public_access_cidrs       = [
+              - "43.200.202.252/32",
+                # (1 unchanged element hidden)
+            ]
+            # (7 unchanged attributes hidden)
+        }
+
+        # (10 unchanged blocks hidden)
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+
+## 5. Apply of the saved targeted plan
+start 23:43:58 KST
+module.cluster.aws_eks_cluster.this: Modifying... [id=bravo-source]
+module.cluster.aws_eks_cluster.this: Modifications complete after 16s [id=bravo-source]
+Apply complete! Resources: 0 added, 1 changed, 0 destroyed.
+exit=0
+end 23:44:15 KST
+(Terraform printed the usual -target warning "Applied changes may be incomplete".)
+
+## 6. EKS update record (aws eks describe-update)
+2026-11-02T23:44:01+09:00 EndpointAccessUpdate Successful PublicAccessCidrs=["121.134.131.104/32"]
+
+## 7. Full plan after apply, ~23:46 KST (no target)
+No changes. Your infrastructure matches the configuration.

@@ -1,0 +1,4 @@
+# executor-0 (bravo-control), 2026-11-02 23:45 KST, after NAT removal. kubeconfig deploy/cloud/in-cluster/kubeconfig.template.yaml
+server=https://src-k8s.bravo-link.svc.cluster.local:443 tls-server-name=kubernetes.default.svc
+  "gitVersion": "v1.36.5-eks-577a51e",
+pod/chat-pgbouncer-6595f74f77-47ndr

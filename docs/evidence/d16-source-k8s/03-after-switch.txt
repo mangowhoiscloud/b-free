@@ -1,0 +1,16 @@
+# after switch (collector 8de337b9, link src-k8s; NAT IP still allowed)  2026-11-02 23:42:48 KST  (14:42:48Z)
+## GET /svc/collector/v1/clusters
+observed_at 2026-11-02T14:42:50Z not_configured []
+cluster=source-aws status=ok error=None server=v1.36.5-eks-577a51e nodes=[('ip-10-10-11-107.ap-northeast-2.compute.internal', True)] namespaces=12 chat_ns=True workloads=23 pods={'Running': 30} lz_present=9
+cluster=target-onprem status=ok error=None server=v1.36.5+rke2r1 nodes=[('bravo-onprem-agent', True), ('bravo-onprem-server', True)] namespaces=15 chat_ns=True workloads=35 pods={'Running': 50, 'Succeeded': 7} lz_present=12
+## GET /svc/collector/v1/environments/source-aws/snapshot?sources=kubernetes
+kubernetes partial collected_at 2026-11-02T14:42:50+00:00
+  server_version: ok  v1.36.5-eks-577a51e
+  namespaces: ok  9 entries
+## GET /svc/collector/v1/inventory
+files_scanned 40 rules_version inventory-rules/2026-11-02.1
+## GET /svc/gate/v1/controls/report?source=source-aws&target=target-onprem (source side, K8s questions)
+collected_at 2026-11-02T14:42:52.236409+00:00 gate_verdict BLOCK
+  SEC-SECRET-READ-K8S: src=UNKNOWN reason=secret_probe_not_configured
+  NET-DEFAULT-DENY: src=UNKNOWN reason=app_namespace_not_configured
+  DR-RESTORE: src=UNKNOWN reason=restore_cluster_not_configured

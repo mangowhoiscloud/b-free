@@ -1,0 +1,16 @@
+# before (collector 9dc004db, NAT path)  2026-11-02 23:38:07 KST  (14:38:07Z)
+## GET /svc/collector/v1/clusters
+observed_at 2026-11-02T14:38:08Z not_configured []
+cluster=source-aws status=ok error=None server=v1.36.5-eks-577a51e nodes=[('ip-10-10-11-107.ap-northeast-2.compute.internal', True)] namespaces=12 chat_ns=True workloads=23 pods={'Running': 30} lz_present=9
+cluster=target-onprem status=ok error=None server=v1.36.5+rke2r1 nodes=[('bravo-onprem-agent', True), ('bravo-onprem-server', True)] namespaces=14 chat_ns=True workloads=35 pods={'Running': 50, 'Succeeded': 7} lz_present=11
+## GET /svc/collector/v1/environments/source-aws/snapshot?sources=kubernetes
+kubernetes partial collected_at 2026-11-02T14:38:08+00:00
+  server_version: error ConfigException: Invalid kube-config file. No configuration found. None
+  namespaces: error ConfigException: Invalid kube-config file. No configuration found. None
+## GET /svc/collector/v1/inventory
+files_scanned 40 rules_version inventory-rules/2026-11-02.1
+## GET /svc/gate/v1/controls/report?source=source-aws&target=target-onprem (source side, K8s questions)
+collected_at 2026-11-02T14:38:08.905098+00:00 gate_verdict BLOCK
+  SEC-SECRET-READ-K8S: src=UNKNOWN reason=secret_probe_not_configured
+  NET-DEFAULT-DENY: src=UNKNOWN reason=app_namespace_not_configured
+  DR-RESTORE: src=UNKNOWN reason=restore_cluster_not_configured

@@ -1,6 +1,6 @@
 # D-16 링크(플랫폼 쪽)
 
-`cloudflared access tcp`로 상대 환경의 서비스를 플랫폼 안 로컬 이름으로 받습니다(D-16 제안, `docs/architecture/02-network.md` 4.3). Zero Trust(Access)를 켜면 임시 링크(D-16 전) `deploy/platform/link/temporary/`를 이것으로 바꿉니다. **지금은 적용하지 않습니다.** Zero Trust가 꺼져 있어 Access 앱과 링크 호스트가 없기 때문입니다.
+`cloudflared access tcp`로 상대 환경의 서비스를 플랫폼 안 로컬 이름으로 받습니다(D-16 제안, `docs/architecture/02-network.md` 4.3). 플랫폼 RKE2에 적용되어 있습니다(Argo CD 앱 `link-d16`). 2026-11-02 23:28 KST에 아래 표의 링크와 `src-admin` · `dst-admin` · `dst-s3`가 모두 2/2 Ready였습니다.
 
 | Service(ns `bravo-link`) | 포트 | 링크 호스트 | 서비스 토큰(OpenBao) |
 |---|---|---|---|
@@ -11,16 +11,24 @@
 | `dst-db` | 5432 | `t1-dst-db.mangowhois.ai` | `secret/envs/platform/cf-link-dst-db` |
 | `dst-pgb` | 6432 | `t1-dst-pgb.mangowhois.ai` | `secret/envs/platform/cf-link-dst-pgb` |
 
-Service 이름은 임시 링크와 같습니다. 그래서 바꿀 때 소비자(수집기, Executor, 게이트, 리허설 서비스)의 설정이 그대로입니다. `*-k8s`의 kubeconfig는 `tls-server-name: kubernetes.default.svc`로 API 서버 인증서를 끝에서 끝으로 확인합니다.
+Service 이름은 임시 링크와 같습니다. 그래서 바꿀 때 소비자(수집기, Executor, 게이트, 리허설 서비스)의 설정이 그대로입니다. `*-k8s`는 API 서버 인증서를 끝에서 끝으로 확인합니다. 링크는 TCP만 넘기고 TLS는 소비자와 API 서버 사이에서 맺습니다.
 
-## 켜는 순서(게이트: Zero Trust)
+| 소비자 | 링크 | 인증 | TLS 이름 |
+|---|---|---|---|
+| 수집기(`GET /v1/clusters`, 스냅숏) | `src-k8s` | EKS IAM 토큰(웹 아이덴티티 역할, access entry `bravo-collector`) | 실제 EKS 엔드포인트 호스트(`eks:DescribeCluster`에서 읽음). 레지스트리 `deploy/platform/control/config/environments.yaml`의 `api_server` |
+| Executor | `src-k8s` | EKS IAM 토큰(access entry `bravo-executor`) | `kubernetes.default.svc`(`deploy/cloud/in-cluster/kubeconfig.template.yaml`) |
+| 수집기, 리허설 서비스, Executor | `dst-k8s` | 읽기 전용 · 리허설 · Executor SA 토큰(OpenBao에서 Secret으로) | `kubernetes.default.svc` |
+
+`kubernetes.default.svc`와 EKS 엔드포인트 호스트는 둘 다 EKS API 인증서의 SAN에 있습니다(2026-11-02 확인, `docs/evidence/d16-source-k8s/`). 출발지 EKS 공개 엔드포인트 허용 목록에는 플랫폼 NAT IP가 없습니다. 플랫폼이 출발지 API에 닿는 길은 이 링크뿐입니다.
+
+## 켜는 순서(게이트: Zero Trust, 2026-11-02에 끝냄)
 
 1. 사용자가 Cloudflare Zero Trust(Access)를 켭니다. 이 단계 전에는 아래 어느 것도 하지 않습니다.
 2. 플랫폼 키 단계가 서비스 토큰 9개(`plat-src-k8s`, `plat-src-db`, `dst-src-db`, `plat-src-pgb`, `plat-dst-k8s`, `plat-dst-db`, `src-dst-db`, `plat-dst-pgb`, D-22가 정해지면 `src-dst-s3`)를 Cloudflare API로 만들고 값을 플랫폼 OpenBao에만 씁니다(`keys.sh issue-service-token`). 토큰 ID(비밀 아님)만 꺼냅니다.
 3. `infra/envs/edge/terraform.tfvars`에 `zero_trust_enabled = true`와 `link_service_token_ids`를 넣고 apply합니다. 관리 Tunnel, Access 앱, Service Auth 정책이 먼저, DNS 레코드가 나중에 생깁니다(`infra/modules/edge_link/cloudflare`).
 4. 관리 Tunnel 토큰을 노출 환경의 `cf-edge/cf-mgmt-tunnel`(키 `token`)에, 클라이언트 토큰을 이 네임스페이스의 `cf-link-<env>-<svc>`(키 `client_id`, `client_secret`)에 파이프로 전달합니다. 파일이나 인자로 남기지 않습니다.
 5. 노출 환경에 `deploy/platform/link/customer-mgmt-tunnel/overlays/<env>`를 적용합니다.
-6. `kubectl apply -k deploy/platform/link/d16`, 링크가 Ready인지 확인한 뒤 `deploy/platform/link/temporary/`를 지웁니다. 출발지 EKS 허용 목록의 플랫폼 NAT IP도 뺍니다.
+6. `kubectl apply -k deploy/platform/link/d16`, 링크가 Ready인지 확인한 뒤 `deploy/platform/link/temporary/`를 지웁니다. 출발지 EKS 허용 목록의 플랫폼 NAT IP도 뺍니다(2026-11-02 23:44 KST, `infra/envs/source-aws`의 `bootstrap_public_cidrs`).
 
 ## 판과 남은 확인
 

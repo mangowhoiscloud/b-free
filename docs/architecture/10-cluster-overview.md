@@ -38,7 +38,7 @@ flowchart TB
   SLINK <-->|"데이터: 논리 복제(정 · 역) · 첨부 복사"| DLINK
 ```
 
-모든 연결은 안에서 밖으로만 열립니다. 어느 환경에도 인바운드 포트가 없습니다(D-16). 지금 연결은 "임시 링크(D-16 전)", 플랫폼 쪽의 `kubectl port-forward`입니다(`deploy/CLOUD-E2E-CONTRACT.md` 7절). GCP 목적지(GKE)는 온프렘과 같은 계약의 랜딩 존입니다(2.4절).
+모든 연결은 안에서 밖으로만 열립니다. 어느 환경에도 인바운드 포트가 없습니다(D-16). 플랫폼에서 두 환경으로 가는 연결은 D-16 링크(플랫폼 `bravo-link`, Cloudflare, 상대 `cf-edge`)입니다. 출발지 EKS API도 이 링크로 닿고, 공개 엔드포인트에는 운영자 노트북 IP만 남았습니다(`deploy/CLOUD-E2E-CONTRACT.md` 7절, 2026-11-02). GCP 목적지(GKE)는 온프렘과 같은 계약의 랜딩 존입니다(2.4절).
 
 ## 2. 클러스터별 구성
 
@@ -110,7 +110,7 @@ flowchart TB
 |---|---|---|---|
 | 운영자 · 승인자 접속 | 브라우저 · MCP 클라이언트에서 플랫폼 | Cloudflare Access(`b-free`), 플랫폼 `cf-edge`, `operator-mcp` · 콘솔 · API | Access(OIDC, Managed OAuth) + `memberships` |
 | 사용자(심사위원 채팅) | 휴대폰에서 출발지 또는 목적지 앱 | 대표 이름 `b-free-chat`(LB 전에는 활성 환경 터널 CNAME), 각 환경 `b-free-chat-src` · `b-free-chat-dst` 터널 | 데모는 없음 |
-| 수집 · 리허설 · 컷오버 제어 | 플랫폼에서 출발지 · 목적지 | 목표: 플랫폼 `bravo-link`, Cloudflare, 상대 `cf-edge`. 지금: 임시 링크 | 링크마다 서비스 토큰 + K8s 서비스 계정 · DB 역할 |
+| 수집 · 리허설 · 컷오버 제어 | 플랫폼에서 출발지 · 목적지 | 플랫폼 `bravo-link`, Cloudflare, 상대 `cf-edge`(2026-11-02 23:3x 사용 중. K8s API는 `src-k8s` · `dst-k8s`) | 링크마다 서비스 토큰 + K8s 서비스 계정 · DB 역할 |
 | 정방향 복제 | 목적지 CNPG가 출발지 CNPG를 구독 | 목적지 `bravo-link`, Cloudflare, 출발지 `cf-edge`. 지금: 임시 링크 | 서비스 토큰 + `replicator`, TLS verify-full |
 | 역방향 복제 · 컷오버 뒤 쓰기 | 출발지에서 목적지 | 출발지 `bravo-link`, Cloudflare, 목적지 `cf-edge`. 지금: 출발지 `chat/dst-db-link` | 같음 |
 | 첨부 복사 | 출발지 복사 Job에서 목적지 객체 저장소 | 출발지 `bravo-link`, 목적지 `cf-edge` | 서비스 토큰 + 첨부 버킷 하나에 묶인 자격 |
@@ -127,7 +127,7 @@ flowchart TB
 | `pgbouncer`(PGDG 빌드) | 각 환경 `chat`의 PgBouncer |
 | `executor`, `api`, `operator-mcp`, `console`, `platform-db` | 플랫폼 `bravo-control` |
 | `otel-collector`, `prometheus`, `tempo`, `loki`, `grafana` | 플랫폼 `bravo-observe` |
-| 컨테이너 네트워크 | Cloudflare 링크(D-16). 지금은 임시 링크 |
+| 컨테이너 네트워크 | Cloudflare 링크(D-16). 플랫폼에서 두 환경으로 가는 길은 D-16 링크 |
 | 공유 볼륨으로 PgBouncer 설정 교체 | `pods/exec`로 활성 파일 교체(02 3절) |
 
 ## 5. 결정 전 판으로 만든 자원(2026-11-02 21:10 기준)

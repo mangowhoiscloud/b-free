@@ -51,7 +51,7 @@
 | 2 | 계획: 자원 52개(VPC① 사설 서브넷 2 · NAT · S3 엔드포인트, EKS · 노드 그룹 · 애드온 6, KMS 3, S3 첨부 버킷(공개 차단 · 버전 관리 · SSE-KMS · TLS 강제 정책), Secrets Manager 그릇, Pod Identity 역할) | `terraform plan` | 완료 |
 | 3 | 생성 | `terraform apply` | 완료. EKS `bravo-source` ACTIVE 1.36, 첨부 버킷 · KMS 키 · Pod Identity 역할이 `terraform output`에 있음 |
 | 4 | 클러스터 첫 설치: 운영자 IP에만 잠시 연 엔드포인트로 Argo CD · `cf-edge` · CNPG · PgBouncer · 채팅 앱 설치, Secrets Manager에 DB 비밀번호 넣기 | Helm 1회 → Argo CD | 진행 중. 20:57 Cilium · Hubble, `cf-edge/cloudflared` 2, CNPG `chat-db-1`, ESO, `dst-db-link` Running. `chat-pgbouncer` Init. 데모 앱 Pod 없음. Argo CD 없음 |
-| 5 | 공개 엔드포인트 닫기(`bootstrap_public_cidrs = []` 후 apply) | Terraform | 미착수. 20:3x에 CIDR 1개로 열려 있음 |
+| 5 | 공개 엔드포인트 닫기(`bootstrap_public_cidrs = []` 후 apply) | Terraform | 미착수. 2026-11-02 23:44 KST부터 운영자 노트북 IP 하나만 열려 있음. 플랫폼 NAT IP는 수집기가 D-16 링크 `src-k8s`로 옮긴 뒤 뺌(`docs/evidence/d16-source-k8s/`) |
 | 6 | 플랫폼에 등록: 고객 계정에 읽기 전용 수집 역할(교차 계정 신뢰)을 만드는 스니펫, 클러스터에 `cf-edge` 연결 | Terraform 스니펫 + 등록 명령 | 설계 |
 
 현재 막혀 있던 것 하나는 임시로 비켜 갔습니다. `landing_zone` 모듈이 아직 없어 그 블록을 `landing_zone.tf.off`로 잠시 꺼 두었습니다. 이 블록은 Argo CD 파일만 쓰고 AWS 자원은 만들지 않습니다.
