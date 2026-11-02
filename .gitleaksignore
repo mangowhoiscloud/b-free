@@ -19,3 +19,8 @@ platform/collector/tests/test_inventory.py:generic-api-key:281
 docs/evidence/t31/t31-20261102T120416Z/prepare/trivy.json:generic-api-key:55
 docs/evidence/t31/t31-20261102T120416Z/prepare/trivy.json:generic-api-key:172
 # 2026-11-02 21:12 확인한 오탐: 멱등 키 UUID(파일럿 증거), keys.sh 주석, 시험용 가짜 키, 공개 GPG 지문(trivy 결과)
+# 2026-11-03 S2 갈래: 같은 오탐(Python 기반 이미지 GPG_KEY 공개 지문, trivy 결과). 파일은 a01cdd8에서 지웠고 a59d1bb 이력에만 남음
+a59d1bbec7215fd46b7c417f387cb53a39562e67:docs/evidence/s2-full/16-t31-prepare/trivy.json:generic-api-key:55
+a59d1bbec7215fd46b7c417f387cb53a39562e67:docs/evidence/s2-full/16-t31-prepare/trivy.json:generic-api-key:172
+a59d1bbec7215fd46b7c417f387cb53a39562e67:docs/evidence/s2-full/20-t31-prepare-run18/trivy.json:generic-api-key:55
+a59d1bbec7215fd46b7c417f387cb53a39562e67:docs/evidence/s2-full/20-t31-prepare-run18/trivy.json:generic-api-key:172
