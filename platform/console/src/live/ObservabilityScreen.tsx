@@ -28,7 +28,9 @@ const Q = {
   // Contract unit is seconds; the screen shows ms.
   latency: (q: number) => `1000 * histogram_quantile(${q}, sum by (${ENV_BY}, le) (rate(${REQ}_bucket{${APP}}[5m])))`,
   writes: `sum by (${ENV_BY}) (rate(chat_writes_total{kind="message"}[1m]))`,
-  connected: `max by (${ENV_BY}) (time() - timestamp(target_info{bravo_env!=""}))`,
+  // min: the freshest resource of the env. A replaced pod keeps an ageing target_info series for 5 min (no OTLP
+  // staleness marker), so max showed a connected env as ~300 s old (15-r2-contracts 7.4).
+  connected: `min by (${ENV_BY}) (time() - timestamp(target_info{bravo_env!=""}))`,
   svcStatus: 'max by (http_url) (httpcheck_status{http_status_class="2xx"})',
   svcMs: 'max by (http_url) (httpcheck_duration_milliseconds)',
   svcErr: 'max by (http_url, error_message) (httpcheck_error)',

@@ -249,7 +249,7 @@ API → `platform/rehearsal`. 순서: 수집기 인벤토리 → 수집기 스�
 
 | 패널 | PromQL | 단위 |
 |---|---|---|
-| 환경 연결(마지막 수신 뒤 경과) | `max by (bravo_env) (time() - timestamp(target_info{bravo_env!=""}))` | 초 |
+| 환경 연결(마지막 수신 뒤 경과) | `min by (bravo_env) (time() - timestamp(target_info{bravo_env!=""}))` | 초. `min`인 이유: `target_info`는 자원(Pod)마다 한 계열이고 OTLP는 끝 표시(staleness marker)가 없어, 교체된 Pod의 계열이 5분 동안 늙어 가며 남음. `max`는 그 옛 계열을 집어 연결된 환경을 "300초 전"으로 보임(2026-11-02 13:40Z, 13:54Z 온프렘 앱 롤아웃 때 실측) |
 | 요청률 | `sum by (bravo_env) (rate(http_server_request_duration_seconds_count{service_name="bravo-demo", http_route!~"/healthz\|/readyz"}[1m]))` | 요청/초 |
 | 오류율(5xx 비율) | `sum by (bravo_env) (rate(http_server_request_duration_seconds_count{service_name="bravo-demo", http_route!~"/healthz\|/readyz", http_response_status_code=~"5.."}[5m])) / sum by (bravo_env) (rate(http_server_request_duration_seconds_count{service_name="bravo-demo", http_route!~"/healthz\|/readyz"}[5m]))` | 0부터 1까지의 비율 |
 | p50, p95, p99 | `histogram_quantile(0.95, sum by (bravo_env, le) (rate(http_server_request_duration_seconds_bucket{service_name="bravo-demo", http_route!~"/healthz\|/readyz"}[5m])))`(0.50, 0.99도 같은 식) | 초 |
