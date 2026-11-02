@@ -77,4 +77,4 @@ images:
     digest: sha256:b2732beda7e0802c7e27ed32442ef2d7a240264b1f068d65abcaffa0c06b6526 # shift-20261102T185505Z (cutover lane L1: judge on loadgen series or a new-connection probe, thresholds per stage, durable PgBouncer target, reverse slot at 6a; tree at 1c0094c)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
-    digest: sha256:5c554f5b5b02339ebe30dd072fe8c31e94edb67fe61739bebbf47fa51de8f8d0 # s2full-20261102T184742Z (S2 lane L2: app_migration ESO Job, gate OBJ-01..06 Job, probes origin=probe, phase timings, Hubble drops from Prometheus, platform-path fixes; sources = a59d1bb; measured run 18 in docs/evidence/s2-full; arm64)
+    digest: sha256:d78bb0ce379ed53ee45f48ab2b364a4e5220f2b6ec4488d95158022d5c47c295 # s2final-20261102T194002Z (S2 lane L2: verification Job at plan_propose, 1 s grace on Harbor/Job Pods, real workspace diff, ESO apiVersion rule; sources = 8a97bc1; timing in docs/evidence/s2-timing; arm64)
