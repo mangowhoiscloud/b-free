@@ -109,7 +109,7 @@ cmd_deliver() {
     else log "executor secret $p: not in OpenBao (topology entries that need it fail at executor start: not connected)"; fi
   done
   local l
-  for l in src-k8s src-db src-pgb src-admin dst-k8s dst-db dst-pgb dst-admin dst-s3; do
+  for l in src-k8s src-db src-pgb src-admin dst-k8s dst-db dst-pgb dst-admin dst-s3 dst-s3http gke-db; do
     secret bravo-link "cf-link-$l" Opaque "client_id=platform/cf-link-$l/client_id" "client_secret=platform/cf-link-$l/client_secret"
   done
   # Argo CD repository credential: read-only deploy key (SSH) for the private repo, kept only in OpenBao

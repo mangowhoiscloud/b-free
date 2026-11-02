@@ -11,4 +11,7 @@ ingress:
     service: tcp://chat-admin.chat.svc:8081
   - hostname: t1-dst-s3.mangowhois.ai
     service: tcp://rook-ceph-rgw-bravo.rook-ceph.svc:443
+  # RGW plain listener, only for the platform gate's OBJ-06 (TLS-only bucket policy must answer AccessDenied).
+  - hostname: t1-dst-s3http.mangowhois.ai
+    service: tcp://rook-ceph-rgw-bravo.rook-ceph.svc:80
   - service: http_status:404

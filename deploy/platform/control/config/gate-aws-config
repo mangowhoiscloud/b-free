@@ -1,0 +1,8 @@
+# Platform gate (deploy/platform/control/services.yaml, AWS_CONFIG_FILE). No credential here: the default chain is the
+# gate's web identity role (AWS_ROLE_ARN + projected token). Profile gate-other is a second role of the same service
+# account WITHOUT any permission (infra/envs/platform-aws gate.tf): the "other credential" of OBJ-05.
+[profile gate-other]
+role_arn = arn:aws:iam::721622471953:role/bravo-platform-gate-other-d668330e39d610b0b436cded53
+web_identity_token_file = /var/run/secrets/sts.amazonaws.com/serviceaccount/token
+region = ap-northeast-2
+sts_regional_endpoints = regional

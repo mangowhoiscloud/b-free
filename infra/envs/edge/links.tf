@@ -46,6 +46,17 @@ locals {
         admin = { service = "tcp://chat-admin.chat.svc:8081", clients = ["plat"] }
         # Attachment copy S3 -> RGW (T8, D-22): the Executor's object-store endpoint on the destination.
         s3 = { service = "tcp://rook-ceph-rgw-bravo.rook-ceph.svc:443", clients = ["plat"] }
+        # RGW's plain listener :80 for the platform gate's OBJ-06 only (a plain request must get AccessDenied from
+        # the TLS-only bucket policy). Client: the gate's s3-local sidecar. 2026-11-03 01:0x 추가.
+        s3http = { service = "tcp://rook-ceph-rgw-bravo.rook-ceph.svc:80", clients = ["plat"] }
+      }
+    }
+    # GKE 목적지(target-gcp): 플랫폼 게이트의 DB 질문(DB-*, DR-ARCHIVE)용 chat-db 링크. 2026-11-03 01:1x 추가.
+    # 커넥터는 GKE cf-edge 의 cloudflared-mgmt(deploy/platform/link/customer-mgmt-tunnel/overlays/target-gcp).
+    gke = {
+      environment_id = "target-gcp"
+      links = {
+        db = { service = "tcp://chat-db-rw.chat.svc:5432", clients = ["plat"] }
       }
     }
   }

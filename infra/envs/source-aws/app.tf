@@ -101,7 +101,7 @@ data "aws_iam_policy_document" "attachments_strong" {
   statement {
     sid       = "DenyObjectAccessExceptApp"
     effect    = "Deny"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:GetObjectVersion"]
+    actions   = ["s3:PutObject", "s3:DeleteObject", "s3:GetObjectVersion"]
     resources = ["${aws_s3_bucket.attachments.arn}/*"]
     principals {
       type        = "*"
@@ -111,6 +111,42 @@ data "aws_iam_policy_document" "attachments_strong" {
       test     = "ArnNotLike"
       variable = "aws:PrincipalArn"
       values   = concat([aws_iam_role.chat_app.arn], var.bucket_admin_principal_arns)
+    }
+  }
+
+  # 읽기: 앱 · 관리자 + 게이트 읽기 역할(canary_reader_principal_arns). 게이트 역할은 아래 문장으로 canary 키 하나만.
+  statement {
+    sid       = "DenyObjectReadExceptAppAndCanaryReaders"
+    effect    = "Deny"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.attachments.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "ArnNotLike"
+      variable = "aws:PrincipalArn"
+      values   = concat([aws_iam_role.chat_app.arn], var.bucket_admin_principal_arns, var.canary_reader_principal_arns)
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.canary_reader_principal_arns) > 0 ? [1] : []
+    content {
+      sid           = "CanaryReadersOnlyTheCanary"
+      effect        = "Deny"
+      actions       = ["s3:GetObject"]
+      not_resources = ["${aws_s3_bucket.attachments.arn}/_gate/canary"]
+      principals {
+        type        = "*"
+        identifiers = ["*"]
+      }
+      condition {
+        test     = "ArnLike"
+        variable = "aws:PrincipalArn"
+        values   = var.canary_reader_principal_arns
+      }
     }
   }
 }

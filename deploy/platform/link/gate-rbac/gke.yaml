@@ -1,0 +1,47 @@
+# GKE (bravo-target-gcp). Platform gate read identity: Google service account bravo-gate-ro, impersonated through
+# Workload Identity Federation (infra/envs/target-gcp platform_gate_reader.tf). Only what the gate probes call. README.md.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bravo-gate-read
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+rules:
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bravo-gate-read
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: bravo-gate-read}
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: bravo-gate-ro@b-free-target-20261102.iam.gserviceaccount.com}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bravo-gate-read
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+rules:
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [list]
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bravo-gate-read
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: bravo-gate-read}
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: bravo-gate-ro@b-free-target-20261102.iam.gserviceaccount.com}

@@ -37,13 +37,16 @@ spec:
           protocol: TCP
         - port: 8081
           protocol: TCP
-    # Object store link (t1-dst-s3, on-prem only): RGW HTTPS in rook-ceph.
+    # Object store links (on-prem only): t1-dst-s3 RGW HTTPS, t1-dst-s3http RGW plain listener (gate OBJ-06 only).
+    # NetworkPolicy matches the pod port: Rook's Service maps 443 -> 443 and 80 -> 8080.
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: rook-ceph
       ports:
         - port: 443
+          protocol: TCP
+        - port: 8080
           protocol: TCP
     - to:
         - ipBlock:

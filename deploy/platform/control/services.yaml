@@ -1,7 +1,8 @@
 # Collector (FR-1, FR-2), gate (FR-6, FR-12), rehearsal service (S2, Harbor) and Cutover Executor (§8.6).
 # AWS access only through service-account web identity (infra/envs/platform-aws rke2.tf: RKE2 issuer published in
 # S3, IAM OIDC provider, AssumeRoleWithWebIdentity per service account): no ~/.aws mount, no static key, not the
-# node role (NFR-6, D-26). The gate has no cloud or cluster credential: those questions answer UNKNOWN.
+# node role (NFR-6, D-26). The gate has its own read identity in every environment (scripts/gate-credentials.sh,
+# link/gate-rbac/README.md), separate from the collector.
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: collector, namespace: bravo-control}
@@ -142,6 +143,17 @@ metadata:
   name: gate
   namespace: bravo-control
   labels: {app.kubernetes.io/name: gate, app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: control}
+# The gate's own read identity per environment (deploy/platform/link/gate-rbac/README.md, scripts/gate-credentials.sh):
+# - source-aws: web identity role bravo-platform-gate-ro-* (EKS access entry group bravo-gate, S3 canary only, read-only
+#   facts); OBJ-05 "other credential" = profile gate-other (role without permissions) in AWS_CONFIG_FILE.
+#   K8s over the D-16 link src-k8s (registry api_server), Postgres over src-db (registry dial_host).
+# - target-onprem: kubeconfig Secret gate-onprem-kubeconfig (SA kube-system/bravo-gate, link dst-k8s); RGW through the
+#   link dst-s3 behind the s3-local sidecar (127.0.0.1:18443, the RGW certificate has IP SAN 127.0.0.1) and its plain
+#   listener through dst-s3http (127.0.0.1:18080, OBJ-06); Postgres over dst-db.
+# - target-gcp: Google SA bravo-gate-ro via WIF (pod token audience bravo-platform-gcp-wif, no key file) for the GKE DNS
+#   endpoint; GCS HMAC from gate-credentials; Postgres over gke-db.
+# Secret gate-credentials (DSNs of role gate_ro, object-store keys) and ConfigMap gate-ca (public CAs) are piped from
+# OpenBao by gate-credentials.sh; both optional, so a missing one gives UNKNOWN answers, not a crash loop.
 spec:
   replicas: 1
   selector: {matchLabels: {app.kubernetes.io/name: gate}}
@@ -152,7 +164,38 @@ spec:
       serviceAccountName: gate
       automountServiceAccountToken: false
       nodeSelector: {bravo.io/pool: core}
-      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        # Native sidecar: local TCP ends of the D-16 RGW links (same forwarder as the executor's s3-local).
+        - name: s3-local
+          image: bravo/gate
+          restartPolicy: Always
+          command: [python, -c]
+          args:
+            - |
+              import asyncio
+              LINKS = {18443: ("dst-s3.bravo-link.svc.cluster.local", 443), 18080: ("dst-s3http.bravo-link.svc.cluster.local", 80)}
+              async def pipe(r, w):
+                  try:
+                      while (b := await r.read(65536)):
+                          w.write(b); await w.drain()
+                  finally:
+                      w.close()
+              def handler(up):
+                  async def handle(cr, cw):
+                      try:
+                          ur, uw = await asyncio.wait_for(asyncio.open_connection(*up), 15)
+                      except Exception as exc:
+                          print(f"s3-local: upstream {up[0]}:{up[1]} failed: {type(exc).__name__}", flush=True); cw.close(); return
+                      await asyncio.gather(pipe(cr, uw), pipe(ur, cw), return_exceptions=True)
+                  return handle
+              async def main():
+                  servers = [await asyncio.start_server(handler(up), "127.0.0.1", port) for port, up in LINKS.items()]
+                  print("s3-local: " + ", ".join(f"127.0.0.1:{p} -> {h}:{u}" for p, (h, u) in LINKS.items()), flush=True)
+                  await asyncio.gather(*(s.serve_forever() for s in servers))
+              asyncio.run(main())
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 5m, memory: 24Mi}, limits: {memory: 64Mi}}
       containers:
         - name: gate
           image: bravo/gate
@@ -162,17 +205,47 @@ spec:
             - {name: BRAVO_GATE_HOST, value: 0.0.0.0}
             - {name: BRAVO_GATE_PORT, value: "8084"}
             - {name: BRAVO_EVIDENCE_TTL_S, value: "3600"}
+            - {name: AWS_REGION, value: ap-northeast-2}
+            - {name: AWS_STS_REGIONAL_ENDPOINTS, value: regional}
+            - {name: AWS_ROLE_ARN, value: "arn:aws:iam::721622471953:role/bravo-platform-gate-ro-2b24fe0681c6862267032bbfb8"}
+            - {name: AWS_WEB_IDENTITY_TOKEN_FILE, value: /var/run/secrets/sts.amazonaws.com/serviceaccount/token}
+            - {name: AWS_CONFIG_FILE, value: /etc/bravo/aws/config}
+            - {name: GOOGLE_APPLICATION_CREDENTIALS, value: /etc/bravo/gcp/credential.json}
+            - {name: BRAVO_ONPREM_KUBECONFIG, value: /etc/bravo/onprem/kubeconfig}
+            - {name: SRC_PG_CA, value: /etc/bravo/gate-ca/source-aws-chat-db.crt}
+            - {name: ONPREM_PG_CA, value: /etc/bravo/gate-ca/target-onprem-chat-db.crt}
+            - {name: GCP_PG_CA, value: /etc/bravo/gate-ca/target-gcp-chat-db.crt}
+          envFrom:
+            - secretRef: {name: gate-credentials, optional: true}
           ports: [{name: http, containerPort: 8084}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          resources: {requests: {cpu: 30m, memory: 160Mi}, limits: {memory: 384Mi}}
+          resources: {requests: {cpu: 30m, memory: 192Mi}, limits: {memory: 512Mi}}
           volumeMounts:
             - {name: registry, mountPath: /etc/bravo/environments.yaml, subPath: environments.yaml, readOnly: true}
             - {name: tmp, mountPath: /tmp}
+            - {name: aws-token, mountPath: /var/run/secrets/sts.amazonaws.com/serviceaccount, readOnly: true}
+            - {name: aws-config, mountPath: /etc/bravo/aws, readOnly: true}
+            - {name: gcp-wif, mountPath: /etc/bravo/gcp, readOnly: true}
+            - {name: gcp-token, mountPath: /var/run/secrets/gcp, readOnly: true}
+            - {name: onprem-kubeconfig, mountPath: /etc/bravo/onprem, readOnly: true}
+            - {name: gate-ca, mountPath: /etc/bravo/gate-ca, readOnly: true}
       volumes:
         - {name: registry, configMap: {name: environments}}
         - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+        - name: aws-token
+          projected:
+            sources:
+              - serviceAccountToken: {audience: sts.amazonaws.com, expirationSeconds: 3600, path: token}
+        - {name: aws-config, configMap: {name: gate-aws-config}}
+        - {name: gcp-wif, configMap: {name: gcp-wif-gate}}
+        - name: gcp-token
+          projected:
+            sources:
+              - serviceAccountToken: {audience: bravo-platform-gcp-wif, expirationSeconds: 3600, path: token}
+        - {name: onprem-kubeconfig, secret: {secretName: gate-onprem-kubeconfig, optional: true, defaultMode: 0440}}
+        - {name: gate-ca, configMap: {name: gate-ca, optional: true}}
 ---
 apiVersion: v1
 kind: Service

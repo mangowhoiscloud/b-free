@@ -18,6 +18,7 @@ locals {
   # group: 출발지 EKS access entry의 K8s 그룹(null이면 출발지 권한 없음).
   web_identity_roles = {
     collector-ro = { sa = "system:serviceaccount:bravo-control:collector", group = "bravo-collector" }
+    gate-ro      = { sa = "system:serviceaccount:bravo-control:gate", group = "bravo-gate" } # 게이트 자기 읽기 신원(gate.tf)
     executor-ctl = { sa = "system:serviceaccount:bravo-control:executor", group = "bravo-executor" }
     ebs-csi      = { sa = "system:serviceaccount:kube-system:ebs-csi-controller-sa", group = null }
     ecr-pull     = { sa = "system:serviceaccount:bravo-control:ecr-pull-refresher", group = null }

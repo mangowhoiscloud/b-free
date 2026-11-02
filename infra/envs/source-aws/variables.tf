@@ -54,6 +54,12 @@ variable "bucket_admin_principal_arns" {
   default     = []
 }
 
+variable "canary_reader_principal_arns" {
+  description = "강한 정책에서 첨부 버킷의 canary(_gate/canary) 하나만 읽을 수 있는 IAM 주체. 플랫폼 게이트 읽기 역할(infra/envs/platform-aws output gate_role_arn)"
+  type        = list(string)
+  default     = []
+}
+
 variable "bootstrap_public_cidrs" {
   description = "첫 설치 동안만 EKS API를 열 운영자 IP(/32). 설치가 끝나면 비움(modules/cluster/eks 참고)"
   type        = list(string)

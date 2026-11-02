@@ -1,0 +1,31 @@
+# target-gcp(GKE Dataplane V2): 관리 커넥터와 링크 원본 정책. Secret cf-mgmt-tunnel 은 OpenBao
+# secret/envs/target-gcp/cf-mgmt-tunnel(필드 token)에서 파이프로 전달(D-26, deploy/platform/scripts/gate-credentials.sh mgmt_tunnel).
+# base 와 다른 점: 네임스페이스는 랜딩 존 것을 그대로 씀(만들지 않음). CiliumNetworkPolicy(API 서버 링크)는 GKE에 CRD가 없어 뺌(K8s API 링크 없음), chat-admin 링크도 없음.
+# DNS는 GKE NodeLocal DNSCache(node-local-dns)까지 허용. chat-db 는 기본 차단이라 이 커넥터에서 오는 5432를 엶.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - chat-db-from-mgmt.yaml
+configMapGenerator:
+  - name: cloudflared-mgmt-config
+    namespace: cf-edge
+    files:
+      - config.yaml
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Namespace
+      metadata: {name: cf-edge}
+  - patch: |-
+      $patch: delete
+      apiVersion: cilium.io/v2
+      kind: CiliumNetworkPolicy
+      metadata: {name: cloudflared-mgmt-apiserver, namespace: cf-edge}
+  - patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata: {name: chat-admin-from-mgmt-connector, namespace: chat}
+  - path: networkpolicy-gke.yaml

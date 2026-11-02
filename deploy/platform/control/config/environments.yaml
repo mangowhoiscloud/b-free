@@ -8,6 +8,11 @@
 #   The source EKS public endpoint allowlist no longer has the platform NAT IP (infra/envs/source-aws).
 # target-onprem: RKE2 API through the D-16 link t1-dst-k8s (Service dst-k8s in bravo-link). Kubeconfig comes from
 #   Secret onprem-kubeconfig (OpenBao, read-only SA token, tls-server-name kubernetes.default.svc).
+# target-gcp: GKE DNS endpoint (IAM container.clusters.connect). The collector has no GKE credential (not configured).
+# Gate keys (platform/gate environments.py; the collector ignores them): app_namespace .. restore_cluster in
+#   kubernetes, and the sections aws, object_store, postgres. The gate brings its OWN read identity for every entry
+#   (deploy/platform/link/gate-rbac/README.md, deploy/platform/scripts/gate-credentials.sh): same addresses, other
+#   credentials than the collector. Env var names below are filled from Secret gate-credentials (values in OpenBao).
 environments:
   source-aws:
     display_name: "출발지 · Amazon EKS (bravo-source)"
@@ -16,8 +21,71 @@ environments:
       eks_cluster_name: bravo-source
       aws_region: ap-northeast-2
       api_server: https://src-k8s.bravo-link.svc.cluster.local:443
+      app_namespace: chat
+      app_secret: chat-admin
+      other_service_accounts: [chat/chat-db, chat/bravo-executor, default/default]
+      restore_cluster: chat/chat-db-restore
+    aws:
+      region: ap-northeast-2
+      secret_ids: [bravo-source/chat/db-app]
+      other_principal_roles: [bravo-source-node-40ca019e8ee974e33ed7633028, bravo-source-ebs-csi-fea7b6132bc602d9a2d7364f49]
+      eks_clusters: [bravo-source]
+    object_store:
+      bucket: bravo-source-attachments-e8c4128d1fe51a0ea466556c84
+      region: ap-northeast-2
+      read_credential: {default_chain: true}   # gate role: canary only + encryption facts (bucket policy exception)
+      other_credential: {profile: gate-other}  # role without permissions (OBJ-05)
+      write_probes: false
+    postgres:
+      dsn_env: SRC_PG_DSN
+      dial_host: src-db.bravo-link.svc.cluster.local   # D-16 link; verify-full checks chat-db-rw.chat.svc
+      app_role: app_writer
+      app_tables: [messages, attachments]
+      tls: {sslrootcert_env: SRC_PG_CA}
   target-onprem:
     display_name: "목적지 · 온프렘 RKE2 CIS (Lima VM 2대)"
     kubernetes:
       provider: k3s
       kubeconfig_env: BRAVO_ONPREM_KUBECONFIG
+      app_namespace: chat
+      app_secret: chat-admin
+      other_service_accounts: [chat/chat-db, chat/bravo-executor, default/default]
+      restore_cluster: chat/chat-db-restore
+    object_store:
+      bucket: bravo-demo-attachments
+      endpoint_url: https://127.0.0.1:18443           # gate sidecar s3-local -> D-16 link dst-s3 -> RGW :443
+      plain_http_endpoint_url: http://127.0.0.1:18080 # sidecar -> link dst-s3http -> RGW's plain listener :80 (OBJ-06)
+      addressing_style: path
+      ca_file: /etc/bravo/gate-ca/onprem-rgw.crt
+      app_credential: {access_key_env: ONPREM_S3_AK, secret_key_env: ONPREM_S3_SK}
+      other_credential: {access_key_env: ONPREM_OTHER_AK, secret_key_env: ONPREM_OTHER_SK}
+      write_probes: false
+    postgres:
+      dsn_env: ONPREM_PG_DSN
+      dial_host: dst-db.bravo-link.svc.cluster.local
+      app_role: app_writer
+      app_tables: [messages, attachments]
+      tls: {sslrootcert_env: ONPREM_PG_CA}
+  target-gcp:
+    display_name: "목적지 · GKE (b-free-target-20261102)"
+    kubernetes:
+      provider: gke
+      api_server: https://gke-f06891ae4d0346d08ef7adcd75fdbd1d1aa3-510055025217.asia-northeast1-b.gke.goog
+      app_namespace: chat
+      app_secret: chat-admin
+      other_service_accounts: [chat/chat-db, chat/bravo-executor, default/default]
+      restore_cluster: chat/chat-db-restore
+    object_store:
+      bucket: bravo-target-gcp-attachments-3f4e9e
+      endpoint_url: https://storage.googleapis.com     # GCS XML API (S3-compatible requests)
+      region: auto
+      addressing_style: path
+      app_credential: {access_key_env: GCS_AK, secret_key_env: GCS_SK}
+      other_credential: {access_key_env: GCS_OTHER_AK, secret_key_env: GCS_OTHER_SK}
+      write_probes: false
+    postgres:
+      dsn_env: GCP_PG_DSN
+      dial_host: gke-db.bravo-link.svc.cluster.local
+      app_role: app_writer
+      app_tables: [messages, attachments]
+      tls: {sslrootcert_env: GCP_PG_CA}

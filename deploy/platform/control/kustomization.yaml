@@ -35,6 +35,12 @@ configMapGenerator:
   - name: gcp-wif-collector
     files:
       - credential.json=config/gcp-wif-collector.json
+  - name: gcp-wif-gate
+    files:
+      - credential.json=config/gcp-wif-gate.json
+  - name: gate-aws-config
+    files:
+      - config=config/gate-aws-config
   - name: executor-topology
     files:
       - topology.json=../../cloud/in-cluster/topology.json
@@ -54,7 +60,7 @@ images:
     digest: sha256:9db331e04ff03d85c368901fabff632fdc8e984765da87b5a79080ea26f5da89 # r15 (console lane: gate rows show measuring source, sources_disagree stays blocked)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
-    digest: sha256:71428216456e779286ef8d09313def20d0a305b08ec2969ed8fb5b31f8d49f1b # exception-20261102T143819Z (src/dst evidence digests on report rows for S1 5b; over dbauth-20261102T134943Z; tree at f1cd770)
+    digest: sha256:00e347550d102fb2a3f7ceec1f1907a0b71260db338cff514cf6fb69a536db66 # gateid-20261102T160001Z (gate lane: own read identity per env: EKS token over src-k8s, GKE WIF, DB dial_host, RGW link CA/plain listener, GCS OBJ-ENC via JSON API; tree at 1a84e8c, over exception 71428216)
   - name: bravo/collector
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector
     digest: sha256:8de337b9f53bd5c9ccef050ea3fc431d55ca539948255164a756b7b56326667c # d16link-20261102T143435Z (D-16: source EKS API over the link src-k8s, tls_server_name = EKS endpoint host; over cost-20261102T141430Z)

@@ -45,7 +45,8 @@ resource "google_iam_workload_identity_pool_provider" "platform_rke2" {
   workload_identity_pool_provider_id = "rke2"
   display_name                       = "platform RKE2 issuer"
   attribute_mapping                  = { "google.subject" = "assertion.sub" }
-  attribute_condition                = "assertion.sub == '${local.cost_reader_subject}'"
+  # 수집기와 게이트(platform_gate_reader.tf) 두 서비스 계정만. 각자 다른 GCP 서비스 계정을 가장함.
+  attribute_condition = "assertion.sub in ['${local.cost_reader_subject}', '${local.gate_reader_subject}']"
   oidc {
     issuer_uri        = var.platform_oidc_issuer
     allowed_audiences = [local.cost_reader_audience]

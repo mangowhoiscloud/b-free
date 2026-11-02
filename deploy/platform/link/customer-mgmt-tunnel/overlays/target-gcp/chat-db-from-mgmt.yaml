@@ -1,0 +1,23 @@
+# GKE chat has default deny: chat-db (primary) accepts 5432 from the management connector (link t1-gke-db, platform
+# gate DB probes as role gate_ro, TLS end to end). Additive to the landing zone's chat-db policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-db-from-mgmt-connector
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: cf-edge}
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: chat-db
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cf-edge
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared-mgmt
+      ports:
+        - {port: 5432, protocol: TCP}
