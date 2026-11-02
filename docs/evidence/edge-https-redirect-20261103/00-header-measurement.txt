@@ -1,0 +1,32 @@
+## 2026-11-03 03:0x KST: which headers reach the origin Gateway (temporary HTTPRoute bravo-hdr-probe, deleted after)
+# Method: a route on one test path per header value, each with a RequestRedirect to a marker path; the Location shows
+# which match fired. Same probe on the on-prem Cilium Gateway and on GKE gke-l7-rilb.
+
+# on-prem (Cilium), host b-free-chat-dst
+http  /__bravo_hdr/xfp -> 302 .../__bravo_hdr_seen/xfp-http      X-Forwarded-Proto: http
+http  /__bravo_hdr/cfv -> 302 .../__bravo_hdr_seen/cfv-http      CF-Visitor: {"scheme":"http"}
+https /__bravo_hdr/xfp -> 302 .../__bravo_hdr_seen/xfp-http      X-Forwarded-Proto: http   <- overwritten, the Gateway's own downstream is plain HTTP
+https /__bravo_hdr/cfv -> 302 .../__bravo_hdr_seen/cfv-https     CF-Visitor: {"scheme":"https"}
+
+# GKE (gke-l7-rilb, Google-managed Envoy), host b-free-chat-gke: header match and RequestRedirect accepted (Reconciled)
+http  xfp -> xfp-http,  http  cfv -> cfv-http
+https xfp -> xfp-http,  https cfv -> cfv-https                    <- same: only CF-Visitor carries the visitor's scheme
+
+# source EKS (Cilium): does anything at the origin tell the representative name b-free-chat (Cloudflare LB) from the
+# direct name b-free-chat-src? Presence probes (RegularExpression ".+"), https://<name>/__bravo_hdr/<header>:
+x-forwarded-host | direct: 404 | via LB: 404     (absent on both)
+x-original-host  | direct: 404 | via LB: 404
+x-host           | direct: 404 | via LB: 404
+forwarded        | direct: 404 | via LB: 404
+cf-lb-pool       | direct: 404 | via LB: 404
+cf-lb-origin     | direct: 404 | via LB: 404
+cf-worker        | direct: 404 | via LB: 404
+x-original-url   | direct: 404 | via LB: 404
+cf-ew-via        | direct: 404 | via LB: 404
+cf-origin-host   | direct: 404 | via LB: 404
+x-forwarded-server | direct: 404 | via LB: 404
+cf-connecting-ip | direct: present | via LB: present
+cdn-loop         | direct: present | via LB: present ; exact "cloudflare; loops=1" on both
+cf-ray           | direct: present | via LB: present
+# Result: the LB pool origin overrides Host with the environment name (infra/modules/edge/cloudflare/main.tf
+# header.host), and no header keeps the original name. The origin cannot tell the two apart.

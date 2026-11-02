@@ -1,0 +1,7 @@
+## 2026-11-03 03:05:35 KST apply HTTPRoute chat (deploy/landing-zone/base/gateway.yaml) on bravo-onprem
+httproute.gateway.networking.k8s.io/chat configured
+Accepted ResolvedRefs
+http://b-free-chat-dst.mangowhois.ai/ -> 301 https://b-free-chat-dst.mangowhois.ai:443/
+http://b-free-chat-dst.mangowhois.ai/api/config -> 301 https://b-free-chat-dst.mangowhois.ai:443/api/config
+http://b-free-chat-dst.mangowhois.ai/?room=consult-1 -> 301 https://b-free-chat-dst.mangowhois.ai:443/?room=consult-1
+https://b-free-chat-dst.mangowhois.ai/ -> 200

@@ -796,7 +796,7 @@ D-02의 "격리 규칙 그대로"는 이 예외를 포함한 규칙을 뜻합니
 | 8 | gitleaks | 배포 커밋의 파일만 검사(게이트 초기화 컨테이너의 얕은 sparse checkout). Git 이력은 검사하지 않음 | 게이트는 수집기와 같은 읽기 전용 배포 키, 같은 고정 커밋을 씁니다. 이력 검사는 저장소 전체 clone이 필요합니다 |
 | 9 | 거부 시험(출발지 OBJ-04 대조군), 다른 계정의 Secret 읽기 거부(출발지 SEC-SECRET-STORE-READ) | 출발지 EKS는 `iam:SimulatePrincipalPolicy`(simulation). SEC-SECRET-READ-K8S는 세 곳 모두 SubjectAccessReview(simulation) | 게이트는 앱의 IRSA 자격을 갖지 않습니다(최소 권한, D-26). SubjectAccessReview는 `kubectl auth can-i`와 같은 판단이고 실제 Secret 값을 읽지 않습니다 |
 
-**발견(이 갈래 밖, 2026-11-03 02:5x 측정).** 공개 이름 `http://b-free-chat-src.mangowhois.ai/` · `b-free-chat-dst` · `b-free-chat-gke`가 평문 HTTP에 200을 줍니다(Cloudflare 영역에서 https로 돌리지 않음). 앱 · 저장소 · DB 구간은 TLS지만 사용자 진입의 첫 구간은 평문을 받습니다. 영역 설정 변경은 사람이 정합니다.
+**발견과 처리(2026-11-03).** 공개 이름 `http://b-free-chat-src` · `-dst` · `-gke` · `b-free-chat`이 평문 HTTP에 200을 줬습니다(02:5x). Cloudflare 영역 설정은 토큰 권한 밖이라(API 10000), 각 원점 Gateway의 HTTPRoute에 규칙을 더했습니다: `CF-Visitor: {"scheme":"http"}`이면 https로 301(`X-Forwarded-Proto`는 원점에서 늘 `http`라 쓸 수 없음, 측정). 03:07 측정에서 다섯 이름 모두 `http://` → 301 https, `https://` 200(`b-free`는 Access 로그인 302), `/ws` 업그레이드 101(`docs/evidence/edge-https-redirect-20261103/`). **남음:** 대표 이름 `b-free-chat`은 LB가 Host를 환경 이름으로 덮어써서 `https://b-free-chat-<환경>`으로 돌아갑니다. 원점에서 가를 헤더가 없습니다(측정). 고치려면 Cloudflare 쪽 변경이 필요해 팀장이 정합니다.
 
 **상태.** 제안(2026-11-03 등록). 구현이 먼저였습니다(게이트 `gate-controls/2026-11-03.2`). 11/3 회의에서 #1–#3, #7을 언제 메울지 정합니다.
 

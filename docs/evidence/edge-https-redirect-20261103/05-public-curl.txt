@@ -1,0 +1,26 @@
+## 2026-11-03 03:07:32 KST public curl, all five names (laptop, through Cloudflare)
+http://b-free-chat-src.mangowhois.ai/api/config        -> 301 https://b-free-chat-src.mangowhois.ai:443/api/config
+https://b-free-chat-src.mangowhois.ai/api/config       -> 200 
+https://b-free-chat-src.mangowhois.ai/ws?room=probe (upgrade) -> 101
+http://b-free-chat-src.mangowhois.ai/ws?room=probe (upgrade)  -> 301 https://b-free-chat-src.mangowhois.ai:443/ws?room=probe
+
+http://b-free-chat-dst.mangowhois.ai/api/config        -> 301 https://b-free-chat-dst.mangowhois.ai:443/api/config
+https://b-free-chat-dst.mangowhois.ai/api/config       -> 200 
+https://b-free-chat-dst.mangowhois.ai/ws?room=probe (upgrade) -> 101
+http://b-free-chat-dst.mangowhois.ai/ws?room=probe (upgrade)  -> 301 https://b-free-chat-dst.mangowhois.ai:443/ws?room=probe
+
+http://b-free-chat-gke.mangowhois.ai/api/config        -> 301 https://b-free-chat-gke.mangowhois.ai/api/config
+https://b-free-chat-gke.mangowhois.ai/api/config       -> 200 
+https://b-free-chat-gke.mangowhois.ai/ws?room=probe (upgrade) -> 101
+http://b-free-chat-gke.mangowhois.ai/ws?room=probe (upgrade)  -> 301 https://b-free-chat-gke.mangowhois.ai/ws?room=probe
+
+http://b-free-chat.mangowhois.ai/api/config        -> 301 https://b-free-chat-src.mangowhois.ai:443/api/config
+https://b-free-chat.mangowhois.ai/api/config       -> 200 
+https://b-free-chat.mangowhois.ai/ws?room=probe (upgrade) -> 101
+http://b-free-chat.mangowhois.ai/ws?room=probe (upgrade)  -> 301 https://b-free-chat-src.mangowhois.ai:443/ws?room=probe
+
+http://b-free.mangowhois.ai/api/config        -> 301 https://b-free.mangowhois.ai/api/config
+https://b-free.mangowhois.ai/api/config       -> 302 https://falling-rain-1f1c.cloudflareaccess.com/cdn-cgi/access/login/b-free.mangowhois.ai?... (Access login)
+https://b-free.mangowhois.ai/ws?room=probe (upgrade) -> 302
+http://b-free.mangowhois.ai/ws?room=probe (upgrade)  -> 301 https://b-free.mangowhois.ai/ws?room=probe
+

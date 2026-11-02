@@ -1,0 +1,23 @@
+## 2026-11-03 03:06:43 KST apply HTTPRoute bravo-control/https-redirect (deploy/platform/edge/gateway.yaml) on bravo-platform-rke2 by hand; Argo app edge adopts it after the push
+httproute.gateway.networking.k8s.io/https-redirect created
+Accepted ResolvedRefs
+NAME                           TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE
+cilium-gateway-bravo-gateway   NodePort   10.43.3.129   <none>        80:31992/TCP   5h34m
+## 2026-11-03 03:07:02 KST origin check inside the platform cluster: Host b-free.mangowhois.ai to the Gateway Service, with and without CF-Visitor (Cloudflare Access sits in front on the public path)
+warning: couldn't attach to pod/edge-redirect-probe, falling back to streaming logs: unable to upgrade connection: container probe not found in pod edge-redirect-probe_bravo-control
+  File "<string>", line 9
+    print(f"CF-Visitor {scheme:5} GET {path:12} -> {r.status} {r.getheader(\"location\") or \"\"}{\" (upgrade)\" if ws else \"\"}"); c.close()
+                                                                            ^
+SyntaxError: unexpected character after line continuation character
+pod bravo-control/edge-redirect-probe terminated (Error)
+CF-Visitor http   GET /             -> 301 https://b-free.mangowhois.ai:443/
+CF-Visitor https  GET /             -> 200 
+CF-Visitor http   GET /v1/health    -> 301 https://b-free.mangowhois.ai:443/v1/health
+CF-Visitor https  GET /v1/health    -> 404 
+CF-Visitor http   GET /mcp          -> 301 https://b-free.mangowhois.ai:443/mcp
+CF-Visitor https  GET /mcp          -> 401 
+CF-Visitor http   GET /grafana/     -> 301 https://b-free.mangowhois.ai:443/grafana/
+CF-Visitor https  GET /grafana/     -> 302 /grafana/login
+CF-Visitor https  GET /ws          (ws upgrade) -> 200 
+CF-Visitor http   GET /ws          (ws upgrade) -> 301 https://b-free.mangowhois.ai:443/ws
+CF-Visitor (none) GET /             -> 200 

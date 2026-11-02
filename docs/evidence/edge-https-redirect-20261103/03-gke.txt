@@ -1,0 +1,4 @@
+## 2026-11-03 03:05:56 KST apply HTTPRoute chat (deploy/landing-zone/overlays/gke/manifests/40-gateway.yaml) on bravo-target-gcp
+httproute.gateway.networking.k8s.io/chat configured
+redirect live after ~30 s
+ResolvedRefs=True ResolvedRefs; Accepted=True Accepted; Reconciled=True ReconciliationSucceeded; 

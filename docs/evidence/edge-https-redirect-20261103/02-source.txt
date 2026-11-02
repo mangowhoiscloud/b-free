@@ -1,0 +1,3 @@
+## 2026-11-03 03:05:51 KST apply HTTPRoute chat (deploy/landing-zone/overlays/eks/gateway.yaml) on bravo-source
+httproute.gateway.networking.k8s.io/chat configured
+Accepted ResolvedRefs

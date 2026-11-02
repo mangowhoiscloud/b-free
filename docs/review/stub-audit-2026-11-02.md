@@ -46,6 +46,7 @@
 | G8 | 게이트 규칙 `gate-controls/2026-11-03.2`: 이 갈래 L3 커밋 | 게이트 `c841a75e` 고정, **push 필요** | 예, 미리 보기 Pod. `docs/evidence/gate/platform-gate-20261102T175426Z/`: 질문 22개, UNKNOWN 0, 새 질문 SEC-GIT-PLAINTEXT · OBJ-PLAIN-EGRESS · NET-EXTERNAL-SCAN 두 쌍 양쪽 PASS | push · Argo 동기화 뒤 `svc/gate`로 다시. 회전 · 로그 마스킹 · DB 감사 검색 · Prowler는 게이트 밖(D-29) |
 | G9 | 러너 · 랜딩 존: 이 갈래 L3 커밋 | 예. 온프렘에 MutatingPolicy · 기본 SA 패치 적용(02:34) | 예. `docs/evidence/kube-bench/onprem-20261103/`: FAIL 4 → 3, 남은 FAIL마다 판단 | EKS · GKE kube-bench FAIL 미판정 |
 | G10 | GKE 이미지 digest 복사: 이 갈래 L3 커밋 | 예. GKE `chat-bravo-demo` `b5c0e764…`(02:52) | 예. `docs/evidence/gke-same-digest-20261103/`, 세 클러스터 같은 digest, `b-free-chat-gke` 200 | - |
+| G11 | 원점 HTTPRoute 리다이렉트: 이 갈래 L3 커밋 | 고객 세 클러스터는 손으로 적용(03:05, Argo 밖). 플랫폼 `https-redirect`는 손으로 만들었고 push 뒤 Argo `edge`가 맡음 | 예. `docs/evidence/edge-https-redirect-20261103/`: 다섯 이름 `http://` 301 → https, `https://` 200(b-free는 Access 302), `/ws` 101 | 대표 이름 `b-free-chat`의 평문 요청은 환경 이름으로 돌아감(LB Host 덮어쓰기, Cloudflare 변경 필요) |
 
 중간 항목(23–50)은 문서 · 시험 기준으로 고쳤고, 운영 실행 확인은 따로 하지 않았습니다. 아직 열린 것은 31(`mode: recorded`를 쓰는 코드 없음, 리뷰 P21)과 44(금고 보관 파일 집중)입니다. 26은 API 코드가 `security_holds: null`, `security_holds_reason: not_implemented:D-20`으로 둡니다(D-20 미구현). 계획이 0건이라 운영 응답으로는 보지 못했습니다.
 
@@ -148,3 +149,4 @@
 | O5 | B20 · P23 | 증거가 OutOfSync 때 찍힘, 동결 절차 없음 | 고침. `deploy/scripts/demo-freeze.sh`(태그 + 이미지 digest + ConfigMap + Argo revision 기록과 비교), `deploy/scripts/argo-state.sh`(증거마다 Argo 상태), `run-platform-gate.sh`가 `argo-state.txt`를 남김. 남음: `deploy/cloud/*` 실행 스크립트에 같은 한 줄(데이터 · 컷오버 갈래 파일), 진짜 동결 태그(데모 전날) |
 | O6 | P9 | 운영자 역할은 첫 로그인 뒤에만, OTP, 세션 24시간 | 사전 점검 `console` 그룹: 플랫폼 DB 신원 · 역할(읽기), 쿠키가 있으면 `/v1/me`. 03:01 측정 naver(운영자) 신원 없음 FAIL. 남음: 사람이 첫 로그인 |
 | O7 | P6 | 링크 위 복제 끊김 준비 판정 | 사전 점검 `repl` 그룹: `latest_end_time` 경과(PASS 45초, 2배까지 WARN), 역방향 구독 상태, 슬롯 보존 WAL. 측정: 역방향 슬롯 보존 WAL이 부하 중 약 3.6 MB/분으로 늘어 약 7시간이면 2GB 한도. 컷오버 준비 판정(Executor) 안의 경과 기준은 데이터 · 컷오버 갈래 몫 |
+| G11 | 중간 | 공개 이름이 평문 HTTP에 200(D-29 발견) | 2026-11-03 03:05–03:07 L3. 원점 HTTPRoute에 `CF-Visitor` http → 301 https 규칙(온프렘 · EKS Cilium, GKE gke-l7-rilb, 플랫폼). Cloudflare 변경 없음. 남음: 대표 이름은 LB Host 덮어쓰기 때문에 환경 이름으로 돌아감. `docs/evidence/edge-https-redirect-20261103/` |

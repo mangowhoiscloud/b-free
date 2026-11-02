@@ -60,6 +60,15 @@ spec:
     - b-free-chat-src.mangowhois.ai
     - b-free-chat.mangowhois.ai
   rules:
+    # Plain HTTP at the edge -> 301 to https (D-29 finding, 2026-11-03). cloudflared reaches this Gateway over plain
+    # HTTP, so X-Forwarded-Proto is always "http" here (measured: the Gateway sets it from its own downstream); the
+    # visitor's scheme arrives only in Cloudflare's CF-Visitor header. https requests (CF-Visitor https) and callers
+    # without the header (in-cluster, health checks) keep the plain rule below. More header matches win on the same path.
+    - matches:
+        - path: {type: PathPrefix, value: /}
+          headers: [{type: Exact, name: CF-Visitor, value: '{"scheme":"http"}'}]
+      filters:
+        - {type: RequestRedirect, requestRedirect: {scheme: https, statusCode: 301}}
     - matches:
         - path:
             type: PathPrefix
