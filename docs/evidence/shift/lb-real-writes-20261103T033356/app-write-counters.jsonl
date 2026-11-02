@@ -1,0 +1,6 @@
+{"label":"before-to-dst","at":"2026-11-02T18:33:59Z","counters":[{"env":"source-aws","outcome":"ok","total":"14442"},{"env":"target-onprem","outcome":"ok","total":"620"}]}
+{"label":"after-to-dst","at":"2026-11-02T18:35:00Z","counters":[{"env":"source-aws","outcome":"ok","total":"16242"},{"env":"target-onprem","outcome":"ok","total":"621"}]}
+{"label":"before-noka-to-dst","at":"2026-11-02T18:36:14Z","counters":[{"env":"source-aws","outcome":"ok","total":"16794"},{"env":"target-onprem","outcome":"ok","total":"696"}]}
+{"label":"after-noka-to-dst","at":"2026-11-02T18:37:03Z","counters":[{"env":"source-aws","outcome":"ok","total":"18322"},{"env":"target-onprem","outcome":"ok","total":"804"}]}
+{"label":"before-final2-to-dst","at":"2026-11-02T18:49:00Z","counters":[{"env":"source-aws","outcome":"ok","total":"20"},{"env":"target-onprem","outcome":"ok","total":"20"}]}
+{"label":"after-final2-to-dst","at":"2026-11-02T18:49:27Z","counters":[{"env":"source-aws","outcome":"ok","total":"167"},{"env":"target-onprem","outcome":"ok","total":"20"}]}

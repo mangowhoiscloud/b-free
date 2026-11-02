@@ -40,6 +40,7 @@ from typing import Any
 
 import httpx
 
+from .loadmetrics import MIN_WINDOW_S, LoadgenMetrics, LoadWindow, MetricsUnavailable, window_counts
 from .vault import SecretBroker
 
 CF_API = "https://api.cloudflare.com/client/v4"
@@ -65,18 +66,24 @@ class FrontConfig:
     consecutive: int = 5                       # probes in a row that must show the target
     propagation_timeout_s: float = 180.0
     # LB-mode step judgement: real chat writes through the front (contract 15 §10.4)
-    write_rate: float = 60.0                   # writes per second, open loop
+    write_rate: float = 60.0                   # writes per second, open loop (ceiling of every step)
+    # Writes per second the target should get at a step: the step rate is min(write_rate, this / weight), so the
+    # 50 % and 100 % steps do not load the target harder than the 10 % step needs (2026-11-03: on-prem writes
+    # cross the link, one round trip 340 ms, PgBouncer pool 10).
+    target_write_rate: float = 20.0
     write_room: str = "shift-probe"
     # Longer than the app's own write deadline (apps/demo WRITE_WAIT_S, 8 s): a slow write then comes back as the
     # app's 503 with X-Served-By, so only edge and transport failures stay unattributed.
     write_timeout_s: float = 10.0
     write_max_in_flight: int = 128
-    # Kept-alive connections. Measured 2026-11-03 KST on b-free-chat (docs/evidence/shift/): without keep-alive the
-    # client's own TLS work raised the p95 of GET /api/status from 184 ms to 552 ms; both followed the weights.
-    write_keepalive: bool = True
+    # A new connection per write. Measured 2026-11-03 03:35 KST at 50 % (docs/evidence/shift/lb-real-writes-*):
+    # POSTs on kept-alive connections reached the target 9 of 150 times, POSTs on new connections 57 of 150, GETs
+    # 60-62 of 150 either way. Latency is timed from sending the request to the response headers, so the sampler's
+    # own TCP and TLS setup is not counted (it added about 400 ms at 60 per second).
+    write_keepalive: bool = False
     min_target_samples: int = 100              # writes the target answered; below this the step is not judged
     min_hold_s: float = 5.0
-    max_hold_s: float = 30.0
+    max_hold_s: float = 40.0
     max_error_rate: float = 0.01
     max_p95_ms: float = 800.0
     # The target must answer at least this fraction of its planned share (10 % step -> 2.5 % of writes).
@@ -111,13 +118,14 @@ class FrontConfig:
             consecutive=int(f("BRAVO_FRONT_CONSECUTIVE", 5)),
             propagation_timeout_s=f("BRAVO_FRONT_PROPAGATION_TIMEOUT_S", 180.0),
             write_rate=f("BRAVO_FRONT_WRITE_RATE", 60.0),
+            target_write_rate=f("BRAVO_FRONT_TARGET_WRITE_RATE", 20.0),
             write_room=room,
             write_timeout_s=f("BRAVO_FRONT_WRITE_TIMEOUT_S", 10.0),
             write_max_in_flight=int(f("BRAVO_FRONT_WRITE_MAX_IN_FLIGHT", 128)),
-            write_keepalive=(e.get("BRAVO_FRONT_WRITE_KEEPALIVE") or "1").strip() in ("1", "true"),
+            write_keepalive=(e.get("BRAVO_FRONT_WRITE_KEEPALIVE") or "0").strip() in ("1", "true"),
             min_target_samples=int(f("BRAVO_FRONT_MIN_TARGET_SAMPLES", 100)),
             min_hold_s=f("BRAVO_FRONT_MIN_HOLD_S", 5.0),
-            max_hold_s=f("BRAVO_FRONT_MAX_HOLD_S", 30.0),
+            max_hold_s=f("BRAVO_FRONT_MAX_HOLD_S", 40.0),
             max_error_rate=f("BRAVO_FRONT_MAX_ERROR_RATE", 0.01),
             max_p95_ms=f("BRAVO_FRONT_MAX_P95_MS", 800.0),
             min_target_share=f("BRAVO_FRONT_MIN_TARGET_SHARE", 0.25),
@@ -126,6 +134,18 @@ class FrontConfig:
         if cfg.write_rate <= 0 or cfg.min_hold_s < 0 or cfg.max_hold_s < cfg.min_hold_s or cfg.min_target_samples < 1:
             raise ValueError("front judgement settings out of range (rate > 0, min_hold <= max_hold, samples >= 1)")
         return cfg
+
+    def thresholds(self, revert: bool = True) -> dict[str, Any]:
+        """The effective judgement settings, recorded on every front stage (contract 15 §10.4) so a screen
+        draws the lines this run was judged against, not the documented defaults."""
+        return {"min_target_samples": self.min_target_samples, "max_error_rate": self.max_error_rate,
+                "max_p95_ms": self.max_p95_ms, "min_hold_s": self.min_hold_s,
+                "max_hold_s": self.max_hold_s if revert else self.move_hold_s,
+                "min_target_share": self.min_target_share, "write_rate": self.write_rate,
+                "target_write_rate": self.target_write_rate, "write_keepalive": self.write_keepalive, "revert": revert}
+
+    def step_rate(self, weight_pct: int) -> float:
+        return min(self.write_rate, self.target_write_rate * 100 / max(weight_pct, 1))
 
     def tunnel_name(self, env_key: str) -> str:
         return f"bravo-{self.app}-{env_key}"
@@ -239,6 +259,25 @@ def judge(samples: Sequence[Sample], cfg: FrontConfig, target_env_id: str, weigh
                      t_err, t_rate, None if t_p95 is None else round(t_p95, 1), tuple(reasons), by_env)
 
 
+def judge_window(w: LoadWindow, target_p95_ms: float | None, cfg: FrontConfig, target_env_id: str,
+                 weight_pct: int) -> Judgement:
+    """The same rules as ``judge`` on the load generator's counts (contract 15 §10.4, source "loadgen")."""
+    reasons: list[str] = []
+    t_rate = _rate(w.target_errors, w.target_samples)
+    if w.target_samples < cfg.min_target_samples:
+        reasons.append(f"INSUFFICIENT_SAMPLES({target_env_id}:{w.target_samples}<{cfg.min_target_samples})")
+    if t_rate is not None and t_rate > cfg.max_error_rate:
+        reasons.append(f"TARGET_ERROR_RATE({t_rate:.4f}>{cfg.max_error_rate})")
+    if target_p95_ms is not None and target_p95_ms > cfg.max_p95_ms:
+        reasons.append(f"TARGET_P95({target_p95_ms:.1f}ms>{cfg.max_p95_ms}ms)")
+    if weight_pct > 0 and w.writes:
+        share, floor = w.by_env.get(target_env_id, 0) / w.writes, cfg.min_target_share * weight_pct / 100
+        if share < floor:
+            reasons.append(f"TARGET_SHARE({target_env_id}:{share:.3f}<{floor:.3f})")
+    return Judgement(not reasons, w.writes, w.errors, _rate(w.errors, w.writes), None, w.target_samples,
+                     w.target_errors, t_rate, target_p95_ms, tuple(reasons), dict(w.by_env))
+
+
 @dataclass(frozen=True, slots=True)
 class Propagation:
     converged: bool
@@ -348,13 +387,19 @@ class WriteSampler:
         self.sent += 1
         body = {"author": WRITE_AUTHOR, "body": f"shift sample {self.label} {self.sent}"}
         start = time.monotonic()
+        marks: dict[str, float] = {}
+
+        async def trace(event: str, _info: dict[str, Any]) -> None:
+            if event in ("http11.send_request_headers.started", "http11.receive_response_headers.complete"):
+                marks[event] = time.monotonic()
+
         try:
             # A distinct query per write, so no edge layer can treat the writes as one repeated request.
-            # (Measured 2026-11-03: POSTs reached the 10 % pool 0.6-2.2 % of the time with or without it while
-            # that pool's writes were slow; GETs with it followed the weight. Cause not confirmed.)
             resp = await self._http.post(self.url, params={"_s": f"{self.label}-{self.sent}"}, json=body,
-                                         headers={"Idempotency-Key": str(uuid.uuid4())})
-            latency = (time.monotonic() - start) * 1000
+                                         headers={"Idempotency-Key": str(uuid.uuid4())},
+                                         extensions={"trace": trace})
+            sent_at = marks.get("http11.send_request_headers.started", start)
+            latency = (marks.get("http11.receive_response_headers.complete", time.monotonic()) - sent_at) * 1000
             env_id = resp.headers.get("x-served-by") or None
             acked = False
             if resp.status_code in (200, 201):
@@ -367,10 +412,11 @@ class WriteSampler:
         except Exception:  # noqa: BLE001 - any failure of one write is one error sample
             return Sample(start - t0, False, (time.monotonic() - start) * 1000, None, None)
 
-    async def collect(self, done: Callable[[list[Sample], float], bool], max_s: float) -> list[Sample]:
+    async def collect(self, done: Callable[[list[Sample], float], bool], max_s: float,
+                      rate: float | None = None) -> list[Sample]:
         """Send until ``done(answered, elapsed_s)`` or ``max_s``; then wait for the writes already sent."""
         t0 = time.monotonic()
-        interval = 1.0 / self.cfg.write_rate
+        interval = 1.0 / (rate or self.cfg.write_rate)
         out: list[Sample] = []
         pending: set[asyncio.Task[Sample]] = set()
 
@@ -552,9 +598,24 @@ class FrontSwitch:
         detail["record"] = rec
         return FrontState("cname", self.front, by_target.get(rec["content"]), detail)
 
+    async def _hold_on_load(self, lm: LoadgenMetrics, target_id: str, weight: int) -> tuple[Judgement, float]:
+        """Hold until the user load gave the target enough writes (15 s at least: 5 s pushes), then judge."""
+        need = self.cfg.min_target_samples
+        start, t1 = time.monotonic(), time.time()
+        c1 = await lm.counts(t1)
+        while True:
+            await asyncio.sleep(5.0)
+            elapsed, now = time.monotonic() - start, time.time()
+            w = window_counts(c1, await lm.counts(now), target_id)
+            if (elapsed >= max(self.cfg.min_hold_s, MIN_WINDOW_S) and w.target_samples >= need) \
+                    or elapsed >= self.cfg.max_hold_s:
+                break
+        return judge_window(w, await lm.write_p95(now, elapsed, target_id), self.cfg, target_id, weight), elapsed
+
     async def shift(
         self, target_env: str, steps: Sequence[int], apply: EffectApply, probe: HttpProbe,
         record_step: RecordStep, sampler: WriteSampler | None = None, *, revert: bool = True,
+        loadgen: LoadgenMetrics | None = None,
     ) -> dict[str, Any]:
         """Walk the plan. `apply` wraps each external change in the effect ledger; `record_step` stores
         a stage row (name, detail, result). Returns the summary; raises nothing for a judged revert.
@@ -624,11 +685,8 @@ class FrontSwitch:
         tp, op = pools.get(self.cfg.tunnel_name(target_env)), pools.get(self.cfg.tunnel_name(other))
         if not tp or not op:
             raise CloudflareError("LB pools for both environments are required")
-        summary["judge"] = {"input": f"POST {sampler.url}", "write_rate": self.cfg.write_rate,
-                            "min_target_samples": self.cfg.min_target_samples, "min_hold_s": self.cfg.min_hold_s,
-                            "max_hold_s": self.cfg.max_hold_s if revert else self.cfg.move_hold_s,
-                            "max_error_rate": self.cfg.max_error_rate, "max_p95_ms": self.cfg.max_p95_ms,
-                            "min_target_share": self.cfg.min_target_share, "revert": revert}
+        thresholds = self.cfg.thresholds(revert)
+        summary["judge"] = {"input": f"POST {sampler.url}", **thresholds}
         need = self.cfg.min_target_samples
         for step in plan_steps(True, steps):
             weights = lb_pool_weights(tp, op, step.weight)
@@ -646,21 +704,38 @@ class FrontSwitch:
                 self.resource_lb(), f"WEIGHT_{target_env.upper()}_{step.weight}", set_weights, observe_weights
             )
             await record_step(f"front.set_{step.weight}",
-                              {"weight": step.weight, "pool_weights": weights,
+                              {"weight": step.weight, "pool_weights": weights, "thresholds": thresholds,
                                "step_ms": int((time.monotonic() - t_step) * 1000), **evidence}, "OK")
             t_hold = time.monotonic()
-            if revert:
+            rate = self.cfg.step_rate(step.weight)
+            # Source: the user load when a load run is active (contract 15 §10.4), else the write probe.
+            load_run: dict[str, Any] | None = None
+            if loadgen is not None and revert:
+                try:
+                    load_run = await loadgen.choose()
+                except MetricsUnavailable as exc:
+                    load_run = None
+                    summary.setdefault("loadgen_errors", []).append(str(exc))
+            if load_run is not None and loadgen is not None:
+                try:
+                    verdict, _ = await self._hold_on_load(loadgen, target_id, step.weight)
+                except MetricsUnavailable as exc:  # judged as not healthy: the target is reverted
+                    verdict = Judgement(False, 0, 0, None, None, 0, 0, None, None,
+                                        (f"LOADGEN_METRICS_UNAVAILABLE({exc})",), {})
+                source, rate = "loadgen", 0.0
+            elif revert:
                 samples = await sampler.collect(
                     lambda got, elapsed: elapsed >= self.cfg.min_hold_s and target_count(got, target_id) >= need,
-                    self.cfg.max_hold_s,
+                    self.cfg.max_hold_s, rate,
                 )
+                verdict, source = judge(samples, self.cfg, target_id, step.weight), "probe"
             else:
-                samples = await sampler.collect(lambda _got, elapsed: False, self.cfg.move_hold_s)
+                samples = await sampler.collect(lambda _got, elapsed: False, self.cfg.move_hold_s, rate)
+                verdict, source = judge(samples, self.cfg, target_id, step.weight), "probe"
             hold_ms = int((time.monotonic() - t_hold) * 1000)
-            verdict = judge(samples, self.cfg, target_id, step.weight)
-            judgement = {**verdict.as_dict(), "hold_ms": hold_ms,
-                         "step_ms": int((time.monotonic() - t_step) * 1000)}
-            entry = {"weight": step.weight, "applied": True, "judgement": judgement,
+            judgement = {**verdict.as_dict(), "source": source, "load_run": load_run, "hold_ms": hold_ms,
+                         "write_rate": rate, "step_ms": int((time.monotonic() - t_step) * 1000)}
+            entry = {"weight": step.weight, "applied": True, "judgement": judgement, "thresholds": thresholds,
                      "hold_ms": hold_ms, "step_ms": judgement["step_ms"]}
             summary["steps"].append(entry)
             await record_step(f"front.step_{step.weight}", entry, "OK" if verdict.healthy else "FAILED")
@@ -678,7 +753,7 @@ class FrontSwitch:
                 t_rev = time.monotonic()
                 ev = await apply(self.resource_lb(), f"REVERT_{target_env.upper()}_0", call_revert, observe_revert)
                 summary["reverted"] = {"at_weight": step.weight, "reasons": list(verdict.reasons),
-                                       "pool_weights": revert_to,
+                                       "pool_weights": revert_to, "thresholds": thresholds,
                                        "step_ms": int((time.monotonic() - t_rev) * 1000), **ev}
                 await record_step("front.revert_0", summary["reverted"], "OK")
                 return summary

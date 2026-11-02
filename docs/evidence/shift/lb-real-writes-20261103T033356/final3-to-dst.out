@@ -1,0 +1,1 @@
+{"run_id": "521517cd-24dc-4e54-9016-f24b8c5e42c5", "idem_key": "shift-measure-final3-to-dst-<uuid>", "target_env": "dst", "wall_ms": 9066, "config": {"write_rate": 60.0, "min_target_samples": 100, "min_hold_s": 5.0, "max_hold_s": 40.0, "max_error_rate": 0.01, "max_p95_ms": 800.0}}

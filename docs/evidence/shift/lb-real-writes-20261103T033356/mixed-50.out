@@ -1,0 +1,2 @@
+{"run_id": "660fd284-6b6a-4e5d-904d-4d5420309973", "idem_key": "shift-measure-mixed-50-<uuid>", "target_env": "dst", "wall_ms": 14359, "config": {"write_rate": 60.0, "min_target_samples": 100, "min_hold_s": 10.0, "max_hold_s": 30.0, "max_error_rate": 0.01, "max_p95_ms": 800.0}}
+{"by_kind": {"post-ka": {"aws": 141, "onprem": 9}, "get-ka": {"aws": 89, "onprem": 62}, "post-new": {"aws": 93, "onprem": 57}, "get-new": {"aws": 90, "onprem": 60}}}

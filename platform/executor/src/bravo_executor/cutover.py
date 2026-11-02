@@ -346,6 +346,9 @@ class CutoverRunner:
                 pool_problems.append(f"POOL_{pool.name}_ACTIVE_FILE_NOT_ORIGIN")
             if not target_host:
                 pool_problems.append(f"POOL_{pool.name}_NO_TARGET_FILE")
+            # A restart must select what is active now (base/chat-pgbouncer.yaml init container).
+            if "durable_target" in files and files["durable_target"] != origin:
+                pool_problems.append(f"POOL_{pool.name}_DURABLE_TARGET_NOT_ORIGIN")
         entries: dict[str, Any] = {}
         for entry in s.entries:
             try:
@@ -925,7 +928,10 @@ class CutoverRunner:
 
             async def obs_activate(sw: Any = sw) -> Observation:
                 now = await sw.current_side()
-                return now == side, {"active_side": now}
+                durable_side = getattr(sw, "durable_side", None)
+                durable = await durable_side() if durable_side else None
+                ok = now == side and durable in (None, side)
+                return ok, {"active_side": now, "durable_target": durable}
 
             await fx.apply(pool.active_resource, "ACTIVATE_TARGET", activate, obs_activate)
 

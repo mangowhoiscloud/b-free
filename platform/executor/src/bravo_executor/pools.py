@@ -7,7 +7,9 @@ a target switch. Two switch kinds:
 * ``K8sExecSwitch`` (clusters, CLOUD-E2E-CONTRACT.md 9): ``pods/exec`` into the PgBouncer Pod and
   atomically replace the active file ``/run/pgbouncer/active.ini`` (emptyDir) with one of the two
   target files mounted from a ConfigMap directory (``target-src.ini``, ``target-dst.ini``):
-  copy to a temp file in the same directory, then ``mv``. RELOAD is sent by the runner.
+  copy to a temp file in the same directory, then ``mv``. RELOAD is sent by the runner. In the same call it
+  patches ConfigMap ``chat-pgbouncer-target`` (``target`` = the side), which the PgBouncer init container reads
+  on a restart, so the switch survives one (RBAC: get and patch on that ConfigMap name only).
 
 Which side a pool currently serves is read from the real state (file content), never assumed.
 """
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -87,6 +90,7 @@ class K8sExecSwitch:
     targets_dir: str = "/etc/pgbouncer/targets"
     active_path: str = "/run/pgbouncer/active.ini"
     container: str | None = None
+    target_configmap: str | None = "chat-pgbouncer-target"  # None: Compose-like setups without the durable record
     timeout_s: float = 20.0
     kubectl: str = "kubectl"
     _cache: dict[str, str] = field(default_factory=dict)
@@ -168,6 +172,13 @@ class K8sExecSwitch:
                 return side
         return None
 
+    async def durable_side(self) -> str | None:
+        """The side ConfigMap chat-pgbouncer-target names (what a PgBouncer restart would select)."""
+        if not self.target_configmap:
+            return None
+        out = await self._kubectl("get", "configmap", self.target_configmap, "-o", "jsonpath={.data.target}")
+        return out.strip() or None
+
     async def preflight(self) -> dict[str, Any]:
         self.resolve()
         out = await self._exec(
@@ -175,7 +186,7 @@ class K8sExecSwitch:
         )
         lines = out.split()
         return {"pod": lines[0] if lines else None, "files": lines[1:], "workload": self.workload,
-                "context": self.context}
+                "context": self.context, "durable_target": await self.durable_side()}
 
     async def activate(self, side: str) -> dict[str, Any]:
         src = self._target_file(side)
@@ -184,7 +195,13 @@ class K8sExecSwitch:
             f"set -e; hostname; cp {src} {tmp}; mv -f {tmp} {self.active_path}; sha256sum {self.active_path}"
         )
         lines = out.split("\n")
-        return {"pod": lines[0].strip(), "active_sha256": (lines[1].split() or [""])[0], "from_file": src}
+        result: dict[str, Any] = {"pod": lines[0].strip(), "active_sha256": (lines[1].split() or [""])[0],
+                                  "from_file": src}
+        if self.target_configmap:
+            await self._kubectl("patch", "configmap", self.target_configmap, "--type", "merge",
+                                "-p", json.dumps({"data": {"target": side}}))
+            result["durable_target"] = await self.durable_side()
+        return result
 
     def describe(self) -> dict[str, Any]:
         return {"kind": "k8s-exec", "context": self.context, "namespace": self.namespace, "workload": self.workload,

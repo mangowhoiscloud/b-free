@@ -58,15 +58,17 @@ def front_view(name: str, detail: Any) -> dict[str, Any] | None:
     if not name.startswith("front."):
         return None
     if name.startswith("front.set_"):
-        return {"weight": detail.get("weight"), "pool_weights": detail.get("pool_weights")}
+        return {"weight": detail.get("weight"), "pool_weights": detail.get("pool_weights"),
+                "thresholds": detail.get("thresholds")}
     if name.startswith("front.step_"):
         return {"weight": detail.get("weight"), "applied": detail.get("applied"),
-                "reason": detail.get("reason"), "judgement": detail.get("judgement")}
+                "reason": detail.get("reason"), "judgement": detail.get("judgement"),
+                "thresholds": detail.get("thresholds")}
     if name == "front.revert_0":
         return {"at_weight": detail.get("at_weight"), "reasons": detail.get("reasons"),
-                "pool_weights": detail.get("pool_weights")}
+                "pool_weights": detail.get("pool_weights"), "thresholds": detail.get("thresholds")}
     if name == "front.preflight":
-        return {k: detail.get(k) for k in ("origin", "mode", "active_env", "target_env", "pool_weights")}
+        return {k: detail.get(k) for k in ("origin", "mode", "active_env", "target_env", "pool_weights", "thresholds")}
     if name == "front.summary":
         return {k: detail.get(k) for k in ("mode", "target_env", "reverted", "unhealthy", "judge")}
     if name == "front.failed":
@@ -95,9 +97,12 @@ async def shift_summary(conn: Conn, plan_id: UUID) -> dict[str, Any] | None:
     steps: list[dict[str, Any]] = []
     current: int | None = None
     target: str | None = None
+    thresholds: dict[str, Any] | None = None  # what this run was judged against (Executor settings)
     reverted = None
     for st in await cur.fetchall():
         d = st["detail"] if isinstance(st["detail"], dict) else {}
+        if isinstance(d.get("thresholds"), dict):
+            thresholds = d["thresholds"]
         if st["name"] == "front.preflight":
             target = d.get("target_env")
         elif st["name"].startswith("front.set_"):
@@ -111,7 +116,8 @@ async def shift_summary(conn: Conn, plan_id: UUID) -> dict[str, Any] | None:
             current = 0
             reverted = {"at_weight": d.get("at_weight"), "reasons": d.get("reasons") or []}
     return {"run_id": str(run["run_id"]), "status": run["status"], "target_env": target, "current_weight": current,
-            "started_at": _iso(run["started_at"]), "ended_at": _iso(run["ended_at"]), "steps": steps,
+            "started_at": _iso(run["started_at"]), "ended_at": _iso(run["ended_at"]), "thresholds": thresholds,
+            "steps": steps,
             "reverted": reverted}
 
 

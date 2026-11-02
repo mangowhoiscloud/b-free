@@ -598,6 +598,9 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 ```json
 {"run_id": "<uuid>", "status": "RUNNING", "target_env": "dst", "current_weight": 50,
  "started_at": "…", "ended_at": null,
+ "thresholds": {"min_target_samples": 100, "max_error_rate": 0.01, "max_p95_ms": 800.0, "min_hold_s": 5.0,
+                "max_hold_s": 40.0, "min_target_share": 0.25, "write_rate": 60.0, "target_write_rate": 20.0,
+                "write_keepalive": false, "revert": true},
  "steps": [{"weight": 10, "healthy": true, "target_samples": 104, "target_errors": 0, "target_error_rate": 0.0,
             "target_p95_ms": 212.4, "samples": 1003, "errors": 0, "error_rate": 0.0, "p95_ms": 88.1,
             "by_env": {"aws": 899, "onprem": 104}, "hold_ms": 16800, "step_ms": 17400, "reasons": []}],
@@ -629,26 +632,28 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | 성공(ACK) | HTTP 200 또는 201, JSON `message.id`가 정수, `X-Served-By` 헤더 있음 |
 | 오류 | 그 밖의 모두. 5xx(장애 주입 `X-Bravo-Fault`, 앱의 503 `write_timeout` 포함), 4xx, 503 `blocked`, 10초 시간 초과, 연결 오류. 다시 보내지 않음 |
 | 어느 환경 | `X-Served-By`(`aws` = 출발지, `onprem` = 목적지). 시간 제한 10초는 앱의 쓰기 기한(`WRITE_WAIT_S` 8초)보다 길어서, 느린 쓰기도 앱의 503과 헤더로 돌아옴. 헤더 없는 오류(Cloudflare 52x, 연결 오류)만 남고 이것은 목적지 오류로 셈(보수적) |
-| 연결 | 연결 유지(keep-alive). 쓰기마다 다른 쿼리(`?_s=<run>-<n>`) |
+| 연결 | 쓰기마다 새 연결(`BRAVO_FRONT_WRITE_KEEPALIVE=0`)과 다른 쿼리(`?_s=<run>-<n>`). 연결을 유지한 POST는 처음 간 pool에 붙었습니다(10.6절). 지연은 요청을 보낸 때부터 응답 헤더까지라서 표본기 자신의 TCP · TLS 준비는 넣지 않습니다 |
 
 | 값 | 기본값(환경 변수) | 이유 |
 |---|---|---|
-| 표본 쓰기 속도 | 초당 60건(`BRAVO_FRONT_WRITE_RATE`) | 10% 단계에서 목적지 100건을 약 17초에 모음 |
+| 표본 쓰기 속도 | 단계마다 min(초당 60건, 초당 20건 ÷ 가중치)(`BRAVO_FRONT_WRITE_RATE`, `BRAVO_FRONT_TARGET_WRITE_RATE`). 10% 60건, 50% 40건, 100% 20건 | 10% 단계에서 목적지 100건을 모으고, 50 · 100% 단계는 목적지에 초당 20건만 보냄(목적지 쓰기는 링크를 건넘) |
 | 방 | `shift-probe`(`BRAVO_FRONT_WRITE_ROOM`) | 심사위원 방(`consult-1`)과 섞이지 않음. 화면과 기록에서 표본임이 보임 |
 | 목적지 최소 표본 | 100건(`BRAVO_FRONT_MIN_TARGET_SAMPLES`) | 100건이면 오류 1건이 1.0%로 기준 안이고, 2건이 2.0%로 기준을 넘음. 100건보다 적으면 오류 1건만으로 1%를 넘어 우연이 판정을 정함 |
 | 최소 보유 | 5초(`BRAVO_FRONT_MIN_HOLD_S`) | Cloudflare LB 반영 지연 동안의 표본도 판정에 넣음 |
-| 최대 보유 | 30초(`BRAVO_FRONT_MAX_HOLD_S`) | 그 안에 목적지 100건을 못 모으면 `INSUFFICIENT_SAMPLES`로 0% 복귀 |
+| 최대 보유 | 40초(`BRAVO_FRONT_MAX_HOLD_S`) | 그 안에 목적지 100건을 못 모으면 `INSUFFICIENT_SAMPLES`로 0% 복귀 |
 | 목적지 오류율 | 1% 이하(`BRAVO_FRONT_MAX_ERROR_RATE`) | FR-8 |
 | 목적지 p95 | 800 ms 이하(`BRAVO_FRONT_MAX_P95_MS`) | 목적지 앱은 링크 너머 출발지 DB에 씀. 10.6절 실측으로 확인 |
 | 목적지 몫 | 계획 몫의 1/4 이상(`BRAVO_FRONT_MIN_TARGET_SHARE` 0.25) | 10% 단계면 표본의 2.5% 이상. Cloudflare pool 모니터가 목적지를 빼고 출발지로 넘기면 오류는 0이어도 목적지를 검증하지 못함(2026-11-02 가짜 DONE) |
 
 보유는 가중치 반영을 확인한 때부터 셉니다. 목적지 표본이 100건 이상이고 5초가 지나면 끝납니다. 출발지의 오류율과 p95는 `samples`, `error_rate`, `p95_ms`로 함께 보이지만 판정에는 쓰지 않습니다.
 
-`run.stages[].front.judgement`는 10.2절 `shift.steps[]`의 한 항목과 같은 키입니다.
+`run.stages[].front.judgement`는 10.2절 `shift.steps[]`의 한 항목과 같은 키이고, `source`(`loadgen` · `probe`), `load_run`, `write_rate`를 더합니다.
 
-**판정 입력이 아닌 것.** `GET /api/config` 프로브는 `GET /v1/front` 상태 표시와 CNAME 모드 전파 시간에만 씁니다. Prometheus는 판정 근거가 아닙니다(7.5절).
+**판정 기준값은 실행이 들고 다닙니다.** Executor는 `front.preflight`, `front.set_<w>`, `front.step_<w>`, `front.revert_0`의 `front.thresholds`에 그 실행이 실제로 쓴 값(`min_target_samples`, `max_error_rate`, `max_p95_ms`, `min_hold_s`, `max_hold_s`, `min_target_share`, `write_rate`, `target_write_rate`, `write_keepalive`, `revert`)을 적습니다. API는 같은 값을 `shift.thresholds`로 냅니다. 콘솔은 이 값으로 기준선을 그립니다. 환경 변수를 바꿔도 화면과 판정이 어긋나지 않습니다.
 
-**부하 생성기(B15)와의 약속.** 부하 생성기(`tools/loadgen`)는 S3-AC1과 NFR-1(실패, 유실, 중복, 쓰기 정지)을 따로 잽니다. 그 출력(끝에 내는 JSON 한 줄)은 단계 판정의 입력이 아닙니다. 판정이 다른 프로세스에 기대면 그 프로세스가 멈췄을 때 판정 없이 전환하게 되고, 단계마다 표본 수를 정할 수 없어 보유 시간이 정해지지 않기 때문입니다. 두 쪽이 같은 시각에 돌면 부하 생성기 기록은 비교 증거로만 씁니다. 부하 생성기가 대표 이름으로 쓴다면 방을 `shift-probe` 밖으로 둡니다.
+**판정 입력이 아닌 것.** `GET /api/config` 프로브는 `GET /v1/front` 상태 표시와 CNAME 모드 전파 시간에만 씁니다. 앱 쪽 카운터(`chat_writes_total`)는 대조 증거로만 씁니다.
+
+**판정 원천: 사용자 부하가 먼저, 표본기는 대체(2026-11-03 코디네이터 결정).** 단계를 시작할 때 부하 실행이 돌고 있으면(플랫폼 Prometheus의 `bravo_loadgen_attempts_total` 마지막 표본이 15초 안) 그 부하로 판정합니다. 계획의 `bravo_plan_id`가 붙은 실행을 먼저 찾고, 없으면 아무 실행(`run_id!=""`)을 씁니다. 개수는 무게 반영 시각과 지금의 순간값 차이(쓰기만, `served_by`별)이고, p95는 목적지 쓰기 성공 시도의 히스토그램입니다. 지표가 5초마다 오므로 이 원천의 보유는 15초 이상입니다. 부하 실행이 없으면 Executor 표본기를 씁니다. 그래서 표본기 쓰기가 사용자 부하에 더해지지 않습니다. 어느 원천을 썼는지는 단계마다 `judgement.source`에 남습니다. Prometheus를 읽지 못하면 그 단계는 `LOADGEN_METRICS_UNAVAILABLE`로 0% 복귀합니다. 지표 계약은 `tools/loadgen/README.md` "지표 계약"입니다.
 
 ### 10.5 기준을 넘으면(1a)
 
@@ -667,10 +672,22 @@ Cloudflare LB `b-free-chat.mangowhois.ai`에서 Executor 도구 경로(10.9절)�
 | 03:02:40 | `59fbeecb` | 실제 쓰기, 최종 설정(연결 유지, 쓰기마다 다른 쿼리, 10초) | 10%에서 0% 복귀 | 33.8초 | 26/1801(1.4%), 모두 오류 |
 
 - **보유 규칙은 60초 안에 듭니다(측정함).** 목적지가 빨리 답하면 편도가 30.4초와 37.2초였습니다. 10% 단계 보유가 13.5초와 20.8초, 50%가 6.8초와 5.3초, 100%가 6.0초와 5.1초입니다. 이전 기준(단계마다 60초 보유)의 편도는 184.8초였습니다.
-- **실제 쓰기로는 목적지 전환이 통과하지 못했습니다(FAIL, 측정함).** 목적지 앱의 쓰기 경로(목적지 PgBouncer, 링크, 출발지 DB)가 느립니다. LB를 거치지 않고 `b-free-chat-dst`에 차례로 보낸 쓰기 8건은 02:56 KST에 2,095–2,454 ms, 다른 부하가 없던 03:10 KST에 1,710–2,633 ms였습니다(모두 201). 같은 때 출발지는 98–415 ms였습니다. 03:02 실행은 다른 갈래의 부하 실행과 겹쳤습니다. 이 측정이 LB를 목적지 100%에 둔 02:58–03:00과 03:01:55–03:02:15에 열린 부하 생성기 WebSocket이 목적지에 남아, 목적지 쓰기가 8초 시간 초과로 쌓였습니다(앱 카운터 `timeout` 17에서 19,006으로). 그래서 그 실행의 오류 수는 판단에 쓰지 않습니다. 단계 판정은 매번 1a대로 목적지를 0%로 돌렸습니다. 링크 쪽 지연을 고치기 전에는 S3 SHIFT가 10%에서 멈춥니다.
+- **실제 쓰기로는 목적지 전환이 통과하지 못했습니다(FAIL, 측정함).** 목적지 앱의 쓰기 경로(목적지 PgBouncer, 링크, 출발지 DB)가 느립니다. LB를 거치지 않고 `b-free-chat-dst`에 차례로 보낸 쓰기 8건은 02:56 KST에 2,095–2,454 ms, 다른 부하가 없던 03:10 KST에 1,710–2,633 ms였습니다(모두 201). 같은 때 출발지는 98–415 ms였습니다. 03:02 실행은 다른 갈래의 부하 실행과 겹쳤습니다. 부하 생성기가 03:01:23부터 60초 동안 LB를 거치지 않고 `b-free-chat-dst`에 초당 50건을 써서 목적지 쓰기가 8초 시간 초과로 쌓였습니다(앱 카운터 `timeout` 17에서 19,006으로). 그래서 그 실행의 오류 수는 판단에 쓰지 않습니다. 02:56부터 300초 동안은 같은 갈래가 `b-free-chat-src`에 썼습니다. 단계 판정은 매번 1a대로 목적지를 0%로 돌렸습니다. 링크 쪽 지연을 고치기 전에는 S3 SHIFT가 10%에서 멈춥니다.
 - **원인 미확인(UNKNOWN).** 목적지 쓰기가 느릴 때 Cloudflare는 10% 가중치에서도 쓰기(POST)를 목적지로 0.6–2.2%만 보냈습니다. 앱 쪽 카운터(`chat_writes_total`)도 같은 수를 보였습니다. 같은 pool로 가는 `GET /api/status`는 가중치를 따랐습니다(8.3–13.9%). 연결 유지 여부와 쿼리 차이로는 바뀌지 않았습니다.
 - p95 기준 800 ms는 그대로 둡니다. 스펙은 이 기준을 실측 지연(T8)으로 정하라고 합니다. 지금 잰 값(쓰기 한 건 2.1–2.5초)은 고장 난 경로의 값이므로 기준으로 삼지 않습니다. 링크를 고친 뒤 다시 재고 `BRAVO_FRONT_MAX_P95_MS`를 정합니다.
 - 측정이 끝난 뒤 LB는 출발지 100%입니다(03:03 KST `front-after-final.json`).
+
+**2차(03:15–03:53 KST): 원인을 재고 고쳤습니다.** 원기록은 `docs/evidence/shift/write-path-20261103/`, `lb-real-writes-20261103T033356/`, `pgbouncer-durable-target-20261103/`입니다.
+
+1. **목적지 쓰기 지연은 왕복 횟수 때문이었습니다(측정함).** 온프렘 앱 Pod에서 PgBouncer와 링크를 거친 `SELECT 1`은 338–341 ms였고, PgBouncer 연결은 열 때 11 ms였습니다. 서버 연결은 이미 재사용되고 있었습니다. 쓰기 한 건은 BEGIN, set_config, 쓰기 차단 확인, INSERT, SELECT, COMMIT의 6왕복으로 2,040 ms였습니다. 앱 `a4636ac`가 같은 문장을 한 번의 simple-query로 보내 1왕복 340 ms가 됐습니다(verify-full 유지). 플랫폼에서 대표 이름 없이 목적지에 차례로 보낸 쓰기는 p50 698 ms, p95 705 ms가 됐습니다(이전 2.1–2.6초).
+2. **링크 한 왕복의 바닥은 약 290–340 ms입니다(측정함).** 플랫폼에서 같은 Cloudflare 링크로 두 DB에 `SELECT 1`은 8.6 ms와 10.2 ms였습니다. 온프렘의 `cloudflared access tcp`가 닿는 `t1-src-db.mangowhois.ai`는 이 노트북 망(KT)에서 Cloudflare `colo=DFW`로 갑니다(`www.cloudflare.com`은 `ICN`). 그래서 온프렘에서 출발지 DB로 가는 한 왕복이 미국을 돌아옵니다. 동시에 12개를 보내면 한 왕복이 400–580 ms로 늘었습니다.
+3. **PgBouncer 풀(측정함).** 목적지 풀 10개는 이미 다 열려 있었습니다. 부하 갈래 측정으로 초당 약 16건이 한계라서 `default_pool_size` 30, `min_pool_size` 10으로 올렸습니다(온프렘 · 출발지, 03:46 KST 적용). 고친 뒤 차례 쓰기 20건은 p50 598 ms, p95 859 ms였습니다.
+4. **POST 몫(측정함).** 50% 단계에서 같은 표본기로 섞어 보냈습니다. 연결을 유지한 POST는 150건 중 9건, 쓰기마다 새 연결인 POST는 57건, GET은 연결 방식과 상관없이 60–62건이 목적지로 갔습니다. 표본기는 쓰기마다 새 연결을 씁니다. 그 뒤 10% 단계 실행에서 목적지 몫은 108/1636(6.6%)이었고 앱 카운터도 같았습니다(목적지 +108, 출발지 +1,528).
+5. **아직 통과하지 못했습니다(FAIL).** 03:36 실행은 목적지 표본 108건, 오류 0건이었지만 목적지 p95 956 ms(표본기의 TLS 준비 포함)로 0% 복귀했습니다. 03:49와 03:52 실행은 출발지 앱 쪽 문제로 판정하지 못했습니다. 출발지 EKS의 앱 복제본 중 노드 `ip-10-10-11-107`의 것에 Gateway(Envoy, 노드 `ip-10-10-11-11`)가 닿지 못해 새 요청의 절반이 Cloudflare 503(`upstream connect error … connection timeout`, `X-Served-By` 없음)이었습니다. 이 오류는 보수적 규칙대로 목적지 오류로 셉니다. 03:48 무렵 앱 0.3.3 배포 뒤 생긴 일이고 Pod를 다시 만들어도 같은 노드에 뜨면 그대로입니다.
+6. **결정 요청: 목적지 p95 기준.** 컷오버 전 목적지 쓰기는 링크를 한 번 건너므로 바닥이 한 왕복(290–340 ms)이고, 풀 대기와 동시 접속에서 600–900 ms가 나옵니다. 기준 800 ms는 그대로 뒀습니다. 선택지는 둘입니다. 첫째, 컷오버 전 SHIFT 판정만 1,500 ms로 둡니다(스펙 "가중치 단계의 판정 기준은 실측 지연(T8)으로 정한다"). 둘째, 온프렘 링크 클라이언트가 미국 POP로 가지 않게 경로를 바꿉니다. 지금 값을 슬쩍 바꾸지 않았습니다.
+7. **PgBouncer 활성 대상이 재시작에도 남습니다(측정함).** Executor가 대상을 바꿀 때 ConfigMap `chat-pgbouncer-target`(`target`)도 고칩니다. init 컨테이너는 그 값을 읽습니다. 온프렘에서 Executor 코드와 권한으로 dst로 바꾸고 재시작하니 `target-dst.ini`가 선택됐고, src로 되돌리고 재시작하니 `target-src.ini`였습니다(03:47 KST). Executor 권한은 `chat` 네임스페이스에서 그 ConfigMap 이름 하나에 대한 get · patch뿐입니다. 컷오버 전 점검은 이 값이 출발지가 아니면 거부합니다(`POOL_<이름>_DURABLE_TARGET_NOT_ORIGIN`).
+
+LB는 측정이 끝난 뒤 출발지 100%입니다(03:52 KST).
 
 ### 10.7 S4 되돌리기의 앞단
 

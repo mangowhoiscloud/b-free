@@ -63,6 +63,9 @@ step_cilium() {
 step_base() {
   log "namespaces, StorageClasses, PgBouncer, cloudflared (kustomize overlay $overlay)"
   k kustomize "$ov" | render | k apply -f -
+  # Durable PgBouncer target (base/chat-pgbouncer.yaml): created once, never overwritten by a re-run.
+  k -n chat get configmap chat-pgbouncer-target >/dev/null 2>&1 \
+    || k -n chat create configmap chat-pgbouncer-target --from-literal=target=src
 }
 
 step_rbd() {

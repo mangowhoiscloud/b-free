@@ -43,3 +43,29 @@ def test_k8s_switch_rejects_shell_metacharacters() -> None:
 def test_entry_repr_hides_the_token() -> None:
     e = EntrySpec(name="aws", side="src", url="http://127.0.0.1:18081", token="s3cr3t-token")  # noqa: S106 - test value
     assert "s3cr3t" not in repr(e) and e.resource == "entry/aws/write-block"
+
+
+async def test_k8s_switch_records_the_durable_target(tmp_path: Path) -> None:
+    """A switch also patches ConfigMap chat-pgbouncer-target, so a PgBouncer restart selects the same side."""
+    state = tmp_path / "cm-target"
+    state.write_text("src", encoding="utf-8")
+    log = tmp_path / "calls"
+    fake = tmp_path / "kubectl"
+    fake.write_text(f"""#!/bin/sh
+echo "$@" >> {log}
+case "$*" in
+  *" exec "*) printf 'chat-pgbouncer-x\\nabc123  /run/pgbouncer/active.ini\\n' ;;
+  *" patch configmap chat-pgbouncer-target "*)
+    echo "$*" | sed -E 's/.*"target": ?"([a-z]+)".*/\\1/' | tr -d '\\n' > {state} ;;
+  *" get configmap chat-pgbouncer-target "*) cat {state} ;;
+  *) exit 3 ;;
+esac
+""", encoding="utf-8")
+    fake.chmod(0o755)
+    sw = K8sExecSwitch(context="bravo-onprem", namespace="chat", workload="pod/chat-pgbouncer-x", db_name="chat",
+                       kubectl=str(fake))
+    assert await sw.durable_side() == "src"
+    out = await sw.activate("dst")
+    assert out["durable_target"] == "dst" and state.read_text(encoding="utf-8") == "dst"
+    calls = log.read_text(encoding="utf-8")
+    assert "patch configmap chat-pgbouncer-target --type merge -p" in calls

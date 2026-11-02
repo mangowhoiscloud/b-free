@@ -118,9 +118,13 @@ def shift_finishes(pg: dict[str, str], run_id: str, pid: str, approval_id: str, 
                  "target_error_rate": 0.0 if healthy else 0.0577, "target_p95_ms": 210.0,
                  "reasons": [] if healthy else [reverted_reason], "by_env": {"aws": 896, "onprem": 104},
                  "hold_ms": 16000, "step_ms": 16500}
-            stages.append((f"front.set_{w}", "OK", {"weight": w, "pool_weights": {"pd": w / 100}, "step_ms": 400}))
+            th = {"min_target_samples": 100, "max_error_rate": 0.01, "max_p95_ms": 800.0, "min_hold_s": 5.0,
+                  "max_hold_s": 30.0, "min_target_share": 0.25, "write_rate": 60.0, "revert": True}
+            stages.append((f"front.set_{w}", "OK", {"weight": w, "pool_weights": {"pd": w / 100}, "step_ms": 400,
+                                                     "thresholds": th}))
             stages.append((f"front.step_{w}", "OK" if healthy else "FAILED",
-                           {"weight": w, "applied": True, "judgement": j, "hold_ms": 16000, "step_ms": 16500}))
+                           {"weight": w, "applied": True, "judgement": j, "hold_ms": 16000, "step_ms": 16500,
+                            "thresholds": th}))
             if not healthy:
                 stages.append(("front.revert_0", "OK", {"at_weight": w, "reasons": [reverted_reason]}))
                 break
@@ -220,6 +224,9 @@ def test_full_pilot_flow(console: Console, executor: ExecutorStub, pg: dict[str,
     assert in_cutover["shift"]["status"] == "DONE" and in_cutover["shift"]["current_weight"] == 100
     assert [s["weight"] for s in in_cutover["shift"]["steps"]] == [10, 50, 100]
     assert in_cutover["shift"]["steps"][0]["target_samples"] == 104 and in_cutover["shift"]["reverted"] is None
+    # The Executor's effective thresholds travel with the run (contract 15 §10.4), not the documented defaults.
+    assert in_cutover["shift"]["thresholds"]["min_target_samples"] == 100
+    assert in_cutover["shift"]["thresholds"]["max_p95_ms"] == 800.0
 
     # The Executor writes the contract tables with its own role.
     with psycopg.connect(pg["bravo_executor"], autocommit=True) as ex:

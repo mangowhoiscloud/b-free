@@ -1,0 +1,50 @@
+== bravo-onprem 2026-11-03 03:26:55 KST
+level=INFO msg="WARN upgrade failed name=chat error=\"conflict occurred while applying object chat/chat-bravo-demo networking.k8s.io/v1, Kind=NetworkPolicy: Apply failed with 1 conflict: conflict with \\\"kubectl-patch\\\" using networking.k8s.io/v1: .spec.egress\""
+Error: UPGRADE FAILED: conflict occurred while applying object chat/chat-bravo-demo networking.k8s.io/v1, Kind=NetworkPolicy: Apply failed with 1 conflict: conflict with "kubectl-patch" using networking.k8s.io/v1: .spec.egress
+deployment "chat-bravo-demo" successfully rolled out
+bravo.local/bravo-demo@sha256:86670b4df32914914071762dfb03e4b617855858763c41363249f440ad25d687
+== bravo-source 2026-11-03 03:27:02 KST
+Join page with QR: <public URL>/join   Health: /healthz   Readiness: /readyz
+Write-block switch (cluster-internal): chat-admin:8081 GET/PUT /admin/writes, Bearer token from Secret chat-admin/token.
+deployment "chat-bravo-demo" successfully rolled out
+721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:86670b4df32914914071762dfb03e4b617855858763c41363249f440ad25d687
+== bravo-onprem retry 2026-11-03 03:27:55 KST (rev 4 failed on NetworkPolicy field ownership; rendered egress equals the live kubectl-patch egress, so --force-conflicts only moves ownership)
+STATUS: deployed
+REVISION: 5
+4       	Tue Nov  3 03:26:55 2026	failed    	bravo-demo-0.1.0	0.1.0      	Upgrade "chat" failed: conflict occurred while applying object chat/chat-bravo-demo networking.k8s.io/v1, Kind=NetworkPolicy: Apply failed with 1 conflict: conflict with "kubectl-patch" using networking.k8s.io/v1: .spec.egress
+5       	Tue Nov  3 03:27:55 2026	deployed  	bravo-demo-0.1.0	0.1.0      	Upgrade complete                                                                                                                                                                                                                  
+== bravo-onprem 2026-11-03 03:28:13 KST: rev 5 used the release's stored values, which still allowed RGW 8080/8443/80; upgrade with the committed values files (install.sh step_app set) restores 443 only (L3 OBJ-PLAIN-EGRESS)
+STATUS: deployed
+REVISION: 6
+{"ports":[{"port":443,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"rook-ceph"}}}]}
+bravo.local/bravo-demo@sha256:86670b4df32914914071762dfb03e4b617855858763c41363249f440ad25d687
+== bravo-target-gcp 2026-11-03 03:29:19 KST (image copied by infra/envs/target-gcp/scripts/images.sh, digest kept)
+Error: UPGRADE FAILED: kubernetes cluster unreachable: Get "https://gke-f06891ae4d0346d08ef7adcd75fdbd1d1aa3-510055025217.asia-northeast1-b.gke.goog/version": getting credentials: exec: executable gke-gcloud-auth-plugin not found
+Unable to connect to the server: getting credentials: exec: executable gke-gcloud-auth-plugin not found
+
+It looks like you are trying to use a client-go credential plugin that is not installed.
+
+To learn more about this feature, consult the documentation available at:
+      https://kubernetes.io/docs/reference/access-authn-authz/authentication/#client-go-credential-plugins
+
+gcloud components install gke-gcloud-auth-plugin
+bravo-source: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:86670b4df32914914071762dfb03e4b617855858763c41363249f440ad25d687
+bravo-onprem: bravo.local/bravo-demo@sha256:86670b4df32914914071762dfb03e4b617855858763c41363249f440ad25d687
+Unable to connect to the server: getting credentials: exec: executable gke-gcloud-auth-plugin not found
+
+It looks like you are trying to use a client-go credential plugin that is not installed.
+
+To learn more about this feature, consult the documentation available at:
+      https://kubernetes.io/docs/reference/access-authn-authz/authentication/#client-go-credential-plugins
+
+gcloud components install gke-gcloud-auth-plugin
+bravo-target-gcp: 
+b-free-chat-src /readyz 200
+b-free-chat-dst /readyz 200
+b-free-chat-gke /readyz 200
+== bravo-target-gcp retry 2026-11-03 03:29:51 KST (gke-gcloud-auth-plugin on PATH)
+STATUS: deployed
+REVISION: 7
+deployment "chat-bravo-demo" successfully rolled out
+bravo-target-gcp: asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/bravo-demo@sha256:86670b4df32914914071762dfb03e4b617855858763c41363249f440ad25d687
+b-free-chat-gke /readyz 200

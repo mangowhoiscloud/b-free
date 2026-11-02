@@ -35,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .approvals import ApprovalCheck, ApprovalRejected
 from .front import CloudflareError, FrontConfig, FrontSwitch, HttpProbe, WriteSampler
 from .ledger import IdempotencyConflict, RunRequest, RunStatus
+from .loadmetrics import LoadgenMetrics
 from .stages import EffectRunner, StageRecorder, error_evidence
 from .vault import SecretBroker
 
@@ -165,6 +166,7 @@ async def _run_shift(
     fs: FrontSwitch | None = None
     probe: HttpProbe | None = None
     sampler: WriteSampler | None = None
+    loadgen = LoadgenMetrics.from_env(None if body.plan_id is None else str(body.plan_id))
     try:
         fs = await FrontSwitch.open(cfg, _broker(app))
         probe = HttpProbe(f"https://{fs.front}{cfg.probe_path}", cfg.probe_timeout_s, cfg.probe_interval_s)
@@ -176,10 +178,10 @@ async def _run_shift(
                               "stage": body.stage})
             state = await fs.state()
             st.detail.update({"mode": state.mode, "active_env": state.active_env, "target_env": body.target_env,
-                              "pool_weights": state.detail.get("pool_weights"),
+                              "pool_weights": state.detail.get("pool_weights"), "thresholds": cfg.thresholds(),
                               "link_note": "Cloudflare API from the platform"})
         summary = await fs.shift(body.target_env, body.steps or [10, 50, 100], apply, probe,
-                                 _recorder(rec), sampler)
+                                 _recorder(rec), sampler, loadgen=loadgen)
         if "reverted" in summary:
             status = RunStatus.ABORT_PRE_WRITE
         async with rec.stage("front.summary") as st:
@@ -192,7 +194,7 @@ async def _run_shift(
         except Exception:  # noqa: BLE001
             log.exception("shift %s: could not record failure stage", run_id)
     finally:
-        for closer in (sampler, probe, fs):
+        for closer in (sampler, probe, fs, loadgen):
             if closer is not None:
                 try:
                     await closer.close()

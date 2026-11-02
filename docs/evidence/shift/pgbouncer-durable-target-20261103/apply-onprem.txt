@@ -1,0 +1,15 @@
+## on-prem 2026-11-03 03:46:35 KST
+serviceaccount/bravo-executor unchanged
+role.rbac.authorization.k8s.io/bravo-executor configured
+rolebinding.rbac.authorization.k8s.io/bravo-executor unchanged
+configmap/chat-pgbouncer-target created
+configmap/chat-pgbouncer-config configured
+deployment.apps/chat-pgbouncer configured
+Waiting for deployment "chat-pgbouncer" rollout to finish: 0 out of 1 new replicas have been updated...
+Waiting for deployment "chat-pgbouncer" rollout to finish: 0 out of 1 new replicas have been updated...
+Waiting for deployment "chat-pgbouncer" rollout to finish: 0 out of 1 new replicas have been updated...
+Waiting for deployment "chat-pgbouncer" rollout to finish: 0 of 1 updated replicas are available...
+deployment "chat-pgbouncer" successfully rolled out
+selected target-src.ini; userlist rendered (3 users)
+active.ini: [databases] chat = host=src-db-link.chat.svc.cluster.local port=5432 dbname=chat 
+can-i (executor SA): get=yes patch=yes other-cm=no

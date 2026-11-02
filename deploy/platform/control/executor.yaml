@@ -108,6 +108,9 @@ spec:
             - {name: BRAVO_FRONT_APP, value: b-free-chat}
             - {name: BRAVO_FRONT_ENV_IDS, value: "src=aws,dst=onprem"}
             - {name: BRAVO_FRONT_LB_ENABLED, value: "1"}
+            # SHIFT step judgement from the load generator's series when a load run is active (contract 15 §10.4);
+            # the Executor's own write probe otherwise. Ingress rule: observability/networkpolicy.yaml.
+            - {name: BRAVO_FRONT_PROM_URL, value: "http://prometheus.bravo-observe.svc.cluster.local:9090"}
             - {name: AWS_REGION, value: ap-northeast-2}
             - {name: AWS_STS_REGIONAL_ENDPOINTS, value: regional}
             # Executor 역할(제어): eks:DescribeCluster on bravo-source + EKS access entry group bravo-executor.

@@ -1,0 +1,14 @@
+## source 2026-11-03 03:46:54 KST
+role.rbac.authorization.k8s.io/bravo-executor configured
+rolebinding.rbac.authorization.k8s.io/bravo-executor unchanged
+role.rbac.authorization.k8s.io/bravo-link unchanged
+rolebinding.rbac.authorization.k8s.io/bravo-link unchanged
+configmap/chat-pgbouncer-target created
+configmap/chat-pgbouncer-config configured
+deployment.apps/chat-pgbouncer configured
+deployment "chat-pgbouncer" successfully rolled out
+selected target-src.ini; userlist rendered (3 users)
+active.ini: [databases] chat = host=chat-db-rw.chat.svc.cluster.local port=5432 dbname=chat 
+can-i (group bravo-executor): get=yes patch=yes other-cm=no
+b-free-chat-src /readyz 200
+b-free-chat-dst /readyz 200

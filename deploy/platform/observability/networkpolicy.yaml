@@ -71,6 +71,11 @@ spec:
             matchLabels: { kubernetes.io/metadata.name: bravo-control }
           podSelector:
             matchLabels: { app.kubernetes.io/name: console }
+        # Executor: SHIFT step judgement reads the load generator's series (instant queries, contract 15 §10.4).
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: bravo-control }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: executor }
       ports:
         - { protocol: TCP, port: 9090 }
 ---

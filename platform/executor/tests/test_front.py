@@ -208,3 +208,30 @@ def test_platform_front_is_never_switched() -> None:
         FrontConfig.from_env({"BRAVO_FRONT_APP": "b-free", "BRAVO_FRONT_ENV_IDS": "src=aws,dst=onprem"})
     cfg = FrontConfig.from_env({"BRAVO_FRONT_APP": "b-free-chat", "BRAVO_FRONT_ENV_IDS": "src=aws,dst=onprem"})
     assert cfg.tunnel_name("dst") == "bravo-b-free-chat-dst"
+
+
+def test_thresholds_recorded_are_the_effective_settings() -> None:
+    cfg = FrontConfig.from_env({"BRAVO_FRONT_APP": "b-free-chat", "BRAVO_FRONT_ENV_IDS": "src=aws,dst=onprem",
+                                "BRAVO_FRONT_MAX_P95_MS": "650", "BRAVO_FRONT_MAX_HOLD_S": "25"})
+    th = cfg.thresholds()
+    assert th["max_p95_ms"] == 650.0 and th["max_hold_s"] == 25.0 and th["min_target_samples"] == 100
+    assert cfg.thresholds(revert=False)["max_hold_s"] == cfg.move_hold_s
+
+
+def test_load_window_counts_writes_by_served_by_and_judges_like_the_probe() -> None:
+    """Contract 15 §10.4 source "loadgen": two instant values of bravo_loadgen_attempts_total, writes only."""
+    from bravo_executor.front import judge_window
+    from bravo_executor.loadmetrics import window_counts
+
+    c1 = {("write", "ok", "aws"): 1000.0, ("write", "ok", "onprem"): 10.0, ("read", "ok", "onprem"): 50.0}
+    c2 = {("write", "ok", "aws"): 1900.0, ("write", "ok", "onprem"): 109.0, ("write", "error", "onprem"): 1.0,
+          ("write", "error", "unknown"): 1.0, ("read", "ok", "onprem"): 400.0}
+    w = window_counts(c1, c2, "onprem")
+    assert w.writes == 1001 and w.by_env == {"aws": 900, "onprem": 100, "unknown": 1}
+    assert w.target_samples == 101 and w.target_errors == 2  # unattributed errors count against the target
+    cfg = FrontConfig.from_env({"BRAVO_FRONT_APP": "b-free-chat", "BRAVO_FRONT_ENV_IDS": "src=aws,dst=onprem"})
+    j = judge_window(w, 640.0, cfg, "onprem", 10)
+    assert not j.healthy and j.reasons == ("TARGET_ERROR_RATE(0.0198>0.01)",)
+    clean = {**c2, ("write", "ok", "onprem"): 110.0, ("write", "error", "unknown"): 0.0,
+             ("write", "error", "onprem"): 0.0}
+    assert judge_window(window_counts(c1, clean, "onprem"), 640.0, cfg, "onprem", 10).healthy  # 100 target writes

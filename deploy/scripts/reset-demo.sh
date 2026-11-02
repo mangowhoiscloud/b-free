@@ -246,9 +246,14 @@ pool_reset() { # name alias namespace selector
   if [[ -z $pod ]]; then report data "pool:$name" NOT_CONNECTED "$a $ns에 $sel Pod 없음"; return; fi
   x="$(kc "$a" -n "$ns" exec "${pod#pod/}" -c pgbouncer -- cat /run/pgbouncer/active.ini 2>/dev/null)" || x="(읽기 실패)"
   y="$(kc "$a" -n "$ns" exec "${pod#pod/}" -c pgbouncer -- cat /etc/pgbouncer/targets/target-src.ini 2>/dev/null)" || y="(읽기 실패)"
-  if [[ $y != "(읽기 실패)" && $x == "$y" ]]; then report data "pool:$name" ALREADY "활성 대상 = target-src.ini"; return; fi
+  # Durable target (base/chat-pgbouncer.yaml): a restart selects the side ConfigMap chat-pgbouncer-target names.
+  local cm; cm="$(kc "$a" -n "$ns" get configmap chat-pgbouncer-target -o jsonpath='{.data.target}' 2>/dev/null)"
+  if [[ $y != "(읽기 실패)" && $x == "$y" && $cm == src ]]; then report data "pool:$name" ALREADY "활성 대상 = target-src.ini, chat-pgbouncer-target = src"; return; fi
   dep="$(kc "$a" -n "$ns" get deploy -l "$sel" -o name 2>/dev/null | head -n 1)"; dep="${dep:-deployment/chat-pgbouncer}"
-  if ((DRY)); then report data "pool:$name" PLAN "활성 대상이 target-src.ini와 다름. $dep rollout restart"; return; fi
+  if ((DRY)); then report data "pool:$name" PLAN "활성 대상 또는 chat-pgbouncer-target(${cm:-없음})이 src가 아님. target=src로 두고 $dep rollout restart"; return; fi
+  if [[ -z $cm ]]; then kc "$a" -n "$ns" create configmap chat-pgbouncer-target --from-literal=target=src >/dev/null 2>"$TMP/err"
+  else kc "$a" -n "$ns" patch configmap chat-pgbouncer-target --type merge -p '{"data":{"target":"src"}}' >/dev/null 2>"$TMP/err"; fi \
+    || { report data "pool:$name" FAIL "chat-pgbouncer-target을 src로 두지 못함: $(head -c 200 "$TMP/err")"; return; }
   if ! kc "$a" -n "$ns" rollout restart "$dep" >/dev/null 2>"$TMP/err" \
     || ! kc "$a" -n "$ns" rollout status "$dep" --timeout=180s >/dev/null 2>>"$TMP/err"; then
     report data "pool:$name" FAIL "rollout 실패: $(head -c 200 "$TMP/err")"; return

@@ -1,6 +1,14 @@
 # PgBouncer chat-pgbouncer (CLOUD-E2E-CONTRACT §9). The Executor switches the target with
 # pods/exec: cp /etc/pgbouncer/targets/target-<side>.ini /run/pgbouncer/active.ini, then RELOAD.
 # Targets come from the overlay ConfigMap chat-pgbouncer-targets (directory mount, no subPath).
+# Durable target (2026-11-03): the Executor also patches ConfigMap chat-pgbouncer-target (key target = src | dst)
+# in the same step, and the init container copies the file that ConfigMap names. A PgBouncer restart after a
+# cutover therefore keeps the switched target. The ConfigMap is NOT in this kustomization: install creates it once
+# (target=src) only when it is missing, so re-applying the base never resets a switched target.
+# Pool (2026-11-03): before the cutover the destination's PgBouncer reaches the source primary over the D-16 link,
+# one round trip about 340 ms. 10 server connections carried about 16 writes/s (load lane); 30 carry the SHIFT
+# 50 % share of a 50 writes/s load with room. min_pool_size keeps 10 of them open, because opening one over the
+# link (TCP, TLS verify-full, SCRAM) costs several round trips.
 # Passwords: Secret chat-pgbouncer-auth (keys app_writer, pgb_admin, pgb_stats), created by the
 # platform from OpenBao secret/envs/<env>/chat-db through a pipe.
 # TLS (ENC-01, 02-network.md 11.2):
@@ -28,7 +36,8 @@ data:
     auth_file = /run/pgbouncer-auth/userlist.txt
     pool_mode = transaction
     max_client_conn = 200
-    default_pool_size = 10
+    default_pool_size = 30
+    min_pool_size = 10
     reserve_pool_size = 0
     max_prepared_statements = 0
     admin_users = pgb_admin
@@ -70,7 +79,8 @@ spec:
         fsGroup: 10070
         seccompProfile: {type: RuntimeDefault}
       initContainers:
-        # Default selection: target-src.ini (source DB; on the destination that is the link).
+        # Target selection: the side ConfigMap chat-pgbouncer-target names (the Executor patches it when it
+        # switches), target-src.ini when the ConfigMap is missing (source DB; on the destination that is the link).
         # userlist.txt is rendered from the Secret keys into a memory volume (mode 600).
         - name: select-default
           image: ${PGBOUNCER_IMAGE}
@@ -80,20 +90,23 @@ spec:
             - -c
             - |
               set -eu
-              cp /etc/pgbouncer/targets/target-src.ini /run/pgbouncer/active.ini
+              side="$(cat /etc/pgbouncer/target-select/target 2>/dev/null || echo src)"
+              case "$side" in src|dst) ;; *) echo "chat-pgbouncer-target names '$side', not src or dst" >&2; exit 1 ;; esac
+              cp "/etc/pgbouncer/targets/target-$side.ini" /run/pgbouncer/active.ini
               umask 077
               for u in app_writer pgb_admin pgb_stats; do
                 pw="$(cat "/var/run/bravo/pgbouncer/$u")"
                 case "$pw" in *'"'*) echo "password for $u contains a quote" >&2; exit 1 ;; esac
                 printf '"%s" "%s"\n' "$u" "$pw"
               done > /run/pgbouncer-auth/userlist.txt
-              echo "selected target-src.ini; userlist rendered (3 users)"
+              echo "selected target-$side.ini; userlist rendered (3 users)"
           securityContext: &csc
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: targets, mountPath: /etc/pgbouncer/targets, readOnly: true}
+            - {name: target-select, mountPath: /etc/pgbouncer/target-select, readOnly: true}
             - {name: active, mountPath: /run/pgbouncer}
             - {name: auth, mountPath: /run/pgbouncer-auth}
             - {name: auth-src, mountPath: /var/run/bravo/pgbouncer, readOnly: true}
@@ -125,6 +138,8 @@ spec:
       volumes:
         - name: main
           configMap: {name: chat-pgbouncer-config}
+        - name: target-select
+          configMap: {name: chat-pgbouncer-target, optional: true}
         - name: db-ca
           configMap: {name: bravo-db-ca, items: [{key: ca.crt, path: ca.crt}]}
         - name: tls

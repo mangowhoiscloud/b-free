@@ -1,0 +1,13 @@
+## test switch on the destination PgBouncer (LB at source 100 %, no load run), 2026-11-03 03:47:31 KST
+1. switch to dst with the Executor's code and credentials (pods/exec + ConfigMap patch)
+{"pool": "dst", "switch": {"kind": "k8s-exec", "context": "bravo-onprem", "namespace": "chat", "workload": "selector:app.kubernetes.io/name=chat-pgbouncer", "active_path": "/run/pgbouncer/active.ini"}, "before": {"active": "src", "durable": "src"}, "activate": {"pod": "chat-pgbouncer-78f5785df-p5fmg", "active_sha256": "0ff724a3de1fece4f870ddc6cda83f045f0a41edcce779e3b2cd7c9ff188d4e9", "from_file": "/etc/pgbouncer/targets/target-dst.ini", "durable_target": "dst"}, "after": {"active": "dst", "durable": "dst"}}
+2. restart PgBouncer
+deployment "chat-pgbouncer" successfully rolled out
+pod=chat-pgbouncer-db49c4684-hzddg init: selected target-dst.ini; userlist rendered (3 users) active.ini: [databases] chat = host=chat-db-rw.chat.svc.cluster.local port=5432 dbname=chat  cm: dst
+3. switch back to src
+{"pool": "dst", "switch": {"kind": "k8s-exec", "context": "bravo-onprem", "namespace": "chat", "workload": "selector:app.kubernetes.io/name=chat-pgbouncer", "active_path": "/run/pgbouncer/active.ini"}, "before": {"active": "dst", "durable": "dst"}, "activate": {"pod": "chat-pgbouncer-db49c4684-hzddg", "active_sha256": "25d9d266fb3139419116c407646896727a7149f6e74385a7ea53acf5b3214ed5", "from_file": "/etc/pgbouncer/targets/target-src.ini", "durable_target": "src"}, "after": {"active": "src", "durable": "src"}}
+4. restart PgBouncer
+deployment "chat-pgbouncer" successfully rolled out
+pod=chat-pgbouncer-54cb47fbcd-xjxfx init: selected target-src.ini; userlist rendered (3 users) active.ini: [databases] chat = host=src-db-link.chat.svc.cluster.local port=5432 dbname=chat  cm: src
+done 2026-11-03 03:47:44 KST
+b-free-chat-dst /readyz 200

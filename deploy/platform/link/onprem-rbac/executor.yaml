@@ -1,5 +1,6 @@
 # Applied to the ON-PREM cluster (context bravo-onprem), namespace chat (CLOUD-E2E-CONTRACT 9 "Executor의 K8s 권한"):
-# pods get/list, pods/exec (PgBouncer target switch), pods/portforward. No ConfigMap or Secret rights.
+# pods get/list, pods/exec (PgBouncer target switch), pods/portforward, get/patch on ConfigMap
+# chat-pgbouncer-target only (durable target). No other ConfigMap and no Secret rights.
 # The platform executor reaches this API through the D-16 link dst-k8s with a TokenRequest token (168h) of this
 # ServiceAccount, kept only in OpenBao secret/envs/target-onprem/k8s-executor (deploy/platform/scripts/onprem-tokens.sh).
 apiVersion: v1
@@ -23,6 +24,11 @@ rules:
   - apiGroups: [""]
     resources: [pods/exec, pods/portforward]
     verbs: [create, get]
+  # Durable PgBouncer target (2026-11-03): read and patch this one ConfigMap only, in the same step as the switch.
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [chat-pgbouncer-target]
+    verbs: [get, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

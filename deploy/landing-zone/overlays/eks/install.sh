@@ -24,8 +24,8 @@ ENV_ID=${BRAVO_ENV_ID:-source-aws}
 # Cilium 1.20.4 documents and tests Gateway API v1.6.3 (Documentation/conf.py gateway_api_version).
 EKS_GATEWAY_API_VERSION=${EKS_GATEWAY_API_VERSION:-v1.6.3}
 # Demo app 0.3.0 (APP_ENV_ID required, /readyz reads the DB through PgBouncer, attachments after HeadBucket).
-EKS_DEMO_IMAGE_TAG=${EKS_DEMO_IMAGE_TAG:-0.3.0}
-EKS_DEMO_IMAGE_DIGEST=${EKS_DEMO_IMAGE_DIGEST:-sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6}
+EKS_DEMO_IMAGE_TAG=${EKS_DEMO_IMAGE_TAG:-0.3.3}
+EKS_DEMO_IMAGE_DIGEST=${EKS_DEMO_IMAGE_DIGEST:-sha256:76e8f595d90267b3d740fdf9012cdf5c93d6337faf63e3601a1da3b2a65c262d}
 # QR target: the customer front name (CNAME to the active environment's tunnel, contract §6), so phones
 # follow the cutover instead of staying on the source.
 PUBLIC_URL=${PUBLIC_URL:-https://b-free-chat.mangowhois.ai}
@@ -100,6 +100,9 @@ step_base() {
   log "namespaces, StorageClasses, PgBouncer, cloudflared (kustomize overlay eks)"
   check_image "$PGBOUNCER_IMAGE_REPO_ECR" "$PGBOUNCER_IMAGE_TAG" "$PGBOUNCER_IMAGE_DIGEST"
   k kustomize "$here" | render | k apply -f -
+  # Durable PgBouncer target (base/chat-pgbouncer.yaml): created once, never overwritten by a re-run.
+  k -n chat get configmap chat-pgbouncer-target >/dev/null 2>&1 \
+    || k -n chat create configmap chat-pgbouncer-target --from-literal=target=src
 }
 
 step_cnpg() {

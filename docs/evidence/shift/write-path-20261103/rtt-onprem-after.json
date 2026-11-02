@@ -1,0 +1,1 @@
+{"env": "onprem", "connect_ms": 11.5, "select1_ms": {"n": 20, "min": 337.0, "p50": 338.6, "max": 722.1}, "write_6_round_trips_ms": {"n": 20, "min": 2033.2, "p50": 2042.7, "max": 2054.9}, "write_1_round_trip_ms": {"n": 20, "min": 339.0, "p50": 340.8, "max": 347.3}}
