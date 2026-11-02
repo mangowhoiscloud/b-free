@@ -1,5 +1,5 @@
 # Platform link image (임시 링크(D-16 전), CLOUD-E2E-CONTRACT.md 7): tools/link (bravo-link) + kubectl + EKS token.
-# - relay mode: the reverse-tunnel relay (tools/link relay.py) for platform -> on-prem K3s.
+# - relay mode: the reverse-tunnel relay (tools/link relay.py) for platform -> on-prem RKE2.
 # - forward mode: a supervised `kubectl port-forward` platform pod -> source EKS service, authenticated
 #   with an EKS bearer token signed from the pod's EKS Pod Identity credentials (no static key, NFR-6).
 # Build (repository root):

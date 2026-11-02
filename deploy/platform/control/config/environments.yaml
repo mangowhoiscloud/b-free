@@ -17,7 +17,7 @@ environments:
       aws_region: ap-northeast-2
       api_server: https://src-k8s.bravo-link.svc.cluster.local:443
   target-onprem:
-    display_name: "목적지 · 온프렘 K3s (Lima)"
+    display_name: "목적지 · 온프렘 RKE2 CIS (Lima VM 2대)"
     kubernetes:
       provider: k3s
       kubeconfig_env: BRAVO_ONPREM_KUBECONFIG

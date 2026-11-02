@@ -1,4 +1,4 @@
-# Applied to the ON-PREM K3s (context bravo-onprem). The platform collector reads the K3s API through the D-16
+# Applied to the ON-PREM RKE2 (context bravo-onprem). The platform collector reads the RKE2 API through the D-16
 # link dst-k8s (t1-dst-k8s.mangowhois.ai, Access service token plat-dst-k8s) with a TokenRequest token of this
 # ServiceAccount (168h, kept only in OpenBao secret/envs/target-onprem/collector-k8s, re-minted by
 # deploy/platform/scripts/onprem-collector-token.sh). Read-only, the same rules as the source ClusterRole. No Secrets.
