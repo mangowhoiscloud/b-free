@@ -1,0 +1,46 @@
+# kube-bench on the platform RKE2 node (spec §7.2 / T2 "RKE2 CIS", TECH-STACK-SPEC 2.8: benchmark named
+# explicitly; kube-bench v0.16.0's newest RKE2 benchmark is rke2-cis-1.9, so the result is an approximation for
+# RKE2 v1.36 and is labelled that way). Runs in its own namespace with Pod Security "privileged" (hostPID and
+# read-only host paths are what the checks read); the namespace is deleted after the run
+# (deploy/platform/scripts/kube-bench.sh).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-bench
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-bench-rke2
+  namespace: kube-bench
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      hostPID: true
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: kube-bench
+          image: docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679
+          command: ["kube-bench", "run", "--benchmark", "rke2-cis-1.9", "--json"]
+          volumeMounts:
+            - {name: var-lib-rancher, mountPath: /var/lib/rancher, readOnly: true}
+            - {name: etc-rancher, mountPath: /etc/rancher, readOnly: true}
+            - {name: var-lib-kubelet, mountPath: /var/lib/kubelet, readOnly: true}
+            - {name: etc-systemd, mountPath: /etc/systemd, readOnly: true}
+            - {name: lib-systemd, mountPath: /lib/systemd, readOnly: true}
+            - {name: etc-passwd, mountPath: /etc/passwd, readOnly: true}
+            - {name: etc-group, mountPath: /etc/group, readOnly: true}
+            - {name: var-log, mountPath: /var/log, readOnly: true}
+      volumes:
+        - {name: var-lib-rancher, hostPath: {path: /var/lib/rancher}}
+        - {name: etc-rancher, hostPath: {path: /etc/rancher}}
+        - {name: var-lib-kubelet, hostPath: {path: /var/lib/kubelet}}
+        - {name: etc-systemd, hostPath: {path: /etc/systemd}}
+        - {name: lib-systemd, hostPath: {path: /lib/systemd}}
+        - {name: etc-passwd, hostPath: {path: /etc/passwd}}
+        - {name: etc-group, hostPath: {path: /etc/group}}
+        - {name: var-log, hostPath: {path: /var/log}}

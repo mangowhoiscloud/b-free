@@ -20,10 +20,13 @@ GATE_DIGEST="$(docker image inspect "$GATE_IMAGE_LOCAL" --format '{{.Id}}')"
 
 # Gate image into containerd (same import path as the app images).
 docker tag "$GATE_IMAGE_LOCAL" "$GATE_REPO:import"
-for n in bravo-onprem-server bravo-onprem-agent; do
-  if ! limactl shell "$n" -- sudo k3s ctr -n k8s.io images ls -q </dev/null | grep -qx "$GATE_REPO@$GATE_DIGEST"; then
+CTR="sudo /var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock -n k8s.io"
+for n in ${BRAVO_LIMA_NODES:-bravo-onprem-server bravo-onprem-agent}; do
+  if ! limactl shell "$n" -- $CTR images ls -q </dev/null | grep -qx "$GATE_REPO@$GATE_DIGEST"; then
     docker save "$GATE_REPO:import" | limactl shell "$n" -- sh -c 'cat > /tmp/bravo-image.tar'
-    limactl shell "$n" -- sudo sh -c "k3s ctr -n k8s.io images import --platform linux/arm64 /tmp/bravo-image.tar >/dev/null && k3s ctr -n k8s.io images tag --force $GATE_REPO:import $GATE_REPO@$GATE_DIGEST >/dev/null && rm -f /tmp/bravo-image.tar" </dev/null
+    limactl shell "$n" -- $CTR images import --platform linux/arm64 /tmp/bravo-image.tar </dev/null >/dev/null
+    limactl shell "$n" -- $CTR images tag --force "$GATE_REPO:import" "$GATE_REPO@$GATE_DIGEST" </dev/null >/dev/null
+    limactl shell "$n" -- sudo rm -f /tmp/bravo-image.tar </dev/null
   fi
 done
 docker rmi "$GATE_REPO:import" >/dev/null

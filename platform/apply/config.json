@@ -48,7 +48,9 @@
       "gate": {
         "source": "source-aws",
         "target": "target-onprem"
-      }
+      },
+      "ctr": "/var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock",
+      "ctr_comment": "on-prem rebuilt as RKE2 (2026-11-02 evening). K3s used 'k3s ctr'. kube_context is whatever the on-prem thread reports; bravo-onprem is absent right now."
     },
     "target-gcp": {
       "kind": "gke-artifact-registry",

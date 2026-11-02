@@ -20,9 +20,10 @@ class AuthError(Exception):
 class ForbiddenError(Exception):
     """Authenticated, but the role or channel may not perform the action. HTTP 403."""
 
-    def __init__(self, reason: str = "insufficient_scope") -> None:
+    def __init__(self, reason: str = "insufficient_scope", detail: dict[str, Any] | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.detail = detail or {}
 
 
 class NotFoundError(Exception):

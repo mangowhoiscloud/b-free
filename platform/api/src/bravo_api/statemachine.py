@@ -1,7 +1,12 @@
 """Plan state machine: one transition table, one function (spec §8.2, 03 3).
 
 Full path: COLLECT -> ANALYZE -> (GATE | PROPOSE) ; PROPOSE -> REHEARSE -> GATE ; GATE ->
-AWAIT_APPROVAL -> CUTOVER -> WATCH -> (DONE | FAILBACK -> DONE_ROLLED_BACK). A failed
+AWAIT_APPROVAL -> CUTOVER -> WATCH -> (DONE | FAILBACK -> DONE_ROLLED_BACK).
+Spec r2 (§8.2 REHEARSE row): a passing rehearsal stays in REHEARSE and opens a change (T31). The pipeline
+prepares a candidate (image digest, SBOM, scan); a ``change`` approval binds diff, image digest and policy
+diff; the pipeline applies it to the destination; only ``CHANGE_APPLIED`` (applied digest == approved
+digest) leaves REHEARSE for GATE, where the system re-runs the gate. Approvals: change (REHEARSE),
+cutover (AWAIT_APPROVAL), failback (WATCH). A failed
 rehearsal returns to PROPOSE until three FAIL verdicts, then NEEDS_HUMAN (FR-5). A gate BLOCK
 stays in GATE (a person may fix and re-run, the pilot path) or re-proposes when an operator
 starts a rehearsal. CUTOVER failures: ABORT_PRE_WRITE -> AWAIT_APPROVAL, SAFE_HOLD. SHIFT
@@ -54,8 +59,10 @@ STAGE_ROLES: dict[str, frozenset[str]] = {
     "PROPOSE": frozenset({"governance", "app_migration", "ci"}),
     "REHEARSE": frozenset({"governance", "app_migration", "ci"}),
 }
-# States that carry a one-time approval request, and the stage it is for.
+# States that carry a one-time approval request on entry, and the stage it is for. The ``change`` request
+# is issued inside REHEARSE when the T31 candidate is prepared (``request_approval``), not on entry.
 APPROVAL_STAGE = {"AWAIT_APPROVAL": "cutover", "WATCH": "failback"}
+APPROVAL_STAGES = ("change", "cutover", "failback")
 
 
 class Trigger(StrEnum):
@@ -65,6 +72,7 @@ class Trigger(StrEnum):
     REPROPOSAL_REQUESTED = "reproposal_requested"
     PROPOSAL_ACCEPTED = "proposal_accepted"
     REHEARSAL_PASSED = "rehearsal_passed"
+    CHANGE_APPLIED = "change_applied"
     REHEARSAL_FAILED = "rehearsal_failed"
     REHEARSAL_INFRA_ERROR = "rehearsal_infra_error"
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
@@ -94,7 +102,10 @@ TRANSITIONS: dict[tuple[State, Trigger], State] = {
     (S.PROPOSE, T.REHEARSAL_FAILED): S.PROPOSE,  # no valid proposal: counted, re-propose
     (S.PROPOSE, T.REHEARSAL_INFRA_ERROR): S.PROPOSE,  # not counted as an attempt
     (S.PROPOSE, T.ATTEMPTS_EXHAUSTED): S.NEEDS_HUMAN,
-    (S.REHEARSE, T.REHEARSAL_PASSED): S.GATE,
+    # r2: the verifier passed -> stay in REHEARSE; a change (T31) is opened and needs the change approval.
+    (S.REHEARSE, T.REHEARSAL_PASSED): S.REHEARSE,
+    # The approved change was applied to the destination with the approved digest -> GATE re-check.
+    (S.REHEARSE, T.CHANGE_APPLIED): S.GATE,
     (S.REHEARSE, T.REHEARSAL_FAILED): S.PROPOSE,
     (S.REHEARSE, T.REHEARSAL_INFRA_ERROR): S.PROPOSE,
     (S.REHEARSE, T.ATTEMPTS_EXHAUSTED): S.NEEDS_HUMAN,
@@ -137,6 +148,9 @@ _SETTABLE = frozenset(
         "rehearsal_infra_errors",
         "approved_artifact_digest",
         "revision",
+        "active_change_id",
+        "last_change_id",
+        "applied_image_digest",
     }
 )
 
@@ -185,13 +199,16 @@ async def transition(
     unknown = set(sets) - _SETTABLE
     if unknown:
         raise ValueError(f"transition cannot set {sorted(unknown)}")
+    issued: dict[str, Any] | None = None
     if target.value in APPROVAL_STAGE:
         if approval_ttl_s is None:
             raise ValueError(f"approval_ttl_s is required when entering {target.value}")
         sets["approval_request_id"] = uuid.uuid4()  # one-time request; any older one is void
         sets["approval_request_expires_at"] = datetime.now(UTC) + timedelta(seconds=approval_ttl_s)
         sets["approval_stage"] = APPROVAL_STAGE[target.value]
-    elif current.value in APPROVAL_STAGE:
+        issued = {"stage": sets["approval_stage"], "approval_request_id": str(sets["approval_request_id"]),
+                  "expires_at": sets["approval_request_expires_at"].isoformat()}
+    elif current.value in APPROVAL_STAGE or (plan.get("approval_stage") == "change" and target is not current):
         sets["approval_request_id"] = None
         sets["approval_request_expires_at"] = None
         sets["approval_stage"] = None
@@ -218,4 +235,71 @@ async def transition(
         run_id=run_id,
         data={"from": current.value, "to": target.value, "trigger": trigger.value, "reason": reason, **(data or {})},
     )
+    if issued is not None:
+        await emit(
+            conn,
+            plan_id=plan_id,
+            kind=EventKind.APPROVAL_REQUESTED,
+            mode=mode,
+            actor=actor,
+            run_id=run_id,
+            data={**issued, "revision": updated["revision"], **approval_binding(updated)},
+        )
     return updated
+
+
+def approval_binding(plan: dict[str, Any]) -> dict[str, Any]:
+    """What a cutover / failback request binds besides the revision (shown before approval)."""
+    if plan.get("approval_stage") == "cutover":
+        return {
+            "gate_verdict_id": str(plan["last_gate_verdict_id"]) if plan.get("last_gate_verdict_id") else None,
+            "artifact_digest": plan.get("approved_artifact_digest"),
+            "applied_image_digest": plan.get("applied_image_digest"),
+        }
+    if plan.get("approval_stage") == "failback":
+        return {"bound_run_id": str(plan["last_run_id"]) if plan.get("last_run_id") else None}
+    return {}
+
+
+async def request_change_approval(
+    conn: Conn, plan_id: UUID, change: dict[str, Any], *, ttl_s: int, actor: Actor
+) -> dict[str, Any]:
+    """Issue the one-time ``change`` approval request for a prepared change. The plan stays in REHEARSE.
+
+    Binds: plan revision, change id, artifact (rehearsal proposal) digest, diff digest, image digest, policy
+    diff digest. The requester is the operator who asked for the change (separation of duties, D-18).
+    """
+    plan = await lock_plan(conn, plan_id)
+    if plan["state"] != State.REHEARSE.value or plan["active_change_id"] != change["change_id"]:
+        raise BusinessError("state_mismatch", detail={"state": plan["state"]})
+    request_id = uuid.uuid4()
+    expires = datetime.now(UTC) + timedelta(seconds=ttl_s)
+    cur = await conn.execute(
+        """UPDATE plans SET approval_request_id = %s, approval_request_expires_at = %s, approval_stage = 'change',
+                  approval_requested_by = %s, version = version + 1, updated_at = now()
+            WHERE plan_id = %s RETURNING *""",
+        (request_id, expires, change["requested_by"], plan_id),
+    )
+    updated = await cur.fetchone()
+    await conn.execute(
+        "UPDATE changes SET approval_request_id = %s WHERE change_id = %s", (request_id, change["change_id"])
+    )
+    await emit(
+        conn,
+        plan_id=plan_id,
+        kind=EventKind.APPROVAL_REQUESTED,
+        mode=EventMode.LIVE,
+        actor=actor,
+        data={
+            "stage": "change",
+            "approval_request_id": str(request_id),
+            "expires_at": expires.isoformat(),
+            "revision": updated["revision"] if updated else plan["revision"],
+            "change_id": str(change["change_id"]),
+            "artifact_digest": change["artifact_digest"],
+            "diff_digest": change["diff_digest"],
+            "image_digest": change["image_digest"],
+            "policy_diff_digest": change["policy_diff_digest"],
+        },
+    )
+    return updated or plan

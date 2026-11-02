@@ -5,6 +5,7 @@ import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav
 import { AgentsScreen } from './live/AgentsScreen';
 import { ApprovalsScreen } from './live/ApprovalsScreen';
 import { EndingScreen } from './live/EndingScreen';
+import { HomeScreen } from './live/HomeScreen';
 import { ClustersScreen } from './live/ClustersScreen';
 import { DemoAppScreen } from './live/DemoAppScreen';
 import { ObservabilityScreen } from './live/ObservabilityScreen';
@@ -17,11 +18,12 @@ import { ErrorLine, Panel } from './components/bits';
 import { CutoverPanel } from './components/CutoverPanel';
 import { EventStream } from './components/EventStream';
 import { GatePanel } from './components/GatePanel';
-import { Header } from './components/Header';
+import { Header, PlanPicker } from './components/Header';
 import { StateProgress } from './components/StateProgress';
 import { useApi, usePlanParam, usePlanStream, useSession } from './state';
 
 const SCREENS = [
+  { id: 'home', label: '홈', group: 'operate' },
   { id: 'plan', label: '계획 · 승인 콘솔', group: 'operate' },
   { id: 'approvals', label: '승인 (change · cutover · failback)', group: 'operate' },
   { id: 'agents', label: '에이전트 실시간', group: 'watch' },
@@ -35,7 +37,10 @@ type ScreenId = (typeof SCREENS)[number]['id'];
 
 const screenFromHash = (): ScreenId => {
   const h = window.location.hash.replace(/^#\/?/, '');
-  return (SCREENS.find((s) => s.id === h)?.id ?? 'plan') as ScreenId;
+  const found = SCREENS.find((s) => s.id === h)?.id;
+  if (found) return found;
+  // No screen in the hash: a plan URL (/plans/<id>, or #approve) opens the plan; anything else opens home.
+  return (/\/plans\/[^/]+\/?$/.test(window.location.pathname) || new URLSearchParams(window.location.search).has('plan') ? 'plan' : 'home') as ScreenId;
 };
 
 /** Screen in the URL hash, so it survives the plan path changes made with pushState. */
@@ -62,7 +67,7 @@ export function App() {
 
   const planQ = useQuery({
     queryKey: ['plan', planId, token],
-    enabled: Boolean(planId && token),
+    enabled: Boolean(planId),
     queryFn: async () => {
       const seen = stream.countRef.current;
       const plan = await api.getPlan(token ?? '', planId ?? '');
@@ -110,7 +115,7 @@ export function App() {
     </a>
     <AppShell sideNav={nav} height="auto" variant="section" contentPadding={0}>
       <div className="app" id="content" tabIndex={-1}>
-      <Header session={session} planId={planId} onOpenPlan={setPlanId} />
+      <Header session={session} />
       {screen !== 'plan' && (
         <div className="screen-wrap">
           {screen === 'agents' && <AgentsScreen planId={planId} events={events} status={stream.status} detail={stream.detail} />}
@@ -118,18 +123,28 @@ export function App() {
           {screen === 'workflow' && <WorkflowScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} />}
           {screen === 'demo' && <DemoAppScreen view={view} />}
           {screen === 'observe' && <ObservabilityScreen />}
+          {screen === 'home' && (
+            <HomeScreen
+              session={session}
+              onOpenPlan={(id) => {
+                setPlanId(id);
+                window.location.hash = '/plan';
+              }}
+            />
+          )}
           {screen === 'approvals' && <ApprovalsScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} user={session.user} />}
           {screen === 'ending' && <EndingScreen />}
         </div>
       )}
       {screen === 'plan' && (
       <div id="main" className="main" tabIndex={-1}>
+        <PlanPicker planId={planId} onOpen={setPlanId} session={session} />
         {!planId || !view ? (
           <section className="welcome" aria-labelledby="welcome-title">
-            <h2 id="welcome-title">계획을 여세요</h2>
+            <h2 id="welcome-title">열린 계획이 없습니다</h2>
             <p>
-              위의 <b>계획 ID</b> 칸에 MCP <code>plan_create</code>가 돌려준 ID를 붙여넣거나, operator로 <b>새 계획</b>을 만듭니다.
-              MCP <code>plan_get</code>이 돌려준 콘솔 주소(<code>…/plans/&lt;plan_id&gt;</code>)로 열어도 됩니다.
+              <a href="#/home">홈</a>의 <b>이전 계획</b> 표에서 계획을 고르거나, 운영자라면 <b>새 이전 시작</b>으로 만듭니다. MCP <code>plan_get</code>이 돌려준
+              콘솔 주소(<code>…/plans/&lt;plan_id&gt;</code>)로 열어도 됩니다.
             </p>
           </section>
         ) : (

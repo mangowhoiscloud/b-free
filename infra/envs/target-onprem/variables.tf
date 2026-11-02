@@ -11,13 +11,13 @@ variable "kube_context" {
 }
 
 variable "api_host_port" {
-  description = "Laptop port for the K3s API (Lima forwards 127.0.0.1:<port> to the server VM's 6443)."
+  description = "Laptop port for the RKE2 API (Lima forwards 127.0.0.1:<port> to the server VM's 6443)."
   type        = number
   default     = 16443
 }
 
 variable "nodes" {
-  description = "VM sizes. The agent carries Rook-Ceph OSD/RGW and the app; both have a raw data disk for one OSD."
+  description = "VM sizes. The agent carries Rook-Ceph OSD/RGW and most workloads; both have a raw data disk for one OSD."
   type = map(object({
     cpus      = number
     memory    = string

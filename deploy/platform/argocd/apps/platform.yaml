@@ -1,4 +1,4 @@
-# Generated set of Argo CD Applications for the platform EKS (app-of-apps root: ../root.yaml).
+# Argo CD Applications for the platform RKE2 node (spec §7.2) (app-of-apps root: ../root.yaml).
 # Git: https://github.com/mangowhoiscloud/b-free.git main. Out-of-Git objects (Secrets piped from OpenBao) are never pruned: prune is off.
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -28,32 +28,6 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: envoy-gateway-crds
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "-10"
-spec:
-  project: default
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: envoy-gateway-system
-  source:
-    repoURL: https://github.com/mangowhoiscloud/b-free.git
-    targetRevision: main
-    path: deploy/platform/envoy-gateway
-    directory:
-      include: envoy-gateway-crds.yaml
-  syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
   name: cilium
   namespace: argocd
   annotations:
@@ -69,7 +43,7 @@ spec:
       targetRevision: 1.20.4
       helm:
         releaseName: cilium
-        valueFiles: [$values/deploy/platform/cilium/values.yaml]
+        valueFiles: [$values/deploy/landing-zone/overlays/rke2/cilium-values.yaml]
     - repoURL: https://github.com/mangowhoiscloud/b-free.git
       targetRevision: main
       ref: values
@@ -131,35 +105,6 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: envoy-gateway
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "-8"
-spec:
-  project: default
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: envoy-gateway-system
-  sources:
-    - repoURL: registry-1.docker.io/envoyproxy
-      chart: gateway-helm
-      targetRevision: 1.9.3
-      helm:
-        releaseName: eg
-        valueFiles: [$values/deploy/platform/envoy-gateway/values.yaml]
-    - repoURL: https://github.com/mangowhoiscloud/b-free.git
-      targetRevision: main
-      ref: values
-  syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -304,3 +249,30 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ebs-csi
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+      chart: aws-ebs-csi-driver
+      targetRevision: 2.67.2
+      helm:
+        releaseName: aws-ebs-csi-driver
+        valueFiles: [$values/deploy/platform/ebs-csi/values.yaml]
+    - repoURL: https://github.com/mangowhoiscloud/b-free.git
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

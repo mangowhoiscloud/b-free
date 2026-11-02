@@ -160,12 +160,14 @@ def test_operator_flow_over_mcp(mcp: TestClient, keys: Keys, executor: ExecutorS
         "state.changed",  # created -> COLLECT
         "state.changed",  # COLLECT -> ANALYZE
         "analysis.done",
-        "state.changed",  # ANALYZE -> GATE (no code-change gaps; collector not configured, reported as such)
+        "state.changed",  # ANALYZE -> GATE (the real collector found no code-change / unclassified dependency)
         "gate.verdict",
         "gate.verdict",
-        "state.changed",
+        "state.changed",  # GATE -> AWAIT_APPROVAL
+        "approval.requested",  # stage cutover, bound to the revision and the gate verdict
     ]
-    assert evs[2]["data"]["inventory"]["status"] == "unconfigured"
+    assert evs[2]["data"]["inventory"]["status"] == "ok" and evs[2]["data"]["gaps"] == []
+    assert evs[-1]["data"]["stage"] == "cutover" and evs[-1]["data"]["gate_verdict_id"] == p["verdict_id"]
     assert {e["mode"] for e in evs} == {"live"} and {e["actor"]["kind"] for e in evs} == {"mcp"}
     assert [int(e["id"]) for e in evs] == sorted(int(e["id"]) for e in evs)
     reuse = call(

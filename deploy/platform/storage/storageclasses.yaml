@@ -1,5 +1,5 @@
 # StorageClass names are the same in every environment (09-cni-csi.md, D-23): bravo-db, bravo-general.
-# EKS provider: EBS CSI, gp3, encrypted with the cluster EBS CMK (modules/cluster/eks kms.tf, alias/bravo-platform-ebs).
+# Platform RKE2 node on EC2: EBS CSI (deploy/platform/ebs-csi), gp3, encrypted with the platform node CMK (modules/node/aws, alias/bravo-platform-node).
 # WaitForFirstConsumer keeps each volume in the AZ of its pod (one core node per AZ).
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -11,7 +11,7 @@ provisioner: ebs.csi.aws.com
 parameters:
   type: gp3
   encrypted: "true"
-  kmsKeyId: arn:aws:kms:ap-northeast-2:721622471953:key/ea325aeb-6662-432b-ab8d-1e90d85e2470
+  kmsKeyId: arn:aws:kms:ap-northeast-2:721622471953:key/b5758b24-0585-48d6-aa7b-3e217690241c
   csi.storage.k8s.io/fstype: ext4
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
@@ -27,7 +27,7 @@ provisioner: ebs.csi.aws.com
 parameters:
   type: gp3
   encrypted: "true"
-  kmsKeyId: arn:aws:kms:ap-northeast-2:721622471953:key/ea325aeb-6662-432b-ab8d-1e90d85e2470
+  kmsKeyId: arn:aws:kms:ap-northeast-2:721622471953:key/b5758b24-0585-48d6-aa7b-3e217690241c
   csi.storage.k8s.io/fstype: ext4
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer

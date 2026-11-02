@@ -36,8 +36,8 @@ export function EndingScreen() {
       <Block title="출처 상태">
         <DataTable
           rows={[
-            { k: '감사 기록 (T24)', ok: false, why: '플랫폼 API에 감사 기록을 읽는 경로가 없습니다. 계획별 이벤트는 CI/CD · 워크플로우 화면에 있습니다.' },
-            { k: '구성 요소 태그별 비용 (T1)', ok: false, why: '태그별 비용(AWS Cost Explorer)을 읽는 백엔드 경로가 없습니다. 브라우저는 AWS 자격을 쓰지 않습니다.' },
+            { k: '감사 기록 (T24)', ok: false, why: '이 콘솔은 감사 기록을 읽는 출처가 없습니다. 계획별 이벤트는 CI/CD · 워크플로우 화면에 있습니다.' },
+            { k: '구성 요소 태그별 비용 (T1)', ok: false, why: '이 콘솔은 태그별 비용을 읽는 출처가 없습니다. 브라우저는 AWS 자격을 쓰지 않습니다.' },
             { k: '남은 의존 지도', ok: !inv.error && inv.data !== undefined, why: inv.error ? `${liveReason(inv.error)} · ${inv.endpoint}` : '수집기 GET /v1/inventory (정적 분석, FR-2)' },
           ]}
           rowKey={(r) => r.k}

@@ -132,8 +132,8 @@ def test_guard_allows_only_worker_transitions_and_freezes_bound_values(pg: dict[
     assert _status(pg, chg) == "approved"
 
     # Worker apply path: it cannot touch the approval link, and "applied" needs deployed digest == approved digest.
-    assert "change_approval_owned_by_api" in _violation(
-        pg, "UPDATE changes SET approval_id = %s WHERE change_id = %s", (uuid.uuid4(), chg))
+    with _apply_conn(pg) as c, pytest.raises(psycopg.errors.InsufficientPrivilege):  # no column grant on approval_id
+        c.execute("UPDATE changes SET approval_id = %s WHERE change_id = %s", (uuid.uuid4(), chg))
     with _apply_conn(pg) as c:
         c.execute("UPDATE changes SET status = 'applying' WHERE change_id = %s", (chg,))
         a = c.execute("SELECT image_digest, policy_diff_digest FROM approvals WHERE approval_id = %s", (approval,)).fetchone()
@@ -144,3 +144,81 @@ def test_guard_allows_only_worker_transitions_and_freezes_bound_values(pg: dict[
         c.execute("UPDATE changes SET status = 'applied', deployed_digest = %s, ended_at = now() WHERE change_id = %s", (IMG, chg))
     assert _status(pg, chg) == "applied"
     assert "change_status_not_allowed" in _violation(pg, "UPDATE changes SET status = 'applying' WHERE change_id = %s", (chg,))
+
+
+def _prepared_and_requested(pg: dict[str, str], ids: dict) -> tuple[uuid.UUID, datetime]:
+    """Worker prepares, API issues the change approval request. Returns (request id, expiry)."""
+    chg, plan = ids["chg"], ids["plan"]
+    with _apply_conn(pg) as c:
+        c.execute("UPDATE changes SET status = 'preparing', worker = 'w' WHERE change_id = %s", (chg,))
+        c.execute("""UPDATE changes SET status = 'prepared', image_repository = 'bravo.local/bravo-demo', image_digest = %s,
+                     prepared_at = now() WHERE change_id = %s""", (IMG, chg))
+    req, exp = uuid.uuid4(), datetime.now(UTC) + timedelta(minutes=15)
+    with psycopg.connect(pg["owner"], autocommit=True) as c, c.transaction():
+        c.execute("""UPDATE plans SET approval_stage = 'change', approval_request_id = %s, approval_request_expires_at = %s,
+                     approval_requested_by = %s WHERE plan_id = %s""", (req, exp, ids["req"], plan))
+        c.execute("UPDATE changes SET approval_request_id = %s WHERE change_id = %s", (req, chg))
+    return req, exp
+
+
+def _grant(pg: dict[str, str], ids: dict, req: uuid.UUID, exp: datetime, approver: uuid.UUID) -> uuid.UUID:
+    bv = digests.bound_values(ARTIFACT)
+    approval = uuid.uuid4()
+    with psycopg.connect(pg["owner"], autocommit=True) as c:
+        c.execute("""INSERT INTO approvals (approval_id, tenant_id, plan_id, approval_request_id, stage, plan_revision,
+                                            approver_id, proposer_id, requester_id, expires_at, artifact_digest, change_id,
+                                            diff_digest, image_digest, policy_diff_digest)
+                     VALUES (%s, %s, %s, %s, 'change', 2, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                  (approval, ids["tenant"], ids["plan"], req, approver, approver, approver, exp,
+                   digests.artifact_digest(ARTIFACT), ids["chg"], bv["diff_digest"], IMG, bv["policy_diff_digest"]))
+    return approval
+
+
+def test_apply_runs_only_under_a_granted_change_approval_read_from_the_platform_db(pg: dict[str, str]) -> None:
+    """Coordinator report: a T31 deploy ran with ``approval None``. Every path to a deploy now goes through
+    ``DbApprovals.verify``; these are its refusals against the real tables, then the one accepted case."""
+    from bravo_apply.approvals import DbApprovals
+    from bravo_apply.runtime import Stop
+
+    ids = _seed(pg["owner"])
+    chg = str(ids["chg"])
+    src = DbApprovals(pg["bravo_apply"])
+
+    def reason(approval_id: str | None) -> str:
+        with pytest.raises(Stop) as e:
+            src.verify(chg, approval_id)
+        assert e.value.status == "refused"
+        return e.value.reason
+
+    assert reason(None) == "approval_missing"
+    assert reason("None") == "approval_missing"
+    assert reason(str(uuid.uuid4())) == "approval_not_found"
+    with pytest.raises(Stop) as e:
+        DbApprovals(None).verify(chg, str(uuid.uuid4()))
+    assert e.value.reason == "approval_source_unavailable"
+
+    req, exp = _prepared_and_requested(pg, ids)
+    # The requester cannot approve their own change: the DB trigger refuses the row outright.
+    with pytest.raises(psycopg.errors.CheckViolation, match="separation_of_duties"):
+        _grant(pg, ids, req, exp, ids["req"])
+    approval = _grant(pg, ids, req, exp, ids["appr"])
+    # Recorded but not granted yet (the change is still 'prepared', the API has not moved it): refused.
+    assert reason(str(approval)) == "approval_not_granted"
+    with psycopg.connect(pg["bravo_api"]) as c, c.transaction():
+        c.execute("SELECT set_config('app.tenant_id', %s, true)", (ids["tenant"],))
+        c.execute("UPDATE changes SET status = 'approved', approval_id = %s, approved_at = now() WHERE change_id = %s",
+                  (approval, ids["chg"]))
+    got = src.verify(chg, str(approval))
+    assert (got["image_digest"], got["approval_id"]) == (IMG, str(approval))
+    assert got["diff_digest"] == digests.bound_values(ARTIFACT)["diff_digest"]
+    # The same approval cannot be used for another change.
+    with pytest.raises(Stop) as e:
+        src.verify(str(uuid.uuid4()), str(approval))
+    assert e.value.reason == "approval_change_mismatch"
+    # Expired approvals are refused (expiry moved back by the owner with the immutability trigger off: test only).
+    with psycopg.connect(pg["owner"], autocommit=True) as c:
+        c.execute("ALTER TABLE approvals DISABLE TRIGGER approvals_immutable")
+        c.execute("UPDATE approvals SET created_at = now() - interval '20 minutes', "
+                  "expires_at = now() - interval '1 minute' WHERE approval_id = %s", (approval,))
+        c.execute("ALTER TABLE approvals ENABLE TRIGGER approvals_immutable")
+    assert reason(str(approval)) == "approval_expired"

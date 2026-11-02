@@ -6,6 +6,8 @@
 - 스펙 위치: §4, §7.2, §7.3, §8.8, D-23(D-01과 연결)
 - 근거 문서: `docs/spec/DEVIATIONS.md` D-23, `docs/architecture/11-landing-zone.md`, `docs/architecture/10-cluster-overview.md`, `docs/spec/ALIGNMENT-2026-11-02.md` 1절 12행, 1급 원천 [tech-stack-combination.md](../spec/sources/tech-stack-combination.md)
 
+**바뀐 것(2026-11-02 21:10 KST).** 온프렘 클러스터는 Ubuntu VM 위 RKE2(CIS)입니다(ADR 0010). 아래의 `k3s` overlay는 `rke2` overlay로 바뀝니다. 랜딩 존 원칙은 그대로입니다.
+
 ## 맥락
 
 스펙은 목적지를 온프렘 하나로 두고, 출발지 관리형 서비스의 대응을 AWS에서 온프렘으로 가는 한 방향 표로 둡니다(§7.3). 고객 클러스터마다 무엇을 설치하는지 정한 공통 묶음이 없습니다. 그런데 §4는 설계가 목적지와 무관하다고 적습니다. 1급 원천은 "모든 환경에 같은 도구를 설치하는 것은 목표가 아님"이라고 적습니다.

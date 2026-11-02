@@ -6,7 +6,7 @@
 import { VStack } from '@astryxdesign/core/Stack';
 import type { ConsoleView } from '../api/derive';
 import { fmtDateTime, fmtMs, shortId } from '../lib/format';
-import { parseClusters, type ClustersResp } from './ClustersScreen';
+import { distroOf, parseClusters, type ClustersResp } from './ClustersScreen';
 import { EdgeBlock } from './EdgeBlock';
 import { Block, DataTable, Facts, Screen, Val } from './ScreenFrame';
 import { Fresh, liveReason, NotConnected, Tag, useConfig, useLive } from './live';
@@ -33,7 +33,7 @@ const STATE: Record<EnvRow['state'], { v: 'success' | 'warning' | 'error' | 'neu
 function rowsFrom(c: ClustersResp, appEnvs: { id: string; host: string }[]): EnvRow[] {
   const hostFor = (id: string, ctx: string | null) => appEnvs.find((e) => e.id === id || (ctx && e.id === ctx))?.host ?? null;
   const rows: EnvRow[] = c.clusters.map((cl) => {
-    const label = cl.provider === 'eks' ? 'Amazon EKS' : cl.provider === 'k3s' ? '온프렘 K3s' : cl.provider;
+    const label = cl.status === 'ok' ? distroOf(cl) : cl.provider;
     const where = `${label} ${cl.cluster_id} · ns ${APP_NAMESPACE}`;
     const base = { key: cl.cluster_id, where, context: cl.context, host: hostFor(cl.cluster_id, cl.context) };
     if (cl.status !== 'ok') return { ...base, state: 'down', note: cl.error ?? '클러스터에 닿지 않음', workloads: '' };
@@ -93,9 +93,9 @@ export function DemoAppScreen({ view }: { view: ConsoleView | null }) {
           />
         )}
         <ol className="foot notes">
-          <li>쓰기/s · 오류율 · p95: 실제 환경 앱 지표(chat_writes_total, chat_write_duration_milliseconds)를 모으는 경로가 아직 없음.</li>
-          <li>DB 대상: PgBouncer(chat-pgbouncer)가 가리키는 DB를 읽는 경로가 아직 없음.</li>
-          <li>쓰기 차단: GET /admin/writes(관리 포트, Bearer 토큰 D-26)를 대신 읽는 플랫폼 경로가 아직 없음.</li>
+          <li>쓰기/s · 오류율 · p95: 이 콘솔은 실제 환경 앱 지표를 읽는 출처가 없습니다.</li>
+          <li>DB 대상: 이 콘솔은 PgBouncer(chat-pgbouncer)의 대상 DB를 읽는 출처가 없습니다.</li>
+          <li>쓰기 차단: 이 콘솔은 GET /admin/writes(관리 포트, Bearer 토큰 D-26)를 대신 읽는 출처가 없습니다.</li>
         </ol>
         <p className="foot">
           위치 · 상태 출처: 수집기 <span className="mono">GET /v1/clusters</span>(읽기 전용 get/list).

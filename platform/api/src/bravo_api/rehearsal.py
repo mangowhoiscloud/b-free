@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import uuid
 from typing import Any
 from uuid import UUID
@@ -23,19 +24,21 @@ from psycopg.types.json import Jsonb
 
 from . import idempotency
 from .auth import Action, Channel, Principal, authorize
+from .changes import open_change
 from .config import Settings
 from .db import Conn, Database
 from .errors import BusinessError
 from .events import SYSTEM, Actor, EventKind, EventMode, emit
 from .models import RehearsalStart
 from .statemachine import PRE_CUTOVER, STAGE_ROLES, State, Trigger, lock_plan, transition
-from .upstreams import RehearsalClient, UpstreamError
+from .upstreams import SNAPSHOT_REFUSALS, CollectorClient, RehearsalClient, UpstreamError
 
 LOG = logging.getLogger("bravo_api.rehearsal")
 
 # Reasons that mean "nothing was run": not an attempt, not an infrastructure failure.
 PRECONDITIONS = frozenset(
     {
+        # platform/rehearsal POST /v1/trials preconditions (Orchestrator.preconditions, llm_credential)
         "llm_unconfigured",
         "cluster_unconfigured",
         "rehearsal_unreachable",
@@ -47,8 +50,125 @@ PRECONDITIONS = frozenset(
         "role_allowlist_missing",
         "role_allowlist_invalid",
         "unauthorized",
+        "envelope_invalid",
+        "state_not_allowed_for_role",
+        "agent_runtime_unavailable",
+        "openbao_unconfigured",
+        "openbao_unreachable",
+        "openbao_denied",
+        "llm_token_missing",
+        "bad_request",
+        "idempotency_key_reuse",
+        # API side, before the Trial request: the collector inventory and the repo snapshot bound to it
+        "inventory_unavailable",
+        "collector_unreachable",
+        "collector_response_lost",
+        "collector_bad_response",
+        "snapshot_unavailable",
+        "snapshot_inventory_mismatch",
+        "snapshot_upload_failed",
+        # platform/rehearsal PUT /v1/snapshots refusals (SnapshotRejected)
+        *SNAPSHOT_REFUSALS,
     }
 )
+EVIDENCE_MAX = 48  # StateEnvelope allows 64; the envelope must stay under 32 KiB with the task instruction
+SUMMARY_MAX = 160
+TIER_ORDER = {"code_change": 0, "unclassified": 1, "adapter": 2, "config_swap": 3, "no_change": 4}
+_REASON_RE = re.compile(r"[^a-z0-9_]+")
+
+
+def _reason_code(reason: str | None) -> str:
+    """``PriorFailure.reason`` pattern ``^[a-z0-9_]{1,64}$``: the recorded reason with other characters folded."""
+    code = _REASON_RE.sub("_", (reason or "").lower()).strip("_")[:64]
+    return code or "no_reason_recorded"
+
+
+def prior_failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """FAIL verdicts of the current attempt budget, oldest first, as ``bravo_agents.PriorFailure``."""
+    return [
+        {
+            "attempt": r["attempt"],
+            "verdict": "FAIL",
+            "reason": _reason_code(r["reason"]),
+            "summary": f"attempt {r['attempt']}: verifier verdict FAIL ({r['reason'] or 'no reason recorded'})"[:500],
+        }
+        for r in rows
+    ]
+
+
+def evidence_from(inventory: dict[str, Any], gate: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """``bravo_agents.Evidence`` items from what the platform actually holds: the collector inventory the
+    snapshot is bound to (finding ids are the collector's own) and the last gate verdict's blocked rows.
+    Metadata only: the finding's masked source line is not copied (it stays in the collector's output)."""
+    items: list[dict[str, Any]] = []
+    if gate is not None:
+        for c in gate["controls"] or []:
+            if not isinstance(c, dict) or c.get("verdict") == "PASS" or not isinstance(c.get("control_id"), str):
+                continue
+            items.append(
+                {
+                    "id": f"gate:{gate['verdict_id']}:{c['control_id'].lower()}",
+                    "kind": "gate_control",
+                    "summary": (
+                        f"{c['control_id']} src={c.get('src')} dst={c.get('dst')} verdict={c.get('verdict')} "
+                        f"reason={c.get('reason')}"
+                    )[:SUMMARY_MAX],
+                }
+            )
+    findings = [*inventory.get("findings", []), *inventory.get("unclassified", [])]
+    findings.sort(key=lambda f: (TIER_ORDER.get(f["tier_code"], 9), f["file"], f["line"], f["id"]))
+    seen: set[str] = set()
+    for f in findings:
+        eid = f"inv:{f['id']}"
+        if eid in seen:
+            continue
+        seen.add(eid)
+        items.append(
+            {
+                "id": eid,
+                "kind": "inventory_finding",
+                "summary": f"{f['tier_code']} {f['service']} {f['kind']} {f['file']}:{f['line']} ({f['rule_id']})"[
+                    :SUMMARY_MAX
+                ],
+            }
+        )
+    return items[:EVIDENCE_MAX]
+
+
+def trial_request(
+    *,
+    plan_id: UUID,
+    tenant_id: str,
+    rehearsal_id: UUID,
+    attempt: int,
+    max_attempts: int,
+    task: str,
+    role: str,
+    state: str,
+    prior: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    source_env: str,
+    target_env: str,
+    analysis: dict[str, Any] | None,
+    inventory_digest: str,
+) -> dict[str, Any]:
+    """Body of platform/rehearsal ``POST /v1/trials`` (``TrialRequest``, extra fields forbidden)."""
+    return {
+        "plan_id": str(plan_id),
+        "tenant_id": tenant_id,
+        "rehearsal_id": str(rehearsal_id),
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "task": task,
+        "role": role,
+        "state": state,
+        "prior_failures": prior,
+        "evidence": evidence,
+        "source_env": source_env,
+        "target_env": target_env,
+        "analysis": analysis,
+        "inventory_digest": inventory_digest,
+    }
 OPEN = ("requested", "running", "proposed")
 
 
@@ -85,10 +205,17 @@ def bound_problem(body: dict[str, Any], row: dict[str, Any]) -> str | None:
 
 
 class RehearsalService:
-    def __init__(self, db: Database, client: RehearsalClient | None, settings: Settings) -> None:
+    def __init__(
+        self,
+        db: Database,
+        client: RehearsalClient | None,
+        settings: Settings,
+        collector: CollectorClient | None = None,
+    ) -> None:
         self._db = db
         self._client = client
         self._settings = settings
+        self._collector = collector
 
     async def start(
         self, p: Principal, channel: Channel, plan_id: UUID, req: RehearsalStart, key: str | None
@@ -132,14 +259,28 @@ class RehearsalService:
                 plan = await transition(conn, plan_id, Trigger.REPROPOSAL_REQUESTED, actor=actor, reason="gate_block")
             elif state is not State.PROPOSE:
                 raise BusinessError("state_mismatch", detail={"state": state.value})
-            cur = await conn.execute("SELECT count(*) AS n FROM rehearsals WHERE plan_id = %s", (plan_id,))
-            attempt = int((await cur.fetchone() or {"n": 0})["n"]) + 1
+            # The attempt within the FR-5 budget (1..max): FAIL verdicts so far + 1. Precondition and infra
+            # retries reuse the number, so the envelope's attempt <= max_attempts holds (bravo_agents).
+            failures = int(plan["rehearsal_failures"])
+            attempt = failures + 1
             cur = await conn.execute(
-                "SELECT attempt, status, reason FROM rehearsals WHERE plan_id = %s AND status = 'FAIL' ORDER BY attempt",
-                (plan_id,),
+                "SELECT attempt, reason FROM rehearsals WHERE plan_id = %s AND status = 'FAIL' "
+                "ORDER BY created_at DESC LIMIT %s",
+                (plan_id, failures),
             )
-            prior = [{"attempt": r["attempt"], "verdict": r["status"], "reason": r["reason"]} for r in await cur.fetchall()]
+            prior = prior_failures(list(reversed(await cur.fetchall())))
             analysis = plan["analysis"]
+            cur = await conn.execute(
+                "SELECT environment_id, name FROM environments WHERE environment_id = ANY(%s)",
+                ([plan["source_environment_id"], plan["target_environment_id"]],),
+            )
+            env_names = {r["environment_id"]: r["name"] for r in await cur.fetchall()}
+            gate = None
+            if plan["last_gate_verdict_id"] is not None:
+                cur = await conn.execute(
+                    "SELECT verdict_id, controls FROM gate_verdicts WHERE verdict_id = %s", (plan["last_gate_verdict_id"],)
+                )
+                gate = await cur.fetchone()
             rehearsal_id = uuid.uuid4()
             idem = f"rehearsal-{rehearsal_id}"
             await conn.execute(
@@ -182,22 +323,36 @@ class RehearsalService:
                 conn, tenant_id=p.tenant_id, action="rehearsal_start", key=key, response=response, status_code=202
             )
 
-        payload = {
-            "plan_id": str(plan_id),
-            "tenant_id": p.tenant_id,
-            "rehearsal_id": str(rehearsal_id),
-            "attempt": attempt,
-            "max_attempts": self._settings.rehearsal_max_attempts,
-            "task": req.task,
-            "role": req.role,
-            "prior_failures": prior,
-            "analysis": analysis,
-        }
         assert self._client is not None
         try:
+            # 1. The collector inventory the Trial is bound to. 2. The repo snapshot matching its input_digest,
+            # uploaded before the Trial (platform/rehearsal repo_read and /src read only that). 3. The Trial.
+            inventory = await self._inventory()
+            digest_hex = inventory["input_digest"]
+            snapshot = await self._snapshot(digest_hex)
+            await self._client.put_snapshot(p.tenant_id, str(plan_id), snapshot, digest_hex)
+            payload = trial_request(
+                plan_id=plan_id,
+                tenant_id=p.tenant_id,
+                rehearsal_id=rehearsal_id,
+                attempt=attempt,
+                max_attempts=self._settings.rehearsal_max_attempts,
+                task=req.task,
+                role=req.role,
+                state=State.PROPOSE.value,
+                prior=prior,
+                evidence=evidence_from(inventory, gate),
+                source_env=env_names[plan["source_environment_id"]],
+                target_env=env_names[plan["target_environment_id"]],
+                analysis=analysis,
+                inventory_digest=digest_hex,
+            )
             started = await self._client.start(payload, idem)
         except UpstreamError as exc:
             reason = exc.reason
+            missing = exc.body.get("missing") if isinstance(exc.body, dict) else None
+            if missing:
+                LOG.info("rehearsal refused before running rehearsal_id=%s missing=%s", rehearsal_id, missing)
             async with self._db.tenant_tx(p.tenant_id, p.id) as conn:
                 row = await _row(conn, rehearsal_id)
                 plan = await settle(conn, self._settings, row, {"verdict": "INFRA_ERROR", "reason": reason})
@@ -216,6 +371,23 @@ class RehearsalService:
                 conn, tenant_id=p.tenant_id, action="rehearsal_start", key=key, response=response, status_code=202
             )
         return response
+
+
+    async def _inventory(self) -> dict[str, Any]:
+        """The collector inventory, or ``UpstreamError`` with a precondition reason (nothing is invented)."""
+        if self._collector is None:
+            raise UpstreamError("inventory_unavailable")
+        try:
+            return await self._collector.inventory()
+        except UpstreamError as exc:
+            if exc.reason in PRECONDITIONS:
+                raise
+            LOG.warning("collector inventory unavailable: %s", exc.reason)
+            raise UpstreamError("inventory_unavailable", exc.status) from exc
+
+    async def _snapshot(self, input_digest: str) -> bytes:
+        assert self._collector is not None  # _inventory() ran first
+        return await self._collector.snapshot(input_digest)
 
 
 async def _row(conn: Conn, rehearsal_id: UUID) -> dict[str, Any]:
@@ -274,11 +446,13 @@ async def settle(conn: Conn, settings: Settings, row: dict[str, Any], body: dict
     if verdict == "PASS":
         if state is State.PROPOSE:
             plan = await transition(conn, plan["plan_id"], Trigger.PROPOSAL_ACCEPTED, **common)
-        return await transition(
+        # Spec r2: stay in REHEARSE and open a change (T31). The change approval binds the diff, the image
+        # digest the trusted pipeline builds from it and the policy diff; only the applied change leaves for GATE.
+        plan = await transition(
             conn,
             plan["plan_id"],
             Trigger.REHEARSAL_PASSED,
-            reason=None,
+            reason="change_requested",
             updates={
                 **base,
                 "rehearsal": "passed",
@@ -287,6 +461,8 @@ async def settle(conn: Conn, settings: Settings, row: dict[str, Any], body: dict
             },  # new content -> new revision (approvals bind it)
             **common,
         )
+        await open_change(conn, plan, row, body["artifact"], body["artifact_digest"], actor=SYSTEM)
+        return await lock_plan(conn, plan["plan_id"])
     if verdict == "FAIL":
         failures = plan["rehearsal_failures"] + 1
         exhausted = failures >= settings.rehearsal_max_attempts

@@ -7,6 +7,7 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { asObj, asStr, parseApproval, parseDevTokens, parseEvent, parseGate, parsePlan, parseRun } from './normalize';
 import type { Approval, ApprovalInput, CreatePlanInput, DevToken, GateResult, Plan, PlanEvent, Run } from './types';
+import { parseEnvironments, parseMe, parsePlans, type EnvSummary, type Me, type PlanSummary } from './home';
 
 export type StreamStatus = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'denied';
 
@@ -17,6 +18,12 @@ export interface StreamHandlers {
 
 export interface ApiClient {
   getDevTokens(): Promise<DevToken[]>;
+  /** Who is logged in (Cloudflare Access identity, or the dev token when one is set). */
+  getMe(token: string): Promise<Me>;
+  listPlans(token: string): Promise<PlanSummary[]>;
+  listEnvironments(token: string): Promise<EnvSummary[]>;
+  /** GET /v1/plans/{id}/changes: change approvals' binding (diff, image digest, policy diff). */
+  listChanges(token: string, planId: string): Promise<Record<string, unknown>[]>;
   createPlan(token: string, input: CreatePlanInput, idemKey: string): Promise<{ plan_id: string }>;
   getPlan(token: string, planId: string): Promise<Plan>;
   runGate(token: string, planId: string, idemKey: string): Promise<GateResult | null>;
@@ -112,7 +119,9 @@ export function createHttpClient(base: string): ApiClient {
         method,
         headers,
         body: opts.body === undefined ? null : JSON.stringify(opts.body),
-        credentials: 'omit',
+        // same-origin: behind Cloudflare Access the CF_Authorization cookie must reach the API so
+        // the edge can add Cf-Access-Jwt-Assertion. Cross-origin (dev) calls still send no cookie.
+        credentials: 'same-origin',
       });
     } catch (e) {
       throw new ApiError(0, null, e instanceof Error ? e.message : String(e));
@@ -138,6 +147,23 @@ export function createHttpClient(base: string): ApiClient {
   return {
     async getDevTokens() {
       return parseDevTokens(await request('GET', '/v1/dev/tokens'));
+    },
+
+    async getMe(token) {
+      return parseMe(await request('GET', '/v1/me', { token }));
+    },
+
+    async listPlans(token) {
+      return parsePlans(await request('GET', '/v1/plans', { token }));
+    },
+
+    async listEnvironments(token) {
+      return parseEnvironments(await request('GET', '/v1/environments', { token }));
+    },
+
+    async listChanges(token, planId) {
+      const body = asObj(await request('GET', `/v1/plans/${enc(planId)}/changes`, { token }));
+      return Array.isArray(body?.changes) ? (body.changes as unknown[]).map((c) => asObj(c) ?? {}) : [];
     },
 
     async createPlan(token, input, idemKey) {
@@ -175,12 +201,14 @@ export function createHttpClient(base: string): ApiClient {
     subscribe(token, planId, lastEventId, h) {
       const ctrl = new AbortController();
       let seq = 0;
-      const headers: Record<string, string> = { 'Cf-Access-Jwt-Assertion': token };
+      // No token: rely on the Access cookie (same origin); the edge adds the assertion header.
+      const headers: Record<string, string> = token ? { 'Cf-Access-Jwt-Assertion': token } : {};
       // The library keys this header in lower case and updates it on every `id:` line.
       if (lastEventId) headers['last-event-id'] = lastEventId;
       h.onStatus('connecting');
       fetchEventSource(`${root}/v1/plans/${enc(planId)}/events`, {
         headers,
+        credentials: 'same-origin',
         signal: ctrl.signal,
         openWhenHidden: true,
         async onopen(res) {

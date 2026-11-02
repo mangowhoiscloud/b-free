@@ -37,7 +37,7 @@ export class LiveError extends Error {
 export function liveReason(err: unknown): string {
   if (err instanceof LiveError) {
     if (err.status === 0) return `서비스에 닿지 못함 (${err.message})`;
-    if (err.status === 502 || err.status === 504) return `서비스가 응답하지 않음 (${err.status}, 컨테이너가 꺼져 있거나 이름을 찾지 못함)`;
+    if (err.status === 502 || err.status === 504) return `프록시 대상이 응답하지 않음 (${err.status})`;
     if (err.status === 404) return `엔드포인트 없음 (404)`;
     return `${err.message} (${err.status})`;
   }
@@ -49,7 +49,9 @@ export async function getJson(url: string, timeoutMs = 8000, accept = 'applicati
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(url, { headers: { Accept: accept }, credentials: 'omit', signal: ctrl.signal });
+    // same-origin: behind Cloudflare Access a cookie-less request to /svc/... is redirected to the Access
+    // login (cross-origin), which fetch reports as "Failed to fetch". Cross-origin calls (DoH) send no cookie.
+    res = await fetch(url, { headers: { Accept: accept }, credentials: 'same-origin', signal: ctrl.signal });
   } catch (e) {
     throw new LiveError(0, ctrl.signal.aborted ? `${timeoutMs / 1000}초 안에 응답 없음` : e instanceof Error ? e.message : String(e));
   } finally {

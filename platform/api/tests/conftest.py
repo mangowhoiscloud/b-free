@@ -1,5 +1,14 @@
 """Shared fixtures. DB tests run against a throwaway postgres:16 container (real RLS,
-triggers and grants); the Executor is a small HTTP stub served on localhost."""
+triggers and grants); the Executor is a small HTTP stub served on localhost.
+
+Test identities (audit A3): the tests generate their own RSA key and serve its JWKS over HTTP on
+localhost, so the API fetches keys exactly as it does from the Cloudflare Access certs URL. The product
+package has no dev keys, no dev token endpoint and no seed; the seed lives in ``tests/devseed.py``.
+
+Upstreams the state machine needs before it may leave COLLECT / ANALYZE (audits B11, A4) are real
+services started per session: a throwaway OpenBao dev server holding the KV entries the tests' secret
+refs name (metadata is all the API reads), and the real platform/collector scanning a small app with no
+gap-grade dependency. Nothing in the API is told to assume either answer."""
 
 from __future__ import annotations
 
@@ -12,7 +21,6 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import jwt
@@ -23,8 +31,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, Header
 
 from bravo_api.config import Mode, Settings
-from bravo_api.devseed import DEV_USERS, dev_sub
 from bravo_api.migrate import apply
+
+from .devseed import DEV_USERS, dev_sub
 
 PG_IMAGE = os.environ.get(
     "BRAVO_TEST_PG_IMAGE",
@@ -34,7 +43,13 @@ ISSUER = "https://bravo-test.cloudflareaccess.com"
 CONSOLE_AUD = "console-aud-test"
 MCP_AUD = "mcp-aud-test"
 KID = "test-1"
-PASSWORDS = {"bravo_api": "api-pw", "bravo_mcp": "mcp-pw", "bravo_executor": "exec-pw"}
+BAO_IMAGE = "openbao/openbao@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f"  # 2.7.2
+COLLECTOR_DIR = __import__("pathlib").Path(__file__).resolve().parents[2] / "collector"
+# secret refs the tests register; anything else is "not found" in the test OpenBao, as in production.
+TEST_SECRET_REFS = ("tenants/t1/src", "tenants/t1/dst", "tenants/t1/a", "tenants/t1/s", "tenants/t1/d", "tenants/t1/x",
+                    "envs/landing-src/chat-db", "envs/landing-dst/chat-db")
+UPSTREAMS: dict[str, str | None] = {}
+PASSWORDS = {"bravo_api": "api-pw", "bravo_mcp": "mcp-pw", "bravo_executor": "exec-pw", "bravo_apply": "apply-pw"}
 
 
 def free_port() -> int:
@@ -46,7 +61,7 @@ def free_port() -> int:
 @dataclass
 class Keys:
     private: rsa.RSAPrivateKey
-    jwks_path: Path
+    jwks_url: str  # served on localhost, fetched by the API like the Access certs URL
 
     def token(
         self,
@@ -68,14 +83,23 @@ class Keys:
         return jwt.encode(claims, key if key is not None else self.private, algorithm=alg, headers={"kid": kid})
 
 
-@pytest.fixture(scope="session")
-def keys(tmp_path_factory: pytest.TempPathFactory) -> Keys:
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def public_jwk(key: rsa.RSAPrivateKey, kid: str) -> dict[str, Any]:
     jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
-    jwk.update({"kid": KID, "alg": "RS256", "use": "sig"})
-    path = tmp_path_factory.mktemp("jwks") / "jwks.json"
-    path.write_text(json.dumps({"keys": [jwk]}))
-    return Keys(private=key, jwks_path=path)
+    jwk.update({"kid": kid, "alg": "RS256", "use": "sig"})
+    return jwk
+
+
+@pytest.fixture(scope="session")
+def keys() -> Keys:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    app = FastAPI()
+    body = {"keys": [public_jwk(key, KID)]}
+
+    @app.get("/cdn-cgi/access/certs")
+    def certs() -> dict[str, Any]:
+        return body
+
+    return Keys(private=key, jwks_url=_serve(app) + "/cdn-cgi/access/certs")
 
 
 @pytest.fixture(scope="session")
@@ -120,10 +144,11 @@ def pg() -> Iterator[dict[str, str]]:
                 "BRAVO_API_DB_PASSWORD": PASSWORDS["bravo_api"],
                 "BRAVO_MCP_DB_PASSWORD": PASSWORDS["bravo_mcp"],
                 "BRAVO_EXECUTOR_DB_PASSWORD": PASSWORDS["bravo_executor"],
+                "BRAVO_APPLY_DB_PASSWORD": PASSWORDS["bravo_apply"],
             }
         )
         apply(owner)
-        from bravo_api.devseed import seed
+        from .devseed import seed
 
         with psycopg.connect(owner, autocommit=True) as c:
             seed(c, issuer=ISSUER, tenant_id="t1")
@@ -212,11 +237,85 @@ def executor() -> ExecutorStub:
     return stub
 
 
+@pytest.fixture(scope="session", autouse=True)
+def platform_upstreams(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str | None]]:
+    """Real OpenBao (dev server, throwaway) + real platform/collector for every API test session."""
+    import httpx
+
+    procs: list[subprocess.Popen[bytes]] = []
+    containers: list[str] = []
+    try:
+        port = free_port()
+        name = f"bravo-api-test-bao-{uuid.uuid4().hex[:8]}"
+        root_token = uuid.uuid4().hex
+        subprocess.run(
+            ["docker", "run", "-d", "--rm", "--name", name, "-p", f"127.0.0.1:{port}:8200", BAO_IMAGE,
+             "bao", "server", "-dev", f"-dev-root-token-id={root_token}", "-dev-listen-address=0.0.0.0:8200"],
+            check=True, capture_output=True,
+        )
+        containers.append(name)
+        bao = f"http://127.0.0.1:{port}"
+        deadline = time.time() + 30
+        while True:
+            try:
+                if httpx.get(f"{bao}/v1/sys/health", timeout=1).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            if time.time() > deadline:
+                raise RuntimeError("test OpenBao did not start")
+            time.sleep(0.2)
+        for ref in TEST_SECRET_REFS:
+            r = httpx.post(f"{bao}/v1/secret/data/{ref}", headers={"X-Vault-Token": root_token},
+                           json={"data": {"dsn": "postgresql://placeholder-not-read-by-the-api"}})
+            r.raise_for_status()
+        token_file = tmp_path_factory.mktemp("bao") / "token"
+        token_file.write_text(root_token)
+        token_file.chmod(0o600)
+        UPSTREAMS.update(bao_addr=bao, bao_token_file=str(token_file))
+
+        collector_py = COLLECTOR_DIR / ".venv" / "bin" / "python"
+        if collector_py.is_file():
+            repo = tmp_path_factory.mktemp("clean-app")
+            (repo / "app.py").write_text('import os\n\nDSN = os.environ["DATABASE_URL"]\n')
+            envs = tmp_path_factory.mktemp("collector-envs") / "environments.yaml"
+            envs.write_text("environments: {}\n")
+            cport = free_port()
+            proc = subprocess.Popen(
+                [str(collector_py), "-m", "bravo_collector", "serve"],
+                env={"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path_factory.mktemp("collector-home")),
+                     "BRAVO_ENVIRONMENTS_FILE": str(envs), "BRAVO_INVENTORY_ROOT": str(repo),
+                     "BRAVO_COLLECTOR_HOST": "127.0.0.1", "BRAVO_COLLECTOR_PORT": str(cport), "LOG_LEVEL": "warning"},
+                cwd=COLLECTOR_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            procs.append(proc)
+            curl = f"http://127.0.0.1:{cport}"
+            deadline = time.time() + 30
+            while True:
+                try:
+                    if httpx.get(f"{curl}/healthz", timeout=1).status_code == 200:
+                        break
+                except httpx.HTTPError:
+                    pass
+                if time.time() > deadline or proc.poll() is not None:
+                    raise RuntimeError("collector did not start")
+                time.sleep(0.2)
+            UPSTREAMS["collector_url"] = curl
+        else:
+            UPSTREAMS["collector_url"] = None  # flow tests will then stay in ANALYZE (collector_unconfigured)
+        yield UPSTREAMS
+    finally:
+        for proc in procs:
+            proc.terminate()
+            proc.wait(10)
+        for name in containers:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+
+
 def make_settings(keys: Keys, pg: dict[str, str], executor_url: str, mode: Mode) -> Settings:
     return Settings(
         mode=mode,
         database_url=pg["bravo_api"] if mode is Mode.API else pg["bravo_mcp"],
-        jwks_path=keys.jwks_path,
         jwt_issuer=ISSUER,
         console_aud=CONSOLE_AUD,
         mcp_aud=MCP_AUD,
@@ -226,14 +325,17 @@ def make_settings(keys: Keys, pg: dict[str, str], executor_url: str, mode: Mode)
         cors_origins=("http://localhost:5173",),
         mcp_allowed_origins=(),
         mcp_allowed_hosts=(),
-        dev_auth=False,
-        dev_tokens_dir=None,
         approval_ttl_s=900,
         gate_max_lag_bytes=65536,
         gate_required_controls=("DB-ANON-READ", "DB-AUTH"),
         run_poll_interval_s=0.1,
         sse_poll_interval_s=0.1,
         sse_ticket_secret=b"test-secret",
+        collector_url=UPSTREAMS.get("collector_url"),
+        bao_addr=UPSTREAMS.get("bao_addr"),
+        bao_token_file=UPSTREAMS.get("bao_token_file"),
+        change_poll_interval_s=0.1,
+        jwks_url=keys.jwks_url,
     )
 
 

@@ -72,17 +72,16 @@ spec:
     - from:
         - podSelector: {matchLabels: {app.kubernetes.io/name: console}}
 ---
-# Front: only the Gateway proxies (Envoy Gateway pods in bravo-edge) reach console 8080, api 8080, operator-mcp 8082.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+# Front: only the Gateway (Cilium Envoy, reserved identity "ingress", which a Kubernetes NetworkPolicy cannot select)
+# reaches console 8080, api 8080 and operator-mcp 8082.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata: {name: front-from-gateway, namespace: bravo-control}
 spec:
-  podSelector:
+  endpointSelector:
     matchExpressions:
       - {key: app.kubernetes.io/name, operator: In, values: [console, api, operator-mcp]}
-  policyTypes: ["Ingress"]
   ingress:
-    - from:
-        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-edge}}
-          podSelector: {matchLabels: {gateway.envoyproxy.io/owning-gateway-name: bravo-gateway}}
-      ports: [{port: 8080}, {port: 8082}]
+    - fromEntities: ["ingress"]
+      toPorts:
+        - ports: [{port: "8080", protocol: TCP}, {port: "8082", protocol: TCP}]

@@ -58,6 +58,7 @@ class Trial:
     locked: bool = False
     harbor_trial_dir: str | None = None
     repo_snapshot: str | None = None  # uploaded customer repo snapshot (snapshot.SnapshotStore), if any
+    worker_started: bool = False  # the agent worker (and so the model) was started for this Trial
     verifier_kind: str | None = None  # what the verifier did (harbor_task.STATIC_RULES today)
     proposed: asyncio.Event = field(default_factory=asyncio.Event)
     created_at: str = field(default_factory=now_iso)
@@ -81,7 +82,7 @@ class Trial:
         return ev
 
     def mark_last(self, tool: str, args: Any, origin: str) -> int | None:
-        """Label the latest event for (tool, args) with its origin (e.g. a demo probe), so the record says who called."""
+        """Label the latest event for (tool, args) with its origin (e.g. a demo probe): the record says who called."""
         sha = hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode()).hexdigest()
         for ev in reversed(self.tool_events):
             if ev["tool"] == tool and ev["args_sha256"] == sha and "origin" not in ev:
@@ -131,6 +132,7 @@ class Trial:
             "leftovers": self.leftovers,
             "harbor_trial_dir": self.harbor_trial_dir,
             "verifier_kind": self.verifier_kind,
+            "worker_started": self.worker_started,
             "created_at": self.created_at,
         }
 

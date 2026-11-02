@@ -1,0 +1,75 @@
+# Applied to the ON-PREM cluster (context bravo-onprem). The platform rehearsal service (Harbor provisioner,
+# platform/rehearsal harbor_env.py) creates and deletes rehearsal-<plan>-<n> / verify-<plan>-<n> namespaces with
+# their baseline (NetworkPolicy, ResourceQuota, LimitRange, ServiceAccount, Role, RoleBinding), runs the sandbox
+# and verifier Pods and execs into them (websocket). It reaches this API through the D-16 link dst-k8s with a
+# TokenRequest token (168h) of kube-system/bravo-rehearsal, kept only in OpenBao secret/envs/target-onprem/k8s-rehearsal.
+# The ValidatingAdmissionPolicy below confines every write of this account to rehearsal-* / verify-* namespaces,
+# so the cluster-wide ClusterRole cannot touch chat, kube-system or any other namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bravo-rehearsal
+  namespace: kube-system
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bravo-rehearsal-provisioner
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [create, get, list, delete, patch]
+  - apiGroups: [""]
+    resources: [pods, serviceaccounts, configmaps, resourcequotas, limitranges]
+    verbs: [create, get, list, watch, delete]
+  - apiGroups: [""]
+    resources: [pods/exec, pods/log, serviceaccounts/token]
+    verbs: [create, get]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create, get, list, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [create, get, list, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bravo-rehearsal-provisioner
+  labels: {app.kubernetes.io/part-of: bravo-platform, app.kubernetes.io/component: platform-access}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: bravo-rehearsal-provisioner}
+subjects:
+  - {kind: ServiceAccount, name: bravo-rehearsal, namespace: kube-system}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: bravo-rehearsal-namespaces-only
+  labels: {app.kubernetes.io/part-of: bravo-platform}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE, CONNECT]
+        resources: ["*/*"]
+  matchConditions:
+    - name: rehearsal-provisioner-only
+      expression: request.userInfo.username == 'system:serviceaccount:kube-system:bravo-rehearsal'
+  validations:
+    - expression: >-
+        request.namespace.startsWith('rehearsal-') || request.namespace.startsWith('verify-') ||
+        (request.resource.resource == 'namespaces' && (request.name.startsWith('rehearsal-') || request.name.startsWith('verify-')))
+      message: "bravo-rehearsal may only write in rehearsal-* and verify-* namespaces"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: bravo-rehearsal-namespaces-only
+spec:
+  policyName: bravo-rehearsal-namespaces-only
+  validationActions: [Deny]

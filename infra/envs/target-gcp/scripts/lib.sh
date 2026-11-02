@@ -11,12 +11,17 @@ PILOT_DIR="$REPO_ROOT/deploy/pilot"
 BAO_ENV="target-gcp"
 CUSTODY_DIR="${BRAVO_KEY_CUSTODY_DIR:-$HOME/.bravo/custody}"
 CUSTODY="$CUSTODY_DIR/openbao-init.json"
-# Platform OpenBao target, same rule as deploy/pilot/scripts/keys.sh: platform-eks once custody records the
-# move (OpenBao on the platform EKS, reached only by kubectl port-forward to pod openbao-0), else the pilot.
-PLATFORM_CONTEXT="${BRAVO_PLATFORM_CONTEXT:-bravo-platform}"
+# Platform OpenBao target, same rule as deploy/pilot/scripts/keys.sh: custody `bao_target` says where the one
+# store lives (D-26). platform-eks / platform-rke2: reached only by kubectl port-forward to openbao/openbao-0
+# with the CA in $CUSTODY_DIR/<target>/ca.crt. pilot: the laptop Compose store on 127.0.0.1:8200.
 BAO_TARGET="${BRAVO_BAO_TARGET:-$(jq -r '.bao_target // "pilot"' "$CUSTODY" 2>/dev/null || echo pilot)}"
-if [[ $BAO_TARGET == platform-eks ]]; then
-  BAO_CA="$CUSTODY_DIR/platform-eks/ca.crt"
+case $BAO_TARGET in
+  platform-eks) PLATFORM_CONTEXT="${BRAVO_PLATFORM_CONTEXT:-bravo-platform}" ;;
+  platform-rke2) PLATFORM_CONTEXT="${BRAVO_PLATFORM_CONTEXT:-bravo-platform-rke2}" ;;
+  *) PLATFORM_CONTEXT="${BRAVO_PLATFORM_CONTEXT:-}" ;;
+esac
+if [[ $BAO_TARGET == platform-* ]]; then
+  BAO_CA="$CUSTODY_DIR/$BAO_TARGET/ca.crt"
   BAO_ADDR=""   # set by bao_pf_start
 else
   BAO_CA="$PILOT_DIR/bao/tls/ca.crt"
@@ -58,7 +63,7 @@ load_outputs() {
   export PROJECT REGION CLUSTER LOCATION IMAGE_REGISTRY GATEWAY_ADDRESS_NAME GATEWAY_IP PROXY_ONLY_CIDR \
     PD_KMS_KEY ATTACH_BUCKET CLUSTER_NAME PUBLIC_HOSTNAME
   # shellcheck disable=SC1091
-  set -a; . "$OVERLAY_DIR/versions.env"; set +a
+  set -a; . "$REPO_ROOT/deploy/landing-zone/versions.env"; . "$OVERLAY_DIR/versions.env"; set +a
 }
 
 k() { kubectl --context "${CLUSTER:?cluster name not loaded}" "$@"; }
@@ -69,8 +74,8 @@ tok_hdr() { [[ -z ${1-} ]] || printf 'X-Vault-Token: %s\n' "$1"; }
 bao_pf_stop() { [[ -z $BAO_PF_PID ]] || { kill "$BAO_PF_PID" 2>/dev/null || true; wait "$BAO_PF_PID" 2>/dev/null || true; BAO_PF_PID=""; }; }
 # Private port-forward to the platform EKS OpenBao on a free local port, for this process only.
 bao_pf_start() {
-  [[ $BAO_TARGET == platform-eks && -z $BAO_PF_PID ]] || return 0
-  [[ -f $BAO_CA ]] || die "no $BAO_CA (keys.sh --target platform-eks tls)"
+  [[ $BAO_TARGET == platform-* && -z $BAO_PF_PID ]] || return 0
+  [[ -f $BAO_CA ]] || die "no $BAO_CA (keys.sh --target $BAO_TARGET tls)"
   local port i code
   port="$(python3 -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
   kubectl --context "$PLATFORM_CONTEXT" -n openbao port-forward pod/openbao-0 "$port:8200" >/dev/null 2>&1 &

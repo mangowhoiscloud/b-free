@@ -93,26 +93,57 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> config.Config:
     return config.load()
 
 
-def _change(prepared: str, approved: str) -> Change:
-    return Change(change_id="3e24d0f4-0000-4000-8000-000000000000", role="app_migration", target_env="target-onprem",
-                  artifact=None, bound={}, approval={"approval_id": "a1", "image_digest": approved, "diff_digest": None,
-                                                     "policy_diff_digest": None},
-                  prepared={"image_digest": prepared})
+CHANGE_ID = "3e24d0f4-0000-4000-8000-000000000000"
+
+
+class _Recorded:
+    """An approval as the platform DB returned it (shape of ``DbApprovals.verify``). The DB checks themselves are
+    tested against a real postgres in test_db_contract.py; these tests cover the digest comparison after it."""
+
+    def __init__(self, image: str, policy: str | None = None) -> None:
+        self.row = {"approval_id": "7d1c0d52-0000-4000-8000-000000000001", "change_id": CHANGE_ID, "image_digest": image,
+                    "diff_digest": None, "policy_diff_digest": policy, "expires_at": "2026-11-02T13:00:00+00:00",
+                    "source": "test"}
+
+    def verify(self, change_id: str, approval_id: str | None) -> dict:
+        assert change_id == CHANGE_ID and approval_id == self.row["approval_id"]
+        return dict(self.row)
+
+
+def _change(prepared: str) -> Change:
+    return Change(change_id=CHANGE_ID, role="app_migration", target_env="target-onprem", artifact=None, bound={},
+                  approval_id="7d1c0d52-0000-4000-8000-000000000001", prepared={"image_digest": prepared})
+
+
+@pytest.mark.parametrize("approval_id", [None, "None", ""])
+def test_apply_without_an_approval_source_or_id_is_refused_before_anything_leaves(
+        cfg: config.Config, tmp_path: Path, approval_id: str | None) -> None:
+    """The 'approval None' deploy (coordinator report, change 3e24d0f4): no DB source, or no approval id -> refused."""
+    from bravo_apply.approvals import DbApprovals
+
+    ch = Change(change_id=CHANGE_ID, role="app_migration", target_env="target-onprem", artifact=None, bound={},
+                approval_id=approval_id, prepared={"image_digest": "sha256:" + "a" * 64})
+    for source, reason in ((None, "approval_source_unavailable"), (DbApprovals(None), "approval_source_unavailable"),
+                           (DbApprovals("postgresql://unused@127.0.0.1:1/x"), "approval_missing")):
+        rec = MemoryRecorder()
+        with pytest.raises(Stop) as e:
+            apply(cfg, ch, rec, tmp_path, source)
+        assert (e.value.status, e.value.reason) == ("refused", reason)
+        assert [(r["name"], r["result"]) for r in rec.rows] == [("tools.verify", "OK"), ("approval.verify", "REFUSED")]
 
 
 def test_apply_refuses_when_approved_digest_differs_from_prepared(cfg: config.Config, tmp_path: Path) -> None:
     rec = MemoryRecorder()
     with pytest.raises(Stop) as e:
-        apply(cfg, _change("sha256:" + "a" * 64, "sha256:" + "b" * 64), rec, tmp_path)
+        apply(cfg, _change("sha256:" + "a" * 64), rec, tmp_path, _Recorded("sha256:" + "b" * 64))
     assert (e.value.status, e.value.reason) == ("refused", "approved_digest_mismatch")
     assert [(r["name"], r["result"]) for r in rec.rows] == [("tools.verify", "OK"), ("approval.verify", "REFUSED")]
 
 
 def test_apply_refuses_an_approval_that_names_a_policy_diff_the_artifact_lacks(cfg: config.Config, tmp_path: Path) -> None:
-    ch = _change("sha256:" + "a" * 64, "sha256:" + "a" * 64)
-    ch.approval["policy_diff_digest"] = "sha256:" + "c" * 64  # type: ignore[index]
     with pytest.raises(Stop) as e:
-        apply(cfg, ch, MemoryRecorder(), tmp_path)
+        apply(cfg, _change("sha256:" + "a" * 64), MemoryRecorder(), tmp_path,
+              _Recorded("sha256:" + "a" * 64, policy="sha256:" + "c" * 64))
     assert e.value.reason == "approved_policy_diff_mismatch"
 
 
@@ -120,14 +151,14 @@ def test_apply_fails_when_the_approved_image_archive_is_missing_or_tampered(cfg:
     good = _oci_tar(tmp_path / "x.tar")
     rec = MemoryRecorder()
     with pytest.raises(Stop) as e:
-        apply(cfg, _change(good, good), rec, tmp_path)
+        apply(cfg, _change(good), rec, tmp_path, _Recorded(good))
     assert (e.value.status, e.value.reason) == ("failed", "image_missing")
     dest = build.image_path(cfg.cache_dir, good)
     dest.parent.mkdir(parents=True)
     _oci_tar(dest, tamper=True)
     rec = MemoryRecorder()
     with pytest.raises(Stop) as e:
-        apply(cfg, _change(good, good), rec, tmp_path)
+        apply(cfg, _change(good), rec, tmp_path, _Recorded(good))
     assert e.value.reason == "oci_manifest_hash_mismatch" and rec.rows[-1]["name"] == "image.locate"
     assert rec.rows[-1]["result"] == Result.REFUSED.value
 

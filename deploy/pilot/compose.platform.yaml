@@ -4,10 +4,13 @@
 # is reached at PLATFORM_EXECUTOR_URL; without it the gate returns BLOCK executor_unreachable.
 
 x-platform-env: &platform-env
-  BRAVO_JWKS_PATH: /etc/bravo/jwks.json
-  BRAVO_JWT_ISSUER: ${PLATFORM_JWT_ISSUER:?set PLATFORM_JWT_ISSUER}
-  BRAVO_CONSOLE_AUD: ${PLATFORM_CONSOLE_AUD:?set PLATFORM_CONSOLE_AUD}
-  BRAVO_MCP_AUD: ${PLATFORM_MCP_AUD:?set PLATFORM_MCP_AUD}
+  # Cloudflare Access only (audit A3): keys are fetched from https://<team>/cdn-cgi/access/certs.
+  # Unset -> every login is refused with 503 access_not_connected. No dev tokens, no seeded users.
+  BRAVO_ACCESS_TEAM_DOMAIN: ${PLATFORM_ACCESS_TEAM_DOMAIN:-}
+  BRAVO_CONSOLE_AUD: ${PLATFORM_CONSOLE_AUD:-}
+  BRAVO_MCP_AUD: ${PLATFORM_MCP_AUD:-}
+  BRAVO_BOOTSTRAP_EMAIL: ${PLATFORM_BOOTSTRAP_EMAIL:-}
+  BRAVO_BOOTSTRAP_TENANT: ${PLATFORM_BOOTSTRAP_TENANT:-}
   BRAVO_EXECUTOR_URL: ${PLATFORM_EXECUTOR_URL:?set PLATFORM_EXECUTOR_URL}
   BRAVO_CONSOLE_BASE_URL: ${PLATFORM_CONSOLE_BASE_URL:?set PLATFORM_CONSOLE_BASE_URL}
   BRAVO_GATE_MAX_LAG_BYTES: ${PLATFORM_GATE_MAX_LAG_BYTES:?set PLATFORM_GATE_MAX_LAG_BYTES}
@@ -43,9 +46,6 @@ services:
       BRAVO_API_DB_PASSWORD: ${PLATFORM_DB_API_PASSWORD:?set PLATFORM_DB_API_PASSWORD}
       BRAVO_MCP_DB_PASSWORD: ${PLATFORM_DB_MCP_PASSWORD:?set PLATFORM_DB_MCP_PASSWORD}
       BRAVO_EXECUTOR_DB_PASSWORD: ${PLATFORM_DB_EXECUTOR_PASSWORD:?set PLATFORM_DB_EXECUTOR_PASSWORD}
-      BRAVO_SEED_DEV: ${PLATFORM_DEV_AUTH:?set PLATFORM_DEV_AUTH}
-      BRAVO_SEED_TENANT: ${PLATFORM_TENANT:?set PLATFORM_TENANT}
-      BRAVO_JWT_ISSUER: ${PLATFORM_JWT_ISSUER}
     depends_on:
       platform-db:
         condition: service_healthy
@@ -65,16 +65,11 @@ services:
       OTEL_SERVICE_NAME: api
       BRAVO_DATABASE_URL: postgresql://bravo_api:${PLATFORM_DB_API_PASSWORD}@platform-db:5432/${PLATFORM_DB_NAME}
       BRAVO_CORS_ORIGINS: ${PLATFORM_CORS_ORIGINS:?set PLATFORM_CORS_ORIGINS}
-      BRAVO_DEV_AUTH: ${PLATFORM_DEV_AUTH}
-      BRAVO_DEV_TOKENS_DIR: /etc/bravo/devtokens
       BRAVO_SSE_TICKET_SECRET: ${PLATFORM_SSE_TICKET_SECRET:?set PLATFORM_SSE_TICKET_SECRET}
       # Rehearsal service (compose.rehearsal.yaml): http://rehearsal:8090 on the pilot network. Empty keeps
       # rehearsals refused (rehearsal_unconfigured); the token must equal the service's REHEARSAL_API_TOKEN.
       BRAVO_REHEARSAL_URL: ${PLATFORM_REHEARSAL_URL:-}
       BRAVO_REHEARSAL_API_TOKEN: ${REHEARSAL_API_TOKEN:-}
-    volumes:
-      - ./devauth/jwks.json:/etc/bravo/jwks.json:ro
-      - ./devauth/tokens:/etc/bravo/devtokens:ro
 
   operator-mcp:
     image: bravo-api:pilot
@@ -91,8 +86,6 @@ services:
       BRAVO_DATABASE_URL: postgresql://bravo_mcp:${PLATFORM_DB_MCP_PASSWORD}@platform-db:5432/${PLATFORM_DB_NAME}
       BRAVO_MCP_ALLOWED_HOSTS: ${PLATFORM_MCP_ALLOWED_HOSTS:?set PLATFORM_MCP_ALLOWED_HOSTS}
       BRAVO_MCP_ALLOWED_ORIGINS: ${PLATFORM_MCP_ALLOWED_ORIGINS:-}
-    volumes:
-      - ./devauth/jwks.json:/etc/bravo/jwks.json:ro
 
   platform-bao:
     # D-26: the platform's only key store. Production mode (never -dev): raft storage on a named

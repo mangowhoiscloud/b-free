@@ -7,11 +7,14 @@
 import type { StreamStatus } from '../api/client';
 import type { ConsoleView } from '../api/derive';
 import type { DevToken, PlanEvent } from '../api/types';
+import { useQuery } from '@tanstack/react-query';
+import { errorText } from '../api/client';
 import { ApprovalPanel } from '../components/ApprovalPanel';
+import { useApi } from '../state';
 import { fmtTime, shortId } from '../lib/format';
 import { StreamBadge } from './AgentsScreen';
-import { Block, DataTable, Screen } from './ScreenFrame';
-import { asRecord, NotConnected, str, Tag } from './live';
+import { Block, DataTable, Screen, Val } from './ScreenFrame';
+import { asRecord, Fresh, NotConnected, str, Tag } from './live';
 import { eventsOf } from './planEvents';
 
 const KINDS = [
@@ -19,6 +22,38 @@ const KINDS = [
   { stage: 'cutover', title: '컷오버 승인 (cutover · S3)', what: '계획 · 게이트 결과에 결속 → Executor 컷오버' },
   { stage: 'failback', title: '되돌리기 승인 (failback)', what: '컷오버 뒤 원래 환경으로 되돌림' },
 ] as const;
+
+function short(v: unknown, n = 12) {
+  return typeof v === 'string' && v ? <span className="mono">{shortId(v.replace(/^sha256:/, ''), n)}</span> : <Val v={null} />;
+}
+
+/** change (S2) approvals' binding from GET /v1/plans/{id}/changes. */
+function ChangesBlock({ planId, token }: { planId: string; token: string }) {
+  const api = useApi();
+  const q = useQuery({ queryKey: ['changes', planId, token], queryFn: () => api.listChanges(token, planId), refetchInterval: 5000, retry: 0 });
+  return (
+    <Block title={`변경(change) 결속 내용${q.data ? ` (${q.data.length}건)` : ''}`} meta={<Fresh at={q.dataUpdatedAt} />}>
+      {q.error ? (
+        <NotConnected endpoint={`GET /v1/plans/${shortId(planId)}/changes`} reason={errorText(q.error)} />
+      ) : (
+        <DataTable
+          rows={q.data ?? []}
+          rowKey={(c, i) => String(c.change_id ?? i)}
+          empty={q.isLoading ? '불러오는 중…' : '이 계획에는 변경 기록이 없습니다.'}
+          cols={[
+            { key: 'id', header: '변경', render: (c) => short(c.change_id, 8) },
+            { key: 's', header: '상태', render: (c) => (typeof c.status === 'string' ? <span className="mono">{c.status}</span> : <Val v={null} />) },
+            { key: 'img', header: '이미지 digest', weight: 2, render: (c) => short(c.image_digest) },
+            { key: 'diff', header: 'diff digest', weight: 2, render: (c) => short(c.diff_digest) },
+            { key: 'pol', header: '정책 diff digest', weight: 2, render: (c) => short(c.policy_diff_digest) },
+            { key: 'dep', header: '배포 digest', weight: 2, render: (c) => short(c.deployed_digest) },
+            { key: 'r', header: '사유', weight: 2, render: (c) => <span className="foot">{typeof c.reason === 'string' ? c.reason : '—'}</span> },
+          ]}
+        />
+      )}
+    </Block>
+  );
+}
 
 export function ApprovalsScreen({ planId, view, events, status, detail, user }: { planId: string | null; view: ConsoleView | null; events: PlanEvent[]; status: StreamStatus; detail: string | null; user: DevToken | null }) {
   const granted = eventsOf(events, ['approval.granted']);
@@ -47,12 +82,8 @@ export function ApprovalsScreen({ planId, view, events, status, detail, user }: 
                 { key: 'b', header: '결속 대상', weight: 4, render: (r) => <span className="foot">{r.k.what}</span> },
               ]}
             />
-            <NotConnected
-              title="change 결속 내용 연결 안 됨"
-              endpoint="platform-api change 승인 경로 (docs/architecture 계약 문서 대기)"
-              reason="diff · 이미지 digest · 정책 diff를 내주는 API 경로와 계약 문서가 아직 없습니다."
-            />
           </Block>
+          <ChangesBlock planId={planId} token={user?.token ?? ''} />
           <Block title={`승인 기록 (${granted.length}건)`}>
             <DataTable
               rows={granted}

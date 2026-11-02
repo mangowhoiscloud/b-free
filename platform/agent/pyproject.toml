@@ -12,7 +12,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest==9.2.0"]
 # openai_agents provider: the OpenAI Agents SDK as a second engine behind the same contract (13 6).
-# The API key comes from the platform OpenBao at run time; there is no ChatGPT-subscription login.
+# The credential comes from the platform OpenBao at run time: an API key, or (demo only) the lead's ChatGPT
+# session on the undocumented Codex backend (bravo_agents/chatgpt_auth.py, ADR 0009).
 # 0.20.0 is the newest release on openai<3: harbor 0.25.0 pulls litellm, which needs openai<3 (0.21+ needs openai>=3).
 openai = ["openai-agents==0.20.0"]
 

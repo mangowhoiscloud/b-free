@@ -10,18 +10,19 @@ case ${1:?usage} in
   up)
     docker rm -f "$NAME" >/dev/null 2>&1 || true
     docker run -d --name "$NAME" -p 127.0.0.1:46432:6432 \
-      --add-host "$RDS_HOST:host-gateway" --add-host "wrong-name.example:host-gateway" \
+      --add-host "${M_HOST%.}:host-gateway" --add-host "wrong-name.example:host-gateway" \
       --env-file <(printf 'APP_WRITER_PASSWORD=%s\nPGB_ADMIN_PASSWORD=%s\n' \
-          "$("$SPIKE_HERE/bao.sh" get envs/spike-db/rds app_writer)" "$("$SPIKE_HERE/bao.sh" get envs/spike-db/pgbouncer pgb_admin)") \
-      -v "$SPIKE_TLS/rds-ap-northeast-2-bundle.pem:/tls/rds-ca.pem:ro" --tmpfs /run/pgb:mode=0777 \
+          "$("$SPIKE_HERE/bao.sh" get "$M_SECRET" app_writer)" "$("$SPIKE_HERE/bao.sh" get envs/spike-db/pgbouncer pgb_admin)") \
+      -v "$M_CA:/tls/rds-ca.pem:ro" --tmpfs /run/pgb:mode=0777 \
       --user 0:0 --entrypoint sh bravo-pgbouncer:pilot -c '
         umask 077
         printf "\"app_writer\" \"%s\"\n\"pgb_admin\" \"%s\"\n" "$APP_WRITER_PASSWORD" "$PGB_ADMIN_PASSWORD" > /run/pgb/userlist.txt
         unset APP_WRITER_PASSWORD PGB_ADMIN_PASSWORD
         cat > /run/pgb/pgbouncer.ini <<INI
 [databases]
-chat = host='"$RDS_HOST"' port='"$RDS_LOCAL_PORT"' dbname=chat
-chat_wrongname = host=wrong-name.example port='"$RDS_LOCAL_PORT"' dbname=chat
+chat = host='"$M_HOST"' port='"$M_LOCAL_PORT"' dbname=chat
+chat_nodot = host='"${M_HOST%.}"' port='"$M_LOCAL_PORT"' dbname=chat
+chat_wrongname = host=wrong-name.example port='"$M_LOCAL_PORT"' dbname=chat
 [pgbouncer]
 listen_addr = 0.0.0.0
 listen_port = 6432
@@ -43,7 +44,7 @@ INI
         chown -R 10070:10070 /run/pgb
         exec su -s /bin/sh bravo-pgb -c "exec pgbouncer /run/pgb/pgbouncer.ini"' >/dev/null
     sleep 2; docker logs "$NAME" 2>&1 | tail -3
-    docker exec "$NAME" getent hosts "$RDS_HOST" wrong-name.example
+    docker exec "$NAME" getent hosts "${M_HOST%.}" wrong-name.example
     ;;
   down) docker rm -f "$NAME" ;;
 esac

@@ -1,3 +1,6 @@
+# NOT USED on the spec platform (EC2 + RKE2). Kept as the record of the interim platform EKS (retired
+# 2026-11-02), where Cilium ran in AWS VPC CNI chaining mode and its Gateway could not reach backends on other
+# nodes. On RKE2 the Cilium Gateway API implementation serves bravo-gateway (deploy/platform/edge/gateway.yaml).
 # Envoy Gateway 1.9.3 (gateway-helm) = Gateway API implementation for the platform front (bravo-gateway).
 # Why not the Cilium implementation (TECH-STACK-SPEC 1 "Gateway API(Envoy, Cilium 구현)"): in AWS VPC CNI
 # chaining mode Cilium's Envoy dials backends from its own cluster-pool "ingress" IP (10.0.x.y), which the VPC

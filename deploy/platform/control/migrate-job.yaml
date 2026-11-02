@@ -23,6 +23,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       automountServiceAccountToken: false
+      imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
       nodeSelector:
         bravo.io/pool: core
       securityContext:

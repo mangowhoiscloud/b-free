@@ -10,7 +10,7 @@ infra/envs/target-gcp/scripts/verify.sh   # PASS/FAIL/UNKNOWN과 증거(runs/ver
 infra/envs/target-gcp/scripts/down.sh     # Gateway · DB 디스크 정리 → HMAC 키 · AppRole 회수 → terraform destroy
 ```
 
-준비물: Terraform 1.17, gcloud(프로젝트 권한), kubectl, helm, jq, envsubst, openssl, AWS 자격(상태 백엔드), 열려 있는 플랫폼 OpenBao(`deploy/pilot/scripts/keys.sh status`). gcloud 기본 설정은 쓰지도 바꾸지도 않습니다. 모든 호출에 `--project`를 줍니다.
+준비물: Terraform 1.17, gcloud(프로젝트 권한), kubectl, helm, jq, envsubst, openssl, AWS 자격(상태 백엔드), 열려 있는 플랫폼 OpenBao(`deploy/pilot/scripts/keys.sh status`, 위치는 custody `bao_target`). kubectl 컨텍스트는 `bravo-target-gcp`이고 kubeconfig는 `infra/envs/target-gcp/.terraform/bravo/kubeconfig`(비밀 없음, DNS 엔드포인트 + `gke-gcloud-auth-plugin`)입니다. gcloud 기본 설정은 쓰지도 바꾸지도 않습니다. 모든 호출에 `--project`를 줍니다.
 
 ## 무엇을 만드나(Terraform)
 

@@ -228,7 +228,9 @@ def test_full_pilot_flow(console: Console, executor: ExecutorStub, pg: dict[str,
         kinds = [r[0] for r in c.execute("SELECT kind FROM events WHERE plan_id = %s ORDER BY seq", (pid,))]
         modes = {r[0] for r in c.execute("SELECT DISTINCT mode FROM events WHERE plan_id = %s", (pid,))}
     assert modes == {"live"}
-    assert kinds.count("run.stage") == 4 and kinds[-3:] == ["run.done", "receipt.saved", "state.changed"]
+    # CUTOVER -> WATCH issues the failback request (approval.requested, stage failback) in the same step.
+    assert kinds.count("run.stage") == 4
+    assert kinds[-4:] == ["run.done", "receipt.saved", "state.changed", "approval.requested"]
     assert "approval.granted" in kinds and kinds.count("gate.verdict") == 2
     with psycopg.connect(pg["owner"]) as c:
         saved = c.execute("SELECT data FROM events WHERE plan_id = %s AND kind = 'receipt.saved'", (pid,)).fetchone()

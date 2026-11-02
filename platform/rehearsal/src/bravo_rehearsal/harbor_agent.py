@@ -140,6 +140,7 @@ async def run_worker(binding: harbor_binding.Binding, log_dir: Path) -> WorkerRu
         except LLMUnconfigured as exc:
             raise AgentRefused("llm_unconfigured") from exc
         trial.phase = "agent_running"
+        trial.worker_started = True  # evidence rows say whether a model could have been called
         proc = await asyncio.create_subprocess_exec(sys.executable, "-m", "bravo_rehearsal.worker", env=env,
                                                     cwd=config_dir, stdout=out, stderr=err)
         waiter = asyncio.create_task(proc.wait())

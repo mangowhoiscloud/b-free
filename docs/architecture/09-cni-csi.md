@@ -1,5 +1,7 @@
 # CNI와 CSI
 
+**바뀐 것(2026-11-02 21:10 KST).** 팀장이 RKE2를 스펙 r2대로 되돌렸습니다(ADR 0010). 온프렘 목적지와 플랫폼은 RKE2(CIS)이고, 플랫폼은 EC2 1대 단일 노드입니다. 아래 표의 K3s 열은 RKE2로 바뀝니다. Cilium + Hubble, Kyverno `GeneratingPolicy`, StorageClass 이름, 객체 저장(RGW)은 그대로입니다. 다른 점 둘: RKE2에 Cilium을 붙이는 방법(내장 `cni: cilium` 또는 `cni: none` + 랜딩 존 Cilium)이 열려 있고, RKE2에는 K3s의 `local-path`가 없어 블록 저장 바탕이 필요합니다. 표 전체를 RKE2 기준으로 다시 쓰는 일은 RKE2 cloud-init이 생긴 뒤 합니다.
+
 클러스터 네트워크(CNI), 네트워크 정책 집행, 스토리지(CSI)를 환경마다 정합니다. 기준은 팀장 결정(2026-11-02)입니다. CNI는 세 환경 모두 Cilium + Hubble입니다. RKE2, Calico, flannel 단독, TopoLVM, SeaweedFS는 쓰지 않습니다. 결정 기록은 ADR 0004(클러스터와 K8s 판), ADR 0005(객체 저장), ADR 0008(Cilium, Gateway API, Terraform)입니다. 2026-11-02 20:45 KST에 다시 썼습니다. 앞 판은 flannel, Kyverno ClusterPolicy, TopoLVM 기준이었습니다.
 
 원칙은 넷입니다.

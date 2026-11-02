@@ -8,6 +8,7 @@
 - **관찰 [ID]**: 공식 문서에서 직접 확인했습니다. URL은 13절에 있고, 모두 2026-11-02에 접속했습니다.
 - **추론**: 공식 문서 여러 개를 조합했거나 설계 판단입니다.
 - **확인 필요(SPK-n)**: 공식 근거를 찾지 못했습니다. 11절의 스파이크 시험으로 확인합니다.
+- **측정(SPK-n)**: 2026-11-02 실제 클라우드(RDS 서울, Cloud SQL 도쿄)에서 Executor 코드로 돌려 확인했습니다. 결과와 증거 경로는 11.1–11.3절, 칸별 상태는 3.2절입니다. 측정이 위 관찰 · 추론과 다르면 측정을 따릅니다.
 
 약어: **A** = AWS 관리형, **G** = Google 관리형, **C** = CNPG.
 
@@ -47,6 +48,15 @@
 | 최신 메이저 | 18.6까지, 19는 preview(관찰 [A12]) | 18.6.1까지(관찰 [A12]) | 9.6–18, 기본 18(관찰 [G8]) | 14–18(관찰 [G11]) | 1.30이 PG 14–18(관찰 [N1]) |
 | 이 설계의 판단 | 지원(P1 후보) | 지원. 슬롯 장애 조치 확인 뒤 | 지원. 단 구독 쪽은 비HA(P2) | **보류**. 3절 막는 것 | 기본 |
 
+**측정으로 채운 칸(2026-11-02, 11.1 · 11.2절).** 위 표의 "확인 필요"보다 아래가 우선입니다.
+- `pg_create_subscription`, `origin = none`: RDS · Cloud SQL 모두 비superuser `executor_ctl`이 구독을 만들고 켜고 끔. `pg_replication_origin_advance`는 두 엔진 모두 `executor_ctl`에 거부되고 마스터만 됨.
+- 발행 · 슬롯 역할: RDS 마스터는 REPLICATION 속성을 줄 수 없음(`rds_replication`만). Cloud SQL 마스터는 REPLICATION 속성을 줄 수 있음.
+- 펜싱(NOLOGIN, REVOKE, 세션 종료): 두 엔진 모두 `executor_ctl`(ADMIN OPTION, `pg_signal_backend`)로 됨.
+- `max_slot_wal_keep_size`: RDS는 dynamic, 2048 MB 걸림. Cloud SQL은 102400 MB 미만 거부.
+- TLS 강제: RDS(`rds.force_ssl=1`), Cloud SQL(`ENCRYPTED_ONLY`) 모두 평문을 `no pg_hba.conf entry … no encryption`류로 거부.
+- 서버 인증서 이름: Cloud SQL 공유 CA 모드 + PSA는 SAN `…sql-psa.goog.`(끝에 점). AlloyDB 직접 연결은 자체 서명 `localhost`.
+- Cloud SQL HA 구독자: 생성 · 동작 · 장애 조치 뒤 적용 모두 됨. 문서의 제한 이유는 나가는 IP.
+
 ## 3. 아홉 방향 매트릭스
 
 "준비"는 컷오버 전에 끝내는 온보딩입니다(5절). "역방향"은 컷오버 4.1절 4번의 미리 만든 역방향 구독입니다.
@@ -63,7 +73,7 @@
 | 8 | G → A | Cloud SQL 발행 → RDS 구독 | #7 출발지 준비 + #2 목적지 준비 | #7과 같음 | RDS 발행 → Cloud SQL 구독 | #7의 HA 문제 + 관리형 구독자 CA | P2 |
 | 9 | G → G | Cloud SQL 발행 → Cloud SQL 구독. 공식 예시가 이 경우(관찰 [G2]) | 양쪽 플래그, 구독 쪽 비HA | #7과 같음 | 반대 방향 같은 방식 | 양쪽 비HA가 필요 | P2 |
 
-**AlloyDB.** 세 칸 모두 보류합니다. 직접 연결에서 verify-full을 쓸 수 없고(관찰 [G10]), 복제 연결에 쓸 REPLICATION 역할을 사용자에게 주지 못하며(관찰 [G9]), 외부 publisher를 native로 구독하는 공식 절차가 없습니다. SPK-11이 통과하기 전에는 Google 관리형 선택지를 Cloud SQL로 둡니다.
+**AlloyDB.** 세 칸 모두 보류합니다. 직접 연결에서 verify-full을 쓸 수 없고(관찰 [G10], **측정(SPK-11)**: 직접 연결 인증서는 `CN=unused`, SAN `localhost`인 자체 서명이고 API가 주는 CA `root.alloydb`로 검증되지 않음), 복제 연결에 쓸 REPLICATION 역할을 사용자에게 주지 못하며(관찰 [G9], 시험 안 함), 외부 publisher를 native로 구독하는 공식 절차가 없습니다. SPK-11이 통과하기 전에는 Google 관리형 선택지를 Cloud SQL로 둡니다.
 
 ### 3.1 같은 엔진, 다른 리전 · 계정
 
@@ -74,6 +84,20 @@
 | 클라우드 자체 복제(교차 리전 읽기 복제본 승격, Aurora Global Database, Cloud SQL 교차 리전 복제본) | 쓰지 않음. 쓴다면 초기 복사 가속에만(확인 필요) | 승격은 클라우드 API라 Executor가 펜싱하지 못함. 역방향 경로가 없음(추론) |
 
 리전 이전 자체는 설계 문서에만 둡니다(D-07).
+
+### 3.2 칸별 증거 상태(2026-11-02 측정)
+
+**측정**은 실제 클라우드에서 Executor 코드로 돌린 결과입니다. **막힘**은 시험으로 막힌 이유를 확인했습니다. **아직**은 돌리지 않았습니다. 증거 경로의 `R/`은 `deploy/pilot/runs/spike-rds-20261102T202459/`, `G/`는 `deploy/pilot/runs/spike-cloudsql-20261102T204821/`입니다(둘 다 gitignore).
+
+공통 조건: C는 CNPG가 아니라 노트북의 PostgreSQL 16.15 컨테이너입니다(파일럿과 같은 공식 이미지). 링크는 임시 링크(D-16 전)입니다. A는 RDS for PostgreSQL 16.15(db.t4g.micro, 서울), G는 Cloud SQL for PostgreSQL 16.15(db-f1-micro, 도쿄)입니다. Aurora와 AlloyDB는 칸에 넣지 않았습니다.
+
+| 출발 ↓ · 목적 → | A (RDS) | G (Cloud SQL) | C (자체 운영 PG16) |
+|---|---|---|---|
+| **A** | #5 **아직.** RDS 두 대를 잇는 실행은 하지 않았습니다. 부품은 측정했습니다. RDS 발행(#4), RDS 구독(#2) | #6 **아직.** 끝에서 끝 실행은 하지 않았습니다. 부품은 측정했습니다. RDS 발행(#4), Cloud SQL 구독(#3) | #4 **측정.** 정방향 10만 행 초기 복사 2.2초. 컷오버 4–8단계 통과. 4단계 294.8 ms(예산 400 ms). 영수증 MATCH 100,094행. 역방향 200행이 72.5 ms 뒤 RDS에 도착, 영수증 MATCH. 되돌리기(PG → RDS)도 MATCH. `R/cutover-rds-to-pg.json`, `R/failback-pg-to-rds.json` |
+| **G** | #8 **아직.** 부품은 측정했습니다. Cloud SQL 발행(#7), RDS 구독(#2) | #9 **아직.** Cloud SQL 두 대를 잇는 실행은 하지 않았습니다 | #7 **측정.** 정방향 10만 행 초기 복사 12.5초(IAP 링크). 컷오버 4–8단계 통과. 영수증 MATCH 100,014행. 역방향 200행 892 ms 뒤 도착, 영수증 MATCH. 되돌리기 MATCH. 4단계는 1,607.6 ms로 예산 초과. 원인은 IAP 링크 왕복입니다(11.3절 4). `G/cutover-cloudsql-to-pg.json`, `G/failback-pg-to-cloudsql.json` |
+| **C** | #2 **측정(부분).** RDS가 C를 구독하는 길을 측정했습니다. `executor_ctl`이 구독 생성(`origin = none`). 역방향 · 되돌리기에서 streaming, 영수증 MATCH. **구독자 TLS는 verify-full 불가**: CA 파일을 둘 수 없음. `sslrootcert=system`은 받지만 공개 CA 인증서 경로는 시험하지 않았습니다. 정방향 초기 복사(`copy_data = true`)를 RDS로 받는 실행은 아직입니다. `R/rev-sub.json` | #3 **측정(부분).** #2와 같은 범위입니다. Cloud SQL은 `sslrootcert=system`을 거부합니다(`certificate is not allowed`). 남는 길은 `require` + `channel_binding=require`뿐입니다. HA(REGIONAL)에서도 구독 생성, 동작, 수동 장애 조치 뒤 적용이 됐습니다(11.2절). `G/rev-sub.json`, `G/spk07-ha-failover.txt` | #1 **측정(파일럿, 이 스파이크 밖).** `docs/evidence/pilot-notebook/RUNS.tsv` |
+
+**한 줄 요약.** 관리형 출발지에서 C로 가는 두 칸(#4, #7)은 컷오버와 되돌리기까지 측정으로 통과했습니다. 관리형이 구독자인 칸(#2, #3)은 동작하지만 구독자 쪽 이름 검증(verify-full)이 막혀 있습니다. 관리형끼리의 칸(#5, #6, #8, #9)은 아직입니다.
 
 ## 4. 관리형이 끼면 바뀌는 규칙
 
@@ -252,13 +276,13 @@ PG18까지 시퀀스는 복제되지 않습니다(관찰 [P3]). 지금처럼 5�
 
 | 순위 | 막는 것 | 근거 | 영향 받는 방향 | 대응 |
 |---|---|---|---|---|
-| 1 | 관리형 구독자가 우리 publisher에 닿는 길과 CA. 관리형 DB에 CA 파일을 둘 수 없음 | 추론. SPK-03 | A → C의 되돌리기, C → A 정방향, #5–#9 | 내부 LB 링크 + 공개 CA 인증서(`sslrootcert=system`). 안 되면 `channel_binding=require` 예외를 보안 검토 |
-| 2 | Cloud SQL HA 인스턴스는 구독자가 될 수 없음 | 관찰 [G2] | G 출발지의 되돌리기(#7–#9), G 목적지(#3, #6) | 목적지는 ZONAL로 만들고 DONE 뒤 HA. HA 출발지는 HA를 끄는 데 동의가 없으면 FR-11 불가, NEEDS_HUMAN |
-| 3 | AlloyDB 직접 연결은 verify-full 불가, 복제 역할을 줄 수 없음, 외부 native 구독 절차 없음 | 관찰 [G9][G10] | AlloyDB 전부 | 보류. Google 관리형은 Cloud SQL. SPK-11 |
-| 4 | 관리형 출발지의 논리 디코딩은 재시작이 필요 | 관찰 [A1][A2][G1] | A · G 출발지 전부 | 5.1 온보딩. 정비 시간과 `change` 승인. 컷오버 일정보다 먼저 |
-| 5 | 관리형에는 PAUSE가 없고, PgBouncer는 공급자 이름 검증에 `hostaddr`를 못 씀 | 관찰 [A8][G7]. PgBouncer 옵션은 문서에서 찾지 못함([B1]). DNS 재정의는 SPK-05 | 관리형 끝이 있는 모든 방향 | 5.2 온보딩 + `hostAliases`와 고정 ClusterIP |
+| 1 | 관리형 구독자가 우리 publisher를 이름으로 검증하지 못함. **길은 열림** | **측정(SPK-03)**. 두 엔진 모두 CA 파일을 둘 수 없음(`root.crt does not exist`). RDS는 `sslrootcert=system`을 받고 시스템 신뢰 저장소로 검증함. Cloud SQL은 `sslrootcert=system`을 거부함(`certificate is not allowed`). 두 엔진 모두 `require` + `channel_binding=require`는 동작. 같은 VPC의 링크 끝(RDS → Pod IP, Cloud SQL PSA → VM IP)으로 가는 길은 동작 | A → C의 되돌리기, C → A 정방향, #5–#9 | Cloud SQL은 `channel_binding=require`밖에 없음. 그래서 ENC-01 예외의 보안 검토가 이 설계의 전제가 됨(제안). RDS만 공개 CA 인증서 안이 남음(시험 안 함) |
+| 2 | Cloud SQL HA 인스턴스의 구독자 제한 | 관찰 [G2]는 "HA는 나가는 IP가 일정하지 않아 구독자가 될 수 없다"고 적음. **측정(SPK-07)**: REGIONAL에서 구독 생성 · ENABLE · 수동 장애 조치(23초) 뒤 적용이 모두 됨 | G 출발지의 되돌리기(#7–#9), G 목적지(#3, #6) | 막는 것은 기능이 아니라 출발 IP입니다. publisher 쪽 허용을 PSA 할당 대역 전체로 두면 됩니다(측정 환경이 그렇게 함). 지원 범위 밖이므로 기본은 여전히 ZONAL로 두고, HA 출발지는 사람 확인으로 진행(제안) |
+| 3 | AlloyDB 직접 연결은 verify-full 불가, 복제 역할을 줄 수 없음, 외부 native 구독 절차 없음 | 관찰 [G9][G10]. **측정(SPK-11, TLS만)**: 직접 연결 인증서가 자체 서명(`CN=unused`, SAN `localhost`)이라 공식 CA로 verify-ca · verify-full 모두 실패. `require`(암호화만)는 동작 | AlloyDB 전부 | 보류. Google 관리형은 Cloud SQL. 복제 역할과 구독 시험은 아직 |
+| 4 | 관리형 출발지의 논리 디코딩은 재시작이 필요 | 관찰 [A1][A2][G1]. **측정(SPK-01)**: RDS는 클라이언트 단절 11.8초(API 66.5초), Cloud SQL은 34.4초(작업 51.5초) | A · G 출발지 전부 | 5.1 온보딩. 정비 시간과 `change` 승인. 컷오버 일정보다 먼저 |
+| 5 | 관리형에는 PAUSE가 없고, PgBouncer는 공급자 이름 검증에 `hostaddr`를 못 씀 | 관찰 [A8][G7]. **측정(SPK-05)**: `/etc/hosts` 재정의로 RDS · Cloud SQL 모두 verify-full 통과, 틀린 이름 거부. Cloud SQL PSA 인증서 SAN은 끝에 점이 있어 `host=`와 hosts 항목 모두 점까지 써야 함 | 관리형 끝이 있는 모든 방향 | 5.2 온보딩 + `hostAliases`와 고정 ClusterIP. Cloud SQL은 끝 점 이름을 쿠버네티스 `hostAliases`가 받는지 확인 필요. 안 되면 사설 DNS 레코드(PSA 이름은 `recordManager: CUSTOMER`) |
 
-다음 순위: Aurora writer 장애 조치 때 논리 슬롯 유지(SPK-08), PG16 ADMIN OPTION 규칙에 맞춘 펜싱 권한(SPK-04), RDS의 `max_slot_wal_keep_size`(SPK-01).
+다음 순위: Aurora writer 장애 조치 때 논리 슬롯 유지(SPK-08, 아직). PG16 ADMIN OPTION 규칙에 맞춘 펜싱 권한(SPK-04)은 RDS · Cloud SQL 모두 측정으로 통과했습니다. RDS의 `max_slot_wal_keep_size`(SPK-01)는 2048 MB가 걸립니다. Cloud SQL은 이 플래그가 102400 MB(100 GB) 미만을 거부하므로, 작은 인스턴스에서는 보호가 되지 않습니다(측정, 11.2절).
 
 ## 11. 스파이크 시험
 
@@ -408,15 +432,82 @@ WHERE rolname IN ('postgres', 'alloydbsuperuser');
 -- 이어서 SPK-03과 같은 CREATE SUBSCRIPTION, Auth Proxy 경유 replication=database 접속 시도
 ```
 
+### 11.1 스파이크 결과: RDS(측정, 2026-11-02)
+
+**환경.** RDS for PostgreSQL 16.15, db.t4g.micro, 단일 AZ, gp3 20 GiB, 자동 백업 없음, 서울. 출발지 VPC의 사설 서브넷에 두었습니다(`infra/envs/spike-db`). C 쪽은 노트북의 PostgreSQL 16.15 컨테이너입니다. 데이터는 `messages` 10만 행(한글, 대소문자, 탭, `|`, 줄바꿈, 이모지), `attachments` 20행(uuid PK), `message_attachments` 20행입니다. Executor 코드(`ChatDb`, `fenced`, `TableDigest`, `PgBouncerAdmin`)는 고치지 않고 그대로 불렀습니다(`deploy/pilot/spike-db/spike.py`).
+- 정방향 길: 노트북 → `kubectl port-forward` → EKS 안 TCP 중계 Pod → RDS. TLS는 끝에서 끝입니다.
+- 역방향 길: RDS → 같은 VPC의 중계 Pod IP(`tools/link` relay) → 노트북이 미리 연 연결 → 노트북 PG.
+
+| ID | 결과 | 측정값 | 증거 |
+|---|---|---|---|
+| SPK-01 | 통과 | 재부팅 전 `wal_level=minimal`(자동 백업 0일), 뒤 `logical`. 재부팅 호출부터 클라이언트 단절 11.8초(9.3초에 끊기고 20.6초에 복귀). API `available`까지 66.5초. `max_slot_wal_keep_size`는 dynamic이고 2048 MB가 걸림(슬롯 `safe_wal_size` 값 있음) | `R/spk01-summary.json`, `R/spk01-probe.jsonl`, `R/rds-parameters.json` |
+| SPK-02 | 통과(조건부) | 비superuser `executor_ctl`(`pg_create_subscription`, DB CREATE)이 RDS에서 구독을 만듦(`origin = none`, `enabled = false`, `create_slot = false`). ENABLE · DISABLE, 정방향 슬롯 삭제(`rds_replication`)도 됨. **`pg_replication_origin_advance`는 `executor_ctl`에 거부.** 마스터는 실행할 수 있지만 EXECUTE를 다른 역할에 GRANT하지 못함 | `R/rev-sub.json`, `R/origin-advance-master.txt`, `R/privileges.json` |
+| SPK-03 | 부분 | CA 파일 지정 불가(`/root/.postgresql/root.crt does not exist`). `sslrootcert=system`은 받고 시스템 저장소로 검증(사설 CA에 `CERTIFICATE_VERIFY_FAILED`). `require` + `channel_binding=require` 성공. 공개 CA 인증서 경로는 시험하지 않음 | `R/rev-sub.json` |
+| SPK-04 | 통과 | 4단계(NOLOGIN, REVOKE, 세션 종료) 294.8 ms. REVOKE commit 뒤 성공한 앱 쓰기 0건. 옛 epoch 명령은 RDS `bravo_fence`가 거부(E5) | `R/cutover-rds-to-pg.json` |
+| SPK-05 | 통과(PAUSE 주의) | 파일럿 PgBouncer 1.26.1이 `/etc/hosts`(Pod `hostAliases`와 같은 방식)로 RDS 이름을 링크로 보내고 verify-full 통과(TLSv1.3). 틀린 이름은 `name … not present in server certificate`로 거부. `auth_file` SCRAM 로그인 성공. `auth_query`는 불가(`pg_shadow` 권한 없음). PAUSE+RESUME 왕복 p95 6.1 ms(20회, 쓰기 4개). **같은 부하에서 쓰기 679건 중 406건이 `server login has been failing, cached error: pause mode`로 실패**(11.3절 3) | `R/spk05-pgbouncer.json`, `R/spk05-pgbouncer.log` |
+| SPK-06 | 부분 | CNPG가 아니라 일반 PG 구독자로 시험. `host=<RDS 이름> hostaddr=<링크 주소>` + verify-full로 streaming. 틀린 이름, IP 문자열, 틀린 CA, 평문은 구독 생성에서 모두 거부(N6 d). CNPG `externalClusters`의 `hostaddr`는 아직 | `R/fwd-sub.json`, `R/n6-tls-client.txt` |
+| SPK-09 | 통과 | 해시 규칙 v1.1 영수증 MATCH(10만 행, uuid PK 포함). 세션 `TimeZone=Asia/Tokyo`, `DateStyle='ISO, DMY'`에서도 같음. **같은 `en_US.UTF-8`인데 glibc 판(RDS 2.26-59.amzn2, Debian 2.41) 때문에 기본 collation 정렬이 다름.** `COLLATE "C"` 해시는 같음 | `R/digest-after-initial-copy.json`, `R/spk09.json` |
+
+**스키마가 RDS에서 막히는 곳(측정).** 마스터는 `rds_superuser`이고 REPLICATION 속성이 없습니다.
+- `CREATE ROLE … REPLICATION`과 `ALTER ROLE … REPLICATION`은 거부됩니다(PG16: REPLICATION 역할만 REPLICATION 역할을 만듦). `GRANT rds_replication`으로 바꿉니다. 이 스파이크의 변형은 두 줄입니다(`deploy/pilot/spike-db/rds_02_roles.sql`, `R/schema-variant.diff`). 이 변형은 당시 판의 `02_roles.sql`(평문 비밀번호 변수) 기준입니다.
+- `pg_hba_file_rules` GRANT는 거부됩니다. 마스터는 읽을 수 있지만 남에게 줄 수 없습니다. DB-AUTH 입력은 RDS에서 파라미터 그룹(`rds.force_ssl`) 조회로 바꿔야 합니다(제안). 평문 접속은 `no pg_hba.conf entry … no encryption`으로 거부됨을 확인했습니다.
+- `bravo_catalog.role_has_password()`는 `pg_authid` 권한이 없어 실패합니다(마스터도 같음). RDS에서는 이 입력을 "확인 불가"로 기록해야 합니다(제안).
+
+### 11.2 스파이크 결과: Cloud SQL(측정, 2026-11-02)
+
+**환경.** Cloud SQL for PostgreSQL 16.15, Enterprise, db-f1-micro, HDD 10 GiB, 도쿄, PSA 사설 IP만, `ssl_mode = ENCRYPTED_ONLY`, 공유 CA 모드(`GOOGLE_MANAGED_CAS_CA`). 프로젝트 `b-free-target-20261102`(`infra/envs/spike-db/gcp`). 링크는 같은 VPC의 e2-micro VM(외부 IP 없음)이고, 노트북은 IAP TCP 터널로 닿습니다. 정방향은 VM이 Cloud SQL로 TCP를 넘기고, 역방향은 같은 relay가 VM에서 돕니다.
+
+| ID | 결과 | 측정값 | 증거 |
+|---|---|---|---|
+| SPK-01(G) | 통과 | `cloudsql.logical_decoding=on`은 재시작함(postmaster 시작 시각이 바뀜). 클라이언트 단절 34.4초, 작업 51.5초. `log_min_error_statement` 변경은 재시작하지 않음. **`max_slot_wal_keep_size`는 102400–10485760 MB만 받음.** 2048은 인스턴스 생성 자체를 실패시킴. 10 GiB 디스크에서 100 GB 상한은 보호가 아님 | `G/spk01-summary.json`, `G/spk01-cloudsql-max-slot-wal-keep-size-rejected.txt` |
+| SPK-02(G) | 통과(조건부) | `executor_ctl`이 구독 생성(`origin = none`), ENABLE · DISABLE, 슬롯 삭제 모두 됨. `pg_replication_origin_advance`는 `executor_ctl`에 거부. 마스터의 GRANT EXECUTE는 성공을 돌려주지만 효과가 없었음. 마스터는 `pg_subscription`을 못 읽음([G2]와 같음) | `G/rev-sub.json`, `G/privileges.json` |
+| SPK-03(G) | 막힘(이름 검증) | CA 파일 불가(`//.postgresql/root.crt does not exist`). **`sslrootcert=system`은 `certificate is not allowed`로 거부.** `require` + `channel_binding=require` 성공. PSA의 Cloud SQL이 고객 VPC의 VM IP(10.60.0.2)로 나가는 길은 동작 | `G/rev-sub.json` |
+| SPK-04(G) | 통과(예산 초과) | NOLOGIN 313.6, REVOKE 747.1, 세션 종료 546.9 ms, 합계 1,607.6 ms. 노트북 → IAP → 도쿄 왕복 때문입니다. 엔진 쪽 시간만 따로 재지 않았습니다. 영수증 MATCH | `G/cutover-cloudsql-to-pg.json` |
+| SPK-05(G) | 통과(이름 주의) | **서버 인증서 SAN이 `…sql-psa.goog.`처럼 점으로 끝남.** libpq 14 · 16 모두 `host=`에 점까지 써야 verify-full 통과. PgBouncer도 `[databases] host=`와 `/etc/hosts` 항목을 모두 점까지 써야 통과(점 없으면 이름 불일치, hosts만 점 없으면 DNS 조회 실패). PAUSE+RESUME p95 3.4 ms, 클라이언트 오류 0건, 대기 최대 7.3초 | `G/n6-tls-client.txt`, `G/spk05-pgbouncer-names.txt`, `G/spk05-pgbouncer.json` |
+| SPK-07 | 통과(문서와 다름) | 공유 CA 모드 + PSA 인증서에 DNS SAN 있음. 이름은 `dnsNames[]`에만 있고(`recordManager: CUSTOMER`), 예전 `dnsName` 필드와 Terraform `dns_name`은 빈 값. **REGIONAL(HA)에서 구독 생성 · ENABLE이 되고, 수동 장애 조치(23초, a → c 영역) 뒤에도 장애 전후 행이 모두 도착함.** 공식 문서의 이유는 "나가는 IP가 일정하지 않음"이었음 | `G/spk07-server-cert.txt`, `G/cloudsql-dns.json`, `G/spk07-ha-subscriber.txt`, `G/spk07-ha-failover.txt` |
+| SPK-09(G) | 통과 | 영수증 MATCH. Cloud SQL glibc collation 2.19의 기본 정렬은 RDS(2.26)와 같고 Debian(2.41)과 다름. `COLLATE "C"` 해시는 세 엔진이 같음(`aae5a28f…`) | `G/digest-after-initial-copy.json`, `G/spk09.json` |
+| SPK-11 | 막힘(TLS만 시험) | AlloyDB(2 vCPU primary, PSA, `ENCRYPTED_ONLY`) 직접 연결 10.61.7.2:5432. 서버 인증서는 자체 서명 `CN=unused`, SAN `DNS:localhost`. API `generateClientCertificate`의 `caCert`(`CN=root.alloydb`)로 verify-ca · verify-full 모두 `certificate verify failed`. `connectionInfo`에는 인증서 체인이 없음. `require`는 TLS 통과(인증 단계까지 감). 서빙 인증서를 그대로 고정하면 verify-ca와 `host=localhost` verify-full은 통과하지만, 문서에 없는 인증서라 근거로 쓰지 않음. 복제 역할 · 외부 구독은 시험하지 않음 | `G/spk11-alloydb-tls.txt`, `G/alloydb-client-cert-response.json` |
+
+**스키마가 Cloud SQL에서 막히는 곳(측정).** 마스터 `postgres`는 CREATEROLE만 있고 superuser · REPLICATION이 아닙니다.
+- `CREATE ROLE … REPLICATION`은 됩니다(RDS와 다름).
+- **`CREATE ROLE`을 한 사용자에게 그 역할의 구성원 행이 생기지 않습니다(ADMIN도 없음).** 그래서 `createrole_self_grant`도 효과가 없습니다. `ALTER TABLE … OWNER TO chat_owner`는 되지만 `ALTER FUNCTION … OWNER`는 `must be able to SET ROLE`로 실패합니다. 이어서 GRANT와 `CREATE PUBLICATION`이 소유자 아님으로 모두 실패합니다.
+- 대응: `CREATE ROLE chat_owner` 바로 뒤에 `GRANT chat_owner TO CURRENT_USER WITH SET TRUE, INHERIT TRUE`와 `GRANT CREATE ON SCHEMA public TO chat_owner` 두 줄(`deploy/pilot/spike-db/cloudsql_01_schema.sql`). `pg_hba_file_rules` GRANT 네 줄은 뺍니다(`cloudsql_02_roles.sql`). 차이는 `G/schema-variant.diff`입니다.
+- `pg_authid`, `pg_shadow`, `pg_hba_file_rules`는 마스터도 읽지 못합니다. 그래서 RDS와 같이 DB-AUTH 입력과 PgBouncer `auth_query`가 막힙니다.
+
+### 11.3 측정으로 새로 나온 것
+
+1. **임시 링크의 `kubectl port-forward`는 연결 하나가 끊겨도 전체가 끝납니다.** RDS 첫 컷오버 시도의 4c(세션 종료)에서, 같은 port-forward를 쓰던 앱 연결이 끊기자 `lost connection to pod`로 port-forward가 끝났습니다. Executor 제어 세션도 같이 끊겨 효과가 UNKNOWN이 됐습니다. 다시 읽으니 4a–4c는 모두 적용돼 있었습니다(epoch 1, NOLOGIN, INSERT 없음, 세션 0). 앱 연결과 제어 연결을 다른 port-forward로 나눈 두 번째 시도는 통과했습니다. 임시 링크에서는 Executor 제어 연결을 전용 port-forward로 둡니다(제안). 증거: `R/cutover-attempt1-link-lost.json`, `R/cutover-attempt1-reread.txt`, `R/link-forward.log`.
+2. **Executor `PgBouncerAdmin`은 같은 관리 명령을 여섯 번째에 실패합니다.** psycopg 기본 `prepare_threshold = 5`로 여섯 번째 `PAUSE chat`가 extended protocol로 가고, 관리 콘솔이 `extended query protocol not supported by admin console`로 거부합니다. 5초 heartbeat(`SHOW VERSION`)도 같은 길입니다. 연결에 `prepare_threshold = None`을 주면 20회 모두 통과했습니다. 증거: `R/spk05-admin-autoprepare.txt`. Executor는 다른 갈래가 고치는 중이라 이 스파이크는 고치지 않았습니다.
+3. **PAUSE는 서버 연결을 닫고, 그 순간 로그인 중이던 클라이언트를 끊습니다.** RESUME 뒤 첫 쿼리마다 TLS 로그인을 새로 합니다. RDS 경로에서는 `server_login_retry` 동안 클라이언트가 `cached error: pause mode`로 끊겼습니다(679건 중 406건). Cloud SQL 경로에서는 끊김 없이 최대 7.3초 기다렸습니다. 앱 재시도가 필요하고, N11 합격선에 "PAUSE 동안 끊긴 클라이언트 0"을 더해야 합니다(제안). 증거: `R/spk05-pgbouncer.log`, `G/spk05-pgbouncer.json`.
+4. **링크 경유 비교와 펜싱은 느립니다.** 10만 행 digest가 RDS 쪽 3.4–8.5초, Cloud SQL 쪽 7.6–21.6초였습니다. 노트북 PG는 0.4초였습니다. Cloud SQL 4단계는 IAP 왕복 때문에 1.6초였습니다. 쓰기 정지 예산을 지키려면 Executor를 출발지 가까이 두거나, 정지 전에 대부분을 비교하고 정지 중에는 barrier 뒤 변경분만 비교해야 합니다(제안).
+5. **해시 규칙 v1.1은 세션 `DateStyle`이 ISO여야 합니다.** `DateStyle='SQL, DMY'`에서는 Executor digest가 `can't parse timestamptz`로 멈춥니다. 틀린 해시를 내지 않으므로 안전한 쪽입니다. 비교 세션에서 `DateStyle`을 고정하자는 12절 4번의 근거입니다.
+6. **미리 만든 역방향 슬롯은 목적지에서 복제가 아닌 쓰기를 모두 담습니다.** 스파이크 정리 중 superuser가 목적지 표를 TRUNCATE했습니다. `origin = none`이면 이 TRUNCATE가 역방향 ENABLE 때 출발지로 갑니다. 슬롯을 다시 만들어 피했습니다. 목적지 관리 작업을 했다면 역방향 슬롯을 다시 만듭니다(제안). 증거: `R/dst-rev-slot-recreate.txt`.
+7. **실패한 문장에 든 비밀번호가 서버 로그에 남습니다.** 기본 `log_min_error_statement = error`라서, 실패한 `CREATE ROLE … PASSWORD`와 `CREATE SUBSCRIPTION … password=`의 문장이 RDS 로그와 노트북 PG 로그에 남았습니다. 스파이크 비밀은 모두 지우고 새로 만들었고, RDS는 지웠습니다. 증거 사본은 가렸습니다(`R/rds-postgresql.log`). Cloud SQL은 Cloud Logging이 인스턴스 삭제 뒤에도 남으므로 `log_min_error_statement = panic`을 먼저 걸고 시험했습니다. 대응: 역할 비밀번호는 SCRAM 검증자로만 보냅니다(현재 `00-bravo-init.sh`가 이렇게 바뀜). 구독 conninfo의 비밀번호는 피할 수 없으므로 관리형에 `log_min_error_statement = panic`을 둡니다(제안, D-26).
+8. **마스터 비밀번호는 Terraform 상태에 없습니다.** RDS는 `manage_master_user_password = true`로 비밀을 만들었고, 상태에는 ARN만 남았습니다. 실제 값으로 상태를 grep해 없음을 확인했습니다(`R/state-secret-check.txt`). Cloud SQL `postgres` 비밀번호는 Terraform이 아니라 OpenBao에서 `gcloud … --prompt-for-password`로 파이프 전달했습니다.
+
+### 11.4 다시 돌리는 법과 비용
+
+- IaC: `infra/envs/spike-db`(AWS, 상태 키 `envs/spike-db.tfstate`), `infra/envs/spike-db/gcp`(상태 키 `envs/spike-db-gcp.tfstate`). 모든 자원에 `component=spike`.
+- 실행: `deploy/pilot/spike-db/`. `run.sh <facts|privileges|seed|fwd-sub|digest|rev-sub|cutover|failback|pgb|spk09|probe>`, `SPIKE_SIDE=rds|cloudsql`. 비밀은 플랫폼 OpenBao `secret/envs/spike-db/*`에서 환경 변수로만 받습니다.
+- 비용(공식 요금표 기준 추정, 실제 청구는 Cost Explorer · Billing에서 `component=spike`로 확인):
+  - AWS: RDS 수명 0.625시간. 인스턴스 $0.0156, gp3 $0.0022, 비밀 $0.0003, 전송 상한 $0.02. 합계 상한 약 $0.04(`R/cost.json`).
+  - Google: `G/cost.json`.
+
 ## 12. 열린 것
 
 | # | 열린 것 | 정할 사람 |
 |---|---|---|
 | 1 | D-24 채택 여부(D-23의 "관리형 DB를 목적지로 쓰지 않음"과의 관계) | 팀장 |
-| 2 | 관리형 구독자의 CA 방식(공개 CA 인증서 또는 채널 바인딩 예외) | 보안 통제 · 게이트, 데이터 · 컷오버 |
-| 3 | Cloud SQL HA 출발지에서 HA를 끄는 동의 절차 | 데이터 · 컷오버 |
-| 4 | 해시 규칙 v1에 `COLLATE "C"`와 세션 설정 다섯 개를 고정할지 | 데이터 · 컷오버(T13) |
-| 5 | 관리형 마스터 자격을 둘 곳 | 인프라 · CI |
+| 2 | 관리형 구독자의 CA 방식. 측정 결과 Cloud SQL은 채널 바인딩 예외밖에 없음(11.2절). RDS만 공개 CA 인증서 안이 남음 | 보안 통제 · 게이트, 데이터 · 컷오버 |
+| 3 | Cloud SQL HA 출발지. 측정으로는 HA 구독자가 동작함(11.2절 SPK-07). HA를 끄라고 요구할지, 출발 IP 허용을 PSA 대역 전체로 두고 진행할지 | 데이터 · 컷오버 |
+| 4 | 해시 규칙 v1에 `COLLATE "C"`와 세션 설정을 고정할지. 측정: 기본 collation 정렬이 엔진마다 다름(glibc 2.19 · 2.26 · 2.41), v1.1은 `DateStyle`이 ISO가 아니면 멈춤 | 데이터 · 컷오버(T13) |
+| 5 | 관리형 마스터 자격을 둘 곳. 스파이크는 RDS 관리 비밀(Secrets Manager, 상태에 ARN만), Cloud SQL은 플랫폼 OpenBao를 씀 | 인프라 · CI |
+| 6 | 관리형용 스키마 변형을 저장소의 정본으로 둘지. RDS는 REPLICATION 대신 `rds_replication`, Cloud SQL은 `chat_owner` 자기 GRANT 두 줄, 둘 다 `pg_hba_file_rules` GRANT 제외(11.1 · 11.2절) | 데이터 · 컷오버 |
+| 7 | DB-AUTH 통제 입력을 관리형에서 무엇으로 바꿀지(`pg_hba_file_rules` · `pg_authid` 읽기 불가) | 보안 통제 · 게이트 |
+| 8 | Executor `PgBouncerAdmin`의 `prepare_threshold` 수정, 임시 링크에서 제어 연결 분리(11.3절 1 · 2) | 데이터 · 컷오버 |
+| 9 | PAUSE 중 클라이언트 끊김을 N11 합격선에 넣을지(11.3절 3) | 데이터 · 컷오버, 앱 |
+| 10 | 관리형 끝에서 쓰기 정지 예산을 지킬 비교 방식과 Executor 위치(11.3절 4) | 데이터 · 컷오버 |
+| 11 | 아직 돌리지 않은 칸: 관리형끼리(#5, #6, #8, #9), 관리형으로의 정방향 초기 복사, CNPG 구독자(SPK-06), Aurora(SPK-08), 큰 DB 초기 복사(SPK-10) | 데이터 · 컷오버 |
 
 ## 13. 출처
 

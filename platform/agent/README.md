@@ -33,11 +33,11 @@
 | `BRAVO_LLM_PROVIDER` | 엔진 | 자격 | 쓰임 |
 |---|---|---|---|
 | `claude_subscription`(기본) | Claude Agent SDK 0.2.176 | 팀장 구독 OAuth 토큰. 플랫폼 OpenBao `secret/envs/platform/llm-claude` `oauth_token`. 워커가 한 번 쓰는 AppRole(`llm-claude`)로 읽어 CLI 환경에만 넣음 | 데모 경로 |
-| `openai_agents` | OpenAI Agents SDK 0.20.0(`pip install '.[openai]'`) | OpenAI API 키. OpenBao `secret/envs/platform/llm-openai` `api_key`(AppRole `llm-openai`) | 대체 엔진 |
+| `openai_agents` | OpenAI Agents SDK 0.20.0(`pip install '.[openai]'`) | OpenBao `secret/envs/platform/llm-openai`(AppRole `llm-openai`). `api_key`가 있으면 API 키, 없으면 팀장 ChatGPT 계정 세션(데모 전용, `keys.sh llm-login openai`) | 대체 엔진 |
 | `anthropic_gateway`, `bedrock_gateway` | Claude Agent SDK | 게이트웨이가 플랫폼 키를 가짐. 워커는 Trial 토큰만 | 운영 목표(Bedrock 도쿄 `jp.` 프로필) |
 
 - 개인 구독은 고객 서비스 경로가 아닙니다. 데모용이고, 운영 경로는 플랫폼 키를 가진 게이트웨이입니다.
-- OpenAI Agents SDK에는 ChatGPT 구독 로그인 경로가 없습니다. API 키만 씁니다.
+- `openai_agents`의 ChatGPT 계정 모드는 OpenAI가 Agents SDK용으로 문서화하지 않은 Codex 백엔드를 Codex CLI와 같은 로그인으로 부릅니다. 데모 전용이고, 운영은 플랫폼이 쥔 API 키입니다. OpenAI가 막을 수 있고 약관 문제는 풀리지 않았습니다(13-agents.md 6절, ADR 0009).
 - 구독은 정액이라 USD 한도를 두지 않습니다. 토큰 사용량만 남깁니다(`Proposal.usage`).
 
 ## 실행에 필요한 환경 변수

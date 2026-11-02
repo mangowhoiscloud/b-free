@@ -81,7 +81,7 @@ export function AgentsScreen({ planId, events, status, detail }: { planId: strin
           ]}
         />
         <p className="foot">
-          허용된 호출은 연결 안 됨 · 이유: API는 거부만 <span className="mono">tool.denied</span> 이벤트로 내보냅니다. 허용 기록은 rehearsal 서비스 <span className="mono">GET /v1/trials/{'{id}'}</span>에 있고 서비스 토큰이 필요해 브라우저에서 읽지 않습니다.
+          허용된 호출은 연결 안 됨 · 이 화면은 계획 이벤트 중 <span className="mono">tool.denied</span>만 받습니다. rehearsal 서비스의 시험 기록(<span className="mono">GET /v1/trials/{'{id}'}</span>)은 서비스 토큰이 필요해 브라우저에서 읽지 않습니다.
         </p>
       </Block>
       <Block title={`Harbor 샌드박스 시험 · 검증기 결과 (${trials.length}건)`}>

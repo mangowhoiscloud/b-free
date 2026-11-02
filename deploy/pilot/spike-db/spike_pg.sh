@@ -17,8 +17,11 @@ case ${1:?usage} in
     tls=${2:?TLS_DIR}
     docker rm -f "$NAME" >/dev/null 2>&1 || true
     docker run -d --name "$NAME" -p 127.0.0.1:45432:5432 \
-      --env-file <(printf 'POSTGRES_PASSWORD=%s\nPOSTGRES_DB=chat\n' "$("$BAO" get $SECRET postgres)") \
-      -v "$tls:/tls:ro" -v "$REPO/apps/demo/schema/sql:/schema:ro" \
+      --env-file <(printf 'POSTGRES_PASSWORD=%s\nPOSTGRES_DB=chat\nBRAVO_SIDE=dst\nBRAVO_SCHEMA_DIR=/schema/sql\nBRAVO_ATTACHMENT_STORE_ID=dst\nAPP_WRITER_PASSWORD=%s\nREPLICATOR_PASSWORD=%s\nEXECUTOR_CTL_PASSWORD=%s\nEXECUTOR_OBSERVE_PASSWORD=%s\n' \
+          "$("$BAO" get $SECRET postgres)" "$("$BAO" get $SECRET app_writer)" "$("$BAO" get $SECRET replicator)" \
+          "$("$BAO" get $SECRET executor_ctl)" "$("$BAO" get $SECRET executor_observe)") \
+      -v "$tls:/tls:ro" -v "$REPO/apps/demo/schema:/schema:ro" \
+      -v "$REPO/apps/demo/schema/00-bravo-init.sh:/docker-entrypoint-initdb.d/00-bravo-init.sh:ro" \
       --entrypoint bash "$IMAGE" -c '
         install -o postgres -g postgres -m 600 /tls/server.key /etc/server.key
         install -o postgres -g postgres -m 644 /tls/server.crt /etc/server.crt
@@ -28,18 +31,12 @@ case ${1:?usage} in
           -c ssl_cert_file=/etc/server.crt -c ssl_key_file=/etc/server.key -c hba_file=/etc/pg_hba.conf \
           -c password_encryption=scram-sha-256 -c log_replication_commands=on -c cluster_name=spike-pg \
           -c log_min_error_statement=panic' >/dev/null
-    for _ in $(seq 60); do
-      docker exec "$NAME" pg_isready -U postgres -d chat -h 127.0.0.1 >/dev/null 2>&1 && break; sleep 1
+    # stock init (apps/demo/schema/00-bravo-init.sh, side dst) runs inside the image entrypoint
+    for _ in $(seq 90); do
+      docker logs "$NAME" 2>&1 | grep -q "bravo-init: done" && docker exec "$NAME" pg_isready -U postgres -d chat -h 127.0.0.1 >/dev/null 2>&1 && break
+      sleep 1
     done
-    sleep 2
     psqlc() { docker exec -i "$NAME" psql -v ON_ERROR_STOP=1 --no-psqlrc -U postgres -d chat "$@"; }
-    psqlc -f /schema/01_schema.sql >/dev/null
-    { printf '\\set app_writer_password %s\n' "'$("$BAO" get $SECRET app_writer)'"
-      printf '\\set replicator_password %s\n' "'$("$BAO" get $SECRET replicator)'"
-      printf '\\set executor_ctl_password %s\n' "'$("$BAO" get $SECRET executor_ctl)'"
-      printf '\\set executor_observe_password %s\n' "'$("$BAO" get $SECRET executor_observe)'"
-      cat "$REPO/apps/demo/schema/sql/02_roles.sql"; } | psqlc -f - >/dev/null
-    { printf '\\set attachment_store_id %s\n' "'dst'"; cat "$REPO/apps/demo/schema/sql/03_dst.sql"; } | psqlc -f - >/dev/null
     psqlc -tAc "select 'spike-pg ready: ' || version()"
     ;;
   down) docker rm -f -v "$NAME" ;;

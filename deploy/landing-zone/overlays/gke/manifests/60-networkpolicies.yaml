@@ -1,6 +1,8 @@
 # Default deny + explicit allows (NET-01). Enforced by Dataplane V2 (eBPF). Same intent as the Kyverno
 # generated baseline on the other overlays (TECH-STACK-SPEC 1절). The app's own policy comes from the
 # chart (values/chat.yaml). kubectl port-forward (temporary link, Executor) is not subject to NetworkPolicy.
+# GKE adapter: NodeLocal DNSCache is on by default, so pod DNS (10.73.0.10) is answered by the node-local-dns
+# pods; every DNS rule allows both k8s-app=kube-dns and k8s-app=node-local-dns in kube-system.
 # --- chat ------------------------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -16,7 +18,7 @@ spec:
   podSelector: {}
   policyTypes: ["Egress"]
   egress:
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}, {namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: node-local-dns}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
 ---
 apiVersion: networking.k8s.io/v1
@@ -69,7 +71,7 @@ spec:
   podSelector: {matchLabels: {app.kubernetes.io/name: cloudflared}}
   policyTypes: ["Egress"]
   egress:
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}, {namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: node-local-dns}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
     # Cloudflare edge (QUIC/HTTP2 on 7844, API on 443). Not to private ranges.
     - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]
@@ -104,7 +106,7 @@ spec:
     - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: chat}}}]
       ports: [{port: 4317, protocol: TCP}, {port: 4318, protocol: TCP}]
   egress:
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}, {namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: node-local-dns}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: platform-otel}}}]
       ports: [{port: 4317, protocol: TCP}]

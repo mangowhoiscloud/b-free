@@ -9,6 +9,7 @@ metadata:
   name: api
   namespace: bravo-control
 automountServiceAccountToken: false
+imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -87,6 +88,8 @@ spec:
             - {name: BRAVO_GATE_REQUIRED_CONTROLS, value: "DB-ANON-READ,DB-AUTH"}
             - name: BRAVO_SSE_TICKET_SECRET
               valueFrom: {secretKeyRef: {name: platform-api, key: sse_ticket_secret}}
+            - name: BRAVO_REHEARSAL_API_TOKEN
+              valueFrom: {secretKeyRef: {name: platform-rehearsal, key: api_token}}
             - name: DB_PASSWORD
               valueFrom: {secretKeyRef: {name: platform-db-roles, key: api}}
             - name: BRAVO_DATABASE_URL
@@ -121,6 +124,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata: {name: operator-mcp, namespace: bravo-control}
 automountServiceAccountToken: false
+imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
 ---
 apiVersion: apps/v1
 kind: Deployment

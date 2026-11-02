@@ -1,6 +1,6 @@
 # infra
 
-스펙 §8.8의 구조를 따릅니다. 클러스터 종류는 팀 리드 결정(2026-11-02)을 따릅니다. RKE2를 모든 환경에서 빼고, 플랫폼과 출발지는 EKS, 온프렘 목적지는 K3s, GCP 목적지는 GKE입니다. CNI와 CSI는 `docs/architecture/09-cni-csi.md`가 정합니다. 모듈은 "기능 계약 + 환경별 구현"입니다. 환경 폴더는 모듈을 조합해 실제 자원을 만듭니다. 담당은 인프라 · CI 영역(T1, T2, T6, T7)입니다. 보안 구성요소(T9)는 보안 통제 · 게이트 영역입니다.
+스펙 §8.8의 구조를 따릅니다. 클러스터 종류는 팀장 결정을 따릅니다. 2026-11-02 21:10 KST에 RKE2를 스펙 r2대로 되돌렸습니다("스펙 그대로 전부", "RKE2 관련만", ADR 0010). 플랫폼은 VPC ②의 EC2 1대 + RKE2 단일 노드, 온프렘 목적지는 Ubuntu VM + RKE2(CIS), 둘 다 공통 cloud-init(`cloud-init/`, 아직 비어 있음)입니다. 출발지는 EKS, GCP 목적지는 GKE 그대로입니다. 아래 표의 EKS 플랫폼 · K3s 행은 결정 전 판이고, 그 판으로 만든 자원이 아직 떠 있습니다. CNI와 CSI는 `docs/architecture/09-cni-csi.md`가 정합니다. 모듈은 "기능 계약 + 환경별 구현"입니다. 환경 폴더는 모듈을 조합해 실제 자원을 만듭니다. 담당은 인프라 · CI 영역(T1, T2, T6, T7)입니다. 보안 구성요소(T9)는 보안 통제 · 게이트 영역입니다.
 
 네트워크와 환경 사이 연결은 제안 D-16(`docs/architecture/02-network.md`)을 따릅니다. 근거는 `research/platform-research/network-design-2026-11-02.md`입니다.
 
@@ -27,9 +27,9 @@
 
 | 폴더 | 만드는 것 | 상태 저장 |
 |---|---|---|
-| `envs/platform-aws/` | VPC ②(사설 서브넷 3개, Regional NAT), EKS(3 AZ, 노드 그룹 core와 agents, 관리형 add-on: VPC CNI 네트워크 정책, EBS CSI와 Pod Identity, CoreDNS, kube-proxy, Pod Identity Agent), `storage`, `policy`, `addons`, OIDC, 첫 설치용 CodeBuild 프로젝트(VPC 안, D-16). 배포 runner는 폴백일 때만(D-16) | S3 백엔드 + 잠금 |
+| `envs/platform-aws/` | **결정 뒤: EC2 1대 + RKE2 단일 노드(T7, ADR 0010). 아래는 결정 전 EKS 판.** VPC ②(사설 서브넷 3개, Regional NAT), EKS(3 AZ, 노드 그룹 core와 agents, 관리형 add-on: VPC CNI 네트워크 정책, EBS CSI와 Pod Identity, CoreDNS, kube-proxy, Pod Identity Agent), `storage`, `policy`, `addons`, OIDC, 첫 설치용 CodeBuild 프로젝트(VPC 안, D-16). 배포 runner는 폴백일 때만(D-16) | S3 백엔드 + 잠금 |
 | `envs/source-aws/` | VPC ①(사설 서브넷 2개, Regional NAT), EKS(API 비공개 전용), CNPG, PgBouncer, ESO, S3, KMS, `edge_link`, 첫 설치용 CodeBuild 프로젝트(VPC 안)(D-16) | 같음 |
-| `envs/target-onprem/` | Lima VM 2대 위 K3s v1.36.5+k3s1(sha256 고정, CIS 강화 가이드 플래그)와 랜딩 존(`deploy/landing-zone/install.sh k3s`, 단계 cilium · base · images · cnpg · secrets · app · gateway): Cilium(VXLAN) + Hubble, Gateway API, StorageClass(임시 local-path), CNPG, 데모 앱, `cf-edge`. 비밀 값은 플랫폼 OpenBao에서 파이프로(D-26). Kyverno, ESO, Rook-Ceph RGW(D-22)는 설치 단계가 아직 없음(2026-11-02 20:45 KST). 로컬에서 실제로 올리고 내림 | 로컬 상태(`terraform.tfstate`, Git 제외) |
+| `envs/target-onprem/` | **2026-11-02 21:10 KST 결정으로 Ubuntu VM + RKE2(CIS) + 공통 cloud-init(T2, ADR 0010)으로 바뀜. 아래는 결정 전 K3s 판.** Lima VM 2대 위 K3s v1.36.5+k3s1(sha256 고정, CIS 강화 가이드 플래그)와 랜딩 존(`deploy/landing-zone/install.sh k3s`, 단계 cilium · base · images · cnpg · secrets · app · gateway): Cilium(VXLAN) + Hubble, Gateway API, StorageClass(임시 local-path), CNPG, 데모 앱, `cf-edge`. 비밀 값은 플랫폼 OpenBao에서 파이프로(D-26). Kyverno, ESO, Rook-Ceph RGW(D-22)는 설치 단계가 아직 없음(2026-11-02 20:45 KST). 로컬에서 실제로 올리고 내림 | 로컬 상태(`terraform.tfstate`, Git 제외) |
 | `envs/target-gcp/` | GCP VPC와 Cloud NAT, GKE Standard(Dataplane V2, PD CSI, Workload Identity, 노드 풀), 랜딩 존 `gke` overlay(객체 저장은 Cloud Storage, D-22). 프로젝트 `b-free-target-20261102`. 명령 `envs/target-gcp/scripts/up.sh` · `verify.sh` · `down.sh` | S3 백엔드(`envs/target-gcp.tfstate`, 다른 환경과 같음. 이유는 `envs/target-gcp/README.md`) |
 
 환경 입력은 `name`, `region`, `size`(small, medium)뿐입니다. 고객이 Kubernetes를 몰라도 되게 CNI 플래그와 StorageClass 값은 모듈 안 기본값으로 둡니다.

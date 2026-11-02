@@ -28,7 +28,8 @@ def test_spec_path_through_rehearsal() -> None:
         Trigger.COLLECTED,
         Trigger.ANALYZED_GAPS,
         Trigger.PROPOSAL_ACCEPTED,
-        Trigger.REHEARSAL_PASSED,
+        Trigger.REHEARSAL_PASSED,  # r2: stays in REHEARSE, opens a change (T31)
+        Trigger.CHANGE_APPLIED,  # change approved + applied with the approved digest -> GATE re-check
         Trigger.GATE_PASSED,
         Trigger.CUTOVER_STARTED,
         Trigger.RUN_DONE,
@@ -37,6 +38,16 @@ def test_spec_path_through_rehearsal() -> None:
     ):
         s = next_state(s, trigger)
     assert s is State.DONE_ROLLED_BACK
+
+
+def test_r2_change_path_stays_in_rehearse_until_applied() -> None:
+    assert next_state(State.REHEARSE, Trigger.REHEARSAL_PASSED) is State.REHEARSE
+    assert next_state(State.REHEARSE, Trigger.CHANGE_APPLIED) is State.GATE
+    # Only REHEARSE can take an applied change, and a passing rehearsal never jumps straight to GATE.
+    for s in State:
+        if s is not State.REHEARSE:
+            with pytest.raises(BusinessError):
+                next_state(s, Trigger.CHANGE_APPLIED)
 
 
 def test_rehearsal_failure_paths() -> None:

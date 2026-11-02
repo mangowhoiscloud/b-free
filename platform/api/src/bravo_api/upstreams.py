@@ -7,6 +7,7 @@ turns a reason into ``state_reason`` or a BLOCK input; it never substitutes a va
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -73,34 +74,128 @@ class GateControlsClient(_Client):
         return body
 
 
-class CollectorClient(_Client):
-    """``GET /v1/inventory`` on platform/collector (FR-1, FR-2).
+INVENTORY_SCHEMA = "inventory/v1"
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+SNAPSHOT_TIMEOUT_S = 60.0
+MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024  # same cap as platform/rehearsal snapshot ingest
+# Finding fields the platform reads (collector README "의존성 인벤토리", detector.Finding).
+FINDING_STR_FIELDS = ("id", "rule_id", "service", "kind", "file")
 
-    Expected body (to be fixed in the 11/3 collector contract): ``{"collected_at": str,
-    "dependencies": [{"id": str, "kind": str, "grade": <VALID_GRADES>, ...}]}``. Anything
-    else is ``collector_bad_response``: ANALYZE does not guess.
+
+def _finding_ok(f: Any) -> bool:
+    return (
+        isinstance(f, dict)
+        and all(isinstance(f.get(k), str) and f[k] for k in FINDING_STR_FIELDS)
+        and f.get("tier_code") in VALID_GRADES
+        and isinstance(f.get("line"), int)
+        and not isinstance(f.get("line"), bool)
+    )
+
+
+class CollectorClient(_Client):
+    """platform/collector: ``GET /v1/inventory`` (FR-2, T16) and the repo snapshot that matches it.
+
+    The body is ``inventory/v1`` as the collector writes it (``detector.InventoryReport``): ``schema_version``,
+    ``input_digest`` (64 hex), ``summary`` (object), ``findings[]`` and ``unclassified[]`` whose items carry
+    ``id``, ``rule_id``, ``tier_code`` (one of VALID_GRADES), ``service``, ``kind``, ``file``, ``line``.
+    Anything else is ``collector_bad_response``: ANALYZE and the rehearsal never guess. Returned unchanged.
     """
 
     name = "collector"
+
+    async def clusters(self) -> dict[str, Any]:
+        """``GET /v1/clusters``: live per-environment cluster view (get/list only). ``cluster_id`` is the
+        collector registry's environment id, which is the environment name here (CLOUD-E2E-CONTRACT 2)."""
+        resp = await self._request("GET", "/v1/clusters")
+        if resp.status_code != 200:
+            raise UpstreamError(f"collector_http_{resp.status_code}", resp.status_code)
+        body = self._json(resp, self.name)
+        if not isinstance(body, dict) or not isinstance(body.get("clusters"), list):
+            raise UpstreamError("collector_bad_response")
+        return body
 
     async def inventory(self) -> dict[str, Any]:
         resp = await self._request("GET", "/v1/inventory")
         if resp.status_code != 200:
             raise UpstreamError(f"collector_http_{resp.status_code}", resp.status_code)
         body = self._json(resp, self.name)
-        deps = body.get("dependencies") if isinstance(body, dict) else None
-        if not isinstance(deps, list):
+        if (
+            not isinstance(body, dict)
+            or body.get("schema_version") != INVENTORY_SCHEMA
+            or not isinstance(body.get("input_digest"), str)
+            or not HEX64.match(body["input_digest"])
+            or not isinstance(body.get("summary"), dict)
+            or not isinstance(body.get("findings"), list)
+            or not isinstance(body.get("unclassified"), list)
+            or not all(_finding_ok(f) for f in [*body["findings"], *body["unclassified"]])
+        ):
             raise UpstreamError("collector_bad_response")
-        for d in deps:
-            if not isinstance(d, dict) or not isinstance(d.get("id"), str) or d.get("grade") not in VALID_GRADES:
-                raise UpstreamError("collector_bad_response")
         return body
+
+    async def snapshot(self, input_digest: str) -> bytes:
+        """The customer repo files the inventory scanned, as a tar.gz (PROPOSED collector endpoint).
+
+        ``GET /v1/inventory/snapshot`` -> 200, body = tar.gz of exactly the scanned files (the selection of
+        ``bravo_rehearsal.snapshot.pack``), header ``X-Bravo-Inventory-Digest`` = that inventory's
+        ``input_digest``. The collector does not serve it yet: 404/405 -> ``snapshot_unavailable``. A body
+        for another inventory -> ``snapshot_inventory_mismatch``. The rehearsal service re-verifies the files.
+        """
+        try:
+            resp = await self._client.request("GET", "/v1/inventory/snapshot", timeout=SNAPSHOT_TIMEOUT_S)
+        except httpx.HTTPError as exc:
+            raise UpstreamError("snapshot_unavailable") from exc
+        if resp.status_code != 200:
+            raise UpstreamError("snapshot_unavailable", resp.status_code)
+        if resp.headers.get("x-bravo-inventory-digest") != input_digest:
+            raise UpstreamError("snapshot_inventory_mismatch", resp.status_code)
+        if not resp.content or len(resp.content) > MAX_SNAPSHOT_BYTES:
+            raise UpstreamError("snapshot_unavailable", resp.status_code)
+        return resp.content
+
+
+# Reasons platform/rehearsal gives for refusing a snapshot (``SnapshotRejected``) or its request.
+SNAPSHOT_REFUSALS = frozenset(
+    {
+        "snapshot_digest_mismatch",
+        "snapshot_unreadable",
+        "snapshot_too_large",
+        "snapshot_too_many_files",
+        "snapshot_file_too_large",
+        "snapshot_special_member",
+        "bad_inventory_digest",
+        "bad_snapshot_key",
+        "inventory_digest_missing",
+        "unauthorized",
+    }
+)
 
 
 class RehearsalClient(_Client):
-    """platform/rehearsal service: ``POST /v1/trials`` (Idempotency-Key) and ``GET /v1/trials/{id}``."""
+    """platform/rehearsal service: ``PUT /v1/snapshots/{tenant}/{plan}``, ``POST /v1/trials`` (Idempotency-Key)
+    and ``GET /v1/trials/{id}``."""
 
     name = "rehearsal"
+
+    async def put_snapshot(self, tenant_id: str, plan_id: str, archive: bytes, input_digest: str) -> dict[str, Any]:
+        """Upload the customer repo snapshot bound to the collector inventory digest. Returns the manifest
+        ``{tenant_id, plan_id, input_digest, files, withheld}``. Refusals keep the service's reason code."""
+        try:
+            resp = await self._client.request(
+                "PUT",
+                f"/v1/snapshots/{tenant_id}/{plan_id}",
+                content=archive,
+                headers={"X-Bravo-Inventory-Digest": input_digest, "Content-Type": "application/gzip"},
+                timeout=SNAPSHOT_TIMEOUT_S,
+            )
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise UpstreamError("rehearsal_unreachable") from exc
+        except httpx.HTTPError as exc:
+            raise UpstreamError("snapshot_upload_failed") from exc
+        body = self._json(resp, self.name) if resp.content else {}
+        if resp.status_code == 200 and isinstance(body, dict) and body.get("input_digest") == input_digest:
+            return body
+        reason = body.get("error") if isinstance(body, dict) else None
+        raise UpstreamError(reason if reason in SNAPSHOT_REFUSALS else "snapshot_upload_failed", resp.status_code, body)
 
     async def start(self, payload: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
         resp = await self._request("POST", "/v1/trials", json=payload, headers={"Idempotency-Key": idempotency_key})

@@ -8,15 +8,7 @@ import { ErrorLine } from './bits';
 
 const ROLE_TEXT: Record<Role, string> = { operator: '운영자', approver: '승인자', viewer: '조회자' };
 
-export function Header({
-  session,
-  planId,
-  onOpenPlan,
-}: {
-  session: Session;
-  planId: string | null;
-  onOpenPlan: (id: string) => void;
-}) {
+export function Header({ session }: { session: Session }) {
   const [theme, setTheme] = useTheme();
   const isDark =
     theme === 'dark' || (theme === null && typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -33,22 +25,7 @@ export function Header({
         </div>
       </div>
 
-      <div className="envs" aria-label="이전 방향">
-        <span className="env env--src">
-          <span className="env__k">출발지 역할</span>
-          <span className="env__v">src</span>
-        </span>
-        <span className="env__arrow" aria-hidden="true">
-          →
-        </span>
-        <span className="env env--dst">
-          <span className="env__k">목적지 역할</span>
-          <span className="env__v">dst</span>
-        </span>
-      </div>
-
-      <PlanPicker planId={planId} onOpen={onOpenPlan} session={session} />
-      <UserSwitcher session={session} />
+      <Identity session={session} />
 
       <button
         type="button"
@@ -72,7 +49,7 @@ export function Header({
   );
 }
 
-function PlanPicker({ planId, onOpen, session }: { planId: string | null; onOpen: (id: string) => void; session: Session }) {
+export function PlanPicker({ planId, onOpen, session }: { planId: string | null; onOpen: (id: string) => void; session: Session }) {
   const [value, setValue] = useState(planId ?? '');
   const [creating, setCreating] = useState(false);
   const listId = useId();
@@ -202,50 +179,19 @@ function CreatePlanDialog({
   );
 }
 
-function UserSwitcher({ session }: { session: Session }) {
-  const [paste, setPaste] = useState('');
-  const selectId = useId();
-  if (session.tokensLoading) return <p className="user muted">사용자 목록을 받는 중…</p>;
-  if (session.tokens.length === 0) {
+function Identity({ session }: { session: Session }) {
+  const me = session.me;
+  if (me.loading) return <p className="user muted">로그인 확인 중…</p>;
+  if (me.data?.email)
     return (
-      <form
-        className="user user--paste"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (paste.trim()) session.setPastedToken(paste.trim());
-        }}
-      >
-        <label className="field field--inline">
-          <span className="field__label">토큰</span>
-          <input className="input mono" type="password" value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="JWT 붙여넣기" autoComplete="off" />
-        </label>
-        <button type="submit" className="btn btn--ghost" disabled={!paste.trim()}>
-          쓰기
-        </button>
-        <span className="user__note" role="status">
-          {session.tokensError ? `개발용 토큰 목록을 받지 못함: ${errorText(session.tokensError)}` : '개발용 토큰이 없습니다.'}
-          {session.user && ` · 지금 ${session.user.email}`}
-        </span>
-      </form>
+      <p className="user" aria-label="로그인한 사용자">
+        <span className="user__email">{me.data.email}</span>
+        <span className="tag">{me.data.role ? `${ROLE_TEXT[me.data.role]} · ${me.data.role}` : `역할 ${me.data.roleRaw ?? '없음'}`}</span>
+      </p>
     );
-  }
   return (
-    <div className="user">
-      <label className="field field--inline" htmlFor={selectId}>
-        <span className="field__label">사용자 <span className="tag">개발용</span></span>
-      </label>
-      <select
-        id={selectId}
-        className="input select"
-        value={session.user?.role ?? ''}
-        onChange={(e) => session.selectRole(e.target.value as Role)}
-      >
-        {session.tokens.map((t) => (
-          <option key={t.role} value={t.role}>
-            {ROLE_TEXT[t.role]} · {t.email}
-          </option>
-        ))}
-      </select>
-    </div>
+    <p className="user muted" role="status">
+      로그인 정보 연결 안 됨 · <span className="mono">GET /v1/me</span> · {me.error ? errorText(me.error) : '응답에 이메일 없음'}
+    </p>
   );
 }

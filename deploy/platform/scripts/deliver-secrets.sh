@@ -10,20 +10,24 @@
 #   platform/platform-db owner             -> bravo-control/platform-db-owner: password (+ username bravo_owner)
 #   platform/platform-db api, mcp, executor -> bravo-control/platform-db-roles: api, mcp, executor
 #   platform/api sse_ticket_secret         -> bravo-control/platform-api: sse_ticket_secret
+#   platform/rehearsal api_token, token_key -> bravo-control/platform-rehearsal (api token shared by api and rehearsal)
 #   platform/grafana admin_password        -> bravo-observe/grafana-admin: admin_password
 #   platform/cf-tunnel token               -> cf-edge/cf-tunnel: token
 #   <env>/chat-db, <env>/chat-pgbouncer    -> bravo-control/executor-pgpass: pgpass (only the fields that exist)
 #   platform/cf-link-<env>-<svc>           -> bravo-link/cf-link-<env>-<svc>: client_id, client_secret (D-16 links)
+#   platform/argocd-repo token             -> argocd/repo-b-free (Argo CD repository credential; GitHub read-only token)
+#   executor topology paths (deploy/cloud/in-cluster/topology.json) -> bravo-control/bx-<path>: every field that
+#     exists, mounted at BRAVO_SECRETS_DIR/<path with / as __>/<field> (executor topology.FileSecrets)
 set -euo pipefail
 umask 077
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEYS="$HERE/../../pilot/scripts/keys.sh"
-CTX="${BRAVO_PLATFORM_CONTEXT:-bravo-platform}"
+CTX="${BRAVO_PLATFORM_CONTEXT:-bravo-platform-rke2}"
 die() { printf 'deliver-secrets: %s\n' "$*" >&2; exit 1; }
 log() { printf 'deliver-secrets: %s\n' "$*"; }
 
 # One field from OpenBao as {"v": "<base64>"} on stdout; the value only crosses a pipe.
-b64_field() { "$KEYS" --target platform-eks env-pipe "$1" "$2" "$3" -- jq -Rs '{v: (. | @base64)}'; }
+b64_field() { "$KEYS" env-pipe "$1" "$2" "$3" -- jq -Rs '{v: (. | @base64)}'; }
 
 # secret NS NAME TYPE key=env/name/field ... [literal:key=value(non-secret)]
 secret() {
@@ -49,9 +53,9 @@ secret() {
 
 cmd_generate() {
   local f
-  for f in owner api mcp executor; do "$KEYS" --target platform-eks env-generate platform platform-db "$f" 24; done
-  "$KEYS" --target platform-eks env-generate platform api sse_ticket_secret 32
-  "$KEYS" --target platform-eks env-generate platform grafana admin_password 24
+  for f in owner api mcp executor; do "$KEYS" env-generate platform platform-db "$f" 24; done
+  "$KEYS" env-generate platform api sse_ticket_secret 32
+  "$KEYS" env-generate platform grafana admin_password 24
 }
 
 # libpq pgpass lines for the executor's chat DB / PgBouncer DSNs (executor.yaml). Built in memory.
@@ -60,7 +64,7 @@ pgpass_doc() {
   # host:port:db:user:password ; host names are the bravo-link Services
   add() { # env name field host port db user
     local v
-    if v="$("$KEYS" --target platform-eks env-pipe "$1" "$2" "$3" -- cat 2>/dev/null)"; then
+    if v="$("$KEYS" env-pipe "$1" "$2" "$3" -- cat 2>/dev/null)"; then
       out+="$4:$5:$6:$7:${v//:/\\:}"$'\n'
     else
       log "pgpass: secret/envs/$1/$2 field $3 absent -> $7@$4 has no password (connect fails: not connected)" >&2
@@ -82,6 +86,7 @@ cmd_deliver() {
   secret bravo-control platform-db-owner kubernetes.io/basic-auth literal:username=bravo_owner password=platform/platform-db/owner
   secret bravo-control platform-db-roles Opaque api=platform/platform-db/api mcp=platform/platform-db/mcp executor=platform/platform-db/executor
   secret bravo-control platform-api Opaque sse_ticket_secret=platform/api/sse_ticket_secret
+  secret bravo-control platform-rehearsal Opaque api_token=platform/rehearsal/api_token token_key=platform/rehearsal/token_key
   secret bravo-observe grafana-admin Opaque admin_password=platform/grafana/admin_password
   secret cf-edge cf-tunnel Opaque token=platform/cf-tunnel/token
   local acc
@@ -90,10 +95,25 @@ cmd_deliver() {
   acc="$(printf '%s\n%s\n' "$acc" "$(pgpass_doc)" | jq -s '.[0] as $s | .[1].v as $v | $s | .data.pgpass = $v')"
   printf '%s\n' "$acc" | kubectl --context "$CTX" apply -f - >/dev/null
   log "Secret bravo-control/executor-pgpass: $(printf '%s\n' "$acc" | jq -r '.data.pgpass | @base64d | split("\n") | map(select(length > 0)) | length') entries (values not shown)"
+  local p env name f specs
+  for p in envs/source-aws/chat-db envs/target-onprem/chat-db envs/source-aws/chat-admin envs/target-onprem/chat-admin \
+           envs/source-aws/object-store envs/target-onprem/object-store envs/target-onprem/k8s-executor; do
+    env=${p#envs/}; name=${env#*/}; env=${env%%/*}; specs=()
+    while read -r f; do [[ -n $f ]] && specs+=("$f=$env/$name/$f"); done < <("$KEYS" env-fields "$env" "$name")
+    if ((${#specs[@]})); then secret bravo-control "bx-${p//\//-}" Opaque "${specs[@]}"
+    else log "executor secret $p: not in OpenBao (topology entries that need it fail at executor start: not connected)"; fi
+  done
   local l
   for l in src-k8s src-db src-pgb dst-k8s dst-db dst-pgb; do
     secret bravo-link "cf-link-$l" Opaque "client_id=platform/cf-link-$l/client_id" "client_secret=platform/cf-link-$l/client_secret"
   done
+  if [[ -n $("$KEYS" env-fields platform argocd-repo) ]]; then
+    secret argocd repo-b-free Opaque literal:type=git literal:url=https://github.com/mangowhoiscloud/b-free.git \
+      literal:username=x-access-token password=platform/argocd-repo/token
+    kubectl --context "$CTX" -n argocd label secret repo-b-free argocd.argoproj.io/secret-type=repository --overwrite >/dev/null
+  else
+    log "argocd repo credential: secret/envs/platform/argocd-repo (field token) is not in OpenBao; Argo CD cannot read the private repo yet"
+  fi
   local ns
   for ns in bravo-control; do
     kubectl --context "$CTX" -n "$ns" create configmap openbao-ca --from-file=ca.crt="${BRAVO_KEY_CUSTODY_DIR:-$HOME/.bravo/custody}/platform-eks/ca.crt" \

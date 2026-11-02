@@ -1,10 +1,12 @@
 # Collector (FR-1, FR-2), gate (FR-6, FR-12), rehearsal service (S2, Harbor) and Cutover Executor (§8.6).
-# AWS access only through EKS Pod Identity (infra/envs/platform-aws pod_identity.tf): no ~/.aws mount,
-# no static key (NFR-6, D-26). The gate has no cloud or cluster credential: those questions answer UNKNOWN.
+# AWS access only through service-account web identity (infra/envs/platform-aws rke2.tf: RKE2 issuer published in
+# S3, IAM OIDC provider, AssumeRoleWithWebIdentity per service account): no ~/.aws mount, no static key, not the
+# node role (NFR-6, D-26). The gate has no cloud or cluster credential: those questions answer UNKNOWN.
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: collector, namespace: bravo-control}
 automountServiceAccountToken: false
+imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -34,6 +36,10 @@ spec:
             - {name: BRAVO_COLLECTOR_PORT, value: "8083"}
             - {name: BRAVO_EVIDENCE_TTL_S, value: "3600"}
             - {name: AWS_REGION, value: ap-northeast-2}
+            - {name: AWS_STS_REGIONAL_ENDPOINTS, value: regional}
+            # 수집 역할(읽기): eks:DescribeCluster on bravo-source + EKS access entry group bravo-collector.
+            - {name: AWS_ROLE_ARN, value: "arn:aws:iam::721622471953:role/bravo-platform-collector-ro-25e58db04e5bb0ea1f58d7f626"}
+            - {name: AWS_WEB_IDENTITY_TOKEN_FILE, value: /var/run/secrets/sts.amazonaws.com/serviceaccount/token}
             - {name: BRAVO_ONPREM_KUBECONFIG, value: /etc/bravo/onprem/kubeconfig}
           ports: [{name: http, containerPort: 8083}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
@@ -43,11 +49,16 @@ spec:
           volumeMounts:
             - {name: registry, mountPath: /etc/bravo/environments.yaml, subPath: environments.yaml, readOnly: true}
             - {name: onprem, mountPath: /etc/bravo/onprem, readOnly: true}
+            - {name: aws-token, mountPath: /var/run/secrets/sts.amazonaws.com/serviceaccount, readOnly: true}
             - {name: app, mountPath: /srv/app}
             - {name: tmp, mountPath: /tmp}
       volumes:
         - {name: registry, configMap: {name: environments}}
         - {name: onprem, secret: {secretName: onprem-kubeconfig, optional: true}}
+        - name: aws-token
+          projected:
+            sources:
+              - serviceAccountToken: {audience: sts.amazonaws.com, expirationSeconds: 3600, path: token}
         # FR-2 static inventory of the app repository: not in the image; empty until the CI agent lane mounts it.
         - {name: app, emptyDir: {sizeLimit: 64Mi}}
         - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
@@ -63,6 +74,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata: {name: gate, namespace: bravo-control}
 automountServiceAccountToken: false
+imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -113,7 +125,24 @@ apiVersion: v1
 kind: ServiceAccount
 metadata: {name: rehearsal, namespace: bravo-control}
 automountServiceAccountToken: false
+imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
 ---
+# OpenBao Kubernetes auth (keys.sh k8s-auth-setup) uses this account's own JWT for TokenReview.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: bravo-rehearsal-tokenreview, labels: {app.kubernetes.io/part-of: bravo-platform}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator}
+subjects:
+  - {kind: ServiceAccount, name: rehearsal, namespace: bravo-control}
+---
+# Rehearsal service (S2, Harbor 0.25.0 Trials on the on-prem cluster). Inputs (platform/rehearsal/.env.example):
+# - target cluster: Secret rehearsal-kubeconfig = kube-system/bravo-rehearsal on the on-prem cluster through the D-16
+#   link dst-k8s (t1-dst-k8s, Access service token); writes confined to rehearsal-*/verify-* by a
+#   ValidatingAdmissionPolicy (deploy/platform/link/onprem-rbac/rehearsal.yaml).
+# - OpenBao: Kubernetes auth role rehearsal -> policy platform-rehearsal (mints one-use llm-claude secret_ids).
+# - API token shared with api, Trial token key: Secret platform-rehearsal (OpenBao secret/envs/platform/rehearsal).
+# - Sandbox and verifier images: digest-pinned values come from the on-prem / rehearsal lane (images loaded on the
+#   on-prem nodes). Until set, Trials are refused with the service's own reason (no simulation).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -134,22 +163,45 @@ spec:
       containers:
         - name: rehearsal
           image: bravo/rehearsal
-          # Preconditions it checks per trial (model path, target kubeconfig, Trial token key, images) are not
-          # configured on the platform yet; POST /v1/trials answers the first missing reason (llm_unconfigured).
           env:
-            - {name: BRAVO_GATE_URL, value: "http://gate.bravo-control.svc:8084"}
+            - {name: BRAVO_GATE_URL, value: "http://gate:8084"}
             - {name: BRAVO_REHEARSAL_TRIALS_DIR, value: /var/lib/bravo/runs}
+            - {name: BRAVO_REHEARSAL_TOOL_LAYER_URL, value: "http://127.0.0.1:8090"}
+            - {name: BRAVO_REHEARSAL_KUBECONFIG, value: /etc/bravo/rehearsal/kubeconfig}
+            - {name: BRAVO_REHEARSAL_KUBE_CONTEXT, value: target-onprem}
+            - {name: BRAVO_LLM_PROVIDER, value: claude_subscription}
+            - {name: BRAVO_MODEL_OPUS, value: claude-opus-5-5}
+            - {name: BRAVO_MODEL_HAIKU, value: claude-haiku-5-5}
+            - {name: BRAVO_BAO_ADDR, value: "https://openbao.openbao.svc:8200"}
+            - {name: BRAVO_BAO_CACERT, value: /etc/bravo/openbao/ca.crt}
+            - {name: BRAVO_BAO_KV_MOUNT, value: secret}
+            - {name: BRAVO_BAO_K8S_ROLE, value: rehearsal}
+            - {name: BRAVO_BAO_K8S_MOUNT, value: kubernetes}
+            - {name: BRAVO_BAO_K8S_JWT_FILE, value: /var/run/secrets/openbao/token}
+            - name: BRAVO_REHEARSAL_API_TOKEN
+              valueFrom: {secretKeyRef: {name: platform-rehearsal, key: api_token}}
+            - name: BRAVO_REHEARSAL_TOKEN_KEY
+              valueFrom: {secretKeyRef: {name: platform-rehearsal, key: token_key}}
           ports: [{name: http, containerPort: 8090}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 30}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          resources: {requests: {cpu: 30m, memory: 192Mi}, limits: {memory: 512Mi}}
+          resources: {requests: {cpu: 30m, memory: 256Mi}, limits: {memory: 768Mi}}
           volumeMounts:
             - {name: runs, mountPath: /var/lib/bravo}
             - {name: tmp, mountPath: /tmp}
+            - {name: kube, mountPath: /etc/bravo/rehearsal, readOnly: true}
+            - {name: bao-ca, mountPath: /etc/bravo/openbao, readOnly: true}
+            - {name: bao-jwt, mountPath: /var/run/secrets/openbao, readOnly: true}
       volumes:
         - {name: runs, emptyDir: {sizeLimit: 512Mi}}
         - {name: tmp, emptyDir: {sizeLimit: 128Mi}}
+        - {name: kube, secret: {secretName: rehearsal-kubeconfig, optional: true, defaultMode: 0440}}
+        - {name: bao-ca, configMap: {name: openbao-ca}}
+        - name: bao-jwt
+          projected:
+            sources:
+              - serviceAccountToken: {expirationSeconds: 3600, path: token}
 ---
 apiVersion: v1
 kind: Service

@@ -19,7 +19,7 @@ if [[ $1 == remove ]]; then
 fi
 
 server=$2 ctx=$3 port=$4
-"$LIMACTL" shell "$server" -- sudo cat /etc/rancher/k3s/k3s.yaml \
+"$LIMACTL" shell "$server" -- sudo cat "${KUBECONFIG_PATH_IN_VM:-/etc/rancher/rke2/rke2.yaml}" \
   | sed -e "s#https://127.0.0.1:6443#https://127.0.0.1:$port#" -e "s/: default$/: $ctx/" -e "s/^\(\s*name:\) default$/\1 $ctx/" \
   > "$work/new"
 yq -i ".clusters[0].name = \"$ctx\" | .users[0].name = \"$ctx\" | .contexts[0].name = \"$ctx\" |

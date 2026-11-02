@@ -1,6 +1,6 @@
-# Platform DB (T7 "플랫폼 DB(상태 · 감사 로그 인덱스)", 10-cluster-overview 2.1): CNPG, PostgreSQL 16,
-# 3 instances, one per AZ (core node per AZ). Async streaming replicas; the API keeps working when one
-# AZ's node stops (T7 completion, D-21). RDS instead is an open decision (TECH-STACK-SPEC 3 #3).
+# Platform DB (T7 "플랫폼 DB(상태 · 감사 로그 인덱스)"): CNPG, PostgreSQL 16, on the spec §7.2 platform
+# (EC2 1대 + RKE2 단일 노드): one instance on bravo-db (EBS gp3, KMS). No AZ redundancy on one node (spec choice,
+# cost); the EBS volume survives a pod or node restart. RDS instead is an open decision (TECH-STACK-SPEC 3 #3).
 # Owner password: Secret platform-db-owner (basic-auth) piped from OpenBao secret/envs/platform/platform-db
 # (field owner) by deploy/platform/scripts/deliver-secrets.sh. Not in Git (D-26).
 apiVersion: postgresql.cnpg.io/v1
@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/name: platform-db
     app.kubernetes.io/part-of: bravo-platform
 spec:
-  instances: 3
+  instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:16.13-standard-trixie@sha256:8c25c9dcc7af607b65cfa6a125c8cae4c126a03d224dc1b6959cc279b7bf89f4
   primaryUpdateStrategy: unsupervised
   enableSuperuserAccess: false
@@ -40,8 +40,8 @@ spec:
     size: 2Gi
   affinity:
     enablePodAntiAffinity: true
-    podAntiAffinityType: required
-    topologyKey: topology.kubernetes.io/zone
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
     nodeSelector:
       bravo.io/pool: core
   resources:

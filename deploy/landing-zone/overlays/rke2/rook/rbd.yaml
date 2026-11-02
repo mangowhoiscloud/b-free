@@ -1,0 +1,56 @@
+# Block storage for the landing-zone StorageClass names (D-22, spec "Rook-Ceph(RGW · RBD)"):
+# RBD pool bravo-rbd, 2 replicas (one per VM/OSD, failure domain host). bravo-db (CNPG) and
+# bravo-general use it. Fallback if RBD cannot serve CNPG: storageclasses-local-path.yaml +
+# local-path.yaml (stopgap, reported as such).
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: bravo-rbd
+  namespace: rook-ceph
+spec:
+  failureDomain: host
+  replicated: {size: 2, requireSafeReplicaSize: false}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-db
+  annotations: {bravo.dev/backing: "rook-ceph RBD pool bravo-rbd (2 replicas)"}
+provisioner: rook-ceph.rbd.csi.ceph.com
+parameters:
+  clusterID: rook-ceph
+  pool: bravo-rbd
+  imageFormat: "2"
+  imageFeatures: layering
+  csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
+  csi.storage.k8s.io/provisioner-secret-namespace: rook-ceph
+  csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner
+  csi.storage.k8s.io/controller-expand-secret-namespace: rook-ceph
+  csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
+  csi.storage.k8s.io/node-stage-secret-namespace: rook-ceph
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bravo-general
+  annotations: {bravo.dev/backing: "rook-ceph RBD pool bravo-rbd (2 replicas)"}
+provisioner: rook-ceph.rbd.csi.ceph.com
+parameters:
+  clusterID: rook-ceph
+  pool: bravo-rbd
+  imageFormat: "2"
+  imageFeatures: layering
+  csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
+  csi.storage.k8s.io/provisioner-secret-namespace: rook-ceph
+  csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner
+  csi.storage.k8s.io/controller-expand-secret-namespace: rook-ceph
+  csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
+  csi.storage.k8s.io/node-stage-secret-namespace: rook-ceph
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate

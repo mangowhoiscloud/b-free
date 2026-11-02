@@ -1,30 +1,3 @@
-output "cluster_name" {
-  description = "EKS 클러스터 이름"
-  value       = module.cluster.name
-}
-
-output "kubernetes_version" {
-  description = "K8s minor"
-  value       = module.cluster.kubernetes_version
-}
-
-output "kubeconfig_path" {
-  description = "비밀 없는 kubeconfig 경로. API는 비공개라 VPC 안이나 링크로만 닿음"
-  value       = module.cluster.kubeconfig_path
-}
-
-output "cni" {
-  description = "CNI 요약"
-  value       = module.cluster.cni
-}
-
-output "node_pools" {
-  description = "역할별 노드 풀"
-  value       = module.cluster.node_pools
-}
-
-
-
 output "ecr_repositories" {
   description = "플랫폼 이미지 저장소(이미지 이름 → URL)"
   value       = { for k, r in aws_ecr_repository.platform : k => r.repository_url }
@@ -40,27 +13,42 @@ output "ci_trusted_subject" {
   value       = module.ci_identity.trusted_subject
 }
 
-output "pod_identity_roles" {
-  description = "Pod Identity 역할(namespace/serviceaccount → 역할 ARN)"
-  value       = { for k, v in local.pod_roles : "${v.namespace}/${v.service_account}" => aws_iam_role.pod[k].arn }
-}
-
-output "source_access_groups" {
-  description = "출발지 EKS access entry가 주는 K8s 그룹(역할 → 그룹)"
-  value       = local.source_access
-}
-
 output "nat_gateway_id" {
-  description = "플랫폼 Regional NAT. 출발지 EKS 허용 목록에 넣을 공인 IP는 이 NAT의 주소(임시 링크(D-16 전))"
+  description = "플랫폼 Regional NAT(VPC ②). 출발지 EKS API 허용 목록에 이 NAT 공인 IP가 있음(수집기 · Executor의 EKS 토큰 경로, 임시 링크(D-16 전))"
   value       = module.network.nat_gateway_id
-}
-
-output "api_endpoint" {
-  description = "EKS API 엔드포인트"
-  value       = module.cluster.api_endpoint
 }
 
 output "gitops_repo_url" {
   description = "Argo CD가 당겨 갈 저장소"
   value       = var.gitops_repo_url
+}
+
+output "rke2_node" {
+  description = "플랫폼 RKE2 단일 노드(SSM 세션 대상)"
+  value = {
+    instance_id = module.node.instance_id
+    private_ip  = module.node.private_ip
+    ami_id      = module.node.ami_id
+    rke2        = local.rke2.version
+  }
+}
+
+output "sa_oidc_issuer" {
+  description = "RKE2 서비스 계정 발급자(S3 공개 discovery 문서). JWKS를 이 버킷에 올려야 웹 신원이 동작"
+  value       = local.oidc_issuer
+}
+
+output "sa_oidc_bucket" {
+  description = "discovery 문서 버킷"
+  value       = aws_s3_bucket.oidc.bucket
+}
+
+output "web_identity_roles" {
+  description = "서비스 계정 → 역할 ARN(AWS_ROLE_ARN)"
+  value       = { for k, v in local.web_identity_roles : v.sa => aws_iam_role.web_identity[k].arn }
+}
+
+output "node_kms_key_arn" {
+  description = "노드 · EBS CSI 볼륨 KMS 키(StorageClass kmsKeyId)"
+  value       = module.node.kms_key_arn
 }

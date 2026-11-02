@@ -65,11 +65,11 @@ DB 역할은 `sql/`에 있습니다. `rehearsal_evidence_ro.sql`(플랫폼 DB, A
 | 공급자 | 변수 | 비고 |
 |---|---|---|
 | `claude_subscription`(기본, 데모) | `BRAVO_MODEL_OPUS=claude-opus-5-5`, `BRAVO_MODEL_HAIKU=claude-haiku-5-5`, 서비스의 `BRAVO_BAO_*` | Claude Agent SDK + 팀장 구독 토큰(OpenBao `secret/envs/platform/llm-claude` `oauth_token`). 개인 구독이라 고객 서비스 경로가 아님 |
-| `openai_agents`(대체 엔진) | `BRAVO_MODEL_*`(OpenAI 모델 ID), 서비스의 `BRAVO_BAO_*` | OpenAI Agents SDK 0.20.0 + API 키(OpenBao `secret/envs/platform/llm-openai` `api_key`). ChatGPT 구독 로그인 경로는 없음 |
+| `openai_agents`(대체 엔진) | `BRAVO_MODEL_*`(OpenAI 모델 ID), 서비스의 `BRAVO_BAO_*` | OpenAI Agents SDK 0.20.0 + OpenBao `secret/envs/platform/llm-openai`. `api_key`가 있으면 API 키, 없으면 팀장 ChatGPT 계정 세션(데모 전용, 문서화되지 않은 Codex 백엔드, ADR 0009) |
 | `bedrock_gateway`(운영 목표) | `BRAVO_LLM_GATEWAY_URL`, `BRAVO_MODEL_OPUS=jp.anthropic.claude-opus-5-5`, `BRAVO_MODEL_HAIKU=jp.anthropic.claude-haiku-5-5`, `BRAVO_BEDROCK_REGION=ap-northeast-1` | 플랫폼 키를 가진 게이트웨이. 설정만, 이 패키지에서 실호출하지 않음 |
 | `anthropic_gateway` | `BRAVO_LLM_GATEWAY_URL`, `BRAVO_MODEL_*` | 개발용 |
 
-**자격 전달.** 서비스는 모델 자격을 읽지 않습니다. KV 메타데이터로 있는지만 보고(`/readyz`의 `llm_token`, 없으면 `POST /v1/trials`가 `llm_token_missing`), Trial마다 공급자 AppRole(`llm-claude` · `llm-openai`)의 secret_id를 하나(60초, 한 번) 발급해 워커에 넘깁니다. 워커가 그것으로 값을 한 번 읽고 토큰을 폐기합니다(`bravo_agents.llm_secret`). 서비스 정책은 `deploy/pilot/bao/policies/platform-rehearsal.hcl`(메타데이터 읽기, secret_id 발급), 워커 정책은 `platform-llm-*.hcl`(그 경로 읽기만)입니다. 정책을 바꿨으면 `rehearsal-bao.sh setup`을 다시 돌립니다. AppRole은 `keys.sh llm-run`이 처음 쓸 때 만듭니다.
+**자격 전달.** 서비스는 모델 자격을 읽지 않습니다. KV 메타데이터로 있는지만 보고(`/readyz`의 `llm_token`, 없으면 `POST /v1/trials`가 `llm_token_missing`), Trial마다 공급자 AppRole(`llm-claude` · `llm-openai`)의 secret_id를 하나(60초, 한 번) 발급해 워커에 넘깁니다. 워커가 그것으로 값을 한 번 읽고 토큰을 폐기합니다(`bravo_agents.llm_secret`). 서비스 정책은 `deploy/pilot/bao/policies/platform-rehearsal.hcl`(메타데이터 읽기, secret_id 발급), 워커 정책은 `platform-llm-*.hcl`(그 경로 읽기. `llm-openai`는 갱신한 ChatGPT 세션 되쓰기용 `update`가 하나 더)입니다. 정책을 바꿨으면 `rehearsal-bao.sh setup`을 다시 돌립니다. AppRole은 `keys.sh llm-run`이 처음 쓸 때 만듭니다.
 
 워커 환경에는 정확한 이름 목록만 들어갑니다: 경로 변수(`sdk_options.ROUTE_VARS`), OpenBao 공급자일 때 서비스의 OpenBao 주소 · CA · 마운트와 한 번 쓰는 `BRAVO_LLM_BAO_ROLE_ID` · `BRAVO_LLM_BAO_SECRET_ID`, Trial 값. 접두어나 운영자 지정으로 넘기는 변수는 없습니다. Trial 토큰 · 도구 계층 주소 · 봉투는 서비스 값이 늘 우선합니다.
 

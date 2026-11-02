@@ -1,0 +1,106 @@
+# ECR pull credential for the platform images (bravo-platform/*, by digest) on the RKE2 node.
+# RKE2's containerd has no ECR credential plugin, so a CronJob takes a 12-hour ECR token with the web identity role
+# ecr-pull (infra/envs/platform-aws rke2.tf: GetAuthorizationToken + read on the platform repositories only) and
+# writes Secret bravo-control/ecr-pull (kubernetes.io/dockerconfigjson). The bravo-control ServiceAccounts list it
+# in imagePullSecrets. No static key; the token never leaves the cluster and expires in 12 hours.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ecr-pull-refresher
+  namespace: bravo-control
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ecr-pull-refresher
+  namespace: bravo-control
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [ecr-pull]
+    verbs: [get, update, patch]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ecr-pull-refresher
+  namespace: bravo-control
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: ecr-pull-refresher}
+subjects:
+  - {kind: ServiceAccount, name: ecr-pull-refresher, namespace: bravo-control}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ecr-pull-refresher
+  namespace: bravo-control
+data:
+  refresh.sh: |
+    #!/bin/sh
+    # Token in a variable and a pipe only; never logged.
+    set -eu
+    REG=721622471953.dkr.ecr.ap-northeast-2.amazonaws.com
+    PW="$(aws ecr get-login-password --region ap-northeast-2)"
+    AUTH="$(printf 'AWS:%s' "$PW" | base64 | tr -d '\n')"
+    CFG="$(printf '{"auths":{"%s":{"auth":"%s"}}}' "$REG" "$AUTH" | base64 | tr -d '\n')"
+    KT="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+    API=https://kubernetes.default.svc/api/v1/namespaces/bravo-control/secrets
+    BODY="$(printf '{"apiVersion":"v1","kind":"Secret","type":"kubernetes.io/dockerconfigjson","metadata":{"name":"ecr-pull","namespace":"bravo-control","labels":{"app.kubernetes.io/managed-by":"ecr-pull-refresher"}},"data":{".dockerconfigjson":"%s"}}' "$CFG")"
+    CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    code="$(printf '%s' "$BODY" | curl -s -o /dev/null -w '%{http_code}' --cacert "$CA" -H "Authorization: Bearer $KT" -H 'Content-Type: application/json' -X PUT --data-binary @- "$API/ecr-pull")"
+    if [ "$code" = 404 ]; then
+      code="$(printf '%s' "$BODY" | curl -s -o /dev/null -w '%{http_code}' --cacert "$CA" -H "Authorization: Bearer $KT" -H 'Content-Type: application/json' -X POST --data-binary @- "$API")"
+    fi
+    echo "ecr-pull-refresher: Secret bravo-control/ecr-pull HTTP $code at $(date -u +%FT%TZ) (token not shown, valid 12h)"
+    case $code in 2*) ;; *) exit 1 ;; esac
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ecr-pull-refresher
+  namespace: bravo-control
+  labels: {app.kubernetes.io/name: ecr-pull-refresher, app.kubernetes.io/part-of: bravo-platform}
+spec:
+  schedule: "17 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: ecr-pull-refresher}
+        spec:
+          serviceAccountName: ecr-pull-refresher
+          automountServiceAccountToken: true
+          restartPolicy: OnFailure
+          nodeSelector: {bravo.io/pool: core}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: refresh
+              image: public.ecr.aws/aws-cli/aws-cli:2.32.0@sha256:4255e1b5d8f89b094e3a8afc785b302c62367612e090bc03cb978f734413c35f
+              command: ["sh", "/opt/refresh/refresh.sh"]
+              env:
+                - {name: AWS_REGION, value: ap-northeast-2}
+                - {name: AWS_STS_REGIONAL_ENDPOINTS, value: regional}
+                - {name: AWS_ROLE_ARN, value: "arn:aws:iam::721622471953:role/bravo-platform-ecr-pull-c31effab26ac5539feab620660"}
+                - {name: AWS_WEB_IDENTITY_TOKEN_FILE, value: /var/run/secrets/sts.amazonaws.com/serviceaccount/token}
+                - {name: HOME, value: /tmp}
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+              resources: {requests: {cpu: 10m, memory: 64Mi}, limits: {memory: 256Mi}}
+              volumeMounts:
+                - {name: script, mountPath: /opt/refresh, readOnly: true}
+                - {name: aws-token, mountPath: /var/run/secrets/sts.amazonaws.com/serviceaccount, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - {name: script, configMap: {name: ecr-pull-refresher}}
+            - name: aws-token
+              projected:
+                sources:
+                  - serviceAccountToken: {audience: sts.amazonaws.com, expirationSeconds: 3600, path: token}
+            - {name: tmp, emptyDir: {sizeLimit: 32Mi}}

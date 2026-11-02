@@ -51,7 +51,21 @@ export function parseClusters(v: unknown): ClustersResp {
 }
 
 const PROVISION_STEPS = ['REQUESTED', 'PROVISIONING', 'BOOTSTRAPPING', 'VERIFYING', 'READY'] as const;
-const PROVIDER_LABEL: Record<string, string> = { eks: 'Amazon EKS', k3s: '온프렘 K3s', gke: 'GKE', kubernetes: 'Kubernetes' };
+
+/** Distribution as the nodes report it (kubelet version suffix); the registry's `provider` only as fallback. */
+export function distroOf(c: Pick<Cluster, 'nodes' | 'provider' | 'server_version'>): string {
+  const v = [...c.nodes.map((n) => n.kubelet_version ?? ''), c.server_version ?? ''].join(' ');
+  if (/\+rke2/.test(v)) return 'RKE2';
+  if (/\+k3s/.test(v)) return 'K3s';
+  if (/-eks-/.test(v)) return 'Amazon EKS';
+  if (/-gke\./.test(v)) return 'GKE';
+  return `${c.provider} (등록부 값)`;
+}
+
+/** Workloads whose name says they are an environment link (e.g. dst-db-link), as the collector sees them. */
+export function linkWorkloads(d: ClustersResp) {
+  return d.clusters.flatMap((c) => c.workloads.filter((w) => /(^|-)link(-|$)/.test(w.name)).map((w) => ({ cluster: c.cluster_id, ...w })));
+}
 
 const provisionLine = (reason: string) => (
   <span>
@@ -66,7 +80,7 @@ function ClusterCard({ c }: { c: Cluster }) {
   const pods = Object.values(c.pods).reduce((a, b) => a + b, 0);
   const lzPresent = c.landing_zone.filter((l) => l.present).length;
   return (
-    <Block title={`${PROVIDER_LABEL[c.provider] ?? c.provider} · ${c.cluster_id}`} meta={<Tag variant={ok ? 'success' : 'error'} label={ok ? '정상' : '연결 안 됨'} />}>
+    <Block title={`${ok ? distroOf(c) : c.provider} · ${c.cluster_id}`} meta={<Tag variant={ok ? 'success' : 'error'} label={ok ? '정상' : '연결 안 됨'} />}>
       {!ok ? (
         <NotConnected endpoint={`GET /svc/collector/v1/clusters → ${c.cluster_id}`} reason={c.error ?? '이유 없음'} />
       ) : (
@@ -79,7 +93,7 @@ function ClusterCard({ c }: { c: Cluster }) {
               { label: '워크로드 Ready', value: <span className="num">{wlReady} / {c.workloads.length}</span> },
               { label: '파드', value: <span className="num">{pods} ({Object.entries(c.pods).map(([k, v]) => `${k} ${v}`).join(', ') || '없음'})</span> },
               { label: '랜딩 존 구성 요소', value: <span className="num">{lzPresent} / {c.landing_zone.length} 있음</span> },
-              { label: '프로비저닝 상태', value: provisionLine('상태 원장(deploy/landing-zone)이 API로 열려 있지 않음.') },
+              { label: '프로비저닝 상태', value: provisionLine('콘솔이 읽는 프로비저닝 상태 출처가 없음.') },
             ]}
           />
           <DataTable
@@ -128,12 +142,22 @@ export function ClustersScreen() {
       lead="환경마다 노드 · 네임스페이스 · 워크로드 준비 상태 · 랜딩 존 구성 요소를 수집기(읽기 전용 get/list)로 5초마다 읽습니다. Secret은 읽지 않습니다."
       aside={<Fresh at={live.updatedAt} label="수집" />}
     >
-      <p className="foot">
-        환경 사이 링크: <b>임시 링크(D-16 전)</b> · 플랫폼(노트북)의 kubectl port-forward. D-16 목표(Cloudflare Tunnel + Access 서비스 토큰)는 Zero Trust가 꺼져 있어 아직 쓰지 않음. 출처: deploy/CLOUD-E2E-CONTRACT.md §7(문서 기준, 링크 상태를 측정한 값 아님).
-      </p>
       <LiveGate live={live} title="클러스터 수집 연결 안 됨">
         {(d) => (
           <VStack gap={4}>
+            <Block title="환경 사이 링크 (수집기가 보는 link 워크로드)">
+              <DataTable
+                rows={linkWorkloads(d)}
+                rowKey={(w) => `${w.cluster}/${w.namespace}/${w.name}`}
+                empty="수집기가 읽는 클러스터에 이름에 link가 들어간 워크로드가 없습니다. 플랫폼 클러스터의 링크는 수집기 등록부에 없으면 여기 보이지 않습니다."
+                cols={[
+                  { key: 'c', header: '클러스터', render: (w) => <span className="mono">{w.cluster}</span> },
+                  { key: 'w', header: '워크로드', weight: 3, render: (w) => <span className="mono">{w.namespace}/{w.kind}/{w.name}</span> },
+                  { key: 's', header: '상태', render: (w) => <Tag variant={w.desired > 0 && w.ready >= w.desired ? 'success' : 'warning'} label={w.desired > 0 && w.ready >= w.desired ? '정상' : '준비 중'} /> },
+                  { key: 'r', header: 'Ready', numeric: true, render: (w) => `${w.ready} / ${w.desired}` },
+                ]}
+              />
+            </Block>
             {d.clusters.map((c) => (
               <ClusterCard key={c.cluster_id} c={c} />
             ))}
@@ -142,7 +166,7 @@ export function ClustersScreen() {
                 <Facts
                   columns="single"
                   items={[
-                    { label: '이유', value: `${n.reason}. 온프렘 K3s(Lima)가 서고 컨텍스트가 보고되면 그 kubeconfig를 수집기에 읽기 전용으로 연결합니다.` },
+                    { label: '이유', value: n.reason },
                     { label: '시도한 곳', value: <span className="mono">GET /svc/collector/v1/clusters → not_configured</span> },
                     { label: '프로비저닝 상태', value: provisionLine('클러스터를 읽지 못함.') },
                   ]}

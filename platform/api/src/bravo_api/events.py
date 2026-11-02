@@ -23,6 +23,7 @@ from .errors import NotFoundError
 class EventKind(StrEnum):
     STATE_CHANGED = "state.changed"
     GATE_VERDICT = "gate.verdict"
+    APPROVAL_REQUESTED = "approval.requested"
     APPROVAL_GRANTED = "approval.granted"
     RUN_STAGE = "run.stage"
     RUN_DONE = "run.done"
@@ -32,6 +33,14 @@ class EventKind(StrEnum):
     TRIAL_PROPOSED = "trial.proposed"
     TOOL_DENIED = "tool.denied"
     TRIAL_VERDICT = "trial.verdict"
+    # T31 change path (spec r2): requested -> stage* -> prepared -> approval -> stage* -> applied | refused | failed
+    CHANGE_REQUESTED = "change.requested"
+    CHANGE_STAGE = "change.stage"
+    CHANGE_PREPARED = "change.prepared"
+    CHANGE_PREPARE_FAILED = "change.prepare_failed"
+    CHANGE_APPLIED = "change.applied"
+    CHANGE_REFUSED = "change.refused"
+    CHANGE_FAILED = "change.failed"
 
 
 class EventMode(StrEnum):

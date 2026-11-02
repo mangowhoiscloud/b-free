@@ -23,16 +23,24 @@ echo "# landing zone verify: overlay=$overlay context=$ctx at $(date -u +%Y-%m-%
 nodes="$(k get nodes -o jsonpath='{range .items[*]}{.metadata.name}={.status.nodeInfo.kubeletVersion}/{.status.conditions[?(@.type=="Ready")].status}/{.status.addresses[?(@.type=="InternalIP")].address} {end}')"
 [[ $(grep -o '/True/' <<<"$nodes" | wc -l | tr -d ' ') -ge 2 ]] && pass nodes.ready "$nodes" || fail nodes.ready "$nodes"
 
-if [[ $overlay == k3s ]]; then
-  cfg="$(limactl shell "$LIMA_SERVER" -- sudo cat /etc/rancher/k3s/config.yaml </dev/null 2>/dev/null)"
-  for flag in "protect-kernel-defaults: true" "secrets-encryption: true" "flannel-backend: none" \
-              "disable-kube-proxy: true" "admission-control-config-file=" "audit-policy-file="; do
-    grep -qF "$flag" <<<"$cfg" && pass k3s.config "$flag" || fail k3s.config "$flag missing"
+if [[ $overlay == rke2 ]]; then
+  cfg="$(limactl shell "$LIMA_SERVER" -- sudo sh -c 'cat /etc/rancher/rke2/config.yaml /etc/rancher/rke2/config.yaml.d/*.yaml' </dev/null 2>/dev/null)"
+  for flag in "profile: cis" "cni: none" "disable-kube-proxy: true" "secrets-encryption: true" \
+              "pod-security-admission-config-file:" "audit-policy-file:"; do
+    grep -qF "$flag" <<<"$cfg" && pass rke2.config "$flag" || fail rke2.config "$flag missing"
   done
-  enc="$(limactl shell "$LIMA_SERVER" -- sudo k3s secrets-encrypt status </dev/null 2>/dev/null | tr '\n' ' ')"
-  grep -q "Encryption Status: Enabled" <<<"$enc" && pass k3s.secrets-encryption "$enc" || fail k3s.secrets-encryption "$enc"
-  al="$(limactl shell "$LIMA_SERVER" -- sudo sh -c 'wc -l < /var/lib/rancher/k3s/server/logs/audit.log' </dev/null 2>/dev/null | tr -d ' ')"
-  [[ ${al:-0} -gt 0 ]] && pass k3s.audit-log "/var/lib/rancher/k3s/server/logs/audit.log: $al lines" || fail k3s.audit-log "no audit log"
+  ver="$(limactl shell "$LIMA_SERVER" -- /usr/local/bin/rke2 --version </dev/null 2>/dev/null | head -1)"
+  [[ -n $ver ]] && pass rke2.version "$ver" || fail rke2.version "rke2 binary missing"
+  etcdu="$(limactl shell "$LIMA_SERVER" -- id etcd </dev/null 2>/dev/null)"
+  [[ -n $etcdu ]] && pass rke2.cis-etcd-user "$etcdu" || fail rke2.cis-etcd-user "no etcd user"
+  sc="$(limactl shell "$LIMA_SERVER" -- sysctl -n vm.panic_on_oom vm.overcommit_memory kernel.panic kernel.panic_on_oops </dev/null 2>/dev/null | tr '\n' ' ')"
+  [[ $sc == "0 1 10 1 " ]] && pass rke2.cis-sysctl "vm.panic_on_oom=0 vm.overcommit_memory=1 kernel.panic=10 kernel.panic_on_oops=1" || fail rke2.cis-sysctl "$sc"
+  sl="$(limactl shell "$LIMA_SERVER" -- systemctl is-enabled sleep.target suspend.target hibernate.target </dev/null 2>/dev/null | tr '\n' ' ')"
+  [[ $sl == "masked masked masked " ]] && pass node.no-sleep "sleep/suspend/hibernate masked" || fail node.no-sleep "$sl"
+  enc="$(limactl shell "$LIMA_SERVER" -- sudo /usr/local/bin/rke2 secrets-encrypt status </dev/null 2>/dev/null | tr '\n' ' ')"
+  grep -q "Encryption Status: Enabled" <<<"$enc" && pass rke2.secrets-encryption "$enc" || fail rke2.secrets-encryption "${enc:-no status}"
+  al="$(limactl shell "$LIMA_SERVER" -- sudo sh -c 'wc -l < /var/lib/rancher/rke2/server/logs/audit.log' </dev/null 2>/dev/null | tr -d ' ')"
+  [[ ${al:-0} -gt 0 ]] && pass rke2.audit-log "/var/lib/rancher/rke2/server/logs/audit.log: $al lines" || fail rke2.audit-log "no audit log"
 fi
 
 # PSA restricted default: a privileged pod in a namespace without labels must be rejected.
@@ -46,6 +54,8 @@ grep -q 'violates PodSecurity "restricted' <<<"$psa" && pass psa.restricted-defa
 cst="$(k -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg status 2>/dev/null)"
 grep -q "KubeProxyReplacement: *True" <<<"$cst" && pass cilium.kpr "$(grep KubeProxyReplacement <<<"$cst" | xargs)" || fail cilium.kpr "kube-proxy replacement off"
 grep -q "Tunnel \[vxlan\]" <<<"$cst" && pass cilium.vxlan "$(grep '^Routing' <<<"$cst" | xargs)" || fail cilium.vxlan "not vxlan"
+cv="$(k -n kube-system get ds cilium -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)"
+[[ $cv == *":v$CILIUM_CHART_VERSION@"* ]] && pass cilium.version "$cv (landing zone chart $CILIUM_CHART_VERSION)" || fail cilium.version "$cv"
 grep -q "^Hubble: *Ok" <<<"$cst" && pass hubble "$(grep '^Hubble' <<<"$cst" | xargs)" || fail hubble "hubble not ok"
 check hubble-relay "deploy/hubble-relay available" k -n kube-system rollout status deploy/hubble-relay --timeout=5s
 gw="$(k -n bravo-edge get gateway bravo-gateway -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status} {.status.addresses[0].value}' 2>/dev/null)"
@@ -55,9 +65,11 @@ hr="$(k -n chat get httproute chat -o jsonpath='{.status.parents[0].conditions[?
 
 # --- storage -------------------------------------------------------------------------------------
 for sc in bravo-db bravo-general; do
-  p="$(k get sc "$sc" -o jsonpath='{.provisioner}' 2>/dev/null)"
+  p="$(k get sc "$sc" -o jsonpath='{.provisioner} pool={.parameters.pool}' 2>/dev/null)"
   [[ -n $p ]] && pass "storageclass.$sc" "provisioner $p" || fail "storageclass.$sc" absent
 done
+pvc="$(k -n chat get pvc -l cnpg.io/cluster=chat-db -o jsonpath='{range .items[*]}{.metadata.name}={.status.phase}/{.spec.storageClassName}/{.status.capacity.storage} {end}' 2>/dev/null)"
+[[ $pvc == *Bound/bravo-db* ]] && pass storage.chat-db-pvc "$pvc" || fail storage.chat-db-pvc "${pvc:-none}"
 
 # --- data ----------------------------------------------------------------------------------------
 db="$(k -n chat get cluster chat-db -o jsonpath='{.status.phase}|{.status.image}' 2>/dev/null)"
@@ -99,7 +111,7 @@ dd="$(k -n chat get networkpolicy -l bravo.dev/generated-by=kyverno-bravo-defaul
   || pass kyverno.chat-enrolled "$dd"
 
 # --- object store --------------------------------------------------------------------------------
-if [[ $overlay == k3s ]]; then
+if [[ $overlay == rke2 ]]; then
   ch="$(k -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.phase} {.status.ceph.health}' 2>/dev/null)"
   [[ $ch == Ready* ]] && pass rook.cephcluster "$ch" || fail rook.cephcluster "${ch:-absent}"
   osd="$(k -n rook-ceph get pods -l app=rook-ceph-osd --field-selector=status.phase=Running -o name 2>/dev/null | wc -l | tr -d ' ')"
@@ -150,7 +162,7 @@ done
 out="$(k -n cf-edge logs "$probe" 2>/dev/null)"
 k -n cf-edge delete pod "$probe" --wait=false >/dev/null 2>&1
 grep -q "gateway 200" <<<"$out" && pass edge.gateway-to-app "cf-edge -> Gateway (Host b-free-chat-dst) -> app /healthz 200" || fail edge.gateway-to-app "$(head -1 <<<"$out")"
-if [[ $overlay == k3s ]]; then
+if [[ $overlay == rke2 ]]; then
   dns="$(sed -n 's/^dns //p' <<<"$out")"
   [[ -n $dns ]] && pass link.host-lima-internal "pod resolves host.lima.internal -> $dns (the laptop through Lima user-v2)" \
     || fail link.host-lima-internal "host.lima.internal does not resolve in a pod"

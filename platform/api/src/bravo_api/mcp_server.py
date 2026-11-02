@@ -29,7 +29,7 @@ from opentelemetry.trace import Status, StatusCode
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.types import Message, Receive, Scope, Send
 
-from .auth import Action, Channel, CredentialSource, Principal, TokenVerifier, is_allowed
+from .auth import AccessNotConnectedError, Action, Channel, CredentialSource, Principal, Verifier, audience_for, is_allowed
 from .config import Settings
 from .db import Database
 from .errors import AuthError, BusinessError, ForbiddenError, NotFoundError
@@ -99,7 +99,10 @@ def _obj(props: dict[str, Any], required: list[str]) -> dict[str, Any]:
     return {"type": "object", "properties": props, "required": required}
 
 
-OUT_ENV = _obj({"environment_id": _STR, "name": _STR, "role": _STR, "engine": _STR}, ["environment_id", "role"])
+OUT_ENV = _obj(
+    {"environment_id": _STR, "name": _STR, "role": _STR, "engine": _STR, "secret_status": _STR, "secret_reason": _ERR},
+    ["environment_id", "role"],
+)
 OUT_CONTROLS = _obj(
     {
         "environment_id": _STR,
@@ -376,19 +379,24 @@ class MCPGuard:
     """ASGI endpoint for ``/mcp``: Host/Origin checks, JWT (MCP AUD), principal, role pre-check."""
 
     def __init__(
-        self, settings: Settings, db: Database, verifier: TokenVerifier, manager: StreamableHTTPSessionManager
+        self, settings: Settings, db: Database, verifier: Verifier, manager: StreamableHTTPSessionManager
     ) -> None:
         self._settings = settings
         self._db = db
         self._verifier = verifier
         self._manager = manager
 
-    async def _deny(self, send: Send, status: int, reason: str, www: str | None = None) -> None:
+    async def _deny(
+        self, send: Send, status: int, reason: str, www: str | None = None, detail: dict[str, Any] | None = None
+    ) -> None:
         headers = [(b"content-type", b"application/json")]
         if www:
             headers.append((b"www-authenticate", www.encode()))
+        body: dict[str, Any] = {"error": reason}
+        if detail:
+            body["detail"] = detail
         await send({"type": "http.response.start", "status": status, "headers": headers})
-        await send({"type": "http.response.body", "body": json.dumps({"error": reason}).encode()})
+        await send({"type": "http.response.body", "body": json.dumps(body, ensure_ascii=False).encode()})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -402,13 +410,18 @@ class MCPGuard:
         if origin is not None and origin not in self._settings.mcp_allowed_origins:
             return await self._deny(send, 403, "origin_not_allowed")
         www_invalid = 'Bearer realm="bravo-operator-mcp", error="invalid_token"'
+        audience = audience_for(scope.get("path", ""), self._settings.console_aud or "", self._settings.mcp_aud or "")
         try:
-            token = self._verifier.verify(_extract_bearer(raw), self._settings.mcp_aud)
+            token = await self._verifier.verify(_extract_bearer(raw), audience)
             principal = await self._db.resolve_principal(token, Channel.MCP, headers.get("x-bravo-tenant"))
+        except AccessNotConnectedError as exc:
+            return await self._deny(send, 503, exc.reason, detail={"message": exc.message})
         except AuthError as exc:
             return await self._deny(send, 401, exc.reason, www_invalid)
         except ForbiddenError as exc:
-            return await self._deny(send, 403, exc.reason, 'Bearer realm="bravo-operator-mcp", error="insufficient_scope"')
+            return await self._deny(
+                send, 403, exc.reason, 'Bearer realm="bravo-operator-mcp", error="insufficient_scope"', exc.detail
+            )
 
         receive_fn = receive
         if scope["method"] == "POST":

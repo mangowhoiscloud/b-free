@@ -1,0 +1,9 @@
+{
+  "comment": "Real environments the platform registers for the beginner customer (python -m bravo_api.admin register-envs --file ... --created-by <operator email>). secret_ref = the environment's DB connection secret in the platform OpenBao (D-26, CLOUD-E2E-CONTRACT 2), listed with keys.sh env-list on 2026-11-02 21:3x KST; register-envs resolves each against OpenBao again and refuses anything not found. kube_context is display/collector mapping only.",
+  "tenant": "b-free",
+  "environments": [
+    {"name": "source-aws", "role": "source", "secret_ref": "envs/source-aws/chat-db", "kube_context": "bravo-source", "what": "Amazon EKS bravo-source (ap-northeast-2)"},
+    {"name": "target-onprem", "role": "target", "secret_ref": "envs/target-onprem/chat-db", "kube_context": "bravo-onprem", "what": "on-prem RKE2 on Lima (rebuilt from K3s 2026-11-02)"},
+    {"name": "target-gcp", "role": "target", "secret_ref": "envs/target-gcp/chat-db", "kube_context": "bravo-target-gcp", "what": "GKE (asia-northeast1)"}
+  ]
+}

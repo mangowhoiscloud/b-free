@@ -43,6 +43,14 @@ def append_evidence(row: dict[str, object]) -> None:
         f.write("\t".join(str(row.get(c, "")).replace("\t", " ") for c in cols) + "\n")
 
 
+def _provider() -> str:
+    try:
+        from bravo_agents.llm import provider_name
+    except ImportError:
+        return "unknown"
+    return provider_name(os.environ)
+
+
 def installed_version(dist: str) -> str:
     try:
         return metadata.version(dist)
@@ -54,6 +62,33 @@ def evidence_quadrant(trial: Any) -> str:
     """ADR 0002 axes from what ran: agent input is non-deterministic; the output counts as code-judged only
     when a verifier graded it (its kind is in the note, e.g. static_rules)."""
     return quadrant.classify(input_deterministic=False, output_code_judgeable=trial.verifier is not None).name
+
+
+def hubble_drops(context: str | None, namespaces: list[str]) -> list[dict[str, Any]]:
+    """Cilium Hubble flows DROPPED for the Trial's namespaces (read from the Cilium agents, provisioner context).
+    Evidence that a blocked connection was dropped by policy, with the drop reason Hubble reports."""
+    import subprocess
+
+    found: list[dict[str, Any]] = []
+    ctx = ["--context", context] if context else []
+    agents = subprocess.run(["kubectl", *ctx, "-n", "kube-system", "get", "pods", "-l", "k8s-app=cilium", "-o",
+                             "name"], capture_output=True, text=True, timeout=60, check=False).stdout.split()
+    for agent, ns in ((agent, ns) for agent in agents for ns in namespaces):  # each agent sees its node's flows
+        cmd = ["kubectl", *ctx, "-n", "kube-system", "exec", agent, "-c", "cilium-agent", "--", "hubble",
+               "observe", "--namespace", ns, "--verdict", "DROPPED", "--last", "50", "-o", "json"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+        for line in r.stdout.splitlines():
+            try:
+                flow = json.loads(line).get("flow") or {}
+            except ValueError:
+                continue
+            found.append({"time": flow.get("time"), "namespace": ns, "verdict": flow.get("verdict"),
+                          "drop_reason": flow.get("drop_reason_desc"),
+                          "source": (flow.get("source") or {}).get("pod_name"),
+                          "destination": (flow.get("IP") or {}).get("destination"),
+                          "port": ((flow.get("l4") or {}).get("TCP") or (flow.get("l4") or {}).get("UDP") or {})
+                          .get("destination_port"), "traffic_direction": flow.get("traffic_direction")})
+    return found
 
 
 def _free_port() -> int:
@@ -159,9 +194,12 @@ async def rehearse(a: argparse.Namespace) -> int:
                      "verdict": trial.verdict,
                      "reward": reward, "phase_seconds": int((dt.datetime.now(dt.UTC) - started).total_seconds()),
                      "run_path": trial.harbor_trial_dir or "",
-                     "note": "; ".join(x for x in (trial.reason or "",
-                                                   f"verifier_kind={trial.verifier_kind}" if trial.verifier_kind
-                                                   else "") if x)})
+                     "note": "; ".join(x for x in (
+                         a.label, f"provider={_provider()}",
+                         "worker_started=yes" if trial.worker_started else "worker_started=no (no model call)",
+                         trial.reason or "",
+                         f"verifier_kind={trial.verifier_kind}" if trial.verifier and trial.verifier_kind
+                         else "verifier_ran=no") if x)})
     print(f"verdict={trial.verdict}\nreason={trial.reason or ''}\nreward={reward}\nrun_path={trial.harbor_trial_dir}")
     print(f"artifact_digest={trial.artifact_digest}")
     for ev in trial.tool_events:
@@ -173,7 +211,13 @@ async def rehearse(a: argparse.Namespace) -> int:
     if trial.harbor_trial_dir:
         out = Path(trial.harbor_trial_dir)
         out.mkdir(parents=True, exist_ok=True)
-        (out / "bravo-trial.json").write_text(json.dumps(trial.view(), ensure_ascii=False, indent=2, default=str))
+        view = {**trial.view(), "label": a.label}
+        (out / "bravo-trial.json").write_text(json.dumps(view, ensure_ascii=False, indent=2, default=str))
+        if a.hubble and trial.names is not None:
+            drops = hubble_drops(settings.kube_context, [trial.names.rehearsal_ns, trial.names.verify_ns])
+            (out / "hubble-dropped.json").write_text(json.dumps(drops, indent=2))
+            for d in drops:
+                print("hubble_drop " + json.dumps(d, sort_keys=True))
     print(f"hook_events={len(trial.hook_events)}")
     return 0 if trial.verdict == "PASS" else 1
 
@@ -191,6 +235,9 @@ def main() -> None:
     ap.add_argument("--inventory-digest", default=None, help="bind the uploaded repo snapshot with this digest")
     ap.add_argument("--snapshot", default=None, type=Path,
                     help="repo snapshot tar (snapshot pack) to store for this plan before the Trial")
+    ap.add_argument("--label", default="", help="free-text label stored with the evidence row and run record")
+    ap.add_argument("--hubble", action="store_true",
+                    help="after the run, save Cilium Hubble DROPPED flows of the Trial namespaces (evidence)")
     ap.add_argument("--probe-bucket-delete", action="store_true",
                     help="demo: send labelled bucket-delete calls with the Trial token while the agent runs")
     a = ap.parse_args()

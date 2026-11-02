@@ -106,7 +106,7 @@ jobs:
             echo "$1=$v" | tee -a "$GITHUB_OUTPUT"
           }
           # api: tests/test_rehearsal.py starts the real platform/rehearsal service, which imports platform/agent.
-          job api       '^(platform/api/|platform/rehearsal/(src/|pyproject\.toml$|uv\.lock$)|platform/agent/(src/|allowlists/|pyproject\.toml$))'
+          job api       '^(platform/api/|platform/collector/(src/|pyproject\.toml$|uv\.lock$)|platform/rehearsal/(src/|pyproject\.toml$|uv\.lock$)|platform/agent/(src/|allowlists/|pyproject\.toml$))'
           job gate      '^platform/gate/'
           # collector: tests/test_inventory.py scans the real apps/demo tree.
           job collector '^(platform/collector/|apps/demo/)'
@@ -149,6 +149,11 @@ jobs:
         run: uv run --frozen ruff check src tests
       - name: Type check (pyright basic, [tool.pyright] in pyproject.toml)
         run: uv run --frozen pyright
+      - name: Collector service virtualenv for the API tests
+        # tests/conftest.py starts the real platform/collector (and a throwaway OpenBao dev container) so plans
+        # can leave ANALYZE (audit A4) and COLLECT (audit B11). Without this venv the flow tests stay in ANALYZE.
+        working-directory: platform/collector
+        run: uv sync --locked
       - name: Rehearsal service virtualenv for tests/test_rehearsal.py
         # The test starts platform/rehearsal/.venv/bin/python as a child process with no model key and
         # expects llm_unconfigured. Without this venv the test skips with rehearsal_venv_missing.

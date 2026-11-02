@@ -8,13 +8,16 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 mode=${1:?usage: dryrun | apply}
+extra=(-e SPIKE_NOOP=1)
+[[ -f $SPIKE_HERE/${SPIKE_SIDE}_01_schema.sql ]] && extra=(-v "$SPIKE_HERE/${SPIKE_SIDE}_01_schema.sql:/variant/01_schema.sql:ro")
 hostaddr="$(docker run --rm --add-host host.docker.internal:host-gateway postgres:16.15 getent ahostsv4 host.docker.internal | awk 'NR==1{print $1}')"
 { for r in app_writer replicator executor_ctl executor_observe; do
     printf '%s_PASSWORD=%s\n' "$(printf '%s' "$r" | tr '[:lower:]' '[:upper:]')" "$("$SPIKE_HERE/bao.sh" get "$M_SECRET" "$r")"
   done; printf 'PGPASSWORD=%s\n' "$(m_master_pw)"; } \
 | docker run --rm -i --add-host host.docker.internal:host-gateway \
     -v "$SPIKE_REPO/apps/demo/schema:/schema:ro" -v "$SPIKE_TLS:/tls:ro" \
-    -v "$SPIKE_HERE/${SPIKE_SIDE}_02_roles.sql:/variant/02_roles.sql:ro" -v "$SPIKE_HERE/managed_init.sh:/managed_init.sh:ro" \
+    -v "$SPIKE_HERE/${SPIKE_SIDE}_02_roles.sql:/variant/02_roles.sql:ro" \
+    "${extra[@]}" -e DRYRUN_VARIANT="${DRYRUN_VARIANT:-0}" -v "$SPIKE_HERE/managed_init.sh:/managed_init.sh:ro" \
     -e PGHOST="$M_HOST" -e PGHOSTADDR="$hostaddr" -e PGPORT="$M_LOCAL_PORT" -e PGDATABASE=chat -e PGUSER="$M_MASTER" \
     -e MANAGED_PRELUDE="${MANAGED_PRELUDE:-}" -e PGSSLMODE=verify-full -e PGSSLROOTCERT="/tls/$(basename "$M_CA")" -e PGCONNECT_TIMEOUT=10 \
     postgres:16.15 bash /managed_init.sh "$mode" > "$SPIKE_RUN/schema-$mode.log"

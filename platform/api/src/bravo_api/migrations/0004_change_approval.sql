@@ -296,6 +296,7 @@ GRANT SELECT, INSERT ON changes TO bravo_api;
 GRANT UPDATE (status, reason, approval_request_id, approval_id, approved_at, stage_seq, updated_at) ON changes TO bravo_api;
 GRANT SELECT ON change_stages TO bravo_api;
 GRANT UPDATE (active_change_id, last_change_id, applied_image_digest) ON plans TO bravo_api;
+GRANT UPDATE (secret_status, secret_reason, secret_checked_at) ON environments TO bravo_api;
 GRANT SELECT ON changes, change_stages TO bravo_mcp;
 
 GRANT SELECT ON changes, change_stages, rehearsals, approvals, environments TO bravo_apply;

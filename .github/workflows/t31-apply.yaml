@@ -1,0 +1,277 @@
+# T31 apply path, GitHub half (spec r2 T31, deploy/CLOUD-E2E-CONTRACT.md §8).
+#
+# What this workflow is: the prepare phase of an approved-change cycle on GitHub. The platform commits the
+# frozen rehearsal diff of change <change_id> as `.bravo/changes/<change_id>.diff` on branch `change/<change_id>`
+# (the app tree itself unchanged), then dispatches this workflow on that branch. The workflow
+#   1. checks the diff file hashes to the bound `diff_digest` and the branch did not touch the app tree,
+#   2. applies the diff to the app at `base_ref` (paths must be exactly those the diff names),
+#   3. builds an arm64 OCI archive with BuildKit pinned by digest, no attestations (one manifest = one digest),
+#   4. syft SBOM + trivy scan in a job with NO permissions, NO secrets, NO OIDC, no checkout (CVE-2026-33634),
+#   5. pushes to ghcr.io/mangowhoiscloud/b-free/<app> by digest (--preserve-digests) and reads it back,
+#   6. publishes t31-candidate.json: change_id, base_ref, diff_digest, image@digest, sbom digest, scan counts.
+# The digest it prints is the candidate a change approval binds (approvals.image_digest).
+#
+# What it is NOT: it does not sign and does not deploy. Signing stays with the platform: platform/apply signs the
+# approved digest with the OpenBao transit key (cosign --key hashivault://bravo-supply-chain) and deploys only when
+# the destination digest equals the approved digest. GitHub cannot reach OpenBao or the on-prem K3s, and no
+# Sigstore keyless / `id-token: write` is used anywhere (private repo, D-26).
+#
+# Not connected yet (2026-11-02): the platform side does not commit `change/<id>` branches or dispatch this
+# workflow, and platform/apply does not pull GHCR digests (that needs a read credential for the private package;
+# no long-lived secret is allowed). Until then platform/apply builds locally with the same pins (prepare phase).
+#
+# Credentials: GITHUB_TOKEN only, least privilege per job. Every action pinned by full commit SHA (same pins and
+# tool checksums as images.yaml, verified there).
+name: t31-apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      change_id:
+        description: "Change UUID (platform DB changes.change_id)"
+        required: true
+        type: string
+      base_ref:
+        description: "40-char commit the diff applies to (the rehearsed base)"
+        required: true
+        type: string
+      diff_digest:
+        description: "sha256:<64 hex> of the diff text bound to the change; empty = no diff (base image only)"
+        required: false
+        default: ""
+        type: string
+      app:
+        description: "App to build (platform/apply config.json apps)"
+        required: true
+        default: demo
+        type: choice
+        options: [demo]
+
+permissions: {}
+
+concurrency:
+  group: t31-apply-${{ inputs.change_id }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PLATFORM: linux/arm64
+  IMAGE_PREFIX: ghcr.io/mangowhoiscloud/b-free
+
+jobs:
+  build:
+    name: diff + build (${{ inputs.app }})
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    outputs:
+      digest: ${{ steps.out.outputs.digest }}
+    env:
+      CHANGE_ID: ${{ inputs.change_id }}
+      BASE_REF: ${{ inputs.base_ref }}
+      DIFF_DIGEST: ${{ inputs.diff_digest }}
+      APP_DIR: apps/demo
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ $CHANGE_ID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "::error::change_id must be a UUID"; exit 1; }
+          [[ $BASE_REF =~ ^[0-9a-f]{40}$ ]] || { echo "::error::base_ref must be a 40-char commit"; exit 1; }
+          [[ -z $DIFF_DIGEST || $DIFF_DIGEST =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::diff_digest must be sha256:<64 hex>"; exit 1; }
+      - name: Check out (full history, to compare with base_ref)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the diff file and that the branch left the app tree alone
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_REF^{commit}"
+          if [ "$(git rev-parse "$BASE_REF:$APP_DIR")" != "$(git rev-parse "HEAD:$APP_DIR")" ]; then
+            echo "::error::branch changes $APP_DIR directly; only .bravo/changes/$CHANGE_ID.diff may carry the change"; exit 1
+          fi
+          f=".bravo/changes/$CHANGE_ID.diff"
+          if [ -z "$DIFF_DIGEST" ]; then
+            [ ! -e "$f" ] || { echo "::error::$f exists but no diff_digest was bound"; exit 1; }
+            echo "DIFF_FILE=" >> "$GITHUB_ENV"
+          else
+            got="sha256:$(sha256sum "$f" | cut -d' ' -f1)"
+            [ "$got" = "$DIFF_DIGEST" ] || { echo "::error::$f hashes to $got, bound diff_digest is $DIFF_DIGEST"; exit 1; }
+            echo "DIFF_FILE=$PWD/$f" >> "$GITHUB_ENV"
+          fi
+      - name: Materialize the app at base_ref and apply the approved diff
+        run: |
+          set -euo pipefail
+          ctx="$RUNNER_TEMP/src"
+          mkdir -p "$ctx"
+          git archive --format=tar "$BASE_REF" "$APP_DIR" | tar -x -C "$ctx"
+          echo "CONTEXT=$ctx/$APP_DIR" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct "$BASE_REF")" >> "$GITHUB_ENV"
+          if [ -n "$DIFF_FILE" ]; then
+            cd "$ctx/$APP_DIR"
+            git apply --numstat -p1 "$DIFF_FILE" | cut -f3 | sort -u > "$RUNNER_TEMP/paths.txt"
+            if grep -Ev '^[A-Za-z0-9_][A-Za-z0-9_./-]{0,511}$' "$RUNNER_TEMP/paths.txt" || grep -E '(^|/)\.\.(/|$)' "$RUNNER_TEMP/paths.txt"; then
+              echo "::error::diff names a path outside the app"; exit 1
+            fi
+            git apply --check -p1 "$DIFF_FILE"
+            git apply -p1 "$DIFF_FILE"
+            { echo "### Diff applied"; echo; sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/paths.txt"; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### No diff bound: base image of \`$BASE_REF\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Set up Buildx (docker-container driver, BuildKit pinned by digest)
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Build OCI archive (no push, no attestations)
+        run: |
+          set -euo pipefail
+          docker buildx build --progress plain --platform "$PLATFORM" --provenance=false --sbom=false \
+            --label "org.opencontainers.image.revision=$BASE_REF" --label "dev.bravo.change-id=$CHANGE_ID" \
+            --metadata-file "$RUNNER_TEMP/build.json" \
+            --output "type=oci,dest=$RUNNER_TEMP/image.oci.tar,rewrite-timestamp=true" "$CONTEXT"
+      - name: Check the archive's single manifest digest
+        id: out
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/oci"; mkdir -p "$dir"; tar -xf "$RUNNER_TEMP/image.oci.tar" -C "$dir"
+          [ "$(jq '.manifests | length' "$dir/index.json")" = 1 ] || { echo "::error::expected one manifest"; exit 1; }
+          digest=$(jq -r '.manifests[0].digest' "$dir/index.json")
+          [ "sha256:$(sha256sum "$dir/blobs/sha256/${digest#sha256:}" | cut -d' ' -f1)" = "$digest" ] || { echo "::error::manifest blob hash"; exit 1; }
+          [ "$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/build.json")" = "$digest" ] || { echo "::error::BuildKit digest differs"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "- candidate \`$digest\` ($PLATFORM)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload OCI archive (consumed by scan and push)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: t31-oci-${{ inputs.change_id }}
+          path: ${{ runner.temp }}/image.oci.tar
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  # CVE-2026-33634: no permissions, no secrets, no OIDC, no checkout, no registry login. Pinned binaries.
+  scan:
+    name: sbom + scan
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions: {}
+    timeout-minutes: 20
+    outputs:
+      digest: ${{ steps.out.outputs.digest }}
+    env:
+      EXPECTED: ${{ needs.build.outputs.digest }}
+      SYFT_VERSION: 1.55.0
+      SYFT_SHA256: bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d # syft_1.55.0_linux_amd64.tar.gz
+      TRIVY_VERSION: 0.76.1
+      TRIVY_SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0 # trivy_0.76.1_Linux-64bit.tar.gz
+      SYFT_CHECK_FOR_APP_UPDATE: "false"
+      TRIVY_DISABLE_TELEMETRY: "true"
+      TRIVY_SKIP_VERSION_CHECK: "true"
+      TRIVY_NO_PROGRESS: "true"
+    steps:
+      - name: Download OCI archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: t31-oci-${{ inputs.change_id }}
+          path: ${{ runner.temp }}
+      - name: Unpack and check it is the built digest
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/oci"; mkdir -p "$dir"; tar -xf "$RUNNER_TEMP/image.oci.tar" -C "$dir"
+          digest=$(jq -r '.manifests[0].digest' "$dir/index.json")
+          [ "$digest" = "$EXPECTED" ] || { echo "::error::archive $digest is not the built $EXPECTED"; exit 1; }
+          echo "OCI_DIR=$dir" >> "$GITHUB_ENV"
+      - name: Install syft and trivy (pinned version + sha256)
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"; mkdir -p "$bin"
+          fetch() {
+            curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$RUNNER_TEMP/$1.tar.gz" "$2"
+            echo "$3  $RUNNER_TEMP/$1.tar.gz" | sha256sum --check --strict -
+            tar -xzf "$RUNNER_TEMP/$1.tar.gz" -C "$bin" "$1"
+          }
+          fetch syft "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" "$SYFT_SHA256"
+          fetch trivy "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "$TRIVY_SHA256"
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: SBOM (SPDX JSON) and vulnerability report
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/evidence"
+          syft scan "oci-dir:$OCI_DIR" -o "spdx-json=$RUNNER_TEMP/evidence/sbom.spdx.json"
+          trivy image --input "$OCI_DIR" --scanners vuln --format json --output "$RUNNER_TEMP/evidence/trivy.json"
+      - name: Policy gate (fail on CRITICAL with a fix available; same rule as platform/apply)
+        run: trivy image --input "$OCI_DIR" --scanners vuln --skip-db-update --severity CRITICAL --ignore-unfixed --exit-code 1 --format table
+      - name: Report the scanned digest
+        id: out
+        run: echo "digest=$EXPECTED" >> "$GITHUB_OUTPUT"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: t31-evidence-${{ inputs.change_id }}
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  push:
+    name: push by digest
+    needs: [build, scan]
+    if: ${{ startsWith(github.ref, 'refs/heads/change/') || github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    timeout-minutes: 15
+    env:
+      EXPECTED: ${{ needs.build.outputs.digest }}
+      SCANNED: ${{ needs.scan.outputs.digest }}
+      CHANGE_ID: ${{ inputs.change_id }}
+      REPO: ghcr.io/mangowhoiscloud/b-free/${{ inputs.app }}
+    steps:
+      - name: Require the scanned digest to be the built digest
+        run: '[ -n "$EXPECTED" ] && [ "$SCANNED" = "$EXPECTED" ] || { echo "::error::scan did not pass for $EXPECTED"; exit 1; }'
+      - name: Download OCI archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: t31-oci-${{ inputs.change_id }}
+          path: ${{ runner.temp }}
+      - name: Push by digest to GHCR and read it back (GITHUB_TOKEN)
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$RUNNER_TEMP/ghcr-auth.json"
+          skopeo login --authfile "$auth" --username "$GITHUB_ACTOR" --password-stdin ghcr.io <<<"$GHCR_TOKEN"
+          tag="change-${CHANGE_ID:0:12}"
+          skopeo copy --authfile "$auth" --retry-times 3 --preserve-digests --digestfile "$RUNNER_TEMP/pushed.digest" \
+            "oci-archive:$RUNNER_TEMP/image.oci.tar" "docker://$REPO:$tag"
+          [ "$(cat "$RUNNER_TEMP/pushed.digest")" = "$EXPECTED" ] || { echo "::error::registry digest differs"; exit 1; }
+          remote=$(skopeo inspect --authfile "$auth" --raw "docker://$REPO@$EXPECTED" | sha256sum | cut -d' ' -f1)
+          [ "sha256:$remote" = "$EXPECTED" ] || { echo "::error::GHCR manifest hashes to sha256:$remote"; exit 1; }
+          skopeo logout --authfile "$auth" ghcr.io || true
+          rm -f "$auth"
+      - name: Candidate record (for the change approval; not a signature, not a deploy)
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          DIFF_DIGEST: ${{ inputs.diff_digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/candidate"
+          jq -n --arg change "$CHANGE_ID" --arg base "$BASE_REF" --arg diff "$DIFF_DIGEST" \
+            --arg image "$REPO@$EXPECTED" --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{change_id: $change, base_ref: $base, diff_digest: (if $diff == "" then null else $diff end), image: $image,
+              run: $run, signed: false, deployed: false,
+              note: "signing (OpenBao transit) and deploy are done by platform/apply after the change approval"}' \
+            > "$RUNNER_TEMP/candidate/t31-candidate.json"
+          { echo "### T31 candidate"; echo; echo '```json'; cat "$RUNNER_TEMP/candidate/t31-candidate.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload candidate record
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: t31-candidate-${{ inputs.change_id }}
+          path: ${{ runner.temp }}/candidate/t31-candidate.json
+          if-no-files-found: error
+          retention-days: 90

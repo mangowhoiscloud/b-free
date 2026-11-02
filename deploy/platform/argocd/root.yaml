@@ -1,4 +1,4 @@
-# App-of-apps root for the platform EKS. Applied once by deploy/platform/scripts/bootstrap.sh; from then on
+# App-of-apps root for the platform RKE2 node. Applied once by deploy/platform/scripts/bootstrap.sh; from then on
 # Argo CD pulls everything under deploy/platform/argocd/apps from Git (D-16, 14-provisioning-scenarios 1.4-1.5).
 apiVersion: argoproj.io/v1alpha1
 kind: Application

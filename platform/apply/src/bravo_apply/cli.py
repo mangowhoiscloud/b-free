@@ -6,9 +6,13 @@
   worker [--once] [--interval S]       DB mode (BRAVO_APPLY_DATABASE_URL, role bravo_apply)
 
 Binding file (CLI mode): {"change_id", "role", "target_environment", "artifact" (frozen rehearsal artifact or null),
-"bound" (optional: recorded digests to check), "approval" ({approval_id, image_digest, diff_digest,
-policy_diff_digest}, apply only), "prepared" ({image_digest, image_repository}, apply only; or --prepared FILE),
-"provenance" (free text: who decided and why; a CLI run has no API approval record)}.
+"bound" (optional: recorded digests to check), "prepared" ({image_digest, image_repository}, apply only; or
+--prepared FILE), "provenance" (free text)}.
+
+apply never takes an approval from a file or flag value: it needs ``--approval-id`` AND the platform DB
+(``BRAVO_APPLY_DATABASE_URL``, role bravo_apply), and runs only if that row is a granted ``change`` approval for
+this change, bound to its digests, approver != requester, not expired (``approvals.DbApprovals``). Otherwise it
+is refused before anything is signed, imported or deployed. A binding file with an "approval" key is rejected.
 """
 
 from __future__ import annotations
@@ -22,16 +26,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import config, digests, tools
+from .approvals import DbApprovals
 from .pipeline import Change, apply, prepare
 from .runtime import MemoryRecorder, Stop
 
 
-def _change(b: dict, prepared: dict | None) -> Change:
+def _change(b: dict, prepared: dict | None, approval_id: str | None = None) -> Change:
     artifact = b.get("artifact")
     bound = b.get("bound") or {**digests.bound_values(artifact),
                                "artifact_digest": digests.artifact_digest(artifact) if artifact else None}
     return Change(change_id=b["change_id"], role=b["role"], target_env=b["target_environment"], artifact=artifact,
-                  bound=bound, approval=b.get("approval"), prepared=prepared or b.get("prepared"),
+                  bound=bound, approval_id=approval_id, prepared=prepared or b.get("prepared"),
                   provenance=b.get("provenance") or "CLI run (no API approval record)")
 
 
@@ -46,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--out", required=True)
         if name == "apply":
             p.add_argument("--prepared", help="prepare.json from the prepare phase")
+            p.add_argument("--approval-id", help="change approval recorded by platform/api; verified in the platform DB")
     w = sub.add_parser("worker")
     w.add_argument("--once", action="store_true")
     w.add_argument("--interval", type=float, default=2.0)
@@ -74,14 +80,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     binding = json.loads(Path(args.binding).read_text())
+    if "approval" in binding:
+        print("bravo-apply: approvals are read from the platform DB only; remove \"approval\" from the binding file",
+              file=sys.stderr)
+        return 2
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     prepared = json.loads(Path(args.prepared).read_text()) if getattr(args, "prepared", None) else None
-    ch = _change(binding, prepared)
+    ch = _change(binding, prepared, getattr(args, "approval_id", None))
     rec = MemoryRecorder(out)
     started = datetime.now(UTC).isoformat()
     try:
-        res = (prepare if args.cmd == "prepare" else apply)(cfg, ch, rec, out)
+        if args.cmd == "prepare":
+            res = prepare(cfg, ch, rec, out)
+        else:
+            res = apply(cfg, ch, rec, out, DbApprovals(os.environ.get("BRAVO_APPLY_DATABASE_URL")))
         status = "prepared" if args.cmd == "prepare" else "applied"
         reason = None
     except Stop as stop:

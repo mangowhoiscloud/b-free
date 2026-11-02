@@ -29,10 +29,11 @@ class ApprovalDecision(BaseModel):
     # extra="ignore": an "approver" (or anything else) in the body is ignored; the approver
     # is always the console session principal (README A3).
     model_config = ConfigDict(extra="ignore")
-    stage: Literal["cutover", "failback"] = "cutover"
+    stage: Literal["change", "cutover", "failback"] = "cutover"
     approval_request_id: UUID
     revision: int = Field(ge=1)
     gate_verdict_id: UUID | None = None
+    change_id: UUID | None = Field(default=None, description="Required for stage change: the prepared change shown")
 
 
 class ShiftRequest(BaseModel):

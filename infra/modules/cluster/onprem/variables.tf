@@ -11,8 +11,8 @@ variable "image" {
   })
 }
 
-variable "k3s" {
-  description = "K3s release and the SHA-256 of k3s-arm64 from that release's sha256sum-arm64.txt."
+variable "rke2" {
+  description = "RKE2 release and the SHA-256 of rke2.linux-arm64.tar.gz from that release's sha256sum-arm64.txt."
   type = object({
     version = string
     sha256  = string
@@ -34,7 +34,7 @@ variable "nodes" {
 }
 
 variable "api_host_port" {
-  description = "Laptop port (127.0.0.1) that Lima forwards to the K3s API on the server VM."
+  description = "Laptop port (127.0.0.1) that Lima forwards to the RKE2 API on the server VM."
   type        = number
   default     = 16443
 }

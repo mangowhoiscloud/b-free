@@ -36,7 +36,7 @@ networkPolicy:
       ports: [{port: 6432, protocol: TCP}]
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: otel-agent}}}]
       ports: [{port: 4317, protocol: TCP}]
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}, {namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: node-local-dns}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
     # Cloud Storage XML API, TLS only (no port 80)
     - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]

@@ -6,6 +6,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata: {name: console, namespace: bravo-control}
 automountServiceAccountToken: false
+imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
 ---
 apiVersion: apps/v1
 kind: Deployment

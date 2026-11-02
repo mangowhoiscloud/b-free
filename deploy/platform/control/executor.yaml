@@ -1,17 +1,18 @@
 # Cutover Executor (§8.6, D-19): StatefulSet replica 1, never force-deleted. Outside any mesh.
-# Chat DB and PgBouncer DSNs carry no password: libpq reads them from a pgpass file (mode 600) that the
-# init container copies from Secret executor-pgpass (assembled from OpenBao secret/envs/<env>/chat-db by
-# deploy/platform/scripts/deliver-secrets.sh). A missing entry means "no password supplied" at connect time.
-# Hosts are the link Services in bravo-link (임시 링크(D-16 전); same names as the D-16 links):
-#   src-db / src-pgb -> source EKS chat-db-rw / chat-pgbouncer (kubectl port-forward pods, Pod Identity)
-#   dst-db           -> on-prem K3s chat-db-rw through the reverse relay (dialled out from the laptop)
-# PgBouncer target switch: the executor still rewrites a local ini file (BRAVO_PGB_INI_PATH, pilot shared
-# volume). On EKS the contract is pods/exec into chat-pgbouncer (CLOUD-E2E-CONTRACT 9), not implemented in
-# platform/executor yet. The path below is not mounted, so a switch fails closed instead of pretending.
+# Image: the data/cutover lane's cloud build (bravo-platform/executor tag cloud-202611022104) in topology mode:
+# - BRAVO_TOPOLOGY_FILE: deploy/cloud/in-cluster/topology.json (no secrets): DB / PgBouncer / write-block entries
+#   through the bravo-link Services (D-16 links t1-src-* / t1-dst-*, Access service tokens).
+# - BRAVO_SECRETS_DIR: one optional Secret per OpenBao path (bx-<path>), delivered from OpenBao by
+#   deploy/platform/scripts/deliver-secrets.sh, mounted as <path with / as __>/<field> (topology.FileSecrets).
+# - KUBECONFIG: deploy/cloud/in-cluster/kubeconfig.template.yaml (pods/exec to chat-pgbouncer on both clusters):
+#   source EKS token from this pod's web identity role executor-ctl (python -m bravo_executor.ekstoken),
+#   on-prem token file from OpenBao secret/envs/target-onprem/k8s-executor. CA files: ConfigMap executor-kube-ca
+#   (public cluster CAs, deploy/platform/scripts/cluster-cas.sh).
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: executor, namespace: bravo-control}
 automountServiceAccountToken: false
+imagePullSecrets: [{name: ecr-pull}] # deploy/platform/ecr-pull
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -31,15 +32,6 @@ spec:
       automountServiceAccountToken: false
       nodeSelector: {bravo.io/pool: core}
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
-      initContainers:
-        - name: pgpass
-          image: bravo/executor
-          command: ["python", "-c", "import os,shutil; s='/etc/bravo/pgpass-src/pgpass'; d='/var/run/bravo-pg/pgpass'; shutil.copyfile(s,d) if os.path.exists(s) else open(d,'w').close(); os.chmod(d,0o600)"]
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          resources: {requests: {cpu: 5m, memory: 32Mi}, limits: {memory: 64Mi}}
-          volumeMounts:
-            - {name: pgpass-src, mountPath: /etc/bravo/pgpass-src, readOnly: true}
-            - {name: pgpass, mountPath: /var/run/bravo-pg}
       containers:
         - name: executor
           image: bravo/executor
@@ -48,45 +40,57 @@ spec:
             - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.bravo-observe.svc:4317"}
             - {name: BRAVO_EXECUTOR_HOST, value: 0.0.0.0}
             - {name: BRAVO_EXECUTOR_PORT, value: "8081"}
-            - {name: PGPASSFILE, value: /var/run/bravo-pg/pgpass}
+            - {name: BRAVO_TOPOLOGY_FILE, value: /etc/bravo/topology/topology.json}
+            - {name: BRAVO_SECRETS_DIR, value: /etc/bravo/secrets}
+            - {name: KUBECONFIG, value: /etc/bravo/kube/config}
             - name: PLATFORM_DB_PASSWORD
               valueFrom: {secretKeyRef: {name: platform-db-roles, key: executor}}
             - name: PLATFORM_DB_DSN
               value: postgresql://bravo_executor:$(PLATFORM_DB_PASSWORD)@platform-db-rw.bravo-control.svc:5432/bravo?sslmode=verify-full&sslrootcert=/etc/bravo/pg-ca/ca.crt
-            - {name: BRAVO_CHAT_DB, value: chat}
-            - {name: BRAVO_SRC_DSN, value: "host=src-db.bravo-link.svc.cluster.local port=5432 dbname=chat user=executor_ctl"}
-            - {name: BRAVO_DST_DSN, value: "host=dst-db.bravo-link.svc.cluster.local port=5432 dbname=chat user=executor_ctl"}
-            - {name: BRAVO_SRC_APP_DSN, value: "host=src-db.bravo-link.svc.cluster.local port=5432 dbname=chat user=app_writer"}
-            - {name: BRAVO_DST_APP_DSN, value: "host=dst-db.bravo-link.svc.cluster.local port=5432 dbname=chat user=app_writer"}
-            - {name: BRAVO_SRC_OBSERVE_DSN, value: "host=src-db.bravo-link.svc.cluster.local port=5432 dbname=chat user=executor_observe"}
-            - {name: BRAVO_DST_OBSERVE_DSN, value: "host=dst-db.bravo-link.svc.cluster.local port=5432 dbname=chat user=executor_observe"}
-            - {name: BRAVO_PGB_APP_DSN, value: "host=src-pgb.bravo-link.svc.cluster.local port=6432 dbname=chat user=app_writer"}
-            - {name: BRAVO_PGB_ADMIN_DSN, value: "host=src-pgb.bravo-link.svc.cluster.local port=6432 dbname=pgbouncer user=pgb_admin"}
-            - {name: BRAVO_PGB_STATS_DSN, value: "host=src-pgb.bravo-link.svc.cluster.local port=6432 dbname=pgbouncer user=pgb_stats"}
-            - {name: BRAVO_PGB_INI_PATH, value: /run/pgbouncer-not-mounted-on-eks/pgbouncer.ini}
-            - {name: BRAVO_PGB_DB_NAME, value: chat}
-            # As seen from the PgBouncer in the source cluster: its own DB, and the destination through the
-            # reverse relay Service dst-db-link (tools/link, CLOUD-E2E-CONTRACT 7).
-            - {name: BRAVO_PGB_SRC_TARGET, value: "host=chat-db-rw.chat.svc port=5432 dbname=chat"}
-            - {name: BRAVO_PGB_DST_TARGET, value: "host=dst-db-link.chat.svc port=5432 dbname=chat"}
-            - {name: BRAVO_SRC_STORE_ID, value: src}
-            - {name: BRAVO_DST_STORE_ID, value: dst}
             - {name: BRAVO_LOCK_LEASE_S, value: "600"}
-            - {name: BRAVO_FAULT_CRASH_AFTER, value: ""}
+            - {name: AWS_REGION, value: ap-northeast-2}
+            - {name: AWS_STS_REGIONAL_ENDPOINTS, value: regional}
+            # Executor 역할(제어): eks:DescribeCluster on bravo-source + EKS access entry group bravo-executor.
+            - {name: AWS_ROLE_ARN, value: "arn:aws:iam::721622471953:role/bravo-platform-executor-ctl-c996b0ed62fdaf4d3a2dc3c712"}
+            - {name: AWS_WEB_IDENTITY_TOKEN_FILE, value: /var/run/secrets/sts.amazonaws.com/serviceaccount/token}
           ports: [{name: http, containerPort: 8081}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          resources: {requests: {cpu: 30m, memory: 160Mi}, limits: {memory: 384Mi}}
+          resources: {requests: {cpu: 30m, memory: 192Mi}, limits: {memory: 512Mi}}
           volumeMounts:
-            - {name: pgpass, mountPath: /var/run/bravo-pg, readOnly: true}
+            - {name: topology, mountPath: /etc/bravo/topology, readOnly: true}
+            - {name: kube, mountPath: /etc/bravo/kube, readOnly: true}
             - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
+            - {name: aws-token, mountPath: /var/run/secrets/sts.amazonaws.com/serviceaccount, readOnly: true}
             - {name: tmp, mountPath: /tmp}
+            - {name: s-envs-source-aws-chat-db, mountPath: /etc/bravo/secrets/envs__source-aws__chat-db, readOnly: true}
+            - {name: s-envs-target-onprem-chat-db, mountPath: /etc/bravo/secrets/envs__target-onprem__chat-db, readOnly: true}
+            - {name: s-envs-source-aws-chat-admin, mountPath: /etc/bravo/secrets/envs__source-aws__chat-admin, readOnly: true}
+            - {name: s-envs-target-onprem-chat-admin, mountPath: /etc/bravo/secrets/envs__target-onprem__chat-admin, readOnly: true}
+            - {name: s-envs-source-aws-object-store, mountPath: /etc/bravo/secrets/envs__source-aws__object-store, readOnly: true}
+            - {name: s-envs-target-onprem-object-store, mountPath: /etc/bravo/secrets/envs__target-onprem__object-store, readOnly: true}
+            - {name: s-envs-target-onprem-k8s-executor, mountPath: /etc/bravo/secrets/envs__target-onprem__k8s-executor, readOnly: true}
       volumes:
-        - {name: pgpass-src, secret: {secretName: executor-pgpass, optional: true, defaultMode: 0440}}
-        - {name: pgpass, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
+        - {name: topology, configMap: {name: executor-topology}}
+        - name: kube
+          projected:
+            sources:
+              - configMap: {name: executor-kubeconfig, items: [{key: config, path: config}]}
+              - configMap: {name: executor-kube-ca, optional: true}
         - {name: pg-ca, secret: {secretName: platform-db-ca, items: [{key: ca.crt, path: ca.crt}]}}
-        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+        - name: aws-token
+          projected:
+            sources:
+              - serviceAccountToken: {audience: sts.amazonaws.com, expirationSeconds: 3600, path: token}
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+        - {name: s-envs-source-aws-chat-db, secret: {secretName: bx-envs-source-aws-chat-db, optional: true, defaultMode: 0440}}
+        - {name: s-envs-target-onprem-chat-db, secret: {secretName: bx-envs-target-onprem-chat-db, optional: true, defaultMode: 0440}}
+        - {name: s-envs-source-aws-chat-admin, secret: {secretName: bx-envs-source-aws-chat-admin, optional: true, defaultMode: 0440}}
+        - {name: s-envs-target-onprem-chat-admin, secret: {secretName: bx-envs-target-onprem-chat-admin, optional: true, defaultMode: 0440}}
+        - {name: s-envs-source-aws-object-store, secret: {secretName: bx-envs-source-aws-object-store, optional: true, defaultMode: 0440}}
+        - {name: s-envs-target-onprem-object-store, secret: {secretName: bx-envs-target-onprem-object-store, optional: true, defaultMode: 0440}}
+        - {name: s-envs-target-onprem-k8s-executor, secret: {secretName: bx-envs-target-onprem-k8s-executor, optional: true, defaultMode: 0440}}
 ---
 apiVersion: v1
 kind: Service

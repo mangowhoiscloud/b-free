@@ -1,0 +1,34 @@
+# AWS EBS CSI driver 1.67.2 (chart 2.67.2) on the platform RKE2 node: StorageClasses bravo-db / bravo-general
+# (gp3, KMS). AWS credentials: service-account web identity only (infra/envs/platform-aws rke2.tf role
+# ebs-csi = AmazonEBSCSIDriverPolicy + the node KMS key via EC2). No node-role permission, no static key.
+# IMDS is closed to pods (hop limit 1), so the node plugin reads instance and zone from the Node object
+# (kubelet provider-id and topology labels set by the platform drop-in 30-platform.yaml).
+controller:
+  region: ap-northeast-2
+  replicaCount: 1
+  env:
+    - name: AWS_ROLE_ARN
+      value: arn:aws:iam::721622471953:role/bravo-platform-ebs-csi-02e41cc9c084a54e155f752bb1
+    - name: AWS_WEB_IDENTITY_TOKEN_FILE
+      value: /var/run/secrets/sts.amazonaws.com/serviceaccount/token
+    - name: AWS_STS_REGIONAL_ENDPOINTS
+      value: regional
+  volumes:
+    - name: aws-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              audience: sts.amazonaws.com
+              expirationSeconds: 3600
+              path: token
+  volumeMounts:
+    - name: aws-token
+      mountPath: /var/run/secrets/sts.amazonaws.com/serviceaccount
+      readOnly: true
+  resources:
+    requests: {cpu: 10m, memory: 40Mi}
+    limits: {memory: 256Mi}
+node:
+  metadataSources: kubernetes
+  enableWindows: false
+  tolerateAllTaints: true

@@ -1,6 +1,6 @@
 # 어디서나 같은 환경: 랜딩 존
 
-온프렘(K3s), GCP(GKE), AWS(EKS) 어느 곳이든 고객은 같은 경험을 하고, 플랫폼은 같은 구조를 펼칩니다. 그래서 환경 사이 이동은 "같은 모양에서 같은 모양으로" 옮기는 일이 됩니다. 팀장(류지환) 결정(2026-11-02)이며 편차 D-23으로 올립니다. 기술 근거는 `docs/spec/TECH-STACK-SPEC.md`, 클러스터 지도는 `10-cluster-overview.md`입니다.
+온프렘(RKE2), GCP(GKE), AWS(EKS) 어느 곳이든 고객은 같은 경험을 하고, 플랫폼은 같은 구조를 펼칩니다. 그래서 환경 사이 이동은 "같은 모양에서 같은 모양으로" 옮기는 일이 됩니다. 팀장(류지환) 결정(2026-11-02)이며 편차 D-23으로 올립니다. 기술 근거는 `docs/spec/TECH-STACK-SPEC.md`, 클러스터 지도는 `10-cluster-overview.md`입니다.
 
 ## 1. 원칙
 
@@ -26,16 +26,18 @@
 | 관측 | OTel Collector 에이전트 → 플랫폼 Collector | 같은 지표 · 트레이스 이름 |
 | 리허설 | Trial마다 `rehearsal-*` · `verify-*`(Harbor(에이전트 샌드박스 · 평가 프레임워크, CNCF 레지스트리 Harbor와 다름)) | - |
 
-판, 네임스페이스 이름, Helm 값, 정책은 모든 클러스터에서 같습니다. 묶음은 `deploy/landing-zone/`에 base 하나와 공급자 overlay 셋(`k3s`, `eks`, `gke`)으로 둡니다.
+판, 네임스페이스 이름, Helm 값, 정책은 모든 클러스터에서 같습니다. 묶음은 `deploy/landing-zone/`에 base 하나와 공급자 overlay 셋(`rke2`, `eks`, `gke`)으로 둡니다.
 
 ## 3. 공급자 어댑터: 클라우드마다 다른 것(이것만)
 
-| 항목 | 온프렘 K3s | GKE | EKS |
+온프렘 열은 2026-11-02 21:10 KST에 K3s에서 RKE2로 바뀌었습니다(D-21 부분 철회, ADR 0010). 지금 `deploy/landing-zone/overlays/`에는 `k3s` overlay가 있고, `rke2` overlay는 아직 없습니다.
+
+| 항목 | 온프렘 RKE2(CIS) | GKE | EKS |
 |---|---|---|---|
-| 클러스터 제어면 | K3s server(내장 etcd) | 관리형 | 관리형 |
-| CNI 바탕 | Cilium(VXLAN) | Dataplane V2(Cilium 기반) | Cilium(VPC CNI 체이닝) |
-| 블록 저장의 바탕 | 결정 전(임시로 K3s 기본 local-path) | PD CSI | EBS CSI |
-| 노드 배치 | VM 2대 | 노드 풀 | 관리형 노드 그룹 |
+| 클러스터 제어면 | RKE2 server(내장 etcd), `profile: cis`. Ubuntu VM, 공통 cloud-init(T2) | 관리형 | 관리형 |
+| CNI 바탕 | Cilium + Hubble. RKE2 내장 `cni: cilium` 또는 `cni: none` + 랜딩 존 Cilium(제안, ADR 0010) | Dataplane V2(Cilium 기반) | Cilium(VPC CNI 체이닝) |
+| 블록 저장의 바탕 | 결정 전. RKE2에는 기본 local-path가 없음. 후보 Rook-Ceph RBD, 임시 안 local-path-provisioner | PD CSI | EBS CSI |
+| 노드 배치 | Ubuntu VM(수는 T2가 정함) | 노드 풀 | 관리형 노드 그룹 |
 | 플랫폼 구성요소의 클라우드 자격 | 없음 | Workload Identity | Pod Identity |
 | 메타데이터 차단 | 해당 없음 | 메타데이터 서버 보호 | IMDSv2 hop limit 1 |
 
@@ -56,7 +58,7 @@ stateDiagram-v2
 
 | 단계 | 온프렘 | GCP · AWS | 고객이 하는 일 |
 |---|---|---|---|
-| PROVISIONING | 고객 VM에서 등록 명령 한 줄 실행 → 바깥 방향 에이전트가 K3s 설치 | 고객 계정에 위임된 역할(AWS 교차 계정 역할, GCP Workload Identity 연동)로 플랫폼이 IaC 실행 | 온프렘: 명령 한 줄. 클라우드: 위임 한 번 |
+| PROVISIONING | 고객 Ubuntu VM에서 공통 cloud-init으로 RKE2(CIS) 설치. CIS 조건이 맞지 않으면 시작 거부, 조건을 고쳐 재설치(스펙 §6 S1 예외 4a) | 고객 계정에 위임된 역할(AWS 교차 계정 역할, GCP Workload Identity 연동)로 플랫폼이 IaC 실행 | 온프렘: 명령 한 줄. 클라우드: 위임 한 번 |
 | BOOTSTRAPPING | 같은 랜딩 존 | 같은 랜딩 존 | 없음 |
 | VERIFYING | 통제 6개 기준선, 링크 시험(N 시험 일부) | 같음 | 없음 |
 
@@ -88,10 +90,10 @@ stateDiagram-v2
 ## 7. 남는 차이(숨기지 않음)
 
 - 노드 OS가 다릅니다(온프렘 Ubuntu, GKE COS, EKS Amazon Linux · Bottlerocket). 커널 차이는 통제 시험 결과로 드러납니다.
-- 온프렘 K3s는 server 1대라 HA가 아닙니다(데모 범위).
+- 온프렘 RKE2와 플랫폼 RKE2는 server 1대라 HA가 아닙니다(스펙 §7.2, 데모 범위).
 - 클라우드 목적지에 자체 객체 저장소를 둘지, 관리형을 쓸지는 운영 부담과 같은 구조 사이의 선택이며 D-22에서 정합니다.
 - 사용자 진입은 모든 환경에서 Cloudflare를 지납니다(D-16의 남는 위험).
 
 ## 8. 오늘 파일럿과의 관계
 
-오늘 21:00 파일럿은 노트북의 Compose로 돌고, 컷오버 엔진이 실제로 동작함을 보입니다. 랜딩 존과 환경 만들기는 11/3부터 온프렘 K3s(Lima)에서 먼저 세우고, EKS · GKE는 같은 묶음을 검증만 합니다(비용 승인 전에는 만들지 않음).
+노트북 Compose 파일럿은 내렸습니다(`deploy/CLOUD-E2E-CONTRACT.md` 6.1). 그 측정은 파일럿(노트북) 기록입니다. 랜딩 존은 2026-11-02 저녁 Lima K3s `bravo-onprem`에 `k3s` overlay로 먼저 세웠고(20:49 앱 · CNPG · PgBouncer Running), 21:10 결정으로 RKE2(CIS) 위에 다시 세웁니다. GKE 목적지 `bravo-target-gcp`는 20:49에 RUNNING이었고, `gke` overlay 설치는 확인하지 못했습니다. EKS 목적지는 만들지 않습니다.

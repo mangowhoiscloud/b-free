@@ -84,9 +84,9 @@ done
 "$TG_SCRIPTS/links.sh" start
 "$TG_SCRIPTS/secrets.sh" eso
 k apply -f "$RENDER_DIR/20-secretstore.yaml" >/dev/null
-k wait --for=condition=Ready clustersecretstore/platform-bao --timeout=180s >/dev/null \
-  || die "ClusterSecretStore platform-bao not Ready (link to platform OpenBao? see links.sh status)"
-log "ClusterSecretStore platform-bao Ready (ESO <- platform OpenBao over the link)"
+k wait --for=condition=Ready clustersecretstore/bravo-platform-openbao --timeout=180s >/dev/null \
+  || die "ClusterSecretStore bravo-platform-openbao not Ready (link to platform OpenBao? see links.sh status)"
+log "ClusterSecretStore bravo-platform-openbao Ready (ESO <- platform OpenBao over the link)"
 k apply -f "$RENDER_DIR/21-externalsecrets.yaml" >/dev/null
 # Re-read OpenBao now (a re-run may have changed a value, e.g. app_writer copied from the source).
 for ns in chat cf-edge; do k -n "$ns" annotate externalsecret --all force-sync="$(date +%s)" --overwrite >/dev/null; done
@@ -104,11 +104,34 @@ for _ in $(seq 1 90); do
   sleep 10
 done
 k -n chat wait --for=condition=Ready cluster/chat-db --timeout=60s >/dev/null
-# Schema and role passwords with the data lane's tool (deploy/cloud/db_roles.py, same as the other targets):
-# SCRAM verifiers computed on the laptop, sent on stdin through kubectl exec (CNPG local peer auth).
-bao_pf_start
-BRAVO_BAO_LOCAL_PORT="${BAO_ADDR##*:}" python3 -I "$REPO_ROOT/deploy/cloud/db_roles.py" \
-  --env "$BAO_ENV" --context "$CLUSTER" --schema dst --store-id gcp | tee "$STATE_DIR/db_roles.json"
+# Schema (apps/demo/schema/sql 01 -> 02 -> 03_dst, contract §9). Role passwords: OpenBao -> SCRAM verifiers
+# computed on the laptop (scram_verifier of deploy/cloud/db_roles.py, the data lane's function) -> psql
+# variables on stdin through kubectl exec (CNPG local peer auth). No password in argv, files or the server log.
+PRIMARY="$(k -n chat get cluster chat-db -o jsonpath='{.status.currentPrimary}')"
+psql_db() { k -n chat exec -i "$PRIMARY" -c postgres -- psql -v ON_ERROR_STOP=1 -X -q -U postgres -d chat "$@"; }
+HAS_SCHEMA="$(psql_db -tAc "select to_regclass('public.messages') is not null")"
+HAS_ROLES="$(psql_db -tAc "select count(*) from pg_roles where rolname in ('app_writer','replicator','executor_ctl','executor_observe')")"
+if [[ $HAS_SCHEMA == t && $HAS_ROLES == 4 ]]; then
+  log "schema and roles already present on $PRIMARY"
+elif [[ $HAS_SCHEMA == t ]]; then
+  die "chat-db has the schema but $HAS_ROLES/4 roles (partial init): delete Cluster chat-db and its PVC, then re-run"
+else
+  log "applying schema 01_schema -> 02_roles -> 03_dst on $PRIMARY (SCRAM verifiers on stdin)"
+  bao GET "secret/data/envs/$BAO_ENV/chat-db" "$(bao_admin_token)" \
+    | python3 -I -c '
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from db_roles import scram_verifier
+d = json.load(sys.stdin)["data"]["data"]
+out = [f"\\set {r}_verifier {chr(39)}{scram_verifier(d[r])}{chr(39)}" for r in ("app_writer", "replicator", "executor_ctl", "executor_observe")]
+out += ["\\set attachment_store_id gcp", "\\set plant_regression false"]
+sys.stdout.write("\n".join(out) + "\n")
+for f in ("01_schema.sql", "02_roles.sql", "03_dst.sql"):
+    sys.stdout.write(open(f"{sys.argv[2]}/{f}").read())
+' "$REPO_ROOT/deploy/cloud" "$REPO_ROOT/apps/demo/schema/sql" \
+    | psql_db -f - >/dev/null
+  log "schema applied"
+fi
 
 # ---- 8. PgBouncer, OTel agent, Gateway, cf-edge -----------------------------------------------------------------
 k apply -f "$RENDER_DIR/31-pgbouncer.yaml" -f "$RENDER_DIR/50-otel-agent.yaml" >/dev/null

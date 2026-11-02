@@ -3,9 +3,9 @@
 - Runs as the database owner (``BRAVO_MIGRATE_DATABASE_URL``), never as a service role.
 - One transaction per file; an advisory lock serialises concurrent runners.
 - Applied files are checksummed; a changed file that was already applied is an error.
-- Service-role passwords come from env (``BRAVO_{API,MCP,EXECUTOR}_DB_PASSWORD``).
-- ``BRAVO_SEED_DEV=1`` seeds tenant ``BRAVO_SEED_TENANT`` and the dev principals for
-  issuer ``BRAVO_JWT_ISSUER`` (pilot only).
+- Service-role passwords come from env (``BRAVO_{API,MCP,EXECUTOR,APPLY}_DB_PASSWORD``).
+- No users are seeded (audit A3). The first member arrives through the Access first-login bootstrap
+  (``BRAVO_BOOTSTRAP_EMAIL``/``BRAVO_BOOTSTRAP_TENANT`` on the API) or ``python -m bravo_api.admin grant``.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ ROLE_PASSWORD_ENV = {
     "bravo_api": "BRAVO_API_DB_PASSWORD",
     "bravo_mcp": "BRAVO_MCP_DB_PASSWORD",
     "bravo_executor": "BRAVO_EXECUTOR_DB_PASSWORD",
+    "bravo_apply": "BRAVO_APPLY_DB_PASSWORD",  # T31 apply worker (migration 0004)
 }
 
 
@@ -74,17 +75,8 @@ def main() -> int:
         LOG.error("BRAVO_MIGRATE_DATABASE_URL is required")
         return 2
     applied = apply(url)
-    if os.environ.get("BRAVO_SEED_DEV") == "1":
-        from .devseed import seed
-
-        issuer = os.environ.get("BRAVO_JWT_ISSUER")
-        tenant = os.environ.get("BRAVO_SEED_TENANT")
-        if not issuer or not tenant:
-            LOG.error("BRAVO_SEED_DEV=1 needs BRAVO_JWT_ISSUER and BRAVO_SEED_TENANT")
-            return 2
-        with psycopg.connect(url, autocommit=True) as conn:
-            seed(conn, issuer=issuer, tenant_id=tenant)
-        LOG.info("dev seed applied for tenant %s", tenant)
+    if os.environ.get("BRAVO_SEED_DEV"):
+        LOG.warning("BRAVO_SEED_DEV is ignored: dev users were removed (audit A3)")
     LOG.info("migrations up to date (%d applied now)", len(applied))
     return 0
 

@@ -11,7 +11,7 @@
 #                           OBJ-05 only).
 #                         cf-tunnel is written by deploy/pilot/scripts/keys.sh issue-tunnel-token.
 #   secrets.sh eso        policy + AppRole eso-target-gcp (read secret/envs/target-gcp/* only), then a fresh
-#                         secret_id into Secret external-secrets/platform-bao-approle via kubectl stdin.
+#                         secret_id into Secret external-secrets/eso-target-gcp via kubectl stdin.
 #   secrets.sh status     which fields exist (set/empty), HMAC key state. No values.
 #   secrets.sh revoke     teardown: delete HMAC keys in GCS, the object-store/gate-other-s3 entries, the AppRole.
 source "$(dirname "$0")/lib.sh"
@@ -138,11 +138,11 @@ cmd_eso() {
   # secret_id: OpenBao -> jq -> kubectl apply (stdin). Not printed, not in argv.
   printf '{}' | bao -d POST auth/approle/role/eso-target-gcp/secret-id "$t" \
     | jq --arg rid "$role_id" '{apiVersion: "v1", kind: "Secret", type: "Opaque",
-        metadata: {name: "platform-bao-approle", namespace: "external-secrets",
+        metadata: {name: "eso-target-gcp", namespace: "external-secrets",
                    labels: {"app.kubernetes.io/part-of": "bravo-landing-zone"}},
-        stringData: {"role-id": $rid, "secret-id": .data.secret_id}}' \
+        stringData: {role_id: $rid, secret_id: .data.secret_id}}' \
     | k apply -f - >/dev/null
-  log "Secret external-secrets/platform-bao-approle applied (fresh secret_id, values not shown)"
+  log "Secret external-secrets/eso-target-gcp applied (fresh secret_id, values not shown)"
 }
 
 cmd_status() {

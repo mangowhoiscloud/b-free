@@ -7,7 +7,7 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 | 기준 | 뜻 |
 |---|---|
 | 고객은 몰라도 된다 | 고객은 엔터프라이즈지만 쿠버네티스 초보자입니다. 플랫폼이 클러스터를 만들고 환경을 옮깁니다. 그래서 관리형과 기본값이 안전한 것을 먼저 고르고, 고객 입력은 이름 · 지역 · 크기 · "어디로"뿐입니다 |
-| 누가 쓰는지 말할 수 있다 | 칸마다 채택 근거(재단, 벤더 지원, AGENTIC STAR, 일본 금융, 수상작)를 적습니다. 근거를 못 찾은 칸은 "검증 중"으로 두고, 팀 확인 전에는 결정으로 쓰지 않습니다. RKE2 폐기(11/2)에서 배운 규칙입니다 |
+| 누가 쓰는지 말할 수 있다 | 칸마다 채택 근거(재단, 벤더 지원, AGENTIC STAR, 일본 금융, 수상작)를 적습니다. 근거를 못 찾은 칸은 "검증 중"으로 두고, 팀 확인 전에는 결정으로 쓰지 않습니다. RKE2 폐기(11/2 낮)에서 나온 규칙입니다. RKE2는 같은 날 21:10에 팀장이 스펙대로 되돌렸습니다(ADR 0010) |
 | 출구가 있다 | 출구전략 제품이므로 우리 자신도 한 회사에 묶이지 않게, 표준 프로토콜(TCP, TLS, OIDC, OTLP, S3 API, PostgreSQL)로 경계를 긋습니다 |
 | 같은 계약 · 같은 경험 | 온프렘 · GKE · EKS 고객 클러스터에서 앱 매니페스트 · 이름 · 통제 시험 · 화면이 같습니다. 엔진은 환경에 맞게 고를 수 있고, 차이는 공급자 어댑터 한 층에만 둡니다(`docs/architecture/11-landing-zone.md`, D-23, 1급 원천 「기술 스택(툴) 조합」) |
 | 동등성은 시험으로 | 배포판이나 제품 이름이 아니라 같은 질문의 시험 결과로 보안 동등성을 판단합니다(스펙 설계 원칙) |
@@ -19,17 +19,17 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 
 | 환경 | 클러스터 | 쿠버네티스 | 네트워크(CNI) | 스토리지(CSI, 클래스 이름 공통) | 상태 |
 |---|---|---|---|---|---|
-| 플랫폼(우리 제어면) | Amazon EKS. 제어면은 AWS가 3-AZ로 운영. 역할별 관리형 노드 그룹(core 3-AZ, agents는 taint) | 1.36(실무 결정, 팀장 확인 대기. 3절 7번). EKS 표준 지원 2027-08-02까지. kube-bench는 벤치마크 이름을 명시해야 함 | Cilium(VPC CNI 체이닝) + Hubble | EBS CSI, gp3, KMS 암호화 | 결정(D-21, CNI는 11/2) |
-| 출발지 AWS | Amazon EKS | 같음 | 같음 | 같음 | 스펙 |
-| 목적지 온프렘 | K3s(server 1 + agent 1), K3s CIS 하드닝 가이드 설정 | v1.36.5+k3s1(sha256 고정, `infra/envs/target-onprem/main.tf`) | Cilium(VXLAN) + Hubble | 블록 저장소는 결정 전(임시로 K3s 기본 local-path). 후보 Rook-Ceph RBD | 결정(D-21). 저장소는 **제안(D-22), 검증 중** |
-| 목적지 GCP(P2) | GKE Standard(Dataplane V2는 생성 때 지정) | 1.36(REGULAR 채널. STABLE에는 2026-11-11 무렵 들어옴) | Dataplane V2(Cilium 기반) | PD CSI(pd-balanced) | 결정(D-21), 범위는 D-01 |
+| 플랫폼(우리 제어면) | VPC ②의 EC2 1대 + RKE2 단일 노드(스펙 §7.2, T7). 온프렘과 같은 공통 cloud-init. EKS 아님(D-21 부분 철회, 2026-11-02 21:10, ADR 0010) | RKE2 v1.36.5+rke2r1(1.36, 제안: 판 고정은 팀장 확인 대기, 3절 7번). sha256은 릴리스 체크섬 파일로 cloud-init에 고정(아직 없음) | Cilium + Hubble. RKE2 내장 `cni: cilium` 또는 `cni: none` + 랜딩 존 Cilium 1.20.4(열림) | EBS CSI(gp3, KMS) 또는 노드 로컬(열림) | 스펙(§7.2). 판은 제안 |
+| 출발지 AWS | Amazon EKS `bravo-source`(바뀌지 않음, T6) | 1.36(2026-11-02 생성, EKS는 판을 내릴 수 없음) | Cilium(VPC CNI chaining) + Hubble | EBS CSI, gp3, KMS 암호화 | 스펙 |
+| 목적지 온프렘 | Ubuntu VM + RKE2, `profile: cis`(스펙 §7.2, FR-3, T2). 공통 cloud-init이 CIS 조건(sysctl, etcd 사용자)을 고정. K3s 아님(D-21 부분 철회, ADR 0010) | RKE2 v1.36.5+rke2r1(제안, 위와 같음) | Cilium + Hubble(붙이는 방법은 플랫폼과 같이 열림) | 블록 저장소는 결정 전. RKE2에는 기본 local-path가 없음. 후보 Rook-Ceph RBD, 임시 안 local-path-provisioner. 객체는 Rook-Ceph RGW | 스펙. 저장소는 **제안(D-22), 검증 중** |
+| 목적지 GCP(P2) | GKE Standard(Dataplane V2는 생성 때 지정) | 1.36(REGULAR 채널. STABLE에는 2026-11-11 무렵 들어옴) | Dataplane V2(Cilium 기반) | PD CSI(pd-balanced) | 결정(D-21의 남은 범위), 범위는 D-01 |
 
 - CNI는 모든 환경에서 Cilium입니다(팀장 결정 2026-11-02, 1급 원천 「기술 스택(툴) 조합」). Hubble 흐름 기록이 네트워크 통제(NET-01)의 증거가 됩니다. Tetragon은 P1입니다.
 - 공통 안전선: Kyverno `generate` 정책이 리허설 · 검증 네임스페이스에 "기본 차단 + DNS 허용" NetworkPolicy를 만들고 지우지 못하게 합니다. 정책 검사에는 OPA를 함께 씁니다.
 - 진입: 환경 사이 가중치는 Cloudflare LB(FR-8), 환경 안 진입점은 Gateway API(Envoy, Cilium 구현)입니다. cloudflared는 앱이 아니라 Gateway로 보냅니다. LB 구독 전에는 대표 CNAME으로 0%와 100%만 바꿉니다(`docs/architecture/15-multicloud-traffic.md`).
 - StorageClass 이름 `bravo-db`, `bravo-general`은 모든 환경에서 같습니다.
 - 객체 저장은 같은 S3 계약 + 환경별 엔진입니다. 온프렘 Rook-Ceph RGW, EKS 목적지 Amazon S3, GKE 목적지 Cloud Storage(D-22, 팀장 해석 "같은 계약 · 같은 경험", ADR 0005). 비밀 값은 모든 환경에서 플랫폼 OpenBao 한 곳이고, 고객 클러스터에는 ESO만 둡니다(D-26, ADR 0007).
-- 근거: EKS standard support 목록(1.34–1.37), K3s 채널(v1.36.5+k3s1), Istio ambient 플랫폼 요건(EKS · GKE · K3s 각각 설정이 있음).
+- 근거: EKS standard support 목록(1.34–1.37), RKE2 GitHub 릴리스(v1.36.5+rke2r1, 2026-09-30 게시, 2026-11-02 조회. v1.36.6-rc1은 사전 릴리스라 제외), Istio ambient 플랫폼 요건.
 
 ## 2. 구성요소
 
@@ -37,9 +37,9 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 
 | 구성요소 | 판 | 역할 | 누가 쓰나(근거) | 대안과 고르지 않은 이유 | 상태 |
 |---|---|---|---|---|---|
-| Amazon EKS | 1.36 | 플랫폼 · 출발지 | AGENTIC STAR Marketplace가 EKS · AKS에 설치됨(REA 분석), 2026 예선 Crystal | 자체 운영 제어면은 고객이 몰라도 되게 하기 어려움 | 결정 |
+| Amazon EKS | 1.36 | 출발지(플랫폼은 RKE2로 바뀜, ADR 0010) | AGENTIC STAR Marketplace가 EKS · AKS에 설치됨(REA 분석), 2026 예선 Crystal | 자체 운영 제어면은 고객이 몰라도 되게 하기 어려움 | 결정 |
 | GKE Standard | 1.36 | GCP 목적지(Autopilot은 kube-bench용 특권 Pod를 막아 쓰지 않음) | 2026 예선 Crystal(도쿄 GKE) | - | 결정, P2 |
-| K3s | v1.36.5+k3s1 | 온프렘 목적지 | CNCF 프로젝트(SUSE 기증), 2025 수상 Green · 2026 Crystal 로컬 | RKE2: 일본 공개 채택 사례 못 찾음, 폐기(11/2). OpenShift: 일본 금융 사례 있음(MUFG ROSA, 라쿠텐은행)이나 VM 두 대에 무겁고 구독 필요 | 결정 |
+| RKE2(CIS 프로필) | v1.36.5+rke2r1(제안) | 온프렘 목적지, 플랫폼 단일 노드 | 스펙 r2가 지정(§7.2, T2, T7). SUSE(Rancher)가 보안 기준(CIS)을 켠 상태로 설치할 수 있는 배포판으로 냄 | K3s: 처음 결정(ADR 0004)이었으나 팀장이 스펙 그대로로 되돌림(2026-11-02 21:10). EKS 플랫폼: 같은 이유로 되돌림. OpenShift: VM 두 대에 무겁고 구독 필요 | 스펙(팀장 재확인 2026-11-02 21:10) |
 | IaC | Terraform 1.17.1 | 환경 생성 · 삭제 | 업계 표준. 수상작 대부분 Terraform | OpenTofu(MPL)는 쓰지 않음. 설치는 공식 릴리스 + SHA256 확인(`tools/toolchain/install-terraform.sh`) | 결정(류지환, 2026-11-02) |
 | VPC | 사설 서브넷만, Regional NAT, 인바운드 0 | 네트워크 | AWS 권장 구성 | 공개 서브넷 + 공인 IP는 노출 위험 | 제안(D-16) |
 
@@ -115,7 +115,7 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 | CIS 통제 비교(kube-bench) | 공개판 v0.16.0은 K3s 최신판을 옛 CIS 1.9로, EKS는 eks-1.8.0까지만 잼. kube-bench를 커밋으로 고정하고 벤치마크를 명시하며, EKS · GKE · K3s 결과를 통제 ID 대응표로 맞추고 "근사"로 표시 | 반영 예정(게이트) |
 | EKS | 관리형 노드 그룹(Auto Mode는 kube-bench 검사 불가). 네트워크 정책은 Cilium이 집행하고, 리허설 네임스페이스는 정책을 먼저 만든 뒤 Pod를 띄움 | 반영 |
 | GKE | Standard + Dataplane V2(생성 때만 지정 가능) | 반영 |
-| K3s | CNCF Sandbox, FIPS 빌드 · STIG 없음, 릴리스 서명 없음 → 하드닝 가이드 전부 적용, sha256으로 확인. 고객이 FIPS를 요구하면 별도 검토 | 반영 |
+| RKE2 | CIS 프로필은 조건(sysctl, etcd 사용자)이 맞지 않으면 시작을 거부함(스펙 §6 S1 예외 4a, §9). 조건을 공통 cloud-init에 고정하고 설치 파일은 sha256으로 확인. (앞 판의 K3s 행은 ADR 0010으로 대체) | 반영 예정(T2, T7) |
 | Rook-Ceph RGW | Ceph Tentacle 20.2.4 고정. 버킷 생성 직후 Block Public Access 네 항목을 켬. TLS 전용 정책은 `BoolIfExists`로 작성(AWS식 `Bool`은 Ceph에서 HTTP를 막지 못함) | 반영 |
 | 금고 | OpenBao(MPL-2.0) 유지 권고. Vault Community는 BSL이고 설치기 내장이 "embedded" 정의에 걸림. 일본 사례는 Vault(Yahoo! JAPAN, Enterprise)만 확인 | 권고: OpenBao 유지 |
 | Kyverno | v1.20에서 ClusterPolicy 제거 예정 → 기본 차단 생성은 `GeneratingPolicy`(`policies.kyverno.io/v1`)로 작성 | 반영 |
@@ -124,7 +124,7 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 | LLM 경로 | Anthropic API에 일본 리전 없음, ISMAP 미등록. 운영 경로는 Bedrock 도쿄 `jp.` 프로필(Opus 5.5, Haiku 5.5). 데모는 합성 데이터만 | 반영 |
 | Harbor | 0.25.0, 1년 미만, 릴리스 서명 없음, 보안 정책 없음. 이슈 #2551(에이전트가 보상을 미리 써 둘 수 있음) → 검증 경계(V1–V6, T26a)로 막고, 배포 파일은 sha256으로 고정. CLI 이름 `harbor`도 CNCF 레지스트리와 겹침 | 팀장 결정 유지, 조건 반영 |
 | Trivy | 2026-03 릴리스 경로 침해(CVE-2026-33634) → CI에서 Action을 커밋 SHA로 고정하고, 검사 작업에 OIDC · 비밀을 주지 않음 | 반영 |
-| 쿠버네티스 판 | K3s 1.35 패치 종료 2026-12-28. 보고서는 1.36을 권고 | 1.36으로 맞춤(3절 7번). EKS `bravo-source`가 이미 1.36으로 떴고 EKS는 판을 내릴 수 없음 |
+| 쿠버네티스 판 | 보고서는 1.36을 권고 | 1.36으로 맞춤(3절 7번). EKS `bravo-source`가 이미 1.36이고 EKS는 판을 내릴 수 없음. RKE2도 1.36 줄 |
 
 ## 3. 열린 결정(팀 회의 안건)
 
@@ -135,7 +135,7 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 | 3 | 플랫폼 DB를 CNPG로 둘지 RDS Multi-AZ로 둘지 | 플랫폼이 EKS로 바뀌면서 관리형 선택지가 생김 | 회의에서 결정 |
 | 5 | OpenBao를 Vault로 바꿀지 | 2023년 포크라 채택 근거가 약함 | 품질 검증 보고(라이선스 조건 포함)로 결정 |
 | 6 | Executor 언어 | 파일럿은 Python으로 만듦 | 담당이 확정 |
-| 7 | 쿠버네티스 minor를 세 환경 모두 1.36으로 둘지(실무 결정, 팀장 확인 대기) | EKS `bravo-source`가 1.36으로 생성됨(2026-11-02, `aws eks describe-cluster`). EKS는 minor를 내릴 수 없음. 플랫폼 EKS `bravo-platform`, K3s(v1.36.5+k3s1), GKE 모듈 기본값도 1.36 | 1.36으로 확정. 대가: kube-bench 자동 판 대응이 없어 `--benchmark`를 명시(`docs/architecture/04-governance.md` 1절), GKE는 STABLE 대신 REGULAR 채널(11/11 무렵 STABLE 진입). ADR 0004 |
+| 7 | 쿠버네티스 minor를 세 환경 모두 1.36으로 둘지, RKE2 판을 v1.36.5+rke2r1로 고정할지(실무 결정, 팀장 확인 대기) | EKS `bravo-source`가 1.36으로 생성됨(2026-11-02, `aws eks describe-cluster`). EKS는 minor를 내릴 수 없음. GKE 모듈 기본값도 1.36. RKE2 1.36 줄의 마지막 안정 릴리스는 v1.36.5+rke2r1(GitHub, 2026-11-02 조회) | 1.36과 v1.36.5+rke2r1로 확정. 대가: kube-bench 자동 판 대응이 없어 벤치마크를 명시(`docs/architecture/04-governance.md` 1절), GKE는 STABLE 대신 REGULAR 채널. ADR 0010 |
 
 ## 4. 바뀐 이력
 
@@ -152,3 +152,4 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 | 2026-11-02 | 온프렘 · GKE · EKS에 같은 랜딩 존(D-23) | 같은 사용 경험과 쉬운 멀티 클라우드 이동이라는 팀장 결정 |
 | 2026-11-02 | 쿠버네티스 minor 1.35 권고 → 세 환경 1.36(실무 결정, 팀장 확인 대기, 3절 7번) | EKS가 1.36으로 생성되어 내릴 수 없음. 나머지를 맞춤 |
 | 2026-11-02 | cloudflared 2026.10.7을 "N12 통과 판"에서 "후보 판, N12 전"으로 고침 | 감사 A6. N12는 11/3 예정 |
+| 2026-11-02 21:10 | D-21 부분 철회: 온프렘 K3s → Ubuntu VM + RKE2(CIS), 플랫폼 EKS → EC2 1대 + RKE2 단일 노드. 출발지 EKS와 GKE 목적지는 그대로 | 팀장 결정 "스펙 그대로 전부", "RKE2 관련만". ADR 0010 |

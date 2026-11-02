@@ -14,7 +14,18 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-from .auth import Action, Channel, CredentialSource, Principal, TokenVerifier, authorize, extract_credential
+from .auth import (
+    AccessNotConnectedError,
+    Action,
+    Channel,
+    CredentialSource,
+    Principal,
+    Verifier,
+    audience_for,
+    authorize,
+    extract_credential,
+)
+from .changes import ChangeService
 from .config import Settings
 from .db import Database
 from .errors import AuthError, BusinessError, ForbiddenError, NotFoundError
@@ -46,8 +57,12 @@ def install_error_handlers(app: Any) -> None:
     @app.exception_handler(ForbiddenError)
     async def _forbidden(_: Request, exc: ForbiddenError) -> JSONResponse:
         return error_response(
-            403, exc.reason, headers={"WWW-Authenticate": 'Bearer realm="bravo", error="insufficient_scope"'}
+            403, exc.reason, exc.detail, headers={"WWW-Authenticate": 'Bearer realm="bravo", error="insufficient_scope"'}
         )
+
+    @app.exception_handler(AccessNotConnectedError)
+    async def _access_down(_: Request, exc: AccessNotConnectedError) -> JSONResponse:
+        return error_response(503, exc.reason, {"message": exc.message})
 
     @app.exception_handler(NotFoundError)
     async def _nf(_: Request, exc: NotFoundError) -> JSONResponse:
@@ -61,17 +76,19 @@ def install_error_handlers(app: Any) -> None:
 def build_router(
     settings: Settings,
     db: Database,
-    verifier: TokenVerifier,
+    verifier: Verifier,
     services: Services,
     shift: ShiftService,
     rehearsals: RehearsalService,
     tickets: TicketSigner,
+    changes: ChangeService,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1")
 
     async def principal(request: Request) -> Principal:
         token = extract_credential(request.headers.items(), CONSOLE_SOURCES)
-        verified = verifier.verify(token, settings.console_aud)
+        audience = audience_for(request.url.path, settings.console_aud or "", settings.mcp_aud or "")
+        verified = await verifier.verify(token, audience)
         return await db.resolve_principal(verified, Channel.CONSOLE, request.headers.get("x-bravo-tenant"))
 
     @router.post("/environments", status_code=201)
@@ -79,6 +96,16 @@ def build_router(
         body: EnvRegister, p: Annotated[Principal, Depends(principal)], key: IdemKey = None
     ) -> dict[str, Any]:
         return await services.env_register(p, Channel.CONSOLE, body, key)
+
+    @router.get("/environments")
+    async def env_list(p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
+        return await services.env_list(p, Channel.CONSOLE)
+
+    @router.get("/plans")
+    async def plan_list(
+        p: Annotated[Principal, Depends(principal)], limit: Annotated[int, Query(ge=1, le=200)] = 100
+    ) -> dict[str, Any]:
+        return await services.plan_list(p, Channel.CONSOLE, limit)
 
     @router.get("/environments/{environment_id}/controls")
     async def env_controls(environment_id: UUID, p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
@@ -103,6 +130,20 @@ def build_router(
         plan_id: UUID, body: RehearsalStart, p: Annotated[Principal, Depends(principal)], key: IdemKey = None
     ) -> dict[str, Any]:
         return await rehearsals.start(p, Channel.CONSOLE, plan_id, body, key)
+
+    @router.get("/plans/{plan_id}/changes")
+    async def change_list(plan_id: UUID, p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
+        return await changes.list(p, Channel.CONSOLE, plan_id)
+
+    @router.get("/plans/{plan_id}/changes/{change_id}")
+    async def change_get(plan_id: UUID, change_id: UUID, p: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
+        return await changes.get(p, Channel.CONSOLE, plan_id, change_id)
+
+    @router.post("/plans/{plan_id}/changes", status_code=201)
+    async def change_request(
+        plan_id: UUID, p: Annotated[Principal, Depends(principal)], key: IdemKey = None
+    ) -> dict[str, Any]:
+        return await changes.request(p, Channel.CONSOLE, plan_id, key)
 
     @router.post("/plans/{plan_id}/approvals", status_code=201)
     async def approve(
@@ -155,19 +196,5 @@ def build_router(
                     await asyncio.sleep(settings.sse_poll_interval_s)
 
         return EventSourceResponse(stream(), ping=15, headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
-
-    if settings.dev_auth:
-
-        @router.get("/dev/tokens", include_in_schema=False)
-        async def dev_tokens() -> dict[str, Any]:
-            """Dev only (BRAVO_DEV_AUTH=1): console-AUD tokens for the pilot users."""
-            directory = settings.dev_tokens_dir
-            if directory is None or not directory.is_dir():
-                raise NotFoundError("dev_tokens")
-            suffix = f".{settings.console_aud}.jwt"
-            tokens = {
-                f.name[: -len(suffix)]: f.read_text().strip() for f in sorted(directory.iterdir()) if f.name.endswith(suffix)
-            }
-            return {"audience": settings.console_aud, "tokens": tokens}
 
     return router

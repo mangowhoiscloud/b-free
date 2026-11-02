@@ -4,8 +4,9 @@
 - claude_subscription(기본, 데모 경로): Claude Agent SDK. 자격은 팀장 구독의 장기 OAuth 토큰(`claude setup-token`)이고,
   플랫폼 OpenBao `secret/envs/platform/llm-claude`(필드 oauth_token)에 있습니다. 실행 때 한 번 쓰는 AppRole로 읽어
   SDK가 띄우는 CLI 자식 프로세스 환경(CLAUDE_CODE_OAUTH_TOKEN)에만 넣습니다(llm_secret.py).
-- openai_agents(대체 엔진): OpenAI Agents SDK. API 키는 OpenBao `secret/envs/platform/llm-openai`(필드 api_key).
-  OpenAI Agents SDK에는 ChatGPT 구독으로 로그인하는 지원 경로가 없습니다. API 키만 씁니다.
+- openai_agents(대체 엔진): OpenAI Agents SDK. 자격은 OpenBao `secret/envs/platform/llm-openai` 하나에 있습니다.
+  필드 api_key가 있으면 API 키(운영 대안). 없으면 팀장 ChatGPT 계정의 Codex CLI 로그인 세션(auth_mode=chatgpt,
+  데모 전용): OpenAI가 Agents SDK용으로 문서화하지 않은 ChatGPT Codex 백엔드를 씁니다(chatgpt_auth.py).
 - anthropic_gateway, bedrock_gateway(운영 목표): Claude Agent SDK가 플랫폼 키를 가진 LLM 게이트웨이로 보냄.
   워커는 Trial 토큰만 가집니다. 운영 경로는 Bedrock 도쿄 `jp.` 추론 프로필입니다.
 개인 구독은 고객에게 서비스하는 경로가 아닙니다(13-agents.md 6절). 값이 하나라도 없으면 llm_unconfigured로 멈춥니다.

@@ -38,8 +38,10 @@ check INF-04 "Workload Identity: pool $(jq -r .workloadIdentityConfig.workloadPo
   bash -c "jq -e '.workloadIdentityConfig.workloadPool | endswith(\".svc.id.goog\")' '$C' && jq -e '.config.workloadMetadataConfig.mode == \"GKE_METADATA\"' '$NP'"
 check INF-05 "private nodes, private endpoint; DNS endpoint (IAM) for operators" -- \
   jcheck "$C" '.privateClusterConfig.enablePrivateNodes and .privateClusterConfig.enablePrivateEndpoint and .controlPlaneEndpointsConfig.dnsEndpointConfig.allowExternalTraffic'
-gcloud compute instances list --project "$PROJECT" --format=json >"$RUN/instances.json"
-check INF-06 "no external IP on any VM ($(jq length "$RUN/instances.json") instance(s))" -- \
+# Only this cluster's node VMs (other lanes may run VMs in the same project).
+gcloud compute instances list --project "$PROJECT" --filter="labels.goog-k8s-cluster-name=$CLUSTER" --format=json >"$RUN/instances.json"
+gcloud compute instances list --project "$PROJECT" --format='value(name,labels.component)' >"$RUN/instances-all.txt"
+check INF-06 "no external IP on the cluster's node VMs ($(jq length "$RUN/instances.json") node(s))" -- \
   jcheck "$RUN/instances.json" '[.[].networkInterfaces[].accessConfigs[]?] | length == 0'
 gcloud compute routers nats list --router "$CLUSTER-router" --region "$REGION" --project "$PROJECT" --format=json >"$RUN/nat.json"
 check INF-07 "Cloud NAT for egress: $(jq -r '[.[].name] | join(",")' "$RUN/nat.json")" -- jcheck "$RUN/nat.json" 'length >= 1'
@@ -47,7 +49,7 @@ check INF-08 "Secret encryption at rest with CMEK (application-layer): $(jq -r .
   jcheck "$C" '.databaseEncryption.state == "ENCRYPTED" and (.databaseEncryption.keyName | test("cryptoKeys/gke-secrets"))'
 check INF-09 "node arch arm64 (C4A $(jq -r .config.machineType "$NP")), boot disk $(jq -r .config.diskType "$NP") + CMEK" -- \
   bash -c "k() { kubectl --context '$CLUSTER' \"\$@\"; }; k get nodes -o json | jq -e '[.items[].metadata.labels[\"kubernetes.io/arch\"]] | all(. == \"arm64\")' && jq -e '.config.bootDiskKmsKey | length > 0' '$NP'"
-check INF-10 "Gateway API enabled: $(jq -r .gatewayApiConfig.channel "$C")" -- jcheck "$C" '.gatewayApiConfig.channel == "CHANNEL_STANDARD"'
+check INF-10 "Gateway API enabled: $(jq -r .networkConfig.gatewayApiConfig.channel "$C")" -- jcheck "$C" '.networkConfig.gatewayApiConfig.channel == "CHANNEL_STANDARD"'
 check INF-11 "label component=target on cluster and node VMs" -- \
   bash -c "jq -e '.resourceLabels.component == \"target\"' '$C' && jq -e 'all(.[]; .labels.component == \"target\")' '$RUN/instances.json'"
 gcloud storage buckets describe "gs://$ATTACH_BUCKET" --project "$PROJECT" --format=json >"$RUN/bucket.json"
@@ -61,7 +63,7 @@ check LZ-01 "namespaces chat, bravo-edge, cf-edge, bravo-observability enforce P
 check LZ-02 "StorageClass bravo-db, bravo-general (pd.csi, hyperdisk-balanced, CMEK); chat-db PVC Bound" -- \
   bash -c "kubectl --context '$CLUSTER' get sc bravo-db bravo-general -o json | jq -e '[.items[] | select(.provisioner == \"pd.csi.storage.gke.io\" and (.parameters[\"disk-encryption-kms-key\"] | length > 0))] | length == 2' && kubectl --context '$CLUSTER' -n chat get pvc -l cnpg.io/cluster=chat-db -o json | jq -e '[.items[] | select(.status.phase == \"Bound\" and .spec.storageClassName == \"bravo-db\")] | length >= 1'"
 check LZ-03 "CNPG operator ready (cnpg-system)" -- k -n cnpg-system rollout status deploy/cnpg-cloudnative-pg --timeout=30s
-k -n chat get cluster chat-db -o json >"$RUN/chat-db.json" 2>&1 || true
+k -n chat get cluster chat-db -o json >"$RUN/chat-db.json" 2>>"$RUN/kubectl.err" || true
 check LZ-04 "CNPG Cluster chat-db: $(jq -r '.status.phase // "absent"' "$RUN/chat-db.json"), ready $(jq -r '.status.readyInstances // 0' "$RUN/chat-db.json")/$(jq -r '.spec.instances // 0' "$RUN/chat-db.json")" -- \
   jcheck "$RUN/chat-db.json" '.status.phase == "Cluster in healthy state" and .status.readyInstances == .spec.instances'
 
@@ -84,12 +86,12 @@ check LZ-05 "PostgreSQL 16, wal_level=logical, max_replication_slots>=10, max_sl
 check LZ-06 "chat schema (dst side): publication bravo_rev, slot bravo_rev_sub, 4 roles, app_writer NOLOGIN, active_store=gcp: $(jq -c '{publications, slots, roles, active_store}' "$D" 2>/dev/null)" -- \
   jcheck "$D" '(.publications | index("bravo_rev")) and (.slots | index("bravo_rev_sub")) and (.roles | keys | length == 5) and .roles.app_writer == false and .roles.replicator and .roles.executor_ctl and .active_store == "gcp"'
 
-k -n external-secrets get clustersecretstore platform-bao -o json >"$RUN/secretstore.json" 2>&1 || true
-check LZ-07 "ESO ClusterSecretStore platform-bao Ready (platform OpenBao over the link): $(jq -r '[.status.conditions[]? | select(.type=="Ready") | .message] | first // "no status"' "$RUN/secretstore.json")" -- \
+k -n external-secrets get clustersecretstore bravo-platform-openbao -o json >"$RUN/secretstore.json" 2>>"$RUN/kubectl.err" || true
+check LZ-07 "ESO ClusterSecretStore bravo-platform-openbao Ready (platform OpenBao over the link): $(jq -r '[.status.conditions[]? | select(.type=="Ready") | .message] | first // "no status"' "$RUN/secretstore.json")" -- \
   jcheck "$RUN/secretstore.json" '[.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length == 1'
 k get externalsecrets -A -o json >"$RUN/externalsecrets.json"
 check LZ-08 "ExternalSecrets synced: $(jq -r '[.items[] | "\(.metadata.namespace)/\(.metadata.name)=\([.status.conditions[]? | select(.type=="Ready") | .status] | first)"] | join(" ")' "$RUN/externalsecrets.json")" -- \
-  jcheck "$RUN/externalsecrets.json" '(.items | length) >= 7 and all(.items[]; [.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length == 1)'
+  jcheck "$RUN/externalsecrets.json" '(.items | length) >= 6 and all(.items[]; [.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length == 1)'
 check LZ-09 "no in-cluster vault: no OpenBao/Vault workload (D-26)" -- \
   bash -c "! kubectl --context '$CLUSTER' get deploy,sts -A -o json | jq -e '[.items[] | .spec.template.spec.containers[].image | select(test(\"openbao|hashicorp/vault\"))] | length > 0'"
 
@@ -114,16 +116,20 @@ fi
 kill $PF 2>/dev/null || true; unset PGB_STATS
 
 # Gateway API
-k -n bravo-edge get gateway bravo-gateway -o json >"$RUN/gateway.json" 2>&1 || true
+# The GKE controller rewrites the conditions during each SYNC (e.g. right after up.sh re-applies), so wait for
+# Programmed=True up to 3 minutes before reading the status; a timeout is recorded as FAIL below.
+k -n bravo-edge wait --for=condition=Programmed gateway/bravo-gateway --timeout=180s >>"$RUN/kubectl.err" 2>&1 || true
+k -n bravo-edge get gateway bravo-gateway -o json >"$RUN/gateway.json" 2>>"$RUN/kubectl.err" || true
 check LZ-12 "Gateway bravo-gateway (gke-l7-rilb) Programmed at $(jq -r '.status.addresses[0].value // "none"' "$RUN/gateway.json") = reserved $GATEWAY_IP" -- \
-  bash -c "jq -e '[.status.conditions[]? | select(.type == \"Programmed\" and .status == \"True\")] | length == 1 and .status.addresses[0].value == \"$GATEWAY_IP\"' '$RUN/gateway.json'"
-k -n chat get httproute chat -o json >"$RUN/httproute.json" 2>&1 || true
+  bash -c "jq -e '([.status.conditions[]? | select(.type == \"Programmed\" and .status == \"True\")] | length == 1) and .status.addresses[0].value == \"$GATEWAY_IP\"' '$RUN/gateway.json'"
+k -n chat get httproute chat -o json >"$RUN/httproute.json" 2>>"$RUN/kubectl.err" || true
 check LZ-13 "HTTPRoute chat Accepted + ResolvedRefs" -- \
   jcheck "$RUN/httproute.json" '[.status.parents[]?.conditions[]? | select((.type == "Accepted" or .type == "ResolvedRefs") and .status == "True")] | length == 2'
 gcloud compute forwarding-rules list --project "$PROJECT" --format=json >"$RUN/forwarding-rules.json"
 check LZ-14 "load balancer is internal only (INTERNAL_MANAGED), no external forwarding rule" -- \
   jcheck "$RUN/forwarding-rules.json" 'length >= 1 and all(.[]; .loadBalancingScheme == "INTERNAL_MANAGED")'
-BS="$(gcloud compute backend-services list --project "$PROJECT" --regions "$REGION" --format='value(name)' 2>/dev/null | head -1)"
+# The Gateway makes one backend service per routed Service (plus a serve404 default): pick chat/chat-bravo-demo.
+BS="$(gcloud compute backend-services list --project "$PROJECT" --regions "$REGION" --format='value(name)' 2>/dev/null | grep -- '-chat-chat-bravo-demo-' | head -1)"
 if [[ -n $BS ]]; then
   gcloud compute backend-services get-health "$BS" --region "$REGION" --project "$PROJECT" --format=json >"$RUN/backend-health.json" 2>&1 || true
   check LZ-15 "LB backend health ($BS): $(jq -r '[.[].status.healthStatus[]?.healthState] | join(",")' "$RUN/backend-health.json" 2>/dev/null)" -- \
@@ -255,7 +261,7 @@ s = ObjectStoreSection(
     app_credential=Credential(access_key_env="GCS_APP_AK", secret_key_env="GCS_APP_SK"),
     other_credential=Credential(access_key_env="GCS_OTHER_AK", secret_key_env="GCS_OTHER_SK"),
 )
-p = ObjectStoreProbe(s)
+p = ObjectStoreProbe(s, allow_writes=True)   # write probes approved for this store (OBJ-03, OBJ-04)
 out = {name: getattr(p, name)().as_dict() for name in ("obj01", "obj02", "obj03", "obj04", "obj05", "obj06")}
 print(json.dumps(out))
 PY

@@ -1,6 +1,6 @@
 # IaC로 환경이 펼쳐지는 과정
 
-플랫폼을 처음 올리는 순간부터 고객 앱이 처음 배포되는 순간까지, 시나리오마다 무엇이 어떤 순서로 펼쳐지는지 적습니다. 각 단계에 2026-11-02 20:57 KST 기준 상태를 함께 둡니다(완료 · 진행 중 · 코드만 · 미착수 · 막힘). 상태는 실제 증거로만 적었습니다. 증거는 파일, 읽기 전용 `kubectl get`, `aws eks describe-*`, `gcloud container clusters list`, `terraform output`, `docker ps`입니다. 노트북 Compose 파일럿은 내렸고, 그 측정은 "파일럿(노트북) 기록"으로만 적습니다(`docs/evidence/pilot-notebook/`). 기술 근거는 `docs/spec/TECH-STACK-SPEC.md`, 클러스터 지도는 `10-cluster-overview.md`, 랜딩 존은 `11-landing-zone.md`입니다.
+플랫폼을 처음 올리는 순간부터 고객 앱이 처음 배포되는 순간까지, 시나리오마다 무엇이 어떤 순서로 펼쳐지는지 적습니다. 각 단계에 2026-11-02 20:57 KST 관측과 21:10 KST 결정(RKE2를 스펙대로, ADR 0010)을 반영한 상태를 함께 둡니다(완료 · 진행 중 · 코드만 · 미착수 · 막힘). 상태는 실제 증거로만 적었습니다. 증거는 파일, 읽기 전용 `kubectl get`, `aws eks describe-*`, `gcloud container clusters list`, `terraform output`, `docker ps`입니다. 노트북 Compose 파일럿은 내렸고, 그 측정은 "파일럿(노트북) 기록"으로만 적습니다(`docs/evidence/pilot-notebook/`). 기술 근거는 `docs/spec/TECH-STACK-SPEC.md`, 클러스터 지도는 `10-cluster-overview.md`, 랜딩 존은 `11-landing-zone.md`입니다.
 
 ## 0. 공통 바탕
 
@@ -13,9 +13,23 @@
 
 ## 1. 플랫폼을 처음 올리는 순간(Day 0)
 
-우리 제어면(`infra/envs/platform-aws`, Amazon EKS)을 처음 세우는 순서입니다.
+우리 제어면을 처음 세우는 순서입니다. 2026-11-02 21:10 KST에 팀장이 RKE2를 스펙 r2대로 되돌렸습니다("스펙 그대로 전부", "RKE2 관련만", ADR 0010). 플랫폼은 VPC ②의 EC2 1대 + RKE2 단일 노드이고(스펙 §7.2, T7), 온프렘과 같은 공통 cloud-init으로 설치합니다.
 
 | # | 하는 일 | 도구 | 결과 | 상태 |
+|---|---|---|---|---|
+| 1 | VPC②: 사설 서브넷, NAT, 인바운드 0 | Terraform `network/aws` | 네트워크 | 완료(apply, EKS 판 때 만듦. 노드가 10.20.11–13.x에 있었음). EC2가 이 VPC를 그대로 쓸지는 인프라 갈래가 정함 |
+| 2 | EC2 1대 + RKE2 단일 노드: 공통 cloud-init, RKE2 v1.36.5+rke2r1(제안) `profile: cis`, sha256 고정 | Terraform + cloud-init | 빈 클러스터 | 미착수. `infra/cloud-init/`가 비어 있음(21:1x) |
+| 3 | 첫 설치 경로: 사설 서브넷의 EC2에 닿는 통로 | 설계 필요(EKS 판의 `bootstrap_public_cidrs`는 해당 없음) | 설치 통로 | 미착수 |
+| 4 | `cf-edge`(cloudflared, 터널 `bravo-platform`)와 Argo CD 설치 | Helm 1회 | 이후 설치는 Git에서 당겨 옴 | RKE2 위에서는 미착수(EKS 판에서는 cloudflared Running, 아래 이력) |
+| 5 | 플랫폼 묶음: Cilium + Hubble, Kyverno + OPA, External Secrets, CNPG 운영자 + 플랫폼 DB, OpenBao(D-26), 관측(Collector · Prometheus · Tempo · Loki · Grafana), 플랫폼 서비스(API · `operator-mcp` · 콘솔 · 상태 머신 · 게이트 · 수집기 · 리허설 서비스(Harbor) · Executor), LLM 게이트웨이(운영 목표) | Argo CD + Helm, 이미지는 digest 고정 | 플랫폼 기동 | RKE2 위에서는 미착수(EKS 판에서는 대부분 Running, 아래 이력) |
+| 6 | Cloudflare: 환경별 Tunnel · 진입 이름 · 가중치 LB(`infra/envs/edge`), 콘솔 · MCP Access 앱. 토큰은 플랫폼 OpenBao에서만 꺼내 씀 | Terraform `edge` + `keys.sh` | 운영자 로그인 | 진행 중. Tunnel 셋(출발지 · 목적지 · 플랫폼)이 `terraform output`에 있음. `b-free`가 Cloudflare Access 로그인으로 302(20:56). LB pool 없음(`pool_ids = {}`). 가중치 전환은 코드만, 미실행(감사 B21) |
+| 7 | 확인: Access 로그인, `tools/list`, 통제 기준선, 네트워크 시험 일부 | 스크립트 | 증거 파일 | 미착수. 증거 파일 없음 |
+
+### 1.1 이력: 결정 전 EKS 판(ADR 0004, 2026-11-02 20:57 KST 관측)
+
+21:10 결정 전에 플랫폼을 EKS `bravo-platform`으로 세웠습니다. 그 자원은 아직 떠 있습니다. 정리와 RKE2로의 이전은 인프라 갈래가 정하고, 클라우드 자원 삭제는 사람 승인 뒤에 합니다.
+
+| # | 하는 일(EKS 판) | 도구 | 결과 | 상태(20:57) |
 |---|---|---|---|---|
 | 1 | VPC②: 사설 서브넷 3개(AZ마다), Regional NAT, 인바운드 0 | Terraform `network/aws` | 네트워크 | 완료(apply). 노드가 세 AZ의 사설 주소 10.20.11–13.x에 있음. 인바운드 0은 확인하지 않음 |
 | 2 | EKS 제어면(1.36, ADR 0004), 관리형 노드 그룹 `core`(3-AZ) · `agents`(taint), 관리형 애드온(VPC CNI · EBS CSI · CoreDNS · kube-proxy · Pod Identity), KMS, 서비스별 Pod Identity 역할 | Terraform `cluster/eks` | 빈 클러스터 | 완료. `bravo-platform` ACTIVE(20:49), 노드 그룹 core 2a · 2b · 2c와 agents(taint `pool=agents:NoSchedule`) ACTIVE, 노드 4 Ready, add-on 6개. KMS와 Pod Identity 역할은 확인하지 않음 |
@@ -25,7 +39,7 @@
 | 6 | Cloudflare: 환경별 Tunnel · 진입 이름 · 가중치 LB(`infra/envs/edge`), 콘솔 · MCP Access 앱(Managed OAuth). 토큰은 플랫폼 OpenBao에서만 꺼내 씀 | Terraform `edge` + `keys.sh` | 운영자 로그인 | 진행 중. Tunnel 셋(출발지 · 목적지 · 플랫폼)이 `terraform output`에 있음. `b-free`가 Cloudflare Access 로그인으로 302(20:56). LB pool 없음(`pool_ids = {}`). 가중치 전환은 코드만, 미실행(감사 B21) |
 | 7 | 확인: Access 로그인, `tools/list`, 통제 기준선, 네트워크 시험 일부 | 스크립트 | 증거 파일 | 미착수. 증거 파일 없음 |
 
-플랫폼 서비스는 20:56에 플랫폼 EKS에서 떠 있습니다. 앞서 노트북 Compose에서 돌린 컷오버 · 되돌리기는 파일럿(노트북) 기록이고 클라우드 결과가 아닙니다(`docs/evidence/pilot-notebook/RUNS.tsv`).
+앞서 노트북 Compose에서 돌린 컷오버 · 되돌리기는 파일럿(노트북) 기록이고 클라우드 결과가 아닙니다(`docs/evidence/pilot-notebook/RUNS.tsv`).
 
 ## 2. 출발지 고객 환경(기존 AWS 고객)
 
@@ -46,9 +60,22 @@
 
 모든 목적지는 같은 상태 머신을 지납니다: 요청 → 구축 → 랜딩 존 설치 → 통제 기준선 · 연결 시험 → 준비 완료(`11-landing-zone.md` 4절).
 
-### 3.1 온프렘 K3s
+### 3.1 온프렘 Ubuntu VM + RKE2(CIS)
+
+스펙 §6 S1 기본 흐름 4와 T2입니다. 2026-11-02 21:10 KST 결정(ADR 0010)으로 K3s에서 RKE2로 바뀌었습니다. kubectl 컨텍스트는 그대로 `bravo-onprem`입니다.
 
 | # | 하는 일 | 도구 | 상태 |
+|---|---|---|---|
+| 1 | 고객 Ubuntu VM 준비(데모는 팀원 Mac의 Lima VM, 절전 차단) | Terraform `terraform_data` + `limactl` | 진행 중. Ubuntu 24.04 Lima VM 2대가 있음(K3s용으로 만듦, `infra/envs/target-onprem`). RKE2용 VM 수와 크기는 T2가 정함 |
+| 2 | 공통 cloud-init으로 RKE2 v1.36.5+rke2r1(제안) `profile: cis` 설치. CIS 조건(sysctl, etcd 사용자)을 cloud-init에 고정, 설치 파일 sha256 확인 | cloud-init(플랫폼과 공용) | 미착수. `infra/cloud-init/`가 비어 있음 |
+| 3 | 예외 4a: CIS 프로필이 조건 미충족으로 시작을 거부하면 cloud-init 조건을 고치고 재설치 | cloud-init, 재설치 | 미착수. 실행 기록 없음 |
+| 4 | 랜딩 존 `rke2` overlay: Cilium + Hubble, CNPG 운영자, PgBouncer, Rook-Ceph RGW(D-22), ESO(값은 플랫폼 OpenBao, D-26), Kyverno `GeneratingPolicy`, Gateway API, `cf-edge`, `bravo-link`, OTel 에이전트 | Argo CD(데모는 설치기) | 미착수. `rke2` overlay 없음(`k3s` overlay만 있음). RKE2에는 기본 local-path가 없어 블록 저장 바탕이 필요(ADR 0010) |
+| 5 | 확인: RKE2가 CIS 프로필로 뜨고 kube-bench 결과가 나옴(T2 완료 기준). Cilium 상태, 정책 거부와 Hubble 기록, Gateway 경로, PVC, RGW 버킷 정책(OBJ-01–06) | kube-bench, 시험 스크립트 | 미착수 |
+| 6 | 접기와 다시 펴기(같은 스크립트로 재설치 확인, T2 세부) | Terraform | 미착수 |
+
+**이력: 결정 전 K3s 판(ADR 0004, 20:57 KST 관측).** Lima K3s `bravo-onprem`(v1.36.5+k3s1)이 아직 떠 있습니다.
+
+| # | 하는 일(K3s 판) | 도구 | 상태(20:57) |
 |---|---|---|---|
 | 1 | 고객 VM 준비(데모는 Lima VM 2대 + 전용 디스크) | Terraform `terraform_data` + `limactl` | 완료. `terraform output instances`: `bravo-onprem-server`, `bravo-onprem-agent`. Lima 홈은 `infra/envs/target-onprem/.lima` |
 | 2 | 등록 명령 한 줄 → VM 안 바깥 방향 에이전트가 K3s(판 고정, sha256 확인, CIS 설정) 설치. Cilium(flannel 끔) | cloud-init / 등록 에이전트 | 완료(K3s). v1.36.5+k3s1 노드 2 Ready(20:49), Cilium · Hubble relay Running. 설치는 등록 에이전트가 아니라 Terraform이 함(등록 에이전트는 설계). CIS 설정 결과(kube-bench)는 없음 |

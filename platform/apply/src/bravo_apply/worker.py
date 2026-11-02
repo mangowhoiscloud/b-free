@@ -23,6 +23,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from .approvals import DbApprovals
 from .config import Config
 from .pipeline import Change, apply, prepare
 from .runtime import Result, Stop
@@ -66,21 +67,13 @@ class Worker:
     def _load(self, conn: psycopg.Connection[dict[str, Any]], row: dict[str, Any]) -> Change:
         art = conn.execute("SELECT artifact FROM rehearsals WHERE rehearsal_id = %s", (row["rehearsal_id"],)).fetchone()
         env = conn.execute("SELECT name FROM environments WHERE environment_id = %s", (row["target_environment_id"],)).fetchone()
-        approval = None
-        if row.get("approval_id"):
-            a = conn.execute(
-                "SELECT approval_id, change_id, image_digest, diff_digest, policy_diff_digest, artifact_digest FROM approvals "
-                "WHERE approval_id = %s AND stage = 'change' AND change_id = %s",
-                (row["approval_id"], row["change_id"]),
-            ).fetchone()
-            approval = {k: (str(v) if k.endswith("_id") and v else v) for k, v in a.items()} if a else None
         return Change(
             change_id=str(row["change_id"]),
             role=row["role"],
             target_env=env["name"] if env else "",
             artifact=art["artifact"] if art else None,
             bound={k: row[k] for k in ("artifact_digest", "diff_digest", "policy_diff_digest", "policy_targets")},
-            approval=approval,
+            approval_id=str(row["approval_id"]) if row.get("approval_id") else None,
             prepared={"image_digest": row["image_digest"], "image_repository": row["image_repository"]},
         )
 
@@ -101,7 +94,10 @@ class Worker:
         out.mkdir(parents=True, exist_ok=True)
         rec = DbRecorder(self.dsn, row["change_id"])
         try:
-            res = (prepare if phase == "prepare" else apply)(self.cfg, ch, rec, out)
+            if phase == "prepare":
+                res = prepare(self.cfg, ch, rec, out)
+            else:
+                res = apply(self.cfg, ch, rec, out, DbApprovals(self.dsn))
         except Stop as stop:
             status = "prepare_failed" if phase == "prepare" else (stop.status if stop.status in ("refused", "failed") else "failed")
             self._finish(row["change_id"], {"status": status, "reason": stop.reason, "ended_at": "now"})

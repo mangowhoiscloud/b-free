@@ -34,17 +34,7 @@ variable "tags" {
   default     = {}
 }
 
-variable "bootstrap_public_cidrs" {
-  description = "첫 설치 동안만 EKS API를 열 운영자 IP(/32). 설치가 끝나면 비움(modules/cluster/eks 참고)"
-  type        = list(string)
-  default     = []
-}
 
-variable "admin_principal_arns" {
-  description = "클러스터 관리자 access entry를 줄 IAM 주체(선택). 생성자는 따로 자동으로 받음"
-  type        = list(string)
-  default     = []
-}
 
 variable "github_repository" {
   description = "CI OIDC가 신뢰할 GitHub 저장소(owner/repo)"
@@ -71,4 +61,13 @@ variable "source_cluster_name" {
   EOT
   type        = string
   default     = "bravo-source"
+}
+
+variable "node_instance_type" {
+  description = <<-EOT
+    플랫폼 RKE2 단일 노드 EC2 종류(arm64). t4g.xlarge(4 vCPU, 16 GiB): RKE2 제어면 · etcd · Cilium(약 2 GiB)에
+    플랫폼 Pod 약 40개(요청 합 약 5 GiB)를 올리면 t4g.large(8 GiB)는 여유가 1 GiB 아래라 가장 작은 동작 크기를 이것으로 둠.
+  EOT
+  type        = string
+  default     = "t4g.xlarge"
 }

@@ -7,6 +7,7 @@ kind: Kustomization
 namespace: bravo-control
 resources:
   - namespace.yaml
+  - ../ecr-pull
   - access.yaml
   - platform-db.yaml
   - migrate-job.yaml
@@ -19,6 +20,12 @@ configMapGenerator:
   - name: environments
     files:
       - environments.yaml=config/environments.yaml
+  - name: executor-topology
+    files:
+      - topology.json=../../cloud/in-cluster/topology.json
+  - name: executor-kubeconfig
+    files:
+      - config=../../cloud/in-cluster/kubeconfig.template.yaml
   - name: executor-migrations
     files:
       - ../../../platform/executor/migrations/0001_resource_locks.sql
@@ -38,7 +45,7 @@ images:
     digest: sha256:f0f950b630c9557531d4187da3fad784c7f4bf11d346413ae8615828b797a113
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
-    digest: sha256:250ec522b53a2a61c267986c16ed9fb3a2b8ba0f20cf6269d4c2b1daa94fad3f
+    digest: sha256:32c2b92b0f6c6852def8273ecd535b7dd013d728d9d99bc176e531f6822d8262 # cloud-202611022104 (data/cutover lane)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
     digest: sha256:208ed7b29adee018cf82a82ea6672311b38a02930c5bcd8f344487d44f1c0eab

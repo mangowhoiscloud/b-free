@@ -6,6 +6,8 @@
 - 스펙 위치: §7.4, §7.5, §8.7, §8.8, FR-8, NFR-7, NET-01(§8.5)
 - 근거 문서: `docs/spec/TECH-STACK-SPEC.md` 1절 · 2.1절 · 2.2절, `docs/spec/ALIGNMENT-2026-11-02.md` 1절 3 · 6행과 2절, `docs/architecture/09-cni-csi.md`, 1급 원천 [tech-stack-combination.md](../spec/sources/tech-stack-combination.md), `deploy/landing-zone/versions.env`
 
+**바뀐 것(2026-11-02 21:10 KST).** 온프렘과 플랫폼은 RKE2입니다(ADR 0010). 아래의 "K3s"와 "플랫폼 EKS"는 RKE2로 읽습니다. Cilium + Hubble, Gateway API, Terraform 결정은 그대로이고, RKE2에 Cilium을 붙이는 방법은 ADR 0010의 제안입니다.
+
 ## 맥락
 
 세 가지를 함께 정했습니다.

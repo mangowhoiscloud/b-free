@@ -60,3 +60,35 @@ def test_check_tools_requires_exact_grant():
         with pytest.raises(AgentRunError) as e:
             asyncio.run(oe.check_tools(agent, GRANTED))
         assert e.value.code == code
+
+
+def test_chatgpt_run_config_targets_codex_backend_with_account_headers(monkeypatch):
+    """ChatGPT 계정 모드: Codex 백엔드, 접근 토큰, 계정 헤더, store=false, 암호화 reasoning, reasoning ID 빼기."""
+    from test_chatgpt_auth import record
+
+    from bravo_agents.chatgpt_auth import session_from_record
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env-must-not-be-used")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://evil.example/v1")
+    session = session_from_record(record())
+    rc = oe.make_chatgpt_run_config("gpt-5.5", session, "sess-1")
+    model = rc.model
+    assert type(model).__name__ == "OpenAIResponsesModel" and model.model == "gpt-5.5"
+    client = model._client
+    assert client.api_key == session.access_token
+    assert str(client.base_url).rstrip("/") == "https://chatgpt.com/backend-api/codex"
+    headers = client.default_headers
+    assert headers["ChatGPT-Account-ID"] == "acct-1234" and headers["session-id"] == "sess-1"
+    assert rc.model_settings.store is False
+    assert rc.model_settings.response_include == ["reasoning.encrypted_content"]
+    assert rc.reasoning_item_id_policy == "omit"
+    assert rc.tracing_disabled is True and rc.trace_include_sensitive_data is False
+
+
+def test_error_detail_redacts_token_like_strings():
+    class Boom(Exception):
+        status_code = 400
+        message = "bad instructions for " + "fake-token." * 6
+
+    d = oe._error_detail(Boom())
+    assert d.startswith("Boom 400 bad instructions") and "fake-token" not in d and "[redacted]" in d

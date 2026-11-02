@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import build, digests, gate, policies, supply, tools
+from .approvals import ApprovalSource
 from .config import Config
 from .destination import driver
 from .runtime import Recorder, Result, Step, Stop, run_stage
@@ -33,7 +34,7 @@ class Change:
     target_env: str
     artifact: dict[str, Any] | None
     bound: dict[str, Any]                     # recorded artifact_digest, diff_digest, policy_diff_digest, policy_targets
-    approval: dict[str, Any] | None = None    # approval_id, image_digest, diff_digest, policy_diff_digest
+    approval_id: str | None = None            # the change approval to run under; verified against the platform DB
     prepared: dict[str, Any] | None = None    # image_repository, image_digest from prepare
     provenance: str = "platform DB change row"
     outputs: dict[str, Any] = field(default_factory=dict)
@@ -120,15 +121,18 @@ def prepare(cfg: Config, ch: Change, rec: Recorder, out: Path) -> dict[str, Any]
     return result
 
 
-def apply(cfg: Config, ch: Change, rec: Recorder, out: Path) -> dict[str, Any]:
+def apply(cfg: Config, ch: Change, rec: Recorder, out: Path, approvals: ApprovalSource | None) -> dict[str, Any]:
+    """Apply phase. ``approvals`` is the only source of the approval (platform DB); None refuses."""
     A = "apply"
     run_stage(rec, A, "tools.verify", lambda: _tools(cfg, ["cosign", "skopeo", "kubectl", "limactl"], A))
-    approval, prepared = ch.approval or {}, ch.prepared or {}
-    approved_image = approval.get("image_digest")
+    prepared = ch.prepared or {}
+    approval: dict[str, Any] = {}
 
     def _approval() -> Step:
-        if not approval:
-            raise Stop("refused", "approval_missing", Result.REFUSED)
+        if approvals is None:
+            raise Stop("refused", "approval_source_unavailable", Result.REFUSED, {"why": "no platform DB approval source"})
+        approval.update(approvals.verify(ch.change_id, ch.approval_id))  # raises Stop(refused, ...) on any problem
+        approved_image = approval.get("image_digest")
         problems = []
         if approved_image != prepared.get("image_digest"):
             problems.append("approved_digest_mismatch")
@@ -142,9 +146,11 @@ def apply(cfg: Config, ch: Change, rec: Recorder, out: Path) -> dict[str, Any]:
                         "prepared_image_digest": prepared.get("image_digest")})
         return Step(detail={"approval_id": approval.get("approval_id"), "image_digest": approved_image,
                             "diff_digest": approval.get("diff_digest"), "policy_diff_digest": approval.get("policy_diff_digest"),
+                            "expires_at": approval.get("expires_at"), "source": approval.get("source"),
                             "provenance": ch.provenance})
 
     run_stage(rec, A, "approval.verify", _approval)
+    approved_image = approval.get("image_digest")
     tar: Path | None = None
     if approved_image:
         def _locate() -> Step:
@@ -185,7 +191,7 @@ def apply(cfg: Config, ch: Change, rec: Recorder, out: Path) -> dict[str, Any]:
         (out / "signature.json").write_text(json.dumps(signature, indent=2))
         run_stage(rec, A, "destination.import", lambda: drv.import_image(tar, approved_image, info["name"]))
         run_stage(rec, A, "deploy.precheck", lambda: drv.precheck(approved_image))
-        cause = f"bravo T31 change {ch.change_id} approval {approval.get('approval_id')}"
+        cause = f"bravo T31 change {ch.change_id} approval {approval['approval_id']}"  # verified above, never None
         run_stage(rec, A, "deploy.rollout", lambda: drv.rollout(approved_image, cause))
         run_stage(rec, A, "deploy.verify", lambda: drv.verify(approved_image))
         deployed = approved_image

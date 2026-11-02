@@ -5,14 +5,8 @@
 # 서드파티 Action은 커밋 SHA로 고정(TECH-STACK-SPEC 2.8). Trivy 단계는 두지 않음(OIDC를 주지 않기 위해).
 name: platform-images
 
+# 일시 중지(2026-11-02 21:5x): 스캔 없이 ECR에 올리는 경로라 push 트리거를 끔. images.yaml에서 스캔한 digest를 복사하도록 고친 뒤 되살림.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "platform/**"
-      - "tools/link/**"
-      - "deploy/platform/images/**"
-      - ".github/workflows/platform-images.yml"
   workflow_dispatch: {}
 
 permissions:

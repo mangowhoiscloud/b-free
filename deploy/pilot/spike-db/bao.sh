@@ -14,14 +14,29 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PILOT_DIR="$(cd "$HERE/.." && pwd)"
 CUSTODY_DIR="${BRAVO_KEY_CUSTODY_DIR:-$HOME/.bravo/custody}"
 CUSTODY="$CUSTODY_DIR/openbao-init.json"
-# Same target rule as deploy/pilot/scripts/keys.sh: after migrate-to-platform the store is the platform
-# EKS OpenBao (openbao/openbao-0), reached through a kubectl port-forward (default 127.0.0.1:18200).
-if [[ $(jq -r '.bao_target // "pilot"' "$CUSTODY") == platform-eks ]]; then
-  TLS_DIR="$CUSTODY_DIR/platform-eks"
-  BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:${BRAVO_BAO_LOCAL_PORT:-18200}}"
-else
+# Same target rule as deploy/pilot/scripts/keys.sh: custody .bao_target says where the one platform store is
+# (pilot | platform-eks | platform-rke2). Platform targets are reached through a kubectl port-forward to
+# openbao/openbao-0: BRAVO_BAO_LOCAL_PORT if a supervised forward already runs, else a private one per call.
+BAO_TARGET="$(jq -r '.bao_target // "pilot"' "$CUSTODY")"
+PF_PID=""
+if [[ $BAO_TARGET == pilot ]]; then
   TLS_DIR="$PILOT_DIR/bao/tls"
   BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:8200}"
+else
+  TLS_DIR="$CUSTODY_DIR/$BAO_TARGET"
+  case $BAO_TARGET in platform-eks) CTX=bravo-platform ;; platform-rke2) CTX=bravo-platform-rke2 ;; *) echo "bao.sh: unknown target $BAO_TARGET" >&2; exit 1 ;; esac
+  if [[ -n ${BRAVO_BAO_LOCAL_PORT:-} ]] && curl -s -o /dev/null --max-time 2 --cacert "$TLS_DIR/ca.crt" "https://127.0.0.1:$BRAVO_BAO_LOCAL_PORT/v1/sys/seal-status"; then
+    BAO_ADDR="https://127.0.0.1:$BRAVO_BAO_LOCAL_PORT"
+  else
+    port="$(python3 -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
+    kubectl --context "$CTX" -n openbao port-forward pod/openbao-0 "$port:8200" >/dev/null 2>&1 &
+    PF_PID=$!
+    trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
+    BAO_ADDR="https://127.0.0.1:$port"
+    for _ in $(seq 1 40); do
+      curl -s -o /dev/null --max-time 2 --cacert "$TLS_DIR/ca.crt" "$BAO_ADDR/v1/sys/seal-status" && break; sleep 0.25
+    done
+  fi
 fi
 
 die() { printf 'bao.sh: %s\n' "$*" >&2; exit 1; }

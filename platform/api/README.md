@@ -10,7 +10,7 @@
 | `POST /v1/plans` | workload, source, target → `plan_id`, 의존성 목록, 통제 차이 |
 | `POST /v1/plans/{id}/rehearsals` | `task`, `role`(governance, app_migration, ci) → `rehearsal_id`, 시도 번호, `trial_id`, 상태(`requested`, `running`, `INFRA_ERROR`+이유). 판정은 리허설 서비스의 검증기가 내고, API는 결속을 확인한 결과만 받음(아래 "리허설") |
 | `POST /v1/plans/{id}/gate` | → 질문별 원본 · 대상 · 판정 |
-| `POST /v1/plans/{id}/approvals` | 콘솔 전용. `stage`(`change`, `cutover`, `failback`), 1회용 `approval_request_id`, 화면에 보인 `revision`. 결속 값(plan, diff, digest, 대상, 만료)은 그 revision이 고정함 → 결속된 승인. 승인자는 입력이 아니고 콘솔 세션의 주체임 |
+| `POST /v1/plans/{id}/approvals` | 콘솔 전용. `stage`(`change`, `cutover`, `failback`), 1회용 `approval_request_id`, 화면에 보인 `revision`, `change`이면 `change_id`. 결속 값(plan, diff, digest, 대상, 만료)은 그 revision이 고정함 → 결속된 승인. 승인자는 입력이 아니고 콘솔 세션의 주체임 |
 | `POST /v1/plans/{id}/shift` | 콘솔 전용. `cutover`(AWAIT_APPROVAL) 또는 `failback`(WATCH, Executor `POST /v1/failback`) → 실행 handle(`run_id`), 단계 결과, 쓰기 정지 ms, 무결성 영수증 |
 | `GET /v1/environments/{id}/controls` | → 통제별 시험 결과, 증거, 수집 시각 |
 | `GET /v1/plans/{id}/events` | SSE. `Last-Event-ID`로 재접속 |
@@ -31,6 +31,17 @@
 | 보안 보류 | `POST /v1/holds`, `GET /v1/holds`, `POST /v1/holds/{id}/release-requests`, `POST /v1/holds/{id}/release`. 생성은 콘솔의 operator 이상, 해제 승인은 콘솔의 `security_approver`. P0에 최소 해제 양식 하나를 둠. 실행 요청은 `security_hold`로 거부될 수 있음(D-20, `docs/architecture/04-governance.md` 5절) |
 
 SSE 이벤트 필드(제안): `id`, `plan_id`, `state`, `kind`, `at`, `mode`(`live`, `recorded`, `mock`), `run_id`, `actor`(`kind`: `console`, `mcp`, `system`), `data`. `kind`별 `data` 형식은 11/3에 표로 고정합니다. 리허설 이벤트 종류는 `trial.started`, `tool.denied`, `trial.verdict`이고, `data`에 `trial_id`를 넣어 콘솔에서 해당 트레이스를 열 수 있게 합니다(`docs/architecture/07-runtime-mesh-observability.md` 6절).
+
+## 승인 2종과 T31(스펙 r2, 2026-11-02)
+
+리허설 PASS는 REHEARSE에 머물고 변경(`changes` 행)을 엽니다. T31 워커(`platform/apply`)가 후보(이미지 digest, SBOM, 스캔)를 만들면 `change` 승인 요청이 생깁니다. 승인은 diff · 이미지 digest · 정책 diff에 결속되고, 반영이 승인 digest로 끝나야 REHEARSE → GATE로 가며 시스템이 게이트를 다시 돌립니다. PASS면 `cutover` 승인 요청입니다. 경로, 본문, 이벤트, 워커 계약, Executor의 승인 확인은 `docs/architecture/15-r2-contracts.md`에 있습니다. 첫 화면용 `GET /v1/plans`, `GET /v1/environments`도 같은 문서에 있습니다.
+
+| 변수 | 쓰는 곳 |
+|---|---|
+| `BRAVO_ACCESS_TEAM_DOMAIN`(또는 `BRAVO_JWT_ISSUER` + `BRAVO_JWKS_URL`), `BRAVO_CONSOLE_AUD`, `BRAVO_MCP_AUD` | Cloudflare Access. 없으면 503 `access_not_connected` |
+| `BRAVO_ACCESS_MEMBERS_FILE` | 첫 로그인 역할 허용 목록(JSON). 예: `deploy/platform/access/members.json` |
+| `BRAVO_BAO_ADDR`, `BRAVO_BAO_CACERT`, `BRAVO_BAO_ROLE_ID_FILE` + `BRAVO_BAO_SECRET_ID_FILE`(또는 `BRAVO_BAO_TOKEN_FILE`), `BRAVO_BAO_KV_MOUNT` | `secret_ref` 확인(메타데이터만). 없으면 환경은 `unverified` |
+| `BRAVO_CHANGE_POLL_INTERVAL_S` | 변경 감시 주기(기본 1초) |
 
 ## 승인과 실행 시작(제안 D-18)
 

@@ -162,16 +162,21 @@ async def _run_openai(role, al, envelope: StateEnvelope, mcp_url: str, trial_tok
         import agents  # noqa: F401
     except ImportError as e:
         raise AgentRunError("sdk_unavailable", "openai-agents not installed (pip extra 'openai')") from e
+    from bravo_agents.llm_secret import fetch_openai_credential
+
     granted = tuple(envelope.approved_scope.mcp_tools)
     base = {"trial_id": envelope.trial_id, "plan_id": envelope.plan_id, "attempt": envelope.attempt, "role": role}
+    # api_key가 있으면 그것(운영 대안), 없으면 ChatGPT 세션(데모). 세션은 이 실행 시간 + 5분 넘게 유효하도록 갱신
+    credential = await asyncio.to_thread(fetch_openai_credential, min_valid_s=budget_s + 300)
     run = await run_openai(instructions=render_system_prompt(envelope, al), prompt=render_task_prompt(envelope),
                            model=route.model, output_model=OUTPUT_MODELS[role], mcp_url=mcp_url,
-                           trial_token=trial_token, granted=granted, api_key=await _secret(route.provider),
+                           trial_token=trial_token, granted=granted, credential=credential,
                            max_turns=al.limits.max_turns, timeout_s=budget_s, sink=sink, base_event=base)
+    credential = None
     raw = run.output.model_dump(mode="json") if isinstance(run.output, ProposalBase) else run.output
     out = validate_output(role, raw, envelope)
     if submit:
         await submit_proposal(mcp_url, trial_token, out)
     return Proposal(role, out, digest(out), run.response_id or "", route.model, run.requests, None, route.provider,
-                    {**run.usage, "strict_schema": run.strict_schema,
+                    {**run.usage, "credential_mode": run.mode, "strict_schema": run.strict_schema,
                      "tools": {"offered": run.tool_names, "calls": run.tool_calls}})

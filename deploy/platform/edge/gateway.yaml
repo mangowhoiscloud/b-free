@@ -8,57 +8,31 @@ metadata:
     app.kubernetes.io/part-of: bravo-platform
     pod-security.kubernetes.io/enforce: restricted
 ---
-# Envoy Gateway (deploy/platform/envoy-gateway): proxies run in this namespace as ordinary pods with VPC
-# addresses, behind a ClusterIP Service named bravo-gateway (no cloud load balancer, inbound 0, D-16).
-# The Cilium implementation could not reach backends across nodes in VPC CNI chaining mode (see
-# deploy/platform/envoy-gateway/values.yaml). Tunnel origin: http://bravo-gateway.bravo-edge.svc.cluster.local:80.
-apiVersion: gateway.envoyproxy.io/v1alpha1
-kind: EnvoyProxy
+# Gateway API on the platform RKE2 node: the Cilium implementation (TECH-STACK-SPEC 1 "Gateway API(Envoy, Cilium
+# 구현)", same as the landing zone, deploy/landing-zone). Cilium runs standalone with kube-proxy replacement
+# (RKE2 cni: none), so Envoy reaches every backend; the EKS-chaining limit (deploy/platform/envoy-gateway/values.yaml)
+# no longer applies. The Service cilium-gateway-bravo-gateway is NodePort through CiliumGatewayClassConfig:
+# no cloud load balancer, the tunnel is the only entry (inbound 0, D-16).
+apiVersion: cilium.io/v2alpha1
+kind: CiliumGatewayClassConfig
 metadata:
-  name: bravo-front
+  name: bravo-nodeport
   namespace: bravo-edge
 spec:
-  provider:
-    type: Kubernetes
-    kubernetes:
-      envoyService:
-        name: bravo-gateway
-        type: ClusterIP
-      envoyDeployment:
-        replicas: 2
-        pod:
-          nodeSelector:
-            bravo.io/pool: core
-          securityContext:
-            runAsNonRoot: true
-            seccompProfile: {type: RuntimeDefault}
-          topologySpreadConstraints:
-            - maxSkew: 1
-              topologyKey: topology.kubernetes.io/zone
-              whenUnsatisfiable: ScheduleAnyway
-              labelSelector:
-                matchLabels:
-                  gateway.envoyproxy.io/owning-gateway-name: bravo-gateway
-        container:
-          resources:
-            requests: {cpu: 20m, memory: 64Mi}
-            limits: {memory: 256Mi}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities: {drop: ["ALL"]}
-            runAsNonRoot: true
-            seccompProfile: {type: RuntimeDefault}
+  description: "NodePort only, no cloud LB (tunnel is the only entry)"
+  service:
+    type: NodePort
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
-  name: bravo-envoy
+  name: bravo-cilium
 spec:
-  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  controllerName: io.cilium/gateway-controller
   parametersRef:
-    group: gateway.envoyproxy.io
-    kind: EnvoyProxy
-    name: bravo-front
+    group: cilium.io
+    kind: CiliumGatewayClassConfig
+    name: bravo-nodeport
     namespace: bravo-edge
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -69,7 +43,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: bravo-platform
 spec:
-  gatewayClassName: bravo-envoy
+  gatewayClassName: bravo-cilium
   listeners:
     - name: http
       protocol: HTTP

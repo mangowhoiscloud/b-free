@@ -20,9 +20,11 @@ PRELUDE="${MANAGED_PRELUDE:-}"
 case ${1:?mode} in
   dryrun)
     { echo 'BEGIN;'; echo '\set ON_ERROR_ROLLBACK on'; echo "$PRELUDE"
-      for f in 01_schema.sql 02_roles.sql 03_src.sql; do echo "\\echo ==== $f"; grep -v '^\\set ON_ERROR_STOP' "$S/$f"; done
+      for f in 01_schema.sql 02_roles.sql 03_src.sql; do src="$S/$f"; [[ -f /variant/$f && ${DRYRUN_VARIANT:-0} == 1 ]] && src=/variant/$f
+        echo "\\echo ==== $src"; grep -v '^\\set ON_ERROR_STOP' "$src"; done
       echo 'ROLLBACK;'; } | psql --no-psqlrc -v ON_ERROR_STOP=0 -v attachment_store_id=src -e -f - 2>&1 ;;
   apply)
-    { echo "$PRELUDE"; cat "$S/01_schema.sql" /variant/02_roles.sql "$S/03_src.sql"; } \
+    one="$S/01_schema.sql"; [[ -f /variant/01_schema.sql ]] && one=/variant/01_schema.sql
+    { echo "$PRELUDE"; cat "$one" /variant/02_roles.sql "$S/03_src.sql"; } \
       | psql --no-psqlrc -v ON_ERROR_STOP=1 -v attachment_store_id=src -e -f - 2>&1 ;;
 esac

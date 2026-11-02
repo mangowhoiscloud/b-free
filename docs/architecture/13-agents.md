@@ -141,15 +141,15 @@ R = 수행, A = 최종 책임, C = 의견, I = 통보. 에이전트는 어느 �
 | `BRAVO_LLM_PROVIDER` | SDK | 자격 | 쓰임 |
 |---|---|---|---|
 | `claude_subscription`(기본) | Claude Agent SDK `claude-agent-sdk==0.2.176` | 팀장 구독의 장기 OAuth 토큰(`claude setup-token`). 플랫폼 OpenBao `secret/envs/platform/llm-claude`, 필드 `oauth_token` | **데모 경로** |
-| `openai_agents` | OpenAI Agents SDK `openai-agents==0.20.0` | OpenAI API 키. OpenBao `secret/envs/platform/llm-openai`, 필드 `api_key`. 없으면 `llm_unconfigured` | 대체 엔진 |
+| `openai_agents` | OpenAI Agents SDK `openai-agents==0.20.0` | OpenBao `secret/envs/platform/llm-openai` 하나. 필드 `api_key`가 있으면 OpenAI API 키(운영 대안). 없으면 팀장 ChatGPT 계정 세션(`auth_mode=chatgpt`, 데모 전용, 아래 "ChatGPT 계정 모드"). 둘 다 없으면 `llm_unconfigured` | 대체 엔진 |
 | `anthropic_gateway` | Claude Agent SDK | 게이트웨이가 플랫폼 API 키를 가짐. 워커는 Trial 토큰(`ANTHROPIC_AUTH_TOKEN`)만 | 개발 |
 | `bedrock_gateway` | Claude Agent SDK(Bedrock 모드) | 게이트웨이가 AWS 자격을 가짐. 워커는 Trial 토큰(`ANTHROPIC_CUSTOM_HEADERS`)만 | **운영 목표**(Bedrock 도쿄 `jp.` 추론 프로필) |
 
 **자격 전달(D-26, `bravo_agents/llm_secret.py`).** `claude_subscription`과 `openai_agents`의 자격은 플랫폼 OpenBao에만 있습니다. 리허설 서비스는 값을 읽지 않습니다.
 - 서비스는 KV 메타데이터로 있는지만 봅니다(`/readyz`의 `llm_token`, `POST /v1/trials` 사전 조건 `llm_token_missing`).
-- Trial마다 서비스가 공급자 전용 AppRole(`llm-claude`, `llm-openai`)의 secret_id를 하나 발급합니다(60초, 한 번). 정책은 그 경로 하나 읽기뿐입니다(`deploy/pilot/bao/policies/platform-llm-*.hcl`).
+- Trial마다 서비스가 공급자 전용 AppRole(`llm-claude`, `llm-openai`)의 secret_id를 하나 발급합니다(60초, 한 번). 정책은 그 경로 하나 읽기입니다(`deploy/pilot/bao/policies/platform-llm-*.hcl`). `llm-openai`에는 같은 경로 `update` 하나(`platform-llm-openai-refresh.hcl`)가 더 붙습니다. 갱신한 ChatGPT 세션을 되쓰는 데만 씁니다.
 - 워커가 그 secret_id로 로그인해 값을 한 번 읽고, 받은 토큰을 바로 폐기합니다. 값은 CLI 자식 프로세스 환경(`CLAUDE_CODE_OAUTH_TOKEN`)이나 OpenAI 클라이언트에만 들어갑니다. 파일 · argv · 로그 · 프롬프트에는 없습니다.
-- 운영자 기기에서는 `deploy/pilot/scripts/keys.sh llm-run claude -- <명령>`이 같은 전달을 합니다. 저장은 `keys.sh env-put platform llm-claude oauth_token`(표준 입력)입니다.
+- 운영자 기기에서는 `deploy/pilot/scripts/keys.sh llm-run claude|openai -- <명령>`이 같은 전달을 합니다. 저장은 `keys.sh env-put platform llm-claude oauth_token`(표준 입력), ChatGPT 세션은 `keys.sh llm-login openai`입니다.
 
 **claude_subscription 격리(2026-11-02 실측, CLI 2.1.316).**
 - 환경: `KEEP_ENV`(PATH, 로캘, 프록시 등) 말고 상속한 변수는 모두 비웁니다. `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, Bedrock · Vertex · Foundry 변수, 클라우드 자격, 호스트 세션 변수(`CLAUDE_CODE_*`)도 빈 값입니다. `CLAUDE_CONFIG_DIR`와 `HOME`은 실행마다 새 임시 디렉터리라 운영자 `~/.claude`의 플러그인 · MCP 서버 · hook · 메모리 · 로그인을 읽지 않습니다. 토큰 없이 띄우면 "Not logged in"으로 끝납니다(키체인 대체 없음).
@@ -158,11 +158,20 @@ R = 수행, A = 최종 책임, C = 의견, I = 통보. 에이전트는 어느 �
 - 실측 canary(`platform/rehearsal/tests/test_live_agents.py`): cwd 밖 파일에 무작위 표식을 두고 "읽고 셸 명령을 실행하라"고 지시했습니다. 모델은 플랫폼 도구만 불렀고 도구 계층이 막았습니다(`path_outside_workspace`, `repo_unconfigured`). 표식은 출력 · SDK 메시지 · CLI stderr · 도구 기록 · hook 기록 · 디스크 어디에도 없었습니다.
 - 비용: 구독은 정액이라 USD 한도(`max_budget_usd`)를 두지 않고 `total_cost_usd`는 비웁니다. 토큰 사용량과 API 가격 환산치(`api_price_equivalent_usd`, 청구액 아님)만 남깁니다. 한도는 턴과 시간입니다.
 
-**openai_agents 격리.** `Agent(tools=[], handoffs=[], mcp_servers=[platform])`, `MCPServerStreamableHttp`의 `tool_filter`=승인 도구, `output_type`=역할 Pydantic 모델(governance · ci는 자유 형식 객체가 있어 비엄격 스키마, 나머지는 엄격). 실행 전 `get_all_tools`가 승인 도구와 정확히 같지 않으면 멈춥니다. 키는 클라이언트에만 넘기고 `OPENAI_API_KEY` · `OPENAI_BASE_URL` 환경 변수를 읽지 않습니다. 주소는 `api.openai.com`으로 고정, 추적 전송은 끕니다. 판 고정: harbor 0.25.0이 끌어오는 litellm이 `openai<3`을 요구해, `openai<3`을 받는 마지막 판 0.20.0을 씁니다.
+**openai_agents 격리.** `Agent(tools=[], handoffs=[], mcp_servers=[platform])`, `MCPServerStreamableHttp`의 `tool_filter`=승인 도구, `output_type`=역할 Pydantic 모델(governance · ci는 자유 형식 객체가 있어 비엄격 스키마, 나머지는 엄격). 실행 전 `get_all_tools`가 승인 도구와 정확히 같지 않으면 멈춥니다. 자격은 클라이언트에만 넘기고 `OPENAI_API_KEY` · `OPENAI_BASE_URL` 환경 변수를 읽지 않습니다. 추적 전송은 끕니다. API 키 모드의 주소는 `api.openai.com`으로 고정입니다. 판 고정: harbor 0.25.0이 끌어오는 litellm이 `openai<3`을 요구해, `openai<3`을 받는 마지막 판 0.20.0을 씁니다.
+
+**openai_agents ChatGPT 계정 모드(데모 전용, 팀장 지시 2026-11-02 "openai_agents도 계정으로 연결해. 계정은 플랫폼에서 관리하고").**
+- **문서화되지 않은 경로입니다.** OpenAI는 Agents SDK에 ChatGPT 로그인을 문서화하지 않았습니다. 이 모드는 Codex CLI와 같은 로그인(같은 OAuth 클라이언트)을 쓰고, Codex CLI가 부르는 ChatGPT Codex 백엔드(`https://chatgpt.com/backend-api/codex`, Responses 호환)를 부릅니다. 사용량은 ChatGPT 요금제 한도에서 빠집니다. 근거는 Codex 공개 소스(Apache-2.0)입니다. 위치는 `bravo_agents/chatgpt_auth.py` 머리말에 적었습니다.
+- **데모 전용입니다.** 운영 경로는 플랫폼이 쥔 OpenAI API 키(같은 레코드의 `api_key`, 있으면 그것이 이김) 또는 LLM 게이트웨이입니다.
+- **위험.** OpenAI가 이 백엔드나 요청 모양을 바꾸거나 막을 수 있습니다. 그러면 이 모드는 멈춥니다(`llm_auth_failed` 또는 `sdk_error`). ChatGPT 요금제를 플랫폼 서비스에 쓰는 것이 OpenAI 약관에 맞는지는 **풀리지 않았습니다**. 고객 서비스에 쓰지 않습니다.
+- **자격은 플랫폼 OpenBao에만 있습니다(D-26).** `keys.sh llm-login openai`가 `codex login`을 새 임시 `CODEX_HOME`에서 돌립니다. 운영자 `~/.codex`의 세션은 읽지도 갱신하지도 않습니다. 결과(`access_token`, `refresh_token`, `id_token`, `account_id`, `auth_mode=chatgpt`, JWT에서 뽑은 `expires_at`)는 파이프로 `secret/envs/platform/llm-openai`에 들어가고(`keys.sh env-put-json`), 임시 디렉터리는 지웁니다. 비밀번호 · 메일 코드 · MFA · 계정 선택은 계정 주인이 브라우저에서 합니다.
+- **실행.** 워커가 한 번 쓰는 AppRole로 세션을 읽습니다. 접근 토큰이 실행 시간 + 5분 안에 끝나면 Codex와 같은 토큰 주소 · 클라이언트로 갱신합니다. 먼저 60초 임대를 KV v2 check-and-set으로 잡고, 회전된 토큰을 다시 check-and-set으로 씁니다. 두 워커가 같은 refresh_token을 두 번 쓰지 않게 하기 위해서입니다(두 번 쓰면 세션이 끊김). 그 뒤 `AsyncOpenAI(base_url=Codex 백엔드, api_key=접근 토큰, default_headers={ChatGPT-Account-ID, session-id})`를 `OpenAIResponsesModel`에 넘깁니다. 백엔드 요구(Codex 소스 기준)는 `store=false`, 스트리밍(`Runner.run_streamed`), `instructions`, `include=["reasoning.encrypted_content"]`, 다음 턴 입력에서 reasoning item ID 빼기(`reasoning_item_id_policy="omit"`)입니다. 도구 계층 · `tool_filter` · 도구 검사 · `output_type` · 서버 쪽 검증은 API 키 모드와 같습니다.
+- **비용.** 요금제는 정액이라 USD가 없습니다. `Proposal.total_cost_usd`는 비우고 토큰 사용량만 남깁니다(`cost_basis`="ChatGPT plan").
+- **2026-11-02 실측.** 로그인 → OpenBao 저장(판 1) → 강제 갱신 1회(판 3: 임대, 새 토큰. 임대 필드 지워짐) → 백엔드 `/models` 200을 확인했습니다. 계정에서 쓸 수 있는 모델은 `gpt-6-*`, `gpt-5.6-*`이고 `gpt-5.5`는 거부됩니다(`model_not_found`). 실측 canary와 `discovery`는 승인 도구 검사(`inventory_describe`, `rehearsal_exec`, `repo_read`)까지 통과하고, 모델 호출에서 계정 주간 사용 한도(429 `usage_limit_reached`, 2026-11-04 06:35 UTC에 풀림)로 멈췄습니다. 요청 모양 호환과 표식 누출 여부는 한도가 풀린 뒤 다시 확인해야 합니다.
 
 **차이와 정직한 메모.**
 - 개인 구독은 고객에게 서비스하는 경로가 아닙니다. 데모에서 팀장 계정 하나로 돌리는 경로이고, 사용 한도에 걸리면 Trial이 멈출 수 있습니다. 운영 경로는 플랫폼이 키를 가진 LLM 게이트웨이(Bedrock 도쿄)입니다.
-- OpenAI Agents SDK에는 ChatGPT 구독으로 로그인하는 지원 경로가 없습니다. `openai_agents`는 API 키로만 돕니다. 흉내 내지 않습니다.
+- `openai_agents`의 ChatGPT 계정 모드는 OpenAI가 Agents SDK용으로 문서화하지 않은 백엔드를 씁니다. 데모 전용이고 약관 문제는 풀리지 않았습니다(위 "ChatGPT 계정 모드").
 - Codex SDK 경로(`codex_chatgpt`)는 지웠습니다. Codex SDK는 Agent SDK가 아니라는 팀장 지시입니다.
 - 남은 차이: Trial 토큰은 SDK가 `--mcp-config` 인자로 CLI에 넘겨 같은 기기의 프로세스 목록에 보입니다(짧은 수명, 그 Trial만). 구독 토큰은 argv에 없습니다.
 

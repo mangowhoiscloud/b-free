@@ -5,10 +5,11 @@
 #
 #   name           in-cluster Service (ns)                 laptop target
 #   openbao        openbao:8200 (external-secrets)          platform OpenBao (ESO, D-26): port-forward to
-#                                                           bravo-platform openbao/openbao-0, or the pilot
-#                                                           127.0.0.1:8200 while custody says bao_target=pilot
-#   platform-otel  platform-otel:4317 (bravo-observability) platform Collector: port-forward to bravo-platform
-#                                                           bravo-observe/svc/otel-collector:4317, or
+#                                                           <platform context> openbao/openbao-0 (custody
+#                                                           bao_target platform-rke2 | platform-eks), or the
+#                                                           pilot 127.0.0.1:8200 while bao_target=pilot
+#   platform-otel  platform-otel:4317 (bravo-observability) platform Collector: port-forward to the platform
+#                                                           context bravo-observe/svc/otel-collector:4317, or
 #                                                           BRAVO_PLATFORM_OTLP_ADDR (host:port on the laptop)
 #   src-db-link    src-db-link:5432 (chat)                  source DB app path the platform opens on the laptop
 #                                                           (CLOUD-E2E-CONTRACT §9: 127.0.0.1:15434)
@@ -57,7 +58,7 @@ start_one() {   # start_one NAME NS LOCALPORT -- target args...
 
 cmd_start() {
   mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
-  if [[ $BAO_TARGET == platform-eks ]]; then
+  if [[ $BAO_TARGET == platform-* ]]; then
     start_one openbao external-secrets 17181 -- --target-context "$PLATFORM_CONTEXT" --target-namespace openbao \
       --target-resource pod/openbao-0 --target-remote-port 8200 --target-local-port 18210 --target-probe tcp
   else

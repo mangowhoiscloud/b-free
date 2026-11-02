@@ -1,10 +1,11 @@
 /**
  * App-wide state: the API client, the dev user (token), and the plan event stream.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ApiClient, StreamStatus } from './api/client';
-import type { DevToken, PlanEvent, Role } from './api/types';
+import type { DevToken, PlanEvent } from './api/types';
+import type { Me } from './api/home';
 
 const ApiContext = createContext<ApiClient | null>(null);
 
@@ -34,63 +35,20 @@ function writeStorage(key: string, value: string | null): void {
   }
 }
 
-/** Best-effort read of the JWT payload email. UI hint only; the API verifies the token. */
-function emailFromJwt(token: string): string | null {
-  const part = token.split('.')[1];
-  if (!part) return null;
-  try {
-    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) as unknown;
-    if (typeof json === 'object' && json !== null && 'email' in json && typeof json.email === 'string') return json.email;
-  } catch {
-    return null;
-  }
-  return null;
-}
-
 export interface Session {
-  tokens: DevToken[];
-  tokensError: unknown;
-  tokensLoading: boolean;
+  /** GET /v1/me result; error when the endpoint is missing or the session is not authenticated. */
+  me: { data: Me | undefined; error: unknown; loading: boolean };
+  /** The logged-in user as the panels need it. Login is Cloudflare Access only (audit A3): no token in
+   *  the browser, the Access cookie goes with every same-origin call and the edge adds the assertion. */
   user: DevToken | null;
-  selectRole: (role: Role) => void;
-  setPastedToken: (token: string) => void;
 }
-
-const ROLE_KEY = 'bravo.role';
 
 export function useSession(): Session {
   const api = useApi();
-  const tokensQ = useQuery({ queryKey: ['dev-tokens'], queryFn: () => api.getDevTokens(), staleTime: Infinity, retry: 1 });
-  const [role, setRole] = useState<Role>(() => {
-    const r = readStorage(ROLE_KEY);
-    return r === 'approver' || r === 'viewer' ? r : 'operator';
-  });
-  const [pasted, setPasted] = useState<DevToken | null>(null);
-
-  const tokens = useMemo(() => tokensQ.data ?? [], [tokensQ.data]);
-  const user = pasted ?? tokens.find((t) => t.role === role) ?? tokens[0] ?? null;
-
-  const selectRole = useCallback((r: Role) => {
-    setPasted(null);
-    setRole(r);
-    writeStorage(ROLE_KEY, r);
-  }, []);
-
-  const setPastedToken = useCallback((token: string) => {
-    const email = emailFromJwt(token) ?? '알 수 없음';
-    const local = email.split('@')[0];
-    const inferred: Role = local === 'operator' || local === 'approver' ? local : 'viewer';
-    setPasted({ role: inferred, email, token });
-  }, []);
-
-  return {
-    tokens,
-    tokensError: tokensQ.error,
-    tokensLoading: tokensQ.isLoading,
-    user,
-    selectRole,
-    setPastedToken,
-  };
+  const meQ = useQuery({ queryKey: ['me'], queryFn: () => api.getMe(''), retry: 0, staleTime: 60_000, refetchInterval: 60_000 });
+  const me = meQ.data;
+  const user: DevToken | null = me?.email && me.role ? { email: me.email, role: me.role, token: '' } : null;
+  return { me: { data: me, error: meQ.error, loading: meQ.isLoading }, user };
 }
 
 export interface PlanStream {
@@ -126,12 +84,13 @@ export function usePlanStream(planId: string | null, token: string | null): Plan
   }, [planId]);
 
   useEffect(() => {
-    if (!planId || !token) {
+    if (!planId) {
       setStatus('closed');
       return;
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = api.subscribe(token, planId, lastId.current, {
+    // token null: the Access cookie carries the identity (same-origin deployment).
+    const unsubscribe = api.subscribe(token ?? '', planId, lastId.current, {
       onEvent(e) {
         if (seen.current.has(e.id)) return;
         seen.current.add(e.id);

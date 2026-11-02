@@ -24,7 +24,8 @@
 
 | 화면 | 출처 | 갱신 |
 |---|---|---|
-| 계획 · 승인 콘솔 | API `GET /v1/plans/{id}`, 계획 SSE. 기존 게이트 · 승인 · 컷오버 · 이벤트 칸 | SSE, 15초 |
+| 홈(첫 화면) | 로그인 사용자와 역할 `GET /v1/me`, 환경 `GET /v1/environments` + 수집기 클러스터 상태, 계획 목록 `GET /v1/plans`(상태 · 출발 → 목적 · 승인 대기, 줄을 누르면 계획 화면). 운영자는 "새 이전 시작"(`POST /v1/plans`), 승인자는 내 승인 대기 표. 경로가 없으면 "연결 안 됨"과 이유 | 5초(환경 10초) |
+| 계획 · 승인 콘솔 | API `GET /v1/plans/{id}`, 계획 SSE. 기존 게이트 · 승인 · 컷오버 · 이벤트 칸. `/plans/<id>` 주소로 열면 이 화면 | SSE, 15초 |
 | 승인 (change · cutover · failback) | 계획 SSE `approval.granted`, 기존 승인 칸. change의 diff · 이미지 digest · 정책 diff는 API 계약 문서가 생길 때까지 "연결 안 됨" | SSE |
 | 에이전트 실시간 | 계획 SSE `trial.*`, `tool.denied`, `analysis.done`. 허용된 도구 호출은 API가 내보내지 않아 "연결 안 됨" | SSE |
 | 클러스터 실시간 | 수집기 `GET /v1/clusters`(읽기 전용 get/list, Secret 안 읽음): 노드, 워크로드 준비, 랜딩 존 구성 요소. 프로비저닝 상태는 상태 원장이 열릴 때까지 "연결 안 됨" | 5초 |
@@ -58,7 +59,8 @@
 
 ## API와 맞춘 것
 
-- 인증은 `Cf-Access-Jwt-Assertion` 헤더입니다. 개발용 사용자는 `GET /v1/dev/tokens`에서 받습니다. 토큰은 저장하지 않습니다.
+- 인증: 배포(`b-free`, Cloudflare Access 뒤, 콘솔과 API가 같은 출처)에서는 브라우저가 Access 쿠키를 보내고(`credentials: 'same-origin'`), Cloudflare가 `Cf-Access-Jwt-Assertion`을 붙입니다. 로그인한 사람과 역할은 `GET /v1/me`로 받습니다. 로컬 실행에서는 개발용 사용자를 `GET /v1/dev/tokens`에서 받아 그 토큰을 헤더로 보냅니다. 토큰은 저장하지 않습니다.
+- `GET /v1/me`, `GET /v1/plans`, `GET /v1/environments`는 플랫폼 API 작업이 추가하는 중이고 응답 형식 계약이 아직 없습니다. `src/api/home.ts`가 방어적으로 읽고(목록은 배열 또는 `{plans|environments|items: [...]}`), 없는 값은 "—"로 둡니다.
 - 쓰기 요청마다 `Idempotency-Key`를 보냅니다. 승인은 승인 요청 ID마다, 컷오버는 승인 ID마다 키 하나를 씁니다. 같은 키로 다시 보내면 서버가 처음 결과를 돌려줍니다.
 - 이벤트 흐름은 `fetch` 기반 SSE(`@microsoft/fetch-event-source`)입니다. `EventSource`는 헤더를 못 보내기 때문입니다. 끊기면 `Last-Event-ID`로 다시 붙습니다.
 - 주소 `/plans/<plan_id>`는 API의 `console_url`과 같습니다. `#approve`로 열면 승인 칸으로 갑니다.

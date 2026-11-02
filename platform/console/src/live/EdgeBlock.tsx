@@ -1,10 +1,9 @@
 /**
- * Edge: the public name and the per-environment names (CLOUD-E2E-CONTRACT §6), resolved live through a
- * public DNS-over-HTTPS JSON resolver. Tunnel status and LB weights need the Cloudflare API, whose token
- * lives only in the platform OpenBao (D-26), so they show "연결 안 됨" / "LB 구독 필요".
+ * Edge: the demo app's public names (BRAVO_PUBLIC_FRONT_HOST, BRAVO_APP_ENVS), resolved live through a
+ * public DNS-over-HTTPS JSON resolver. LB pools, tunnel status and the active environment need the Cloudflare
+ * API (token only in the platform OpenBao, D-26); the console has no source for them, so it says so.
  */
 import { useQuery } from '@tanstack/react-query';
-import { Text } from '@astryxdesign/core/Text';
 import { Block, DataTable } from './ScreenFrame';
 import { asArray, asRecord, Fresh, getJson, liveReason, NotConnected, num, str, Tag, useConfig } from './live';
 
@@ -62,22 +61,13 @@ export function EdgeBlock() {
           ]}
         />
       )}
-      <Text type="supporting" color="secondary" as="p">
-        출처: 공개 DNS-over-HTTPS <span className="mono">{dohUrl ?? '—'}</span>. 대표 이름은 LB 구독 전까지 활성 환경 터널을 가리키는 CNAME 하나입니다. 우리 플랫폼은 b-free입니다(CLOUD-E2E-CONTRACT §6).
-      </Text>
-      <DataTable
-        rows={[
-          { k: '활성 환경', v: '연결 안 됨', why: 'Cloudflare 레코드 내용(터널 ID)을 읽는 플랫폼 읽기 전용 경로가 없습니다. 프록시된 레코드는 공개 DNS로 터널 대상을 볼 수 없습니다' },
-          { k: '터널 상태', v: '연결 안 됨', why: 'Cloudflare API 토큰은 플랫폼 OpenBao에만 있고(D-26) 터널 상태를 읽어 주는 플랫폼 엔드포인트가 아직 없습니다' },
-          { k: 'LB 가중치', v: 'LB 구독 필요', why: 'Cloudflare Load Balancing 구독 전에는 가중치가 없습니다. 전환은 CNAME 교체입니다' },
-        ]}
-        rowKey={(r) => r.k}
-        empty=""
-        cols={[
-          { key: 'k', header: '항목', render: (r) => r.k },
-          { key: 'v', header: '상태', render: (r) => <Tag variant={r.v === 'LB 구독 필요' ? 'warning' : 'neutral'} label={r.v} /> },
-          { key: 'w', header: '이유', weight: 4, render: (r) => <Text type="supporting" color="secondary">{r.why}</Text> },
-        ]}
+      <p className="foot">
+        출처: 공개 DNS-over-HTTPS <span className="mono">{dohUrl ?? '—'}</span>. 프록시된 레코드는 공개 DNS로 Cloudflare 주소만 보입니다.
+      </p>
+      <NotConnected
+        title="LB · 터널 · 활성 환경 연결 안 됨"
+        endpoint="Cloudflare API (플랫폼 경유)"
+        reason="이 콘솔은 LB 풀 가중치, 터널 상태, 활성 환경을 읽는 출처가 없습니다. Cloudflare API 토큰은 플랫폼 OpenBao에만 있습니다(D-26)."
       />
     </Block>
   );

@@ -3,7 +3,7 @@
 스펙 10장(정본 사본 `docs/spec/spec-v0.1-r2-snapshot.html`)의 270초 흐름을 실제 환경에서 돌리는 각본입니다. 목표는 270초, 여유는 30초입니다. 스펙대로 클러스터 생성, 초기 복사, 기준선 통제 시험은 미리 실행하고 실행 ID와 시각을 보입니다. 게이트, AI 수정, 트래픽 전환, 컷오버, 되돌리기는 라이브로 합니다.
 
 **규칙.**
-- 실제 대상만 씁니다. 출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS입니다. 노트북 Compose 파일럿은 내렸습니다(`deploy/CLOUD-E2E-CONTRACT.md` 6.1).
+- 실제 대상만 씁니다. 출발지 EKS, 온프렘 RKE2(CIS), GKE, 플랫폼 RKE2입니다. 2026-11-02 21:10 KST에 팀장이 RKE2를 스펙 r2대로 되돌렸습니다("스펙 그대로 전부", "RKE2 관련만", ADR 0010). 1.1절의 관측은 그 전에 만든 K3s · EKS 판입니다. 노트북 Compose 파일럿은 내렸습니다(`deploy/CLOUD-E2E-CONTRACT.md` 6.1).
 - 일어나지 않은 결과는 적지 않습니다. 빠진 것이 있는 장면은 "준비 중: <빠진 것>"으로 적습니다.
 - Compose 시절 측정은 "파일럿(노트북) 기록"으로만 인용합니다. 클라우드 결과가 아닙니다(`docs/evidence/pilot-notebook/`).
 - 관측 시각은 2026-11-02 20:25–20:57 KST입니다. 다른 갈래가 같은 시간에 환경을 올리고 있어 상태가 빠르게 바뀝니다. 데모 전에는 `docs/demo/INTEGRATION-CHECK.md`로 다시 확인합니다.
@@ -15,9 +15,9 @@
 | 역할 | 실체 | 접근 | 관측(2026-11-02 KST, 읽기 전용) |
 |---|---|---|---|
 | 출발지 `source-aws` | Amazon EKS `bravo-source`, ap-northeast-2, K8s 1.36, t4g.large(arm64) 1대 | kubectl `bravo-source` | 20:25 노드 1 Ready, 앱 네임스페이스 없음. 20:49 Cilium · Hubble Running. 20:57 `cf-edge/cloudflared` 2, `chat/chat-db-1`, ESO, 역방향 링크 `dst-db-link` Running, `chat-pgbouncer`는 Init. 데모 앱 Pod는 아직 없음 |
-| 목적지 1 `target-onprem` | Lima VM 2대 위 K3s v1.36.5+k3s1(`infra/envs/target-onprem`) | kubectl `bravo-onprem` | 20:49 노드 2 Ready. `chat`의 데모 앱 2, `chat-db-1`, `chat-pgbouncer`, `cf-edge/cloudflared` 2 Running. 20:50 `https://b-free-chat-dst.mangowhois.ai/api/config`가 HTTP 200, `env.id=onprem` |
+| 목적지 1 `target-onprem` | 목표: Ubuntu VM + RKE2(CIS), 공통 cloud-init(T2). 지금 떠 있는 것: 결정 전 Lima VM 2대 위 K3s v1.36.5+k3s1(`infra/envs/target-onprem`) | kubectl `bravo-onprem`(RKE2도 같은 이름) | 준비 중: RKE2 설치(cloud-init 없음). K3s 판 관측: 20:49 노드 2 Ready. `chat`의 데모 앱 2, `chat-db-1`, `chat-pgbouncer`, `cf-edge/cloudflared` 2 Running. 20:50 `https://b-free-chat-dst.mangowhois.ai/api/config`가 HTTP 200, `env.id=onprem` |
 | 목적지 2 `target-gcp` | GKE `bravo-target-gcp`, 프로젝트 `b-free-target-20261102`, asia-northeast1-b | 컨텍스트 미보고 | 20:49 `RUNNING`, 1.36.4-gke.2377000. 랜딩 존 설치는 확인하지 못함 |
-| 플랫폼 | Amazon EKS `bravo-platform`(1.36), 노드 그룹 core 3개(2a · 2b · 2c)와 agents 1개(taint `pool=agents:NoSchedule`) | kubectl `bravo-platform` | 20:30 `CREATING`, 20:49 `ACTIVE`. 20:56 `bravo-control`에 api, operator-mcp, console, collector, gate, rehearsal, `executor-0`, CNPG `platform-db`(DB `bravo`, 복제본 생성 중) Running. `openbao/openbao-0`, `bravo-observe`(Prometheus · Tempo · Loki · Grafana · Collector), `cf-edge/cloudflared` Running |
+| 플랫폼 | 목표: VPC ②의 EC2 1대 + RKE2 단일 노드(T7, 스펙 §7.2). 지금 떠 있는 것: 결정 전 Amazon EKS `bravo-platform`(1.36), 노드 그룹 core 3개(2a · 2b · 2c)와 agents 1개(taint `pool=agents:NoSchedule`) | RKE2 컨텍스트 없음. EKS 판은 kubectl `bravo-platform` | 준비 중: EC2 + RKE2 생성과 서비스 이전. EKS 판 관측: 20:30 `CREATING`, 20:49 `ACTIVE`. 20:56 `bravo-control`에 api, operator-mcp, console, collector, gate, rehearsal, `executor-0`, CNPG `platform-db`(DB `bravo`, 복제본 생성 중) Running. `openbao/openbao-0`, `bravo-observe`(Prometheus · Tempo · Loki · Grafana · Collector), `cf-edge/cloudflared` Running |
 | Executor | 플랫폼 EKS `bravo-control/executor-0`(Service `executor:8081`). 클라우드 E2E 스크립트는 노트북 프로세스(`deploy/cloud/executor.sh`, `http://127.0.0.1:8085`)를 씀 | 둘 중 어느 것이 데모용인지 확인 필요 | 노트북 쪽은 20:56 응답 없음. 플랫폼 쪽은 Pod Running, API 응답은 확인하지 않음 |
 | 키 보관소 | 플랫폼 OpenBao. 20:25에는 노트북 `platform-bao` 컨테이너, 20:56에는 플랫폼 EKS `openbao/openbao-0` | `deploy/pilot/scripts/keys.sh status`(BAO_ADDR 기본 127.0.0.1:8200) | 20:56 `docker ps`에 `platform-bao` 없음. 노트북 스크립트가 플랫폼 EKS 금고에 닿으려면 port-forward 필요 |
 | 앞단 | Cloudflare `mangowhois.ai` | `infra/envs/edge` 출력 | `b-free`(플랫폼)는 Cloudflare Access 로그인으로 302(20:56). `b-free-chat`(고객 앱 대표)와 `b-free-chat-src`는 20:50에 530, 20:57에 502. `b-free-chat-dst`는 200(20:50). LB pool 없음(`pool_ids = {}`) |
@@ -43,8 +43,8 @@
 
 | 스펙 r2 문구 | 데모에서 쓰는 것 | 근거 |
 |---|---|---|
-| 목적지 · 플랫폼 RKE2(CIS), 플랫폼 EC2 | 온프렘 K3s, GKE, 플랫폼 EKS. K8s는 세 환경 1.36 | D-21, ADR 0004 |
-| 목적지 하나(온프렘) | 온프렘 K3s와 GKE. 같은 계약의 랜딩 존 | D-23, D-01, ADR 0006 |
+| 목적지 · 플랫폼 RKE2(CIS), 플랫폼 EC2 | **스펙 그대로**: 온프렘 Ubuntu VM + RKE2(CIS), 플랫폼 EC2 1대 + RKE2 단일 노드, 공통 cloud-init. K8s 1.36(RKE2 v1.36.5+rke2r1, 제안). 21:10 전의 K3s · 플랫폼 EKS 결정(ADR 0004)은 대체됨 | D-21 부분 철회, ADR 0010 |
+| 목적지 하나(온프렘) | 온프렘 RKE2와 GKE. 같은 계약의 랜딩 존 | D-23, D-01(D-21의 남은 범위), ADR 0006 |
 | SeaweedFS 첨부 저장소 | 같은 S3 계약 + 환경별 엔진(온프렘 RGW, GKE Cloud Storage). 게이트는 OBJ-01–06 행동 시험 | D-22, ADR 0005 |
 | Tailscale 경로 | 목표는 Cloudflare Tunnel + Access 링크. 지금은 "임시 링크(D-16 전)": 플랫폼의 `kubectl port-forward`(`deploy/cloud/link.sh`) | D-16, ADR 0003, 계약 7절 |
 | 목적지마다 OpenBao | 플랫폼 OpenBao 하나. 고객 클러스터는 ESO만 | D-26, ADR 0007 |
@@ -76,7 +76,8 @@
 | 순서 | 화면 | 조작(명령 · API) | 증거 | 상태 |
 |---|---|---|---|---|
 | 1 | `#/demo`, 앱 `/join` | 심사위원이 QR로 `https://b-free-chat.mangowhois.ai/join`에 들어와 채팅 | 출발지 `chat-db`의 `messages` 행, Prometheus `chat_writes_total` | 준비 중: 출발지 EKS의 데모 앱(20:57 Pod 없음, `chat-pgbouncer` Init). `b-free-chat`, `b-free-chat-src`는 20:57에 HTTP 502(커넥터는 붙었고 원점이 아직 없음) |
-| 2 | `#/clusters` | 사전 구축 기록을 보임: `terraform -chdir=infra/envs/<env> output`, 수집기 `GET /v1/clusters` | Terraform 상태(S3 `envs/<env>.tfstate`, 온프렘은 로컬 상태), 수집기 응답의 `observed_at` | 클러스터 넷은 있음(1.1절). 수집기 Pod는 플랫폼 EKS에서 Running(20:56), 응답은 확인하지 않음. 준비 중: 생성 실행 ID와 시각을 적은 사전 실행 기록 |
+| 2 | `#/clusters` | 사전 구축 기록을 보임: 빈 Ubuntu VM에 공통 cloud-init으로 RKE2를 CIS 프로필로 세운 실행 기록(스펙 S1 기본 흐름 4, 인수 조건 "RKE2가 CIS 프로필로 뜨고 실행 기록이 남는다"), `terraform -chdir=infra/envs/<env> output`, 수집기 `GET /v1/clusters` | cloud-init 로그, `rke2-server` 기동 기록, kube-bench 결과(T2), Terraform 상태 | 준비 중: RKE2 cloud-init과 그 실행 기록(`infra/cloud-init/` 비어 있음). 지금 있는 클러스터는 결정 전 K3s · EKS 판(1.1절) |
+| 2a | `#/clusters`, `#/workflow` | 스펙 S1 예외 4a를 사전 실행 기록으로 보임: CIS 프로필이 조건 미충족(sysctl, etcd 사용자)으로 시작을 거부함. 공통 cloud-init의 조건을 고치고 재설치함 | 거부 기록(`rke2-server` 로그), 고친 cloud-init의 diff, 재설치 뒤 기동 기록과 kube-bench 결과 | 준비 중: RKE2 cloud-init 없음, 거부와 재설치의 실제 실행 기록 없음 |
 | 3 | `#/plan` 의존성 칸, `#/ending` | 수집기 `GET /v1/inventory`(앱 코드 · 차트 정적 탐지, 3등급) | 응답의 `input_digest`, `rules_version` | 탐지기는 동작함. 20:30 응답은 설정 교체 2, 어댑터 추가 1, 코드 수정 2, 이전 불필요 2, 미분류 1(파일럿(노트북) 기록, Compose 수집기). 준비 중: 플랫폼 EKS 수집기의 응답 확인, 출발지 설정 수집(S3 정책 · IAM · KMS)의 읽기 전용 역할 |
 | 4 | `#/plan` 게이트 칸 | 운영자 MCP `plan_create` 뒤 `env_controls`, 게이트 `GET /v1/controls?source=source-aws&target=target-onprem&level=control`. 환경 등록부는 `deploy/environments/real-targets.yaml` | 통제 ID별 PASS · FAIL · UNKNOWN 표, `rule_version` | 게이트 Pod Running(20:56). 준비 중: 실제 환경 대상 시험 실행 기록. 감사 A5 · B16 · B17(OBJ-05 · 06 거짓 PASS 등)이 열려 있어 그 전에는 결과를 보이지 않음 |
 | 5 | `#/plan` 게이트 칸 | MCP `gate_run`(또는 `POST /v1/plans/{id}/gate`) | `gate.verdict` 이벤트 BLOCK, 이유에 OBJ-01(목적지 버킷의 서명 없는 GET 허용) | 준비 중: 온프렘 Rook-Ceph RGW와 열린 버킷 심기(랜딩 존 설치기에 RGW 단계 없음) |
@@ -90,7 +91,7 @@
 
 | 순서 | 화면 | 조작(명령 · API) | 증거 | 상태 |
 |---|---|---|---|---|
-| 1 | `#/agents` | 상태 머신이 리허설 서비스 `POST /v1/trials`를 부름. 모델 경로 `claude_subscription`(데모 전용, ADR 0009). Trial 네임스페이스 `rehearsal-<plan>-<n>`이 목적지 K3s에 생김 | Trial 폴더(Harbor 형식), `trial.proposed` 이벤트, `docs/evidence/rehearsals.tsv` 한 줄 | 리허설 서비스 Pod Running(20:56). 준비 중: 실제 Trial 1회, 목적지 kubeconfig(없으면 `cluster_unconfigured`), digest 고정 샌드박스 · 검증기 이미지. 감사 B8(모든 역할 리허설이 INFRA_ERROR), B9(`repo_read` 루트) 열림 |
+| 1 | `#/agents` | 상태 머신이 리허설 서비스 `POST /v1/trials`를 부름. 모델 경로 `claude_subscription`(데모 전용, ADR 0009). Trial 네임스페이스 `rehearsal-<plan>-<n>`이 목적지 RKE2에 생김 | Trial 폴더(Harbor 형식), `trial.proposed` 이벤트, `docs/evidence/rehearsals.tsv` 한 줄 | 리허설 서비스 Pod Running(20:56). 준비 중: 실제 Trial 1회, 목적지 kubeconfig(없으면 `cluster_unconfigured`), digest 고정 샌드박스 · 검증기 이미지. 감사 B8(모든 역할 리허설이 INFRA_ERROR), B9(`repo_read` 루트) 열림 |
 | 2 | `#/agents` | 에이전트가 정리를 이유로 버킷 삭제를 시도. 도구 계층이 파괴적 동사를 거부. 네임스페이스 밖 접속은 Cilium NetworkPolicy가 막음 | `tool.denied` 이벤트, Hubble 흐름 `POLICY_DENIED` | 도구 계층 거부는 시험으로 확인됨(`platform/rehearsal/tests/test_tool_layer.py`). 준비 중: 실제 Trial에서 난 기록 |
 | 3 | `#/agents` | 분리 검증기가 `verify-<plan>-<n>`에서 판정 | `trial.verdict` PASS, 검증 Pod UID, 산출물 digest | 준비 중: 실제 Trial. 감사 B7(검증기는 제안 JSON 정적 검사뿐) 열림 |
 | 4 | `#/approvals` change | 승인자가 콘솔에서 승인(요청자와 다른 사람). 반영은 T31 경로(신뢰된 빌드, cosign 서명, 승인 digest와 대조 뒤 배포) | `approval.granted`(stage `change`), 배포 digest | 준비 중: API 승인 단계가 `cutover`, `failback`뿐이고 `change`가 없음(`platform/api/src/bravo_api/migrations/0003_full_path.sql`). T31 반영 경로 없음 |
@@ -194,7 +195,10 @@
 
 | 장면 | 빠진 것 | 관련 작업 |
 |---|---|---|
-| 공통 | 플랫폼 EKS 서비스는 20:56에 Running. 남은 것: Access 로그인 뒤 화면 확인, 데모용 Executor 하나로 정하기, 노트북 스크립트의 금고 경로(port-forward) | T7, T10, T21 |
+| 공통 | 플랫폼을 EC2 1대 + RKE2 단일 노드로 세우고(공통 cloud-init) 지금 EKS 판에서 도는 서비스 · OpenBao · 관측을 옮기기. RKE2 컨텍스트를 계약 2절에 보고 | T7, ADR 0010 |
+| 공통 | Access 로그인 뒤 콘솔 화면 확인, 데모용 Executor 하나로 정하기, 노트북 스크립트의 금고 경로(port-forward) | T10, T21 |
+| 0:00 S1 | 온프렘 Ubuntu VM + RKE2(CIS) 공통 cloud-init, kube-bench 결과, 사전 실행 기록. `rke2` 랜딩 존 overlay(Cilium 붙이는 방법, 블록 저장 바탕 포함) | T2, ADR 0010 |
+| 0:00 S1 | 예외 4a(CIS 시작 거부, cloud-init 조건 수정, 재설치)의 실제 실행 기록 | T2 |
 | 공통 | 클라우드 사전 실행 기록(`docs/evidence/`). 270초 통합 리허설 3회 연속 | T28 |
 | 0:00 S1 | 출발지 EKS의 데모 앱과 `chat-admin`, `chat-pgbouncer` 기동. `b-free-chat` 502 해소 | T6 |
 | 0:00 S1 | 실제 환경 통제 시험 실행과 감사 A5 · B16 · B17 해소 | T14, T19 |

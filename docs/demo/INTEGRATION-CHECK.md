@@ -1,6 +1,6 @@
 # 중간 통합 점검(T28)
 
-스펙 T28의 세부 작업 "중간 통합 점검 2회: S1–S2 연결, S3–S4 연결"의 점검표입니다. 실제 대상(출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS)에서만 봅니다. 노트북 Compose 파일럿은 쓰지 않습니다(`deploy/CLOUD-E2E-CONTRACT.md` 6.1).
+스펙 T28의 세부 작업 "중간 통합 점검 2회: S1–S2 연결, S3–S4 연결"의 점검표입니다. 실제 대상(출발지 EKS, 온프렘 RKE2(CIS), GKE, 플랫폼 EC2 + RKE2)에서만 봅니다. 2026-11-02 21:10 KST 결정(ADR 0010) 전의 관측은 K3s · EKS 판이라 "지금" 칸에 그렇게 표시합니다. 노트북 Compose 파일럿은 쓰지 않습니다(`deploy/CLOUD-E2E-CONTRACT.md` 6.1).
 
 **쓰는 법.**
 - 항목마다 명령을 그대로 돌리고, "기대하는 실제 신호"와 출력을 비교합니다. 하나라도 다르면 그 항목은 FAIL입니다. 출력을 볼 수 없으면 UNKNOWN이고, UNKNOWN은 통과로 세지 않습니다.
@@ -12,13 +12,14 @@
 
 ```sh
 SRC=bravo-source            # 출발지 EKS 컨텍스트
-DST=bravo-onprem            # 온프렘 K3s 컨텍스트(deploy/cloud/cloud.env DST_CONTEXT)
+DST=bravo-onprem            # 온프렘 RKE2 컨텍스트(이름은 K3s 때와 같음, deploy/cloud/cloud.env DST_CONTEXT)
+PLAT=<플랫폼 RKE2 컨텍스트>   # 아직 없음(계약 2절에 보고되면 채움). 결정 전 EKS 판은 bravo-platform
 GCP_PROJECT=b-free-target-20261102
 EXECUTOR=http://127.0.0.1:8085   # deploy/cloud/executor.sh(cloud.env LINK_BIND:EXECUTOR_PORT)
 FRONT=b-free-chat.mangowhois.ai
-# 플랫폼 서비스 주소. 플랫폼 EKS에 배포된 뒤 정함(준비 중)
-# 20:56 플랫폼 EKS ns bravo-control의 Service: api 8080, gate 8084, collector 8083, rehearsal 8090, executor 8081
-# 예: kubectl --context bravo-platform -n bravo-control port-forward svc/gate 18084:8084
+# 플랫폼 서비스 주소. 플랫폼 RKE2에 배포된 뒤 정함(준비 중)
+# Service 이름과 포트(20:56 EKS 판 관측, 같은 차트라 RKE2에서도 같다고 봄): api 8080, gate 8084, collector 8083, rehearsal 8090, executor 8081
+# 예: kubectl --context $PLAT -n bravo-control port-forward svc/gate 18084:8084
 API=<플랫폼 API>  GATE=<게이트>  COLLECTOR=<수집기>  REHEARSAL=<리허설 서비스>
 ```
 
@@ -33,15 +34,17 @@ S1이 만든 것(환경, 인벤토리, 통제표, 게이트 1차 BLOCK)이 S2(�
 | A1 | 출발지 노드 | `kubectl --context $SRC get nodes` | 모든 노드 `Ready`, `v1.36.*` | 노드 1 Ready, v1.36.5-eks(20:49) |
 | A2 | 출발지 Cilium | `kubectl --context $SRC -n kube-system exec ds/cilium -- cilium-dbg status --brief` | `OK` | Cilium · Hubble Pod Running(20:49). 상태 명령은 돌리지 않음 |
 | A3 | 출발지 정책 집행 주체 | `aws eks describe-addon --cluster-name bravo-source --addon-name vpc-cni --query addon.configurationValues` 와 A2 | `enableNetworkPolicy=false`이고 A2가 `OK`(엔진은 Cilium 하나) | `enableNetworkPolicy=false`(20:3x). A2 미확인 |
-| A4 | 온프렘 노드 · Cilium | `kubectl --context $DST get nodes`, A2와 같은 명령을 `$DST`로 | 노드 2 `Ready`, `OK` | 노드 2 Ready(20:49) |
+| A4 | 온프렘 노드 · Cilium | `kubectl --context $DST get nodes -o wide`, A2와 같은 명령을 `$DST`로 | 모든 노드 `Ready`, 판 `v1.36.5+rke2r1`, `OK` | 준비 중: RKE2 없음. K3s 판은 노드 2 Ready, `v1.36.5+k3s1`(20:49) |
+| A4b | 온프렘 RKE2가 CIS 프로필 | VM 안에서 `sudo grep -E '^profile:' /etc/rancher/rke2/config.yaml`(Lima면 `limactl shell <vm> -- ...`), 그리고 kube-bench 결과 파일 | `profile: cis`(또는 그 판의 CIS 값), kube-bench 결과가 있음(T2 완료 기준) | 준비 중: RKE2 cloud-init 없음 |
+| A4c | 예외 4a 사전 기록 | `docs/evidence/`의 RKE2 시작 거부 · 재설치 기록 | 거부 로그, 고친 cloud-init diff, 재설치 뒤 기동 기록 | 준비 중: 기록 없음 |
 | A5 | GKE | `gcloud container clusters list --project $GCP_PROJECT --format='value(name,status,currentMasterVersion)'` | `bravo-target-gcp RUNNING 1.36.*` | `RUNNING 1.36.4-gke.2377000`(20:49). kubectl 컨텍스트는 미보고 |
-| A6 | 플랫폼 EKS | `aws eks describe-cluster --name bravo-platform --region ap-northeast-2 --query cluster.status --output text`, `kubectl --context bravo-platform -n bravo-control get pods` | `ACTIVE`, 플랫폼 서비스 Pod 모두 Running | `ACTIVE`(20:49). 20:56 api · operator-mcp · console · collector · gate · rehearsal · `executor-0` · `platform-db` Running(DB 복제본 생성 중) |
-| A7 | 플랫폼 API | `kubectl --context bravo-platform -n bravo-control port-forward svc/api 18080:8080` 뒤 `curl -s localhost:18080/readyz`. 앞단은 `https://b-free.mangowhois.ai`(Access 로그인) | HTTP 200 | Pod Running(20:56). `/readyz`는 확인하지 않음. `b-free`는 Access 로그인으로 302 |
+| A6 | 플랫폼 EC2 + RKE2 | `kubectl --context $PLAT get nodes -o wide`, `kubectl --context $PLAT -n bravo-control get pods` | 노드 1 `Ready`(`+rke2r1`), 플랫폼 서비스 Pod 모두 Running | 준비 중: EC2 + RKE2 없음. 결정 전 EKS 판 `bravo-platform`은 `ACTIVE`(20:49). 20:56 api · operator-mcp · console · collector · gate · rehearsal · `executor-0` · `platform-db` Running(DB 복제본 생성 중) |
+| A7 | 플랫폼 API | `kubectl --context $PLAT -n bravo-control port-forward svc/api 18080:8080` 뒤 `curl -s localhost:18080/readyz`. 앞단은 `https://b-free.mangowhois.ai`(Access 로그인) | HTTP 200 | Pod Running(20:56). `/readyz`는 확인하지 않음. `b-free`는 Access 로그인으로 302 |
 | A8 | 출발지 앱 계약 이름 | `kubectl --context $SRC -n chat get clusters.postgresql.cnpg.io/chat-db deploy/chat-pgbouncer svc/chat-admin` 그리고 `kubectl --context $SRC -n chat get clusters.postgresql.cnpg.io chat-db -o jsonpath='{.status.phase}'` | 세 개 모두 있음, `Cluster in healthy state` | 20:49 `chat` 없음. 20:57 `chat-db-1` Running, `chat-pgbouncer` Init, `chat-admin`은 확인하지 않음 |
 | A9 | 온프렘 앱 계약 이름 | A8을 `$DST`로 | A8과 같음 | `chat-db-1`, `chat-pgbouncer` Running(20:49). `chat-admin`, 상태 문구는 확인하지 않음 |
 | A10 | 앞단 대표 이름이 출발지 | `curl -s https://$FRONT/api/config \| jq -r .env.id` | `aws` | HTTP 530(20:50), 502(20:57) |
 | A11 | 목적지 직접 이름 | `curl -s https://b-free-chat-dst.mangowhois.ai/api/config \| jq -r .env.id` | `onprem` | `onprem`, HTTP 200(20:50) |
-| A12 | 금고 | 금고가 플랫폼 EKS(`openbao/openbao-0`)면 `kubectl --context bravo-platform -n openbao port-forward svc/openbao 8200:8200` 뒤 `deploy/pilot/scripts/keys.sh status` | 봉인 풀림, 감사 장치 있음 | 돌리지 않음. 20:56 노트북 `platform-bao` 없음, `openbao-0` Running |
+| A12 | 금고 | 금고가 플랫폼 클러스터(`openbao/openbao-0`)면 `kubectl --context $PLAT -n openbao port-forward svc/openbao 8200:8200` 뒤 `deploy/pilot/scripts/keys.sh status` | 봉인 풀림, 감사 장치 있음 | 돌리지 않음. 20:56 노트북 `platform-bao` 없음, `openbao-0` Running |
 | A13 | 임시 링크(D-16 전) | `deploy/cloud/link.sh status` | 모든 포워드 up, 끝에서 끝 상태 OK | 돌리지 않음 |
 | A14 | Executor | `curl -s $EXECUTOR/v1/readiness \| jq '{direction, sub_state, lag_bytes}'` | `forward`, `streaming`, `lag_bytes` 작음 | 응답 없음(20:46) |
 | A15 | 정방향 복제 | `deploy/cloud/repl_setup.sh status` | 목적지 `bravo_fwd_sub` enabled에 worker_pid 있음, 출발지 `bravo_rev_sub` 있고 disabled, `app_writer`는 출발지만 LOGIN | 돌리지 않음(A8 미충족) |

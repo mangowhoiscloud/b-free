@@ -48,6 +48,9 @@ class K3sContainerd:
         self.kubectl = kubectl
         self.limactl = limactl
         self.ctx = resolve_context(kubectl, dest)
+        # containerd CLI on the node: K3s ``k3s ctr``; RKE2 ``/var/lib/rancher/rke2/bin/ctr --address
+        # /run/k3s/containerd/containerd.sock`` (the on-prem cluster was rebuilt as RKE2 on 2026-11-02).
+        self.ctr = dest.get("ctr", "k3s ctr")
 
     def k(self, *args: str, timeout: float = 60, check: bool = True, input_bytes: bytes | None = None):
         return run([self.kubectl, "--context", self.ctx, *args], env=clean_env(keep=KUBE_ENV), timeout=timeout,
@@ -75,7 +78,7 @@ class K3sContainerd:
 
     def node_digest(self, node: str, ref: str) -> str | None:
         """DIGEST column of ``ref`` in the node's containerd (k8s.io namespace), or None."""
-        out = self._sh(node, f"sudo k3s ctr -n k8s.io images ls 'name=={ref}'", timeout=60).stdout.decode()
+        out = self._sh(node, f"sudo {self.ctr} -n k8s.io images ls 'name=={ref}'", timeout=60).stdout.decode()
         for line in out.splitlines()[1:]:
             cols = line.split()
             if cols and cols[0] == ref and len(cols) >= 3:
@@ -94,9 +97,9 @@ class K3sContainerd:
             tmp = f"/tmp/bravo-apply-{digest[7:19]}.tar"  # noqa: S108 - path on the K3s node, root-owned import
             with tar.open("rb") as f:
                 self._sh(node, f"cat > {tmp}", stdin=f, timeout=900)
-            self._sh(node, f"sudo k3s ctr -n k8s.io images import --platform linux/arm64 {tmp} >/dev/null", timeout=900)
-            self._sh(node, f"sudo k3s ctr -n k8s.io images tag --force '{archive_name}' '{ref}' >/dev/null"
-                           f" && sudo k3s ctr -n k8s.io images rm '{archive_name}' >/dev/null; rm -f {tmp}", timeout=120)
+            self._sh(node, f"sudo {self.ctr} -n k8s.io images import --platform linux/arm64 {tmp} >/dev/null", timeout=900)
+            self._sh(node, f"sudo {self.ctr} -n k8s.io images tag --force '{archive_name}' '{ref}' >/dev/null"
+                           f" && sudo {self.ctr} -n k8s.io images rm '{archive_name}' >/dev/null; rm -f {tmp}", timeout=120)
             have = self.node_digest(node, ref)
             per_node[node] = {"action": "imported", "digest": have}
             if have != digest:

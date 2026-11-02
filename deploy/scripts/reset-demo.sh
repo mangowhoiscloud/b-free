@@ -22,7 +22,8 @@
 #   RESET_SRC_CONTEXT       출발지 EKS 컨텍스트(기본 cloud.env SRC_CONTEXT, 없으면 bravo-source)
 #   RESET_ONPREM_CONTEXT    온프렘 K3s 컨텍스트(기본 cloud.env DST_CONTEXT)
 #   RESET_GKE_CONTEXT       GKE 컨텍스트(기본 없음)
-#   RESET_PLATFORM_CONTEXT  플랫폼 EKS 컨텍스트(기본 bravo-platform). 승인 확인에 씀
+#   RESET_PLATFORM_CONTEXT  플랫폼 컨텍스트(기본 bravo-platform = 결정 전 EKS 판). 승인 확인에 씀.
+#                           플랫폼은 EC2 1대 + RKE2로 바뀜(ADR 0010). RKE2 컨텍스트가 생기면 이 값으로 줌
 #   RESET_PLATFORM_NS       플랫폼 네임스페이스(기본 bravo-control, docs/architecture/10-cluster-overview.md)
 #   RESET_PLATFORM_DB       플랫폼 DB CNPG Cluster 이름(기본 platform-db). RESET_PLATFORM_DB_NAME(기본 bravo)
 #   RESET_EXECUTOR_URL      Executor 주소(기본 cloud.env LINK_BIND:EXECUTOR_PORT, deploy/cloud/executor.sh)

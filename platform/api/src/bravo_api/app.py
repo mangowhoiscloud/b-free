@@ -18,9 +18,10 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.routing import Route
 
 from . import __version__, telemetry
-from .auth import JWKSStore, TokenVerifier
+from .auth import JWKSSource, NotConnectedVerifier, RemoteJWKS, TokenVerifier, Verifier
+from .changes import ChangeService, ChangeWatcher
 from .config import Mode, Settings
-from .db import Database
+from .db import Bootstrap, Database
 from .executor_client import ExecutorClient
 from .mcp_server import MCPGuard, build_server
 from .rehearsal import RehearsalService, RehearsalWatcher
@@ -33,14 +34,27 @@ from .upstreams import CollectorClient, GateControlsClient, RehearsalClient
 LOG = logging.getLogger("bravo_api")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, jwks: JWKSSource | None = None) -> FastAPI:
+    """``jwks`` replaces the certs-URL key source (tests only); the product path never passes it."""
     settings = settings or Settings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     telemetry.setup("operator-mcp" if settings.mode is Mode.MCP else "api")
 
-    db = Database(settings.database_url, settings.db_pool_min, settings.db_pool_max)
+    bootstrap = (
+        Bootstrap(settings.bootstrap_email, settings.bootstrap_tenant, settings.bootstrap_roles)
+        if settings.bootstrap_email and settings.bootstrap_tenant
+        else None
+    )
+    db = Database(settings.database_url, settings.db_pool_min, settings.db_pool_max, bootstrap, settings.access_members)
     executor = ExecutorClient(settings.executor_url, settings.executor_timeout_s)
-    verifier = TokenVerifier(settings.jwt_issuer, JWKSStore(settings.jwks_path))
+    verifier: Verifier
+    if settings.access_configured:
+        assert settings.jwt_issuer is not None and settings.jwks_url is not None
+        verifier = TokenVerifier(settings.jwt_issuer, jwks or RemoteJWKS(settings.jwks_url, ttl_s=settings.jwks_ttl_s))
+    else:
+        LOG.error("Cloudflare Access not configured (BRAVO_ACCESS_TEAM_DOMAIN / BRAVO_CONSOLE_AUD / BRAVO_MCP_AUD): "
+                  "every authenticated request is refused with 503 access_not_connected")
+        verifier = NotConnectedVerifier()
     timeout = settings.executor_timeout_s
     gate_controls = GateControlsClient(settings.gate_controls_url, timeout) if settings.gate_controls_url else None
     collector = CollectorClient(settings.collector_url, timeout) if settings.collector_url else None
@@ -51,9 +65,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     upstreams = [c for c in (gate_controls, collector, rehearsal_client) if c is not None]
     services = Services(db, executor, settings, gate_controls=gate_controls, collector=collector)
-    rehearsals = RehearsalService(db, rehearsal_client, settings)
+    rehearsals = RehearsalService(db, rehearsal_client, settings, collector=collector)
     watcher = RunWatcher(db, settings.run_poll_interval_s, settings.approval_ttl_s)
     rehearsal_watcher = RehearsalWatcher(db, rehearsal_client, settings)
+    change_watcher = ChangeWatcher(db, services, settings)
     manager: StreamableHTTPSessionManager | None = None
     if settings.mode is Mode.MCP:
         manager = StreamableHTTPSessionManager(app=build_server(services, rehearsals), stateless=True, json_response=True)
@@ -68,12 +83,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else:
                 resumed = await watcher.resume()
                 rehearsal_watcher.start()
+                change_watcher.start()
                 LOG.info("api ready; resumed %d in-flight run watchers", resumed)
                 yield
                 await watcher.close()
                 await rehearsal_watcher.close()
+                await change_watcher.close()
         finally:
+            await verifier.aclose()
             await executor.aclose()
+            await services.secret_refs.aclose()
             for client in upstreams:
                 await client.aclose()
             await db.close()
@@ -107,6 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ShiftService(db, executor, watcher, settings.approval_ttl_s),
                 rehearsals,
                 TicketSigner(settings.sse_ticket_secret),
+                ChangeService(db),
             )
         )
         if settings.cors_origins:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the landing zone (D-23, docs/architecture/11-landing-zone.md) on one cluster.
 #   install.sh <overlay> <kube-context> [step ...]
-# Overlay: k3s (the eks and gke overlays are not written yet). Steps run in the order below;
+# Overlay: rke2 (on-prem, spec §7.2; the eks and gke overlays are not written yet). Steps run in the order below;
 # naming steps runs only those. Every step is idempotent.
 #
 # Secrets (D-26): values come only from the platform OpenBao through deploy/pilot/scripts/keys.sh
@@ -30,6 +30,8 @@ log() { printf '\n== landing-zone[%s/%s] %s\n' "$overlay" "$ctx" "$*"; }
 render() { envsubst '${PG_IMAGE} ${CLOUDFLARED_IMAGE} ${PGBOUNCER_IMAGE} ${IMAGE_PULL_POLICY} ${CEPH_IMAGE} ${OSD_NODES}'; }
 
 export PGBOUNCER_IMAGE="$PGBOUNCER_IMAGE_REPO@$PGBOUNCER_IMAGE_DIGEST"
+# containerd CLI on the nodes (RKE2 bundles ctr; images are imported, never pulled).
+CTR="sudo /var/lib/rancher/rke2/bin/ctr --address /run/k3s/containerd/containerd.sock -n k8s.io"
 export IMAGE_PULL_POLICY=Never
 
 helm_repos() {
@@ -39,27 +41,41 @@ helm_repos() {
   helm repo add kyverno https://kyverno.github.io/kyverno >/dev/null 2>&1 || true
   helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&1 || true
   helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts >/dev/null 2>&1 || true
+  helm repo add ceph-csi-operator https://ceph.github.io/ceph-csi-operator >/dev/null 2>&1 || true
   helm repo update >/dev/null
 }
 
 step_cilium() {
-  log "Gateway API $GATEWAY_API_VERSION CRDs, Cilium $CILIUM_CHART_VERSION (VXLAN, kube-proxy replacement, Hubble)"
+  log "Gateway API $GATEWAY_API_VERSION CRDs, Cilium $CILIUM_CHART_VERSION (VXLAN, kube-proxy replacement, Hubble; RKE2 cni: none)"
   k apply --server-side --force-conflicts \
     -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml" >/dev/null
-  local api_host
-  api_host="$("$repo/infra/modules/cluster/onprem/scripts/node-ip.sh" "$LIMA_SERVER")"
   h upgrade --install cilium cilium/cilium --version "$CILIUM_CHART_VERSION" -n kube-system \
-    -f "$ov/cilium-values.yaml" --set k8sServiceHost="$api_host" --wait --timeout 10m >/dev/null
+    -f "$ov/cilium-values.yaml" --wait --timeout 10m >/dev/null
   k -n kube-system rollout status ds/cilium --timeout=5m
   k -n kube-system rollout status deploy/cilium-operator --timeout=5m
   k -n kube-system rollout status deploy/hubble-relay --timeout=5m
   k wait --for=condition=Ready node --all --timeout=5m
+  k get gatewayclass cilium
   k apply -f "$ov/lb-pool.yaml"
 }
 
 step_base() {
   log "namespaces, StorageClasses, PgBouncer, cloudflared (kustomize overlay $overlay)"
   k kustomize "$ov" | render | k apply -f -
+}
+
+step_rbd() {
+  log "Ceph CSI drivers chart $CEPH_CSI_DRIVERS_CHART_VERSION, RBD pool bravo-rbd, StorageClasses bravo-db, bravo-general"
+  h upgrade --install ceph-csi-drivers ceph-csi-operator/ceph-csi-drivers --version "$CEPH_CSI_DRIVERS_CHART_VERSION" \
+    -n rook-ceph -f "$ov/rook/csi-drivers-values.yaml" --wait --timeout 5m >/dev/null
+  local i
+  for i in $(seq 1 60); do
+    [[ $(k -n rook-ceph get pods --no-headers 2>/dev/null | grep -c 'rbd.*Running') -ge 2 ]] && break; sleep 5
+  done
+  k -n rook-ceph get pods --no-headers | grep rbd
+  k apply -f "$ov/rook/rbd.yaml"
+  k -n rook-ceph wait --for=jsonpath='{.status.phase}'=Ready cephblockpool/bravo-rbd --timeout=5m
+  k get sc bravo-db bravo-general
 }
 
 step_images() {
@@ -70,13 +86,14 @@ step_images() {
       || { echo "image $local_ref is not $dig on this laptop" >&2; return 1; }
     docker tag "$local_ref" "$repo:import"
     for n in $LIMA_NODES; do
-      if limactl shell "$n" -- sudo k3s ctr -n k8s.io images ls -q | grep -qx "$repo@$dig"; then
+      if limactl shell "$n" -- $CTR images ls -q </dev/null | grep -qx "$repo@$dig"; then
         echo "$n: $repo@$dig present"; continue
       fi
       docker save "$repo:import" | limactl shell "$n" -- sh -c 'cat > /tmp/bravo-image.tar'
-      limactl shell "$n" -- sudo k3s ctr -n k8s.io images import --platform linux/arm64 /tmp/bravo-image.tar >/dev/null
-      limactl shell "$n" -- sudo sh -c "k3s ctr -n k8s.io images tag --force $repo:import $repo@$dig >/dev/null && rm -f /tmp/bravo-image.tar"
-      limactl shell "$n" -- sudo k3s ctr -n k8s.io images ls -q | grep -qx "$repo@$dig"
+      limactl shell "$n" -- $CTR images import --platform linux/arm64 /tmp/bravo-image.tar </dev/null >/dev/null
+      limactl shell "$n" -- $CTR images tag --force "$repo:import" "$repo@$dig" </dev/null >/dev/null
+      limactl shell "$n" -- sudo rm -f /tmp/bravo-image.tar </dev/null
+      limactl shell "$n" -- $CTR images ls -q </dev/null | grep -qx "$repo@$dig"
       echo "$n: imported $repo@$dig"
     done
     docker rmi "$repo:import" >/dev/null
@@ -114,11 +131,11 @@ secret_from_bao() {
 step_secrets() {
   log "Secrets from the platform OpenBao (secret/envs/$ENV_ID/*)"
   "$keys" env-generate "$ENV_ID" chat-admin token
-  # PgBouncer-local logins are environment-local; app_writer must match the source DB's
-  # app_writer while target-src.ini points at the source (see report).
+  # PgBouncer-local logins are environment-local. app_writer is NOT generated: it must equal the
+  # source DB's value while target-src.ini points at the source; copy it inside OpenBao with
+  # keys.sh env-copy source-aws chat-db app_writer target-onprem.
   "$keys" env-generate "$ENV_ID" chat-db pgb_admin
   "$keys" env-generate "$ENV_ID" chat-db pgb_stats
-  "$keys" env-generate "$ENV_ID" chat-db app_writer
   secret_from_bao chat chat-admin token=chat-admin/token
   secret_from_bao chat chat-pgbouncer-auth app_writer=chat-db/app_writer pgb_admin=chat-db/pgb_admin pgb_stats=chat-db/pgb_stats
   # The DSN carries no password; the password is a separate key (chart db.passwordSecret).
@@ -261,7 +278,7 @@ step_gateway() {
   k -n bravo-edge get svc cilium-gateway-bravo-gateway
 }
 
-all_steps=(cilium base images cnpg secrets kyverno eso otel rook rgw_tls rgw app gateway)
+all_steps=(cilium base images rook rbd cnpg secrets kyverno eso otel rgw_tls rgw app gateway)
 steps=("$@"); ((${#steps[@]})) || steps=("${all_steps[@]}")
 helm_repos
 for s in "${steps[@]}"; do "step_$s"; done

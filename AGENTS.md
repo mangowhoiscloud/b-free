@@ -36,6 +36,7 @@
 | 일정과 의존 | `docs/plans/2026-11-03-to-07.md` |
 | DB 엔진 사이 이전 3×3(RDS · Cloud SQL · CNPG) | `docs/architecture/12-db-migration-matrix.md` |
 | IaC로 환경이 펼쳐지는 과정(플랫폼 첫 기동 · 목적지 만들기 · 앱 첫 배포) | `docs/architecture/14-provisioning-scenarios.md` |
+| 스펙 r2 계약(SSE 이벤트, 통제 시험 결과, 의존성 인벤토리), 승인 2종(change · cutover), T31 반영 경로, 콘솔 첫 화면 API | `docs/architecture/15-r2-contracts.md` |
 | 환경 사이 트래픽 전환(Edge 가중치, 판정, 0% 복귀, LB 구독 전후) | `docs/architecture/15-multicloud-traffic.md` |
 | Terraform 모듈 | `infra/README.md` |
 | 플랫폼 서비스 경계 | `platform/README.md` |

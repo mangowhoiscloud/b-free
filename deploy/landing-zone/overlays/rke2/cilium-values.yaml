@@ -1,0 +1,25 @@
+# Landing-zone Cilium on RKE2 (RKE2 runs with cni: none so every environment has the same Cilium,
+# D-23): VXLAN overlay, kube-proxy replacement (needed by the Cilium Gateway API implementation),
+# Hubble flow records. 127.0.0.1:6443 is the API server on the RKE2 server and the RKE2 agent's
+# local API load balancer on agents.
+k8sServiceHost: 127.0.0.1
+k8sServicePort: 6443
+kubeProxyReplacement: true
+routingMode: tunnel
+tunnelProtocol: vxlan
+ipam:
+  mode: kubernetes          # RKE2 allocates node podCIDRs from 10.42.0.0/16
+bpf:
+  masquerade: true
+operator:
+  replicas: 1
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: false
+gatewayAPI:
+  enabled: true
+envoy:
+  enabled: true

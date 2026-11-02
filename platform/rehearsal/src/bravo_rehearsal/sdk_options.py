@@ -7,8 +7,9 @@ Every agent runs on an Agent SDK (team lead, 2026-11-02). Providers (``BRAVO_LLM
   the platform OpenBao (``secret/envs/platform/llm-claude``). The rehearsal service never reads it: per Trial it
   mints one single-use secret_id for the ``llm-claude`` AppRole and hands only that to the worker
   (``service.Orchestrator._worker_env``); the worker reads the token itself (``bravo_agents.llm_secret``).
-- ``openai_agents`` (alternate engine): OpenAI Agents SDK, API key at ``secret/envs/platform/llm-openai``, same
-  delivery through the ``llm-openai`` AppRole.
+- ``openai_agents`` (alternate engine): OpenAI Agents SDK, credential at ``secret/envs/platform/llm-openai`` (an
+  ``api_key``, or the demo-only ChatGPT session on the undocumented Codex backend), same delivery through the
+  ``llm-openai`` AppRole.
 - ``anthropic_gateway`` / ``bedrock_gateway`` (production target): an LLM gateway holding the platform key; the
   worker authenticates with its Trial token. Bedrock Tokyo inference profiles: ``jp.anthropic.claude-opus-5-5``,
   ``jp.anthropic.claude-haiku-5-5`` (config only, no live call from this package).

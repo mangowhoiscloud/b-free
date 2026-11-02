@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# StorageClasses come from rook/rbd.yaml (install.sh step rbd), after Rook is up.
+# local-path.yaml + storageclasses-local-path.yaml are the stopgap fallback, not applied by default.
+resources:
+  - ../../base
+  - chat-pgbouncer-targets.yaml

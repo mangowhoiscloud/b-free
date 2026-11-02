@@ -1,6 +1,6 @@
 # 클라우드 E2E 공통 계약
 
-여러 갈래가 동시에 클라우드 E2E(출발지 Amazon EKS → 온프렘 K3s)를 세울 때 서로 맞춰야 하는 이름, 경로, 규칙입니다. 류지환 지시(2026-11-02 20:10 KST): "클라우드까지 쭉 밀어. 공격적으로 병렬 작업하고 빠지는 파트 없도록. 스텁이나 가짜 정보는 막는다."
+여러 갈래가 동시에 클라우드 E2E(출발지 Amazon EKS에서 온프렘 RKE2로. 2026-11-02 21:10 전에는 K3s)를 세울 때 서로 맞춰야 하는 이름, 경로, 규칙입니다. 류지환 지시(2026-11-02 20:10 KST): "클라우드까지 쭉 밀어. 공격적으로 병렬 작업하고 빠지는 파트 없도록. 스텁이나 가짜 정보는 막는다."
 
 ## 1. 금지
 
@@ -13,8 +13,11 @@
 | 환경 ID | 실체 | kubectl 컨텍스트 | OpenBao 경로 |
 |---|---|---|---|
 | `source-aws` | Amazon EKS `bravo-source`(ap-northeast-2, arm64) | `bravo-source` | `secret/envs/source-aws/*` |
-| `target-onprem` | Lima VM 위 K3s | 온프렘 갈래가 정함(보고 필수) | `secret/envs/target-onprem/*` |
-| 플랫폼 | 노트북 Compose `bravo-pilot` | - | `secret/platform/*` |
+| `target-onprem` | Ubuntu VM 위 RKE2(CIS 프로필), 공통 cloud-init(T2). 2026-11-02 21:10 KST 결정(ADR 0010). 결정 전 Lima K3s(v1.36.5+k3s1)가 같은 컨텍스트로 아직 떠 있음 | `bravo-onprem`(RKE2로 바뀌어도 같은 이름) | `secret/envs/target-onprem/*` |
+| `target-gcp` | GKE `bravo-target-gcp`(프로젝트 `b-free-target-20261102`, asia-northeast1-b) | 아직 보고 없음 | `secret/envs/target-gcp/*` |
+| 플랫폼 | VPC ②의 EC2 1대 + RKE2 단일 노드(T7, 스펙 §7.2, ADR 0010) | RKE2 컨텍스트는 아직 없음. 생기면 이 칸에 적음. 결정 전 EKS `bravo-platform`(컨텍스트 `bravo-platform`)이 떠 있음 | `secret/platform/*` |
+
+플랫폼 줄의 옛 값(노트북 Compose `bravo-pilot`)은 6.1절에 따라 내렸습니다.
 
 ## 3. 클러스터 안 이름(두 환경 같음, D-23)
 
@@ -36,7 +39,7 @@
 ## 5. 이미지
 
 - 출발지는 출발지 계정의 Amazon ECR(Terraform `infra/envs/source-aws`)입니다. 고객이 원래 쓰던 레지스트리라는 설정입니다.
-- 목적지(온프렘)는 이미지 tar를 K3s containerd로 가져옵니다(폐쇄망 방식). AWS에 의존하지 않습니다.
+- 목적지(온프렘)는 이미지 tar를 클러스터 containerd로 가져옵니다(폐쇄망 방식. K3s 때와 같고, RKE2도 containerd). AWS에 의존하지 않습니다.
 - 두 쪽 모두 digest로 고정합니다.
 
 ## 6. 앞단(이름 바뀜, 류지환 지시 2026-11-02 20:4x)
@@ -46,7 +49,7 @@
 | `b-free.mangowhois.ai` | **우리 플랫폼**(콘솔 · API · MCP). 플랫폼 EKS의 Gateway `bravo-gateway`(ns `bravo-edge`)로 | `bravo-platform` | `secret/envs/platform/cf-tunnel` |
 | `b-free-chat.mangowhois.ai` | 고객 데모 앱 대표 이름. LB 전에는 활성 환경 터널을 가리키는 CNAME, 전환은 Executor(`front.py`). **코드만, 미실행**: CNAME 전환과 LB 가중치 모두 실제 실행 기록이 없음(감사 B21, 2026-11-02 20:4x) | - | - |
 | `b-free-chat-src.mangowhois.ai` | 출발지(EKS) 앱 | `bravo-b-free-chat-src` | `secret/envs/source-aws/cf-tunnel` |
-| `b-free-chat-dst.mangowhois.ai` | 목적지(온프렘 K3s) 앱 | `bravo-b-free-chat-dst` | `secret/envs/target-onprem/cf-tunnel` |
+| `b-free-chat-dst.mangowhois.ai` | 목적지(온프렘 RKE2, 결정 전에는 K3s) 앱 | `bravo-b-free-chat-dst` | `secret/envs/target-onprem/cf-tunnel` |
 
 - 플랫폼 API는 Cloudflare Access JWT만 받습니다. 공개로 우회하는 길을 만들지 않습니다.
 - 터널 원격 설정의 `origin_service`는 3절의 진입 Service로 맞추고 `infra/envs/edge/terraform.tfvars`를 고칩니다.
@@ -71,12 +74,12 @@
 
 ## 6.1 노트북 Compose 파일럿은 내림
 
-류지환 지시(2026-11-02): "compose는 다 내려. 혼선을 주니까." 실제 대상은 출발지 EKS, 온프렘 K3s, GKE, 플랫폼 EKS뿐입니다. 예외는 플랫폼 키 보관소 `platform-bao` 하나입니다. 플랫폼 EKS로 옮기는 동안만 노트북에서 돌고, UI는 없습니다. 시험이 잠깐 띄우고 지우는 컨테이너는 괜찮습니다.
+류지환 지시(2026-11-02): "compose는 다 내려. 혼선을 주니까." 실제 대상은 출발지 EKS, 온프렘 RKE2, GKE, 플랫폼 RKE2뿐입니다(2026-11-02 21:10 결정 전에는 온프렘 K3s, 플랫폼 EKS). 예외는 플랫폼 키 보관소 `platform-bao` 하나입니다. 플랫폼 EKS로 옮기는 동안만 노트북에서 돌고, UI는 없습니다. 시험이 잠깐 띄우고 지우는 컨테이너는 괜찮습니다.
 
 ## 7. 환경 사이 링크
 
 - D-16 목표는 Cloudflare Tunnel + Access 서비스 토큰입니다. Zero Trust Free가 2026-11-02 20:5x에 켜졌고, Cloudflare 쪽(Access 앱, Service Auth 정책, 관리 Tunnel, DNS)은 적용했습니다(`infra/envs/edge/links.tf`, `infra/modules/edge_link/cloudflare`). 클러스터 쪽(관리 Tunnel 커넥터, `bravo-link`)은 아직입니다. 그때까지 아래 임시 링크를 씁니다.
-- 그전까지 쓰는 임시 링크는 플랫폼(노트북)의 `kubectl port-forward`입니다. 목적지 K3s(Lima)는 `host.lima.internal`로 노트북 포트에 닿습니다.
+- 그전까지 쓰는 임시 링크는 플랫폼(노트북)의 `kubectl port-forward`입니다. 목적지(Lima VM 위 클러스터)는 `host.lima.internal`로 노트북 포트에 닿습니다.
 - 임시 링크는 문서와 콘솔에 "임시 링크(D-16 전)"로 표시합니다.
 
 **링크 이름과 토큰(D-16, 2026-11-02 20:5x).** 호스트는 `t1-<노출 환경>-<서비스>.mangowhois.ai`, 토큰은 `<소비>-<노출 환경>-<서비스>`(`02-network.md` 4.1)입니다. 토큰은 `keys.sh issue-service-token`이 만들어 OpenBao에만 씁니다. 필드 `client_id`, `client_secret`, `token_id`, `name`, `expires_at`. 만료 2026-11-09 11:50 UTC(168시간). Terraform에는 ID만 들어갑니다.

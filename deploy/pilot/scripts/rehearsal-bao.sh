@@ -11,6 +11,8 @@
 #   rehearsal-bao.sh with-rehearsal -- CMD    run CMD with BRAVO_BAO_ROLE_ID / BRAVO_BAO_SECRET_ID
 #                                             (one fresh secret_id: 60 s, 1 use) in its env only
 #   rehearsal-bao.sh status                   policy, role settings, issuer token, which secrets exist (no values)
+#   rehearsal-bao.sh --target pilot|platform-eks|platform-rke2 <cmd>   which OpenBao (default: custody bao_target,
+#                                             through a private kubectl port-forward kept open for <cmd>)
 #
 # The service logs in once at start (bravo_rehearsal.server_tools.OpenBao.login), drops the
 # secret_id, and renews its periodic token (1 h period) while it runs. A restart needs a new
@@ -41,6 +43,45 @@ env_get() {
 
 BAO_PORT="${PLATFORM_BAO_HOST_PORT:-$(env_get PLATFORM_BAO_HOST_PORT)}"
 BAO_ADDR="${BAO_ADDR:-https://127.0.0.1:${BAO_PORT:-8200}}"
+
+# Target, same rule as keys.sh (D-26: one store): pilot = laptop Compose platform-bao; platform-eks = OpenBao on the
+# platform EKS, reached only through a private `kubectl port-forward` to openbao/openbao-0 for this run. Choose with
+# `rehearsal-bao.sh --target <t> <cmd>` or BRAVO_BAO_TARGET; default platform-eks once custody records the move.
+# platform-rke2 = the spec §7.2 platform (EC2 + RKE2 node, kube API via the SSM port forward); platform-eks = the
+# interim EKS platform. Context per target: BRAVO_PLATFORM_CONTEXT overrides. Default: custody's bao_target.
+BAO_TARGET="${BRAVO_BAO_TARGET:-}"
+if [[ ${1-} == --target ]]; then BAO_TARGET=${2-}; shift 2 || die "usage: rehearsal-bao.sh --target pilot|platform-eks|platform-rke2 <cmd>"
+elif [[ ${1-} == --target=* ]]; then BAO_TARGET=${1#--target=}; shift; fi
+if [[ -z $BAO_TARGET ]]; then
+  BAO_TARGET=pilot
+  [[ -f $CUSTODY ]] && BAO_TARGET="$(jq -r '.bao_target // "pilot"' "$CUSTODY" 2>/dev/null || echo pilot)"
+fi
+case $BAO_TARGET in
+  platform-eks) PLATFORM_CONTEXT="${BRAVO_PLATFORM_CONTEXT:-bravo-platform}"; PLATFORM_TLS_DIR="$CUSTODY_DIR/platform-eks" ;;
+  platform-rke2) PLATFORM_CONTEXT="${BRAVO_PLATFORM_CONTEXT:-bravo-platform-rke2}"; PLATFORM_TLS_DIR="$CUSTODY_DIR/platform-rke2" ;;
+  pilot) PLATFORM_CONTEXT=""; PLATFORM_TLS_DIR="" ;;
+  *) die "unknown target: $BAO_TARGET (pilot | platform-eks | platform-rke2)" ;;
+esac
+PF_PID=""
+pf_stop() { [[ -z $PF_PID ]] || { kill "$PF_PID" 2>/dev/null || true; wait "$PF_PID" 2>/dev/null || true; PF_PID=""; }; }
+pf_start() {
+  [[ -z $PF_PID ]] || return 0
+  command -v kubectl >/dev/null || die "--target $BAO_TARGET needs kubectl"
+  [[ -f $PLATFORM_TLS_DIR/ca.crt ]] || die "no $PLATFORM_TLS_DIR/ca.crt: keys.sh --target $BAO_TARGET tls"
+  local port i code
+  port="$(python3 -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
+  kubectl --context "$PLATFORM_CONTEXT" -n openbao port-forward pod/openbao-0 "$port:8200" >/dev/null 2>&1 &
+  PF_PID=$!
+  trap pf_stop EXIT
+  TLS_DIR="$PLATFORM_TLS_DIR"; BAO_ADDR="https://127.0.0.1:$port"
+  for i in $(seq 1 40); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$TLS_DIR/ca.crt" --max-time 2 "$BAO_ADDR/v1/sys/seal-status" || true)"
+    [[ $code == 200 ]] && return 0
+    kill -0 "$PF_PID" 2>/dev/null || die "kubectl port-forward to $PLATFORM_CONTEXT openbao/openbao-0 exited"
+    sleep 0.25
+  done
+  die "platform OpenBao not reachable through port-forward ($PLATFORM_CONTEXT openbao/openbao-0)"
+}
 
 tok_hdr() { [[ -z ${1-} ]] || printf 'X-Vault-Token: %s\n' "$1"; }
 
@@ -104,10 +145,17 @@ cmd_setup() {
   if [[ -n $existing ]] && api POST auth/token/renew-self "$existing" >/dev/null 2>&1; then
     log "issuer token: present in custody and renewed"
   else
-    printf '{"policies":["platform-rehearsal-issuer"],"period":"168h","display_name":"rehearsal-issuer"}' \
-      | api -d POST auth/token/create-orphan "$admin" \
-      | jq '{rehearsal_issuer_token: .auth.client_token, rehearsal_issuer_token_accessor: .auth.accessor}' | custody_merge
-    log "issuer token: platform-rehearsal-issuer (periodic 168h) -> custody"
+    local out
+    if out="$(printf '{"policies":["platform-rehearsal-issuer"],"period":"168h","display_name":"rehearsal-issuer"}' \
+        | api -d POST auth/token/create-orphan "$admin" 2>/dev/null)"; then
+      printf '%s' "$out" \
+        | jq '{rehearsal_issuer_token: .auth.client_token, rehearsal_issuer_token_accessor: .auth.accessor}' | custody_merge
+      log "issuer token: platform-rehearsal-issuer (periodic 168h) -> custody"
+    else
+      # The platform-admin policy cannot create orphan tokens on this store; with-rehearsal then mints the
+      # secret_id with the admin token from custody, as keys.sh llm-run does.
+      log "issuer token: not created (create-orphan refused); with-rehearsal will use the custody admin token"
+    fi
   fi
 }
 
@@ -151,11 +199,15 @@ cmd_with_rehearsal() {
   (($#)) || die "usage: rehearsal-bao.sh with-rehearsal -- <cmd> [args...]"
   need_custody; need_unsealed
   local issuer role_id secret_id
-  issuer="$(custody_get .rehearsal_issuer_token)" || die "no rehearsal_issuer_token: rehearsal-bao.sh setup"
-  api POST auth/token/renew-self "$issuer" >/dev/null || die "rehearsal issuer token invalid: rehearsal-bao.sh setup"
+  issuer="$(jq -r '.rehearsal_issuer_token // ""' "$CUSTODY")"
+  if [[ -z $issuer ]] || ! api POST auth/token/renew-self "$issuer" >/dev/null 2>&1; then
+    issuer="$(custody_get .admin_token)"  # narrow issuer token unavailable on this store (see setup)
+  fi
   role_id="$(api GET "auth/approle/role/$ROLE/role-id" "$issuer" | jq -er .data.role_id)"
   secret_id="$(printf '{"ttl":"60s","num_uses":1}' | api -d POST "auth/approle/role/$ROLE/secret-id" "$issuer" | jq -er .data.secret_id)"
-  BRAVO_BAO_ROLE_ID="$role_id" BRAVO_BAO_SECRET_ID="$secret_id" exec "$@"
+  # The command keeps the port-forward for its whole run (platform-eks), so it is not exec'd.
+  BRAVO_BAO_ADDR="$BAO_ADDR" BRAVO_BAO_CACERT="$TLS_DIR/ca.crt" \
+    BRAVO_BAO_ROLE_ID="$role_id" BRAVO_BAO_SECRET_ID="$secret_id" "$@"
 }
 
 cmd_status() {
@@ -173,6 +225,7 @@ cmd_status() {
 
 for bin in curl jq; do command -v "$bin" >/dev/null || die "needs $bin"; done
 cmd=${1-help}; shift || true
+[[ $BAO_TARGET == pilot || $cmd == help || $cmd == -h || $cmd == --help ]] || pf_start
 case $cmd in
   setup) cmd_setup ;;
   put-evidence-db) cmd_put_evidence_db ;;
@@ -180,6 +233,6 @@ case $cmd in
   put-collector-ro) cmd_put_collector_ro "$@" ;;
   with-rehearsal) cmd_with_rehearsal "$@" ;;
   status) cmd_status ;;
-  help | -h | --help) sed -n '2,18p' "${BASH_SOURCE[0]}" ;;
+  help | -h | --help) sed -n '2,21p' "${BASH_SOURCE[0]}" ;;
   *) die "unknown command: $cmd (rehearsal-bao.sh help)" ;;
 esac

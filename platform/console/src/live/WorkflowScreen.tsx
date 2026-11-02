@@ -39,8 +39,8 @@ export function WorkflowScreen({ planId, view, events, status, detail }: { planI
       <Block title="연결 상태">
         <DataTable
           rows={[
-            { k: 'GitHub Actions CI', state: 'none' as const, why: '연결 안 됨 (저장소 push 보류). 원격 저장소가 없어 실행 기록이 없습니다.' },
-            { k: 'Terraform 환경', state: 'none' as const, why: 'terraform output을 읽기 전용으로 내주는 백엔드 경로가 없습니다(infra/*는 다른 작업 중). 실제 EKS 상태는 클러스터 화면에서 봅니다.' },
+            { k: 'GitHub Actions CI', state: 'none' as const, why: '이 콘솔은 CI 실행 기록을 읽는 출처가 없습니다.' },
+            { k: 'Terraform 환경', state: 'none' as const, why: '이 콘솔은 terraform output을 읽는 출처가 없습니다. 클러스터 상태는 클러스터 화면에서 수집기로 봅니다.' },
             {
               k: '게이트 서비스',
               state: catalog.error ? ('down' as const) : catalog.data ? ('ok' as const) : ('none' as const),
