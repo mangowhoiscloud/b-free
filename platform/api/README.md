@@ -108,4 +108,4 @@ SSE 이벤트 필드(제안): `id`, `plan_id`, `state`, `kind`, `at`, `mode`(`li
 |---|---|
 | `BRAVO_REHEARSAL_URL`, `BRAVO_REHEARSAL_API_TOKEN` | 리허설 서비스. 없으면 `rehearsal_unconfigured`(503) |
 | `BRAVO_COLLECTOR_URL` | ANALYZE가 `GET /v1/inventory`를 읽음. 형식은 `upstreams.CollectorClient` 주석(11/3 수집기 계약으로 확정) |
-| `BRAVO_GATE_URL`, `BRAVO_GATE_TIMEOUT_S`(기본 60) | 게이트가 `GET /v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`의 질문 행(목적지 증거 digest 포함)과 증거 만료 시각을 더 읽음. 같은 통제 ID가 두 곳에서 오면 UNKNOWN → BLOCK. 게이트가 모르는 환경이면 `gate_controls_unknown_environment` |
+| `BRAVO_GATE_URL`, `BRAVO_GATE_TIMEOUT_S`(기본 60) | 게이트가 `GET /v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`의 질문 행(목적지 증거 digest 포함)과 증거 만료 시각을 더 읽음. 같은 통제 ID가 Executor와 게이트 양쪽에서 오면 원본 · 대상을 따로 합침: 같으면 그 값, 한쪽 UNKNOWN이면 다른 쪽 값(`missing_sources`), PASS와 FAIL로 갈리면 UNKNOWN `sources_disagree`(계약 15 9.5). 게이트가 모르는 환경이면 `gate_controls_unknown_environment` |

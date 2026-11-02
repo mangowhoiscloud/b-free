@@ -1,0 +1,10 @@
+# 2026-11-02 23:44:49 KST platform/api: two-source merge rule (lead decision), pytest -v -k 'sources or source_' tests/test_gate.py, then the full suite
+tests/test_gate.py::test_sources_agree_use_the_value_and_keep_both PASSED [ 14%]
+tests/test_gate.py::test_sources_agree_on_fail_and_the_gate_digest_binds_the_exception PASSED [ 28%]
+tests/test_gate.py::test_sources_disagree_is_unknown_with_both_values_and_blocks PASSED [ 42%]
+tests/test_gate.py::test_one_source_unknown_takes_the_other_and_notes_it PASSED [ 57%]
+tests/test_gate.py::test_one_source_missing_value_takes_the_other PASSED [ 71%]
+tests/test_gate.py::test_both_sources_unknown_still_blocks PASSED        [ 85%]
+tests/test_gate.py::test_same_source_twice_stays_contradictory PASSED    [100%]
+======================= 7 passed, 29 deselected in 1.29s =======================
+164 passed in 13.20s

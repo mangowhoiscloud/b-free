@@ -164,3 +164,72 @@ def test_drift_marks_only_measured_changes() -> None:
     assert exception_drift(evaluate([obj06("PASS", "PASS")], READY, POLICY), open_ex)[0][1] == "verdict_changed"
     assert exception_drift(evaluate([obj06("PASS", "UNKNOWN")], READY, POLICY), open_ex) == []  # not measured
     assert exception_drift(evaluate([], READY, POLICY), open_ex) == []  # gate unreachable: row missing
+
+
+# Two sources for one control (lead's rule 2026-11-02, contract 15 §9.5) ---------------------------------------
+
+def two(cid: str, exe: tuple[str, str], gate: tuple[str, str], digest: str | None = D1) -> list[dict[str, str | None]]:
+    return [{"control_id": cid, "src": exe[0], "dst": exe[1], "source": "executor"},
+            {"control_id": cid, "src": gate[0], "dst": gate[1], "evidence_digest": digest, "source": "gate"}]
+
+
+def auth_row(r):
+    return next(c for c in r.controls if c.control_id == "DB-AUTH")
+
+
+def test_sources_agree_use_the_value_and_keep_both() -> None:
+    r = evaluate([{"control_id": "DB-ANON-READ", "src": "PASS", "dst": "PASS", "source": "executor"},
+                  *two("DB-AUTH", ("PASS", "PASS"), ("PASS", "PASS"))], READY, POLICY)
+    row = auth_row(r).as_dict()
+    assert r.verdict is Verdict.PASS and (row["src"], row["dst"], row["reason"]) == ("PASS", "PASS", None)
+    assert [s["source"] for s in row["sources"]] == ["executor", "gate"] and row["missing_sources"] == []
+    assert row["evidence_digest"] == D1  # the gate's digest is the one an exception binds to
+
+
+def test_sources_agree_on_fail_and_the_gate_digest_binds_the_exception() -> None:
+    from bravo_api.gate import ControlException
+
+    inputs = [*two("DB-AUTH", ("PASS", "FAIL"), ("PASS", "FAIL")),
+              {"control_id": "DB-ANON-READ", "src": "PASS", "dst": "PASS", "source": "executor"}]
+    assert evaluate(inputs, READY, POLICY).reasons == ("DB-AUTH:regression",)
+    ex = ControlException("e-2", "DB-AUTH", "PASS", "FAIL", D1)
+    r = evaluate(inputs, READY, POLICY, exceptions=(ex,))
+    assert auth_row(r).verdict == "EXCEPTION" and r.verdict is Verdict.PASS
+
+
+def test_sources_disagree_is_unknown_with_both_values_and_blocks() -> None:
+    r = evaluate([*controls(("PASS", "PASS"))[:1], *two("DB-AUTH", ("PASS", "PASS"), ("PASS", "FAIL"))], READY, POLICY)
+    row = auth_row(r).as_dict()
+    assert (row["src"], row["dst"], row["verdict"], row["reason"]) == ("PASS", "UNKNOWN", "BLOCK", "sources_disagree")
+    assert {s["source"]: s["dst"] for s in row["sources"]} == {"executor": "PASS", "gate": "FAIL"}
+    assert row["evidence_digest"] is None  # UNKNOWN is never exceptable (5a)
+    assert r.verdict is Verdict.BLOCK and r.reasons == ("DB-AUTH:sources_disagree",)
+
+
+def test_one_source_unknown_takes_the_other_and_notes_it() -> None:
+    r = evaluate([*controls(("PASS", "PASS"))[:1], *two("DB-AUTH", ("PASS", "PASS"), ("UNKNOWN", "UNKNOWN"))],
+                 READY, POLICY)
+    row = auth_row(r).as_dict()
+    assert (row["src"], row["dst"], row["verdict"]) == ("PASS", "PASS", "PASS") and r.verdict is Verdict.PASS
+    assert row["missing_sources"] == ["gate"]
+    assert row["evidence_digest"] is None  # the gate did not measure this dst: nothing to bind an exception to
+
+
+def test_one_source_missing_value_takes_the_other() -> None:
+    inputs = [*controls(("PASS", "PASS"))[:1], *two("DB-AUTH", ("PASS", "FAIL"), ("PASS", "PASS"))]
+    inputs[1] = {"control_id": "DB-AUTH", "src": "PASS", "source": "executor"}  # executor gave no dst value
+    row = auth_row(evaluate(inputs, READY, POLICY)).as_dict()
+    assert (row["src"], row["dst"], row["verdict"], row["missing_sources"]) == ("PASS", "PASS", "PASS", ["executor"])
+    assert row["evidence_digest"] == D1
+
+
+def test_both_sources_unknown_still_blocks() -> None:
+    r = evaluate([*controls(("PASS", "PASS"))[:1], *two("DB-AUTH", ("UNKNOWN", "UNKNOWN"), ("UNKNOWN", "UNKNOWN"))],
+                 READY, POLICY)
+    assert auth_row(r).reason == "unknown" and r.reasons == ("DB-AUTH:unknown",)
+
+
+def test_same_source_twice_stays_contradictory() -> None:
+    dup = [{"control_id": "DB-AUTH", "src": "PASS", "dst": "PASS", "source": "executor"}] * 2
+    r = evaluate([*controls(("PASS", "PASS"))[:1], *dup], READY, POLICY)
+    assert r.reasons == ("DB-AUTH:unknown",)

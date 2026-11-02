@@ -24,5 +24,5 @@
 
 - 운영 DB에는 0008이 아직 없습니다. 고정 digest(`deploy/platform/control/kustomization.yaml`)를 main에 올리면 Argo CD Sync 훅 Job `platform-db-migrate`가 새 api 이미지로 0008을 적용합니다. 시도 기록은 위 ROLLBACK 실행뿐입니다.
 - GKE OBJ-06 예외는 운영에서 아직 걸 수 없습니다. 플랫폼 게이트 등록부(`deploy/platform/control/config/environments.yaml`)에 `target-gcp`가 없고, `source-aws`에도 `object_store` 절이 없어 OBJ-06이 측정되지 않습니다(UNKNOWN은 예외 불가). 등록부에 두 환경의 `object_store`를 넣어야 OBJ-06 PASS/FAIL과 digest가 나옵니다.
-- 같은 통제 ID가 Executor와 게이트 양쪽에서 오면 UNKNOWN입니다(기존 규칙). 게이트 보고서를 실제로 읽게 되면서 `DB-ANON-READ`, `DB-AUTH`가 두 곳에서 와 UNKNOWN으로 막힙니다. 전에도 모든 판정이 `gate_controls_http_422`로 막혔습니다. 규칙을 바꿀지, 게이트 쪽 질문을 뺄지는 게이트 갈래와 정해야 합니다.
+- 같은 통제 ID가 Executor와 게이트 양쪽에서 오는 경우(`DB-ANON-READ`, `DB-AUTH`)는 팀장 결정(2026-11-02 23:4x)대로 합칩니다(계약 15 9.5, `merge-tests.txt`). 운영 게이트는 이 둘을 UNKNOWN(`not_configured`)으로 내므로 Executor 값을 쓰고 `missing_sources: ["gate"]`로 적습니다.
 - 예외 행과 승인은 이 작업에서 운영 DB에 만들지 않았습니다. 데모에서 사람이 콘솔로 만듭니다.

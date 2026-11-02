@@ -410,7 +410,8 @@ class Services:
         readiness: dict[str, Any] | None = None
         evidence_expires_at: datetime | None = None
         try:
-            controls = await self.executor.controls()
+            # Tagged so the gate can merge a control both sources report (gate.py, contract 15 §9.5).
+            controls = [{**c, "source": "executor"} if isinstance(c, dict) else c for c in await self.executor.controls()]
         except ExecutorError as exc:
             errors.append(exc.reason)
         try:
@@ -418,8 +419,8 @@ class Services:
         except ExecutorError as exc:
             errors.append(exc.reason)
         if self.gate_controls is not None:
-            # Controls from platform/gate are appended as read. A control id reported by both
-            # sources is contradictory evidence and the gate treats it as UNKNOWN (fail closed).
+            # Controls from platform/gate are appended as read. A control id both sources report is merged per
+            # side (gate.py): same -> kept, one UNKNOWN -> the other, PASS vs FAIL -> UNKNOWN sources_disagree.
             try:
                 if source is None or target is None:
                     raise UpstreamError("gate_controls_environment_missing")
@@ -515,9 +516,9 @@ class Services:
         if plan["state"] != State.ANALYZE.value:
             return plan
         controls = snap.as_json()["controls"]
-        differing = sorted(
+        differing = sorted({
             c["control_id"] for c in controls if isinstance(c.get("control_id"), str) and c.get("src") != c.get("dst")
-        )
+        })
         analysis = {
             "inventory": inv.as_json(),
             "gaps": inv.gaps(),

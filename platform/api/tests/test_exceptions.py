@@ -78,6 +78,8 @@ def test_exception_flow_s1_5b(api: TestClient, keys: Keys, executor: ExecutorStu
                               pg: dict[str, str]) -> None:
     executor.healthy()  # DB-ANON-READ, DB-AUTH PASS/PASS, ready (no evidence digest: not exceptable)
     gate.rows = {
+        # Reported by the Executor too, with the same values: merged (contract 15 §9.5), both sources kept.
+        "DB-AUTH": {"src": "PASS", "dst": "PASS", "dst_evidence_digest": "sha256:" + "a0" * 32},
         "OBJ-05": {"src": "PASS", "dst": "UNKNOWN", "dst_evidence_digest": "sha256:" + "55" * 32},
         "OBJ-06": {"src": "PASS", "dst": "FAIL", "dst_evidence_digest": D1},
     }
@@ -90,6 +92,8 @@ def test_exception_flow_s1_5b(api: TestClient, keys: Keys, executor: ExecutorStu
     assert g1["verdict"] == "BLOCK" and g1["reasons"] == ["OBJ-05:unknown", "OBJ-06:regression"]
     row = next(c for c in g1["controls"] if c["control_id"] == "OBJ-06")
     assert row["evidence_digest"] == D1 and row["exception_id"] is None
+    auth = next(c for c in g1["controls"] if c["control_id"] == "DB-AUTH")
+    assert (auth["verdict"], [x["source"] for x in auth["sources"]]) == ("PASS", ["executor", "gate"])
     expires = (datetime.now(UTC) + timedelta(days=7)).isoformat()
     body = {"control_id": "OBJ-06", "gate_verdict_id": g1["verdict_id"], "evidence_digest": D1,
             "reason": "GCS XML API accepts plain HTTP; no organization for storage.secureHttpTransport",

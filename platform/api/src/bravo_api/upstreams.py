@@ -83,7 +83,8 @@ class GateControlsClient(_Client):
         ):
             raise UpstreamError("gate_controls_bad_response")
         rows = [{"control_id": q["control_id"], "question": q.get("question"), "src": q.get("src"),
-                 "dst": q.get("dst"), "evidence_digest": q.get("dst_evidence_digest")} for q in questions]
+                 "dst": q.get("dst"), "evidence_digest": q.get("dst_evidence_digest"), "source": "gate"}
+                for q in questions]
         expires_at = body.get("expires_at") if isinstance(body.get("expires_at"), str) else None
         return rows, expires_at
 

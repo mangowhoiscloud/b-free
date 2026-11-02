@@ -10,6 +10,13 @@ Per control (source, target):
 Control exception (spec S1 5b, contract 15 §9): a row with ``dst == FAIL`` and ``src`` PASS or FAIL whose
 approved, unexpired exception matches control, ``src``, ``dst`` and the destination ``evidence_digest`` becomes
 ``EXCEPTION`` (``exception_approved``) and is left out of the parity verdict. UNKNOWN is never excepted (5a).
+Two sources, one control id (Executor ``/v1/controls`` and the platform/gate report, rows tagged ``source``),
+merged per side (src, dst) by the lead's rule of 2026-11-02 (contract 15 §9.5):
+    both the same -> that value; one UNKNOWN (or unreadable) and the other PASS/FAIL -> the other, and the
+    UNKNOWN source is listed in ``missing_sources``; PASS vs FAIL -> UNKNOWN, reason ``sources_disagree``
+    (still blocks, 5a). Both sources are kept in ``sources``. The row's ``evidence_digest`` is the digest of the
+    source that measured the merged ``dst`` (only the gate has digests), so an exception binds the gate's evidence.
+    The same source twice (or untagged duplicates) is contradictory: UNKNOWN.
 Readiness: ``lag_bytes`` at most the threshold, ``schema_hash.src == schema_hash.dst``.
 Executor unreachable or malformed -> every input UNKNOWN -> BLOCK ``executor_unreachable``.
 Same input -> same verdict: inputs (observations and the exceptions applied) are canonicalised and hashed
@@ -25,7 +32,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-RULE_VERSION = "gate-rules/2026-11-02.2"
+RULE_VERSION = "gate-rules/2026-11-02.3"
 _VALUES = frozenset({"PASS", "FAIL", "UNKNOWN"})
 EXCEPTION = "EXCEPTION"
 EVIDENCE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -69,6 +76,8 @@ class ControlResult:
     reason: str | None
     evidence_digest: str | None = None  # destination evidence digest (platform/gate report), else None
     exception_id: str | None = None
+    sources: tuple[dict[str, Any], ...] | None = None  # both reports when two sources gave this control
+    missing_sources: tuple[str, ...] = ()  # sources that answered UNKNOWN where the other measured
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +88,8 @@ class ControlResult:
             "reason": self.reason,
             "evidence_digest": self.evidence_digest,
             "exception_id": self.exception_id,
+            "sources": [dict(x) for x in self.sources] if self.sources is not None else None,
+            "missing_sources": list(self.missing_sources),
         }
 
 
@@ -119,20 +130,60 @@ def judge_control(src: str, dst: str) -> tuple[str, str | None]:
     return "BLOCK", "not_equivalent"
 
 
+def _merge(reports: list[dict[str, Any]]) -> dict[str, Any]:
+    """One control's canonical entry from its reports (module docstring rule)."""
+    if len(reports) == 1:
+        r = reports[0]
+        entry = {"src": r["src"], "dst": r["dst"]}
+        if r["evidence_digest"] is not None:
+            entry["evidence_digest"] = r["evidence_digest"]
+        return entry
+    names = [r["source"] for r in reports]
+    if len(reports) != 2 or None in names or names[0] == names[1]:
+        return {"src": "UNKNOWN", "dst": "UNKNOWN"}  # same source twice / untagged: contradictory, fail closed
+    a, b = sorted(reports, key=lambda r: r["source"])
+    entry: dict[str, Any] = {"sources": {r["source"]: {k: r[k] for k in ("src", "dst", "evidence_digest")}
+                                         for r in (a, b)}}
+    missing: set[str] = set()
+    disagree = False
+    for side in ("src", "dst"):
+        va, vb = a[side], b[side]
+        if va == vb:
+            entry[side] = va
+        elif va == "UNKNOWN":
+            entry[side] = vb
+            missing.add(a["source"])
+        elif vb == "UNKNOWN":
+            entry[side] = va
+            missing.add(b["source"])
+        else:  # PASS vs FAIL: the sources disagree; UNKNOWN, so it blocks (5a)
+            entry[side] = "UNKNOWN"
+            disagree = True
+    entry["missing_sources"] = sorted(missing)
+    if disagree:
+        entry["disagree"] = "1"
+    digests = {r["evidence_digest"] for r in (a, b)
+               if r["evidence_digest"] is not None and r["dst"] == entry["dst"] != "UNKNOWN"}
+    if len(digests) == 1:
+        entry["evidence_digest"] = digests.pop()
+    return entry
+
+
 def canonical_inputs(
     controls: list[dict[str, Any]] | None, readiness: dict[str, Any] | None, policy: GatePolicy
 ) -> dict[str, Any]:
-    by_id: dict[str, dict[str, Any]] = {}
+    reports: dict[str, list[dict[str, Any]]] = {}
     for item in controls or []:
         if not isinstance(item, dict) or not isinstance(item.get("control_id"), str):
             continue
-        cid = item["control_id"]
-        entry = {"src": _norm(item.get("src")), "dst": _norm(item.get("dst"))}
-        digest = _digest(item.get("evidence_digest"))
-        if digest is not None:
-            entry["evidence_digest"] = digest
-        # A duplicated control id is contradictory evidence: fail closed.
-        by_id[cid] = {"src": "UNKNOWN", "dst": "UNKNOWN"} if cid in by_id else entry
+        source = item.get("source")
+        reports.setdefault(item["control_id"], []).append({
+            "source": source if isinstance(source, str) and source else None,
+            "src": _norm(item.get("src")),
+            "dst": _norm(item.get("dst")),
+            "evidence_digest": _digest(item.get("evidence_digest")),
+        })
+    by_id: dict[str, dict[str, Any]] = {cid: _merge(rs) for cid, rs in reports.items()}
     for cid in policy.required_controls:
         by_id.setdefault(cid, {"src": "UNKNOWN", "dst": "UNKNOWN", "missing": "1"})
     r = readiness if isinstance(readiness, dict) else {}
@@ -149,6 +200,12 @@ def canonical_inputs(
         "policy": {"required_controls": sorted(policy.required_controls), "max_lag_bytes": policy.max_lag_bytes},
         "rule_version": RULE_VERSION,
     }
+
+
+def _sources(c: dict[str, Any]) -> tuple[dict[str, Any], ...] | None:
+    if "sources" not in c:
+        return None
+    return tuple({"source": name, **vals} for name, vals in sorted(c["sources"].items()))
 
 
 def _matching(c: dict[str, Any], cid: str, exceptions: tuple[ControlException, ...]) -> ControlException | None:
@@ -190,12 +247,16 @@ def evaluate(
         if ex is not None:
             # 5b: shown separately as an approved exception and left out of the parity verdict.
             results.append(ControlResult(cid, c["src"], c["dst"], EXCEPTION, "exception_approved",
-                                         c["evidence_digest"], ex.exception_id))
+                                         c["evidence_digest"], ex.exception_id, sources=_sources(c),
+                                         missing_sources=tuple(c.get("missing_sources") or ())))
             continue
         verdict, reason = judge_control(c["src"], c["dst"])
         if c.get("missing") and not source_errors:
             reason = "control_missing"  # Executor answered but did not report this control
-        results.append(ControlResult(cid, c["src"], c["dst"], verdict, reason, c.get("evidence_digest")))
+        if c.get("disagree"):
+            reason = "sources_disagree"
+        results.append(ControlResult(cid, c["src"], c["dst"], verdict, reason, c.get("evidence_digest"),
+                                     sources=_sources(c), missing_sources=tuple(c.get("missing_sources") or ())))
         if reason:
             reasons.add(f"{cid}:{reason}")
 

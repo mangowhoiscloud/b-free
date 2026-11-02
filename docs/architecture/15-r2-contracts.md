@@ -475,7 +475,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 
 ### 9.4 게이트 판정에서
 
-`POST /v1/plans/{id}/gate`, 시스템 재대조(`change_recheck`), WATCH 재시험 모두 같은 규칙입니다. 규칙 판 `gate-rules/2026-11-02.2`.
+`POST /v1/plans/{id}/gate`, 시스템 재대조(`change_recheck`), WATCH 재시험 모두 같은 규칙입니다. 규칙 판 `gate-rules/2026-11-02.3`(두 출처 합치기, 9.5).
 
 - 행이 `dst == "FAIL"`, `src`가 `PASS` 또는 `FAIL`이고, 그 계획 · 그 목적지 · 그 통제의 `approved` 예외가 만료 전이며 `src` · `dst` · `evidence_digest`가 모두 같으면: 그 행은 `verdict: "EXCEPTION"`, `reason: "exception_approved"`, `exception_id`. `reasons[]`에 넣지 않습니다(동등 판정에서 뺌).
 - 나머지 행은 그대로입니다. UNKNOWN은 늘 `BLOCK` · `unknown`입니다. 준비 상태(`readiness:*`)와 수집 오류도 그대로 막습니다.
@@ -489,6 +489,9 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | `controls[].evidence_digest` | 목적지 증거 digest(게이트 보고서의 `dst_evidence_digest`). 증거가 없으면 `null` |
 | `controls[].exception_id` | `EXCEPTION`인 행만, 아니면 `null` |
 | `controls[].verdict` | `PASS` · `BLOCK` · `EXCEPTION` |
+| `controls[].sources` | 두 출처가 같은 통제를 보고했을 때만: `[{"source": "executor" \| "gate", "src", "dst", "evidence_digest"}]`(출처 이름 순). 하나만 보고했으면 `null` |
+| `controls[].missing_sources` | 한쪽이 측정했는데 UNKNOWN(또는 값 없음)을 낸 출처 이름. 없으면 `[]` |
+| `controls[].reason` | 기존 값 + `sources_disagree`(두 출처가 PASS와 FAIL로 갈림) |
 | `exceptions[]` | 이 판정에 적용한 예외. `{"exception_id", "control_id", "src", "dst", "evidence_digest", "expires_at", "approved_by", "compensating_control"}`. 콘솔은 "예외 승인"으로 승인자 · 기간 · 대체 통제와 함께 따로 보임 |
 | `evidence_expires_at` | 게이트 보고서의 `expires_at`(증거 유효기간 끝). 게이트를 못 읽었으면 `null`. 지난 판정으로는 예외를 요청 · 승인하지 않음 |
 
@@ -497,7 +500,14 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 - `GET /v1/controls/report`의 `questions[]` 행에 `src_evidence_digest`, `dst_evidence_digest`를 더합니다. 값은 `"sha256:" + sha256(JSON(증거 객체))`. 증거 객체는 `src_evidence` · `dst_evidence` 그대로(`{"verdict", "reason", "evidence"}`), JSON은 키 정렬 · 구분자 `,` `:` · UTF-8. 시각은 증거에 없으므로 같은 관측이면 같은 값입니다.
 - `GET /v1/controls`(4개 키 계약)는 바뀌지 않습니다.
 - 예외는 게이트 서비스가 모릅니다. `EXCEPTION`은 API가 판정을 조립할 때만 나옵니다.
-- API는 이제 `GET /v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`을 읽습니다(전에는 인자 없는 `/v1/controls`라 게이트가 422로 답했습니다). 질문 행을 `{control_id, src, dst, evidence_digest}`로 받습니다. 시간 제한 `BRAVO_GATE_TIMEOUT_S`(기본 60초). 게이트가 모르는 환경 이름이면 `gate_controls_unknown_environment`로 막습니다. 같은 통제 ID가 Executor와 게이트 양쪽에서 오면 지금처럼 UNKNOWN입니다.
+- API는 이제 `GET /v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`을 읽습니다(전에는 인자 없는 `/v1/controls`라 게이트가 422로 답했습니다). 질문 행을 `{control_id, src, dst, evidence_digest, source: "gate"}`로 받고, Executor 행에는 `source: "executor"`를 붙입니다. 시간 제한 `BRAVO_GATE_TIMEOUT_S`(기본 60초). 게이트가 모르는 환경 이름이면 `gate_controls_unknown_environment`로 막습니다.
+- **두 출처 합치기(팀장 결정 2026-11-02 23:4x KST).** `DB-ANON-READ`, `DB-AUTH`처럼 Executor와 게이트가 같은 통제 ID를 보고하면 원본(`src`) · 대상(`dst`)을 따로 합칩니다.
+  - 두 값이 같으면 그 값을 씁니다.
+  - 한쪽이 UNKNOWN(또는 값 없음)이고 다른 쪽이 PASS · FAIL이면 그 값을 쓰고, UNKNOWN을 낸 출처를 `missing_sources`에 적습니다.
+  - PASS와 FAIL로 갈리면 그쪽은 UNKNOWN, 행 `reason`은 `sources_disagree`입니다. 그대로 막습니다(5a).
+  - 두 출처의 값은 행의 `sources`에 다 남깁니다.
+  - 행의 `evidence_digest`는 합친 `dst`를 실제로 측정한 출처의 digest입니다. digest는 게이트만 내므로 예외는 늘 게이트 증거에 묶입니다. 게이트가 그 `dst`를 측정하지 않았으면(UNKNOWN) `null`이고 예외를 걸 수 없습니다.
+  - 같은 출처가 같은 ID를 두 번 내면(또는 출처 표시가 없으면) 모순으로 보고 UNKNOWN입니다.
 
 ### 9.6 이벤트
 
