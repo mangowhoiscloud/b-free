@@ -6,6 +6,7 @@ aws:
   # ce:UpdateCostAllocationTagsStatus attempts (deploy/platform/scripts/cost-tag.sh, lead approved 2026-11-02).
   cost_tag_activation_attempts:
     - {at: "2026-11-02T13:16:00Z", result: "ValidationException: Tag keys not found: component"}
+    - {at: "2026-11-02T13:46:21Z", result: "ValidationException: Failed to update Cost Allocation Tag: Tag keys not found: component."}
 gcp:
   project: b-free-target-20261102
   regions: [asia-northeast1]

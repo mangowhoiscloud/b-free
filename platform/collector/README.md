@@ -110,18 +110,22 @@ environments:
 | `GET /v1/environments` | 환경 ID, 이름, 설정된 출처, `credential_source`(자격을 받는 방식의 표시, 값은 아님). 비밀 없음 |
 | `GET /v1/environments/{id}/snapshot?sources=aws,kubernetes,postgres` | `collector/v1` 스냅숏. 모르는 환경은 404 |
 | `GET /v1/clusters` | 콘솔용 클러스터 실시간 보기. `kubernetes` 절이 있는 환경마다 노드 · 네임스페이스 · 워크로드 · 파드 단계 수 · 랜딩 존 구성요소(`11-landing-zone.md` 2절 규칙표). get/list만, Secret은 읽지 않음. 호출마다 5초 제한, 실패한 클러스터는 `unreachable`, 설정이 없으면 `not_configured`. 4초 캐시 |
+| `GET /v1/cost` | 비용 영수증 `cost/v1`(아래 "비용 영수증"). 질의 `start`, `end`, `plan_id`, `plan_created_at`, `plan_done_at`. 잘못된 시각은 422 |
 | `GET /v1/inventory` | `BRAVO_INVENTORY_ROOT`의 인벤토리(`inventory/v1`). 경로 인자는 받지 않습니다(경로 탈출 방지). 설정이 없거나, 읽을 파일이 하나도 없으면 503(`inventory_root_empty`: "의존성 없음"이 아니라 저장소가 없다는 뜻) |
 | `GET /v1/inventory/snapshot` | 리허설용 저장소 스냅숏(S2, `15-r2-contracts.md`). 인벤토리가 읽은 파일만 담은 tar.gz, 헤더 `X-Bravo-Inventory-Digest`(인벤토리 `input_digest`와 같음), `X-Bravo-Snapshot-Files`, `X-Bravo-Snapshot-Skipped`. 같은 저장소면 같은 바이트(mtime 0, uid 0, 0644). 루트가 없거나 비면 503 |
 
-## 비용(T1, 데모 마무리 장면)
+## 비용 영수증(T1, NFR-8, 데모 마무리 장면)
 
-    uv run --frozen python -m bravo_collector cost [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--tag component]
+`GET /v1/cost`(형식 `cost/v1`, 계약은 `docs/architecture/15-r2-contracts.md` 8절)와 같은 내용의 CLI입니다. 자원마다 단가 · 출처 · 수량 · 금액 · 근거(청구 · 추정 · 정액(구독) · API 가격 환산(청구 아님))를 한 줄로 내고, 계획 시각을 주면 이전 전 · 이전 중 · 이전 후와 "이전 중 추가 비용"을 계산합니다.
 
-Cost Explorer를 읽기만 합니다. 요청마다 USD 0.01이 청구되므로 필요할 때만 돌립니다(한 번에 2–3건, 출력의 `cost_explorer_requests`).
+    BRAVO_COST_CONFIG=../../deploy/platform/control/config/cost.yaml uv run --frozen python -m bravo_collector cost \
+      [--start ISO] [--end ISO] [--plan-id ID --plan-created-at ISO [--plan-done-at ISO]]
 
-- 먼저 `ce:ListCostAllocationTags`로 `component`가 비용 할당 태그로 켜져 있는지 봅니다. 켜져 있을 때만 태그별 비용을 냅니다.
-- 켜져 있지 않으면 그 상태와 이유를 그대로 냅니다(`tag.status`, `tag.reason`). 켜는 것은 결제 설정이라 계정 소유자 승인 뒤에 사람이 합니다. 이 도구는 바꾸지 않습니다.
-- 서비스별 비용은 늘 냅니다. 계정 전체 값이라 같은 계정의 다른 프로젝트도 들어 있습니다(`by_service.scope`). 지어낸 값은 없습니다.
+- 코드: `src/bravo_collector/costing/`(`aws_inventory.py`, `gcp_inventory.py`, `cloudflare.py`, `llm.py`, `prices.py`, `actuals.py`, `receipt.py`).
+- 읽기만 합니다. 쓰기 계열 호출이 없음을 `tests/test_cost.py::test_cost_code_makes_no_write_calls`가 검사합니다. 태그 활성화(결제 설정)는 `deploy/platform/scripts/cost-tag.sh`로 사람이 합니다.
+- Cost Explorer는 요청당 USD 0.01이라 1시간 캐시합니다(키 단위 잠금). 자원 목록 5분, 단가 24시간 캐시입니다.
+- 설정 `BRAVO_COST_CONFIG`(비밀 없음): `aws.regions`, `gcp.project` · `regions`, `cloudflare.zero_trust_plan`, `llm.subscriptions`. 환경 변수: `CLOUDFLARE_API_TOKEN` · `CLOUDFLARE_ACCOUNT_ID` · `CLOUDFLARE_ZONE_ID`(선택), `BRAVO_LLM_USAGE_DIR`(Harbor 실행 기록 디렉터리), `GOOGLE_APPLICATION_CREDENTIALS`(플랫폼에서는 WIF 자격 설정 파일).
+- 필요한 AWS 읽기 권한은 `infra/envs/platform-aws/rke2.tf`의 `collector_cost_read`, GCP는 `infra/envs/target-gcp/platform_cost_reader.tf`의 viewer 역할입니다.
 
 ## 실행
 
@@ -144,6 +148,7 @@ Cost Explorer를 읽기만 합니다. 요청마다 USD 0.01이 청구되므로 �
 | `test_aws.py` | 실제 AWS 계정, 읽기 호출만(버킷 목록에서 최대 2개, CloudTrail) | 기본 자격 체인에 자격이 없거나 `sts:GetCallerIdentity`가 실패할 때 |
 | `test_kubernetes.py` | `BRAVO_TEST_KUBECONFIG`(없으면 `~/.kube/config`)의 클러스터. Secret 메타데이터 목록 요청(kubernetes 클라이언트 37의 `param_serialize` · `call_api`)이 실제로 성공하는지 포함 | kubeconfig가 없거나 서버에 닿지 않을 때 |
 | `test_redact.py` | 자격 패턴, 오류 · 로그 가림, 자격이 든 응답 차단, `credential_source` 표시 | 없음 |
+| `test_cost.py` | 단계 배분 · 이전 중 추가 비용 계산, 일별(KST) 묶음, 합계 규칙, 쓰기 호출 없음, Cost Explorer 1시간 캐시(요청 수 기록), 실제 AWS 가격 · 자원 읽기(Cost Explorer는 부르지 않음) | AWS 자격이 없을 때 실제 읽기 시험만 |
 | `test_inventory.py` | 임시 파일 트리와 실제 `apps/demo` | `apps/demo`가 없을 때 그 시험만 |
 
 ## 의존성 인벤토리(FR-2, T16)

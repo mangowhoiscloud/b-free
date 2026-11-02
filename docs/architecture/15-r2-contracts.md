@@ -11,6 +11,7 @@
 | 5. T31 반영 경로 · Executor 승인 확인 | T10 ↔ T31 `platform/apply`, T12 Executor | 마이그레이션 `0004_change_approval.sql` |
 | 6. 리허설 Trial 요청 · 저장소 스냅숏 | T10 → T15 `platform/rehearsal` | `platform/api/src/bravo_api/rehearsal.py`, `upstreams.py` |
 | 7. 관측 API(콘솔 관측 화면) | 플랫폼 관측 백엔드(T18) → T21 콘솔 | `deploy/platform/observability`, `deploy/landing-zone/base/otel-agent-values.yaml`, `deploy/landing-zone/observability` |
+| 8. 비용 영수증 API(마무리 장면, NFR-8) | T1 수집기 → T10 API → T21 콘솔 | `platform/collector/src/bravo_collector/costing/`, `platform/api/src/bravo_api/service.py`(`cost`), `deploy/platform/control/config/cost.yaml` |
 
 ## 1. SSE 이벤트
 
@@ -292,6 +293,89 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | `platform`의 Hubble 계열 없음 | 플랫폼 Cilium(`deploy/platform/cilium`)에 `hubble.metrics`가 없음. Prometheus 수집 작업 `hubble`은 준비돼 있음 | 연결 안 됨: 플랫폼 Hubble 지표 꺼짐 |
 | Executor 단계 패널이 빔 | 컷오버 실행이 아직 없거나 Executor가 span을 보내지 못함 | API의 `run.stages[]`를 봄 |
 
+## 8. 비용 영수증 API(마무리 장면, NFR-8)
+
+`GET /v1/cost`는 이 플랫폼이 쓰는 자원마다 금액 한 줄을 돌려줍니다. 줄마다 단가와 그 출처, 수량, 금액, 근거(청구 · 추정)가 있습니다. 계획을 주면 "이전 전 · 이전 중 · 이전 후"로 나누고 "이전 중 추가 비용"을 계산합니다. 지어낸 금액은 없습니다. 읽지 못한 값은 `null`이고, 이유가 `not_connected[]`에 있습니다. 형식은 2026-11-02 22:5x KST 코드(`cost/v1`)에서 옮겼습니다.
+
+### 8.1 엔드포인트
+
+| 요청 | 누가 | 뜻 |
+|---|---|---|
+| `GET /v1/cost[?plan_id=<uuid>][&start=<ISO>][&end=<ISO>]` | API(콘솔 출처 `b-free`, Access JWT, viewer 이상) | 콘솔이 부르는 경로. `plan_id`가 있으면 API가 플랫폼 DB에서 계획 생성 시각과 처음 `DONE` · `DONE_ROLLED_BACK`이 된 시각을 읽어 수집기에 넘김. 응답은 수집기 본문 그대로 |
+| `GET /v1/cost?start=&end=&plan_id=&plan_created_at=&plan_done_at=&plan_state=&workload=` | 수집기(:8083, 클러스터 안, 콘솔 `/svc/collector/` 읽기 전용 프록시로도 닿음) | 같은 본문. 시각은 ISO 8601(UTC). 기본 기간은 이번 달 1일 00:00Z부터 지금까지. 계획을 주고 `start`가 없으면 계획 생성 24시간 전부터 |
+| `python -m bravo_collector cost [--config] [--start] [--end] [--plan-id] [--plan-created-at] [--plan-done-at]` | 운영자 | 같은 본문을 표준 출력으로 |
+
+오류: 수집기 422(시각 형식, `end <= start`, 62일 초과, `plan_done_at < plan_created_at`)는 API에서 422 `cost_bad_request`. 수집기가 설정되지 않으면 503 `collector_unconfigured`, 닿지 않으면 503 `collector_unreachable`(문구 "연결 안 됨: 수집기 비용 영수증"). 없는 계획은 404.
+
+### 8.2 응답(`cost/v1`)
+
+| 필드 | 뜻 |
+|---|---|
+| `schema_version`, `generated_at`, `inventory_observed_at`, `currency` | `cost/v1`, 응답 시각, 자원을 읽은 시각(5분 캐시), `USD` |
+| `period` {`start`, `end`, `hours`, `days`}, `day_timezone` | 기간과 일별 묶음의 시간대(`+09:00`, KST · JST) |
+| `plan` {`plan_id`, `state`, `workload`, `created_at`, `done_at`} | 계획(없으면 `null`). `done_at`이 `null`이면 아직 끝나지 않음 |
+| `phases` {`before`, `during`, `after`} | 각 단계의 `start`, `end`. 이전 전 = 기간 시작부터 계획 생성까지, 이전 중 = 계획 생성부터 `DONE`(없으면 지금)까지, 이전 후 = `DONE`부터 기간 끝까지 |
+| `summary.<단계>` | `label`, `start`, `end`, `hours`, `total`, `daily`(= `total` / `hours` × 24), `by_component` |
+| `migration_extra` | `value`, `formula`("이전 중 전체 − 이전 중 출발지(component=source, 원래 내던 비용)"), `inputs` {`during_total`, `during_source`, `during_hours`}, `explain`(계산식 문자열), `lower_bound`(금액을 모르는 줄이 있으면 `true`) |
+| `totals` | `total`(청구 + 추정 + 금액이 있는 정액), `estimated`, `billed`(태그 청구가 없으면 `null`), `flat`, `api_equivalent_not_billed`(합계에 넣지 않음), `unpriced_lines`, `by_component`, `by_environment`, `migration_extra` |
+| `lines[]` | 8.3 |
+| `daily[]` | {`date`(KST), `by_component`, `total`}. 합계에 들어가는 줄만 |
+| `tag` | `component` 비용 할당 태그 상태: `status`(`Active` · `Inactive` · `NOT_REGISTERED`), `label`("활성" · "태그 활성화 대기"), `reason`, `activation_attempts[]` |
+| `actuals` | Cost Explorer 결과: `status`, `period`, `by_service` {`scope`(계정 전체, 다른 프로젝트 포함, 합계에 넣지 않는 참고 값), `estimated`, `total`, `groups`, `daily`}, `cached_at`, `ttl_s`(3600), `from_cache`, `requests_this_response`, `charge_usd_on_fill` |
+| `price_list_at`, `bill_received_at` | 가장 이른 단가 조회 시각, Cost Explorer를 읽은 시각 |
+| `sources[]`, `not_connected[]`, `notes[]` | 출처별 상태, 연결 안 됨 목록 {`provider`, `what`, `reason`}, 범위 설명 |
+
+### 8.3 줄(`lines[]`)
+
+| 필드 | 뜻 |
+|---|---|
+| `line_id`, `provider`(`aws` · `gcp` · `cloudflare` · `llm`), `service`, `resource_type`, `resource_id`, `resource`(보이는 이름) | 자원 |
+| `environment`(`source-aws` · `platform` · `target-gcp` · `edge` · `llm`), `component`(`source` · `platform` · `target` · `edge` · `llm`), `component_source`(`tag` 또는 `inferred:<규칙>`) | 어디에 붙는 비용인가. AWS는 `component` 태그, 없으면 이름 `bravo-<component>`, 붙은 인스턴스 순으로 정함. GCP 프로젝트는 목적지 전용이라 라벨이 없으면 `target` |
+| `unit_price`, `unit`, `price_source` {`name`, `ref`(사용 유형 · SKU), `description`, `effective_date`, `url`, `fetched_at`} | 단가와 출처. AWS Pricing API, GCP Cloud Billing Catalog API, Cloudflare API, 공식 가격 페이지 |
+| `quantity`, `quantity_unit` | 기간 안의 수량(시간, GB-month, GB, vCPU-hours, key-month, tokens …) |
+| `subtotal` | `quantity × unit_price`. 모르면 `null` |
+| `basis`, `basis_code` | `청구`(`billed`), `추정`(`estimated`, 정가 × 자원 자체 시각으로 본 실행 시간), `정액(구독)`(`flat`), `API 가격 환산(청구 아님)`(`api_equivalent`) |
+| `in_total` | 합계에 들어가는가. 태그 청구 줄이 있으면 AWS 추정 줄은 `false`(이중 계산 방지). API 가격 환산 줄은 늘 `false` |
+| `phases` {`before`, `during`, `after`: {`quantity`, `subtotal`}} | 계획이 있을 때만 |
+| `running` {`from`, `to`, `state`}, `status`(`ok` · `not_connected`), `reason`, `note`, `plan_id`(에이전트 실행), `detail`(토큰 구성, LB 끝점) | 근거 |
+
+### 8.4 무엇을 읽는가
+
+| 범위 | 읽는 것(모두 읽기 호출) | 단가 |
+|---|---|---|
+| AWS(ap-northeast-2) | EC2 인스턴스(실행 중과, 종료 뒤 아직 보이는 것), EBS(붙은 인스턴스로 PVC 볼륨도), EKS, Regional NAT(시간 + CloudWatch 처리 GB, AZ 차원 합), NAT 공인 IPv4, ELB, S3(CloudWatch 일별 크기), KMS(별칭 `bravo-*`), ECR(이미지별 크기), Secrets Manager(메타데이터만), RDS, CloudTrail | AWS Pricing API On-Demand. 월 단가는 그 달 일수 × 24시간으로 시간 배분 |
+| GCP(`b-free-target-20261102`) | GKE 클러스터 요금, 노드(vCPU, RAM), Hyperdisk Balanced(용량, 기본 3,000 IOPS · 140 MiB/s를 넘는 몫), Cloud NAT(VM 수 × 시간, NAT IP), 내부 Application LB 프록시, Artifact Registry 크기, Cloud KMS 키 버전 | Cloud Billing Catalog API. 월 단가는 730시간으로 시간 배분. GKE 무료 등급($74.40/월 크레딧)은 적용하지 않고 주석으로 둠 |
+| Cloudflare | LB · 풀 · 끝점 수(`load_balancers`, `pools`), 구독 금액(`subscriptions`, Billing Read 필요), Zero Trust Free | API 구독 금액, Zero Trust는 Free 요금제라 0 |
+| LLM | 구독(설정 파일, 공식 가격 페이지를 인용할 때만 금액), 에이전트 실행마다 기록된 토큰(Harbor `result.json`의 `agent_result.metadata.worker.tokens`) | 실행 금액은 Claude Agent SDK `total_cost_usd`(SDK 가격표)를 그대로 씀. 구독 경로라 청구되지 않음 |
+| 청구(실제 금액) | Cost Explorer: `ListCostAllocationTags`, `GetCostAndUsage`(SERVICE, 태그가 Active면 TAG `component`도) | 태그가 Active가 되면 `aws:billed:<component>` 줄이 생기고, 하루 금액을 그날 24시간에 고르게 나눠 단계에 배분 |
+
+자격(장기 키 없음, NFR-6 · D-26): AWS는 수집 역할의 웹 신원 + 인라인 정책 `cost-receipt-read`(`infra/envs/platform-aws/rke2.tf`). GCP는 Pod 자신의 서비스 계정 토큰(audience `bravo-platform-gcp-wif`)을 Workload Identity Federation(풀 `bravo-platform`, 공급자 `rke2`)으로 바꾸고 `bravo-cost-reader`(viewer 역할만)를 가장합니다(`infra/envs/target-gcp/platform_cost_reader.tf`, 자격 설정 `deploy/platform/control/config/gcp-wif-collector.json`). Cloudflare는 선택 Secret `collector-cloudflare`(`api_token`, `account_id`, `zone_id`, OpenBao에서 파이프로).
+
+### 8.5 캐시와 요금
+
+| 대상 | 캐시 | 이유 |
+|---|---|---|
+| Cost Explorer | 1시간, 기간은 늘 이번 달 1일부터 내일까지(UTC). 키가 하루에 한 번만 바뀜 | 요청마다 USD 0.01. 한 번 채울 때 2건(태그가 Active면 3건) |
+| 자원 목록 | 5분 | Describe · List는 무료지만 느림(처음 10초에서 60초) |
+| 단가 | 24시간 | 가격표는 달 단위로 바뀜 |
+
+키마다 잠금이 있어 콘솔이 여러 번 동시에 불러도 같은 호출을 한 번만 합니다(`tests/test_cost.py`). 수집기가 다시 뜨면 캐시가 비므로 첫 응답이 Cost Explorer를 다시 부릅니다.
+
+### 8.6 값이 없을 때
+
+| 보이는 것 | 뜻 |
+|---|---|
+| `tag.label` = "태그 활성화 대기" | 청구 데이터가 아직 `component` 태그를 모름. `deploy/platform/scripts/cost-tag.sh activate`는 "Tag keys not found: component"로 거절됨(2026-11-02 13:16Z, 13:46Z, 팀장 승인). 태그 단 자원이 청구에 잡힌 뒤 최대 24시간. 그때까지 컴포넌트별 실제 금액은 없고 자원별 추정을 씀 |
+| `actuals.by_service`만 있음 | 계정 전체 실제 금액(다른 프로젝트 포함). 합계에 넣지 않음 |
+| S3 줄 `subtotal: null` | CloudWatch `BucketSizeBytes`가 하루 단위라 만든 날에는 값이 없음 |
+| Cloudflare LB 줄 `unit_price: null` | 토큰에 Billing Read가 없음(`403 Authentication error`). Cloudflare 문서는 LB 금액을 대시보드에서만 보임 |
+| LLM 구독 `unit_price: null` | Claude 구독 등급이 기록되지 않음. ChatGPT 가격 페이지는 2026-11-02 HTTP 403이고, Pro 등급이 둘이라는 보도가 있어 금액을 정하지 않음 |
+| "에이전트 실행별 토큰 사용량" 연결 안 됨 | 플랫폼 리허설 서비스가 Trial 결과를 emptyDir에만 두어 수집기가 읽을 곳이 없음(`BRAVO_LLM_USAGE_DIR` 없음). 노트북 실행 기록에서는 읽힘 |
+| GCP "청구(실제 금액)" 연결 안 됨 | Cloud Billing 내보내기(BigQuery)가 없음. GCP 줄은 모두 추정 |
+| 삭제된 자원 | Describe가 더는 돌려주지 않는 자원(종료 1시간 뒤의 인스턴스, 지운 EKS `bravo-platform`)은 추정에서 빠짐. 태그 청구가 켜지면 그 몫이 청구 줄에 들어감 |
+
+**측정 예(2026-11-02 13:45Z, 노트북 실행, 운영자 자격 · Cloudflare 토큰 · 실행 기록 포함).** 기간 11/1 00:00Z부터 13:44Z까지 63줄, 합계 추정 $2.51(출발지 $0.89, 플랫폼 $0.84, 목적지 GKE $0.78, edge $0), 금액을 모르는 줄 8개, API 가격 환산(청구 아님) $0.39(실행 2개, 토큰 42,154개와 62,471개). Cost Explorer 계정 전체는 $1.02(추정값, 하루 지연). 플랫폼 수집기 Pod(웹 신원, 13:41Z)는 48줄, 합계 $1.99였습니다. 그때는 GCP 가장 권한이 퍼지기 전이라 GCP가 연결 안 됨이었고, 13:46Z에 같은 신원으로 GKE · Compute · KMS · Artifact Registry · Billing Catalog가 모두 200인 것을 확인했습니다. 계획이 아직 없어(플랫폼 DB `plans` 0행) 단계 배분 값은 `tests/test_cost.py`의 계산 시험으로만 확인했습니다.
+
 ## 스펙 밖
 
-`GET /v1/plans`, `GET /v1/environments`, `POST /v1/plans/{id}/changes`, JIT 역할 파일, `envs/<이름>/…` 비밀 참조는 스펙 §8.9에 없습니다. 2026-11-02 코디네이터 지시(초보 고객이 첫 화면에서 모든 것을 보고 시작)로 넣었습니다. 회의에서 `docs/spec/DEVIATIONS.md`에 올릴지 정합니다.
+`GET /v1/plans`, `GET /v1/environments`, `POST /v1/plans/{id}/changes`, `GET /v1/cost`(T1 "component 태그별 비용 조회"를 API로 낸 것), JIT 역할 파일, `envs/<이름>/…` 비밀 참조는 스펙 §8.9에 없습니다. 2026-11-02 코디네이터 지시(초보 고객이 첫 화면에서 모든 것을 보고 시작)로 넣었습니다. 회의에서 `docs/spec/DEVIATIONS.md`에 올릴지 정합니다.

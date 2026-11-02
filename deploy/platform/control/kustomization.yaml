@@ -48,7 +48,7 @@ configMapGenerator:
 images:
   - name: bravo/api
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api
-    digest: sha256:832b16cdf3ea143fec05b942bc18314179dd2c11176e5c4c5619af35a3c0070d # r2-20261102T130026Z (platform-API lane: + inventory_root_empty, GET /v1/me, migration 0007 owner RLS fix)
+    digest: sha256:eefdcf9f8af3e884fe6f17b47db6d34bd7542e173efe01c819f72bd9a963cff2 # cost-20261102T134535Z (obs/cost lane: + GET /v1/cost over r2-20261102T130026Z; tree at 59883af)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
     digest: sha256:077fb8c8209228797fcebc6566e1229a4a6a6018d3247601094a69b535000805 # redesign-r8 (console lane: DESIGN-REFERENCE IA, type scale, time range, KPI, receipt, health/sync)
@@ -60,7 +60,7 @@ images:
     digest: sha256:be1e69fd48d4fdeb8da4110987fe164c19bd5e71bbe398d8a01856d75834b49d # cost-20261102T133456Z (obs/cost lane: GET /v1/cost; built from the working tree with the collector lane redact.py)
   - name: bravo/executor
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor
-    digest: sha256:f3f82550c17a19983d2b15184e2f0f1046d72fd4ff6e118fd23b2cc2d8a2eb9d # cloud-202611022231 (data/cutover lane: + front LB step timing and per-env probe counts)
+    digest: sha256:98f57c71e87884577b4a83e51101a791635995df2feacc8b14524140cb89c34d # cloud-202611022246 (data/cutover lane: + front judge TARGET_SHARE, LB failover no longer passes as DONE)
   - name: bravo/rehearsal
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal
     digest: sha256:929b414d3658b07ce0c3489620f6268333555ed0fd4474a5f4691103a3321614 # readyz-20261102T131522Z (rehearsal lane: worker imports via site-packages .pth, no PYTHONPATH; /readyz checks a usable OpenBao token; arm64)
