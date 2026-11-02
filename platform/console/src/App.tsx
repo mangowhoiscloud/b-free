@@ -15,6 +15,7 @@ import { errorText } from './api/client';
 import { deriveView } from './api/derive';
 import type { PlanAnalysis } from './api/types';
 import { ApprovalPanel } from './components/ApprovalPanel';
+import { ExceptionsPanel } from './components/ExceptionsPanel';
 import { ErrorLine, Panel } from './components/bits';
 import { CutoverPanel } from './components/CutoverPanel';
 import { EventStream } from './components/EventStream';
@@ -82,6 +83,10 @@ export function App() {
     },
     refetchInterval: 15_000,
   });
+  // Environment names for the plan's source/target ids (gate report and exception evidence need names).
+  const envsQ = useQuery({ queryKey: ['environments', token ?? ''], queryFn: () => api.listEnvironments(token ?? ''), enabled: Boolean(planId), retry: 0, staleTime: 60_000 });
+  const envName = (id: string | null | undefined) => (id ? envsQ.data?.find((e) => e.id === id)?.name ?? null : null);
+  const planNames = { source: envName(planQ.data?.plan.source), target: envName(planQ.data?.plan.target) };
 
   const view = useMemo(
     () => (planId ? deriveView(planId, planQ.data?.plan, stream.events, planQ.data?.seen ?? 0) : null),
@@ -139,7 +144,7 @@ export function App() {
               }}
             />
           )}
-          {screen === 'approvals' && <ApprovalsScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} user={session.user} />}
+          {screen === 'approvals' && <ApprovalsScreen planId={planId} view={view} events={events} status={stream.status} detail={stream.detail} user={session.user} names={planNames} />}
           {screen === 'ending' && <EndingScreen />}
           {screen === 'cost' && <CostScreen session={session} />}
         </div>
@@ -179,6 +184,7 @@ export function App() {
               </div>
               <div className="col col--side">
                 <ApprovalPanel planId={planId} view={view} user={session.user} />
+                <ExceptionsPanel planId={planId} view={view} user={session.user} names={planNames} />
                 <CutoverPanel planId={planId} view={view} user={session.user} />
               </div>
               <div className="col col--events">

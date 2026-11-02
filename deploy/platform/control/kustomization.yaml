@@ -51,7 +51,7 @@ images:
     digest: sha256:eefdcf9f8af3e884fe6f17b47db6d34bd7542e173efe01c819f72bd9a963cff2 # cost-20261102T134535Z (obs/cost lane: + GET /v1/cost over r2-20261102T130026Z; tree at 59883af)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:b7c1323e981054697927a3bde44f4347ce39a9ea34e4592c09f61a0a0830c6f2 # r12 (console lane: target_info min by (stale pod series), Hubble note derived from data only)
+    digest: sha256:194273013b7d4e0d2b9ead738301332896faca95bcb193a447c9e45709d150a2 # r13 (console lane: control exceptions S1 5b request/approve UI, A4 held ANALYZE, B10 receipt parts)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)

@@ -26,6 +26,7 @@
 |---|---|---|
 | 홈(첫 화면) | 로그인 사용자와 역할 `GET /v1/me`, 환경 `GET /v1/environments` + 수집기 클러스터 상태, 계획 목록 `GET /v1/plans`(상태 · 출발 → 목적 · 승인 대기, 줄을 누르면 계획 화면). 운영자는 "새 이전 시작"(`POST /v1/plans`), 승인자는 내 승인 대기 표. 경로가 없으면 "연결 안 됨"과 이유 | 5초(환경 10초) |
 | 계획 · 승인 콘솔 | API `GET /v1/plans/{id}`, 계획 SSE. 기존 게이트 · 승인 · 컷오버 · 이벤트 칸. `/plans/<id>` 주소로 열면 이 화면 | SSE, 15초 |
+| 통제 예외 (S1 5b) | 게이트 표의 측정된 목적지 FAIL 행에서 operator가 "예외 요청"(사유 10–2000자, 만료 5분–30일), approver가 계획 화면 · 승인 기록의 예외 칸에서 그 FAIL의 증거(판정 행, digest, 게이트 보고서의 현재 증거)를 보고 승인 · 거절. 승인된 행은 "예외 승인"과 승인자 · 만료로 보이고 동등 판정 요약에서 따로 셈. UNKNOWN은 예외 불가. 계약 `docs/architecture/15-r2-contracts.md` §9 | 15초, 이벤트 |
 | 승인 (change · cutover · failback) | 계획 SSE `approval.granted`, 기존 승인 칸. change의 diff · 이미지 digest · 정책 diff는 API 계약 문서가 생길 때까지 "연결 안 됨" | SSE |
 | 에이전트 실시간 | 계획 SSE `trial.*`, `tool.denied`, `analysis.done`. 허용된 도구 호출은 API가 내보내지 않아 "연결 안 됨" | SSE |
 | 클러스터 실시간 | 수집기 `GET /v1/clusters`(읽기 전용 get/list, Secret 안 읽음): 노드, 워크로드 준비, 랜딩 존 구성 요소. 프로비저닝 상태는 상태 원장이 열릴 때까지 "연결 안 됨" | 5초 |

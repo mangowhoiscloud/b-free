@@ -1,11 +1,88 @@
+import { Fragment, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiError, errorText } from '../api/client';
 import type { ConsoleView } from '../api/derive';
-import type { DevToken } from '../api/types';
-import { fmtDateTime } from '../lib/format';
+import type { ControlException, ControlRow, DevToken, GateResult } from '../api/types';
+import { fmtDateTime, fmtTs } from '../lib/format';
 import { idemKey, releaseIdemKey } from '../lib/idem';
 import { useApi } from '../state';
 import { ActorBadge, ControlValueMark, ErrorLine, Mark, Panel, Reasons } from './bits';
+import { EXCEPTION_STATUS, exceptionsError, useExceptions } from './ExceptionsPanel';
+
+/** Plan states in which the API refuses exception requests (contract 15 §9.3 state_mismatch). */
+const EXCEPTION_LOCKED = new Set(['CUTOVER', 'FAILBACK', 'DONE', 'DONE_ROLLED_BACK', 'SAFE_HOLD', 'ABORT_PRE_WRITE', 'WATCH']);
+
+/** A row can be excepted only when it is a measured destination FAIL with evidence (contract 15 §9.1). */
+function exceptable(c: ControlRow): boolean {
+  return c.verdict === 'BLOCK' && c.dst === 'FAIL' && (c.src === 'PASS' || c.src === 'FAIL') && c.evidence_digest !== null;
+}
+
+function isoLocal(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Operator's request form for one FAIL row: reason (10–2000) and expiry (5 min – 30 days). */
+function RequestException({ planId, gate, row, user, onDone }: { planId: string; gate: GateResult; row: ControlRow; user: DevToken | null; onDone: () => void }) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const [reason, setReason] = useState('');
+  const [expires, setExpires] = useState(() => isoLocal(Date.now() + 7 * 24 * 3600_000));
+  const scope = `exception-request:${planId}:${row.control_id}:${gate.verdict_id}`;
+  const send = useMutation({
+    mutationFn: () =>
+      api.requestException(
+        user?.token ?? '',
+        planId,
+        { control_id: row.control_id, gate_verdict_id: gate.verdict_id, evidence_digest: row.evidence_digest ?? '', reason: reason.trim(), expires_at: new Date(expires).toISOString() },
+        idemKey(scope),
+      ),
+    onSuccess: () => onDone(),
+    onSettled: (_d, err) => {
+      if (!(err instanceof ApiError && err.status === 0)) releaseIdemKey(scope);
+      void qc.invalidateQueries({ queryKey: ['plan', planId] });
+    },
+  });
+  const exp = Date.parse(expires);
+  const problems: string[] = [];
+  if (reason.trim().length < 10) problems.push('사유는 10자 이상 씁니다: 왜 대체할 수 없는지와 보완 통제.');
+  if (!(exp > Date.now() + 5 * 60_000 && exp < Date.now() + 30 * 24 * 3600_000)) problems.push('만료는 지금부터 5분 뒤에서 30일 뒤 사이여야 합니다.');
+  return (
+    <form
+      className="exception__form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (problems.length === 0) send.mutate();
+      }}
+    >
+      <p className="muted">
+        {row.control_id} · 원본 {row.src} · 대상 {row.dst} · 판정 <span className="mono">{gate.verdict_id.slice(0, 8)}</span> · 증거{' '}
+        <span className="mono" title={row.evidence_digest ?? undefined}>
+          {(row.evidence_digest ?? '').replace(/^sha256:/, '').slice(0, 14)}…
+        </span>
+      </p>
+      <label className="field">
+        <span className="field__label">사유 (10–2000자)</span>
+        <textarea className="input" rows={3} maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: 대상에서 이 통제를 걸 수 없는 이유와 대신 둔 보완 통제…" />
+      </label>
+      <label className="field field--inline">
+        <span className="field__label">만료</span>
+        <input className="input" type="datetime-local" value={expires} min={isoLocal(Date.now() + 6 * 60_000)} max={isoLocal(Date.now() + 30 * 24 * 3600_000 - 60_000)} onChange={(e) => setExpires(e.target.value)} />
+      </label>
+      <Reasons id={`exreq-${row.control_id}`} reasons={problems} />
+      <div className="exception__actions">
+        <button type="submit" className="btn btn--primary" disabled={problems.length > 0 || send.isPending}>
+          {send.isPending ? '요청 중…' : '예외 요청 보내기'}
+        </button>
+        <button type="button" className="btn btn--ghost" onClick={onDone}>
+          취소
+        </button>
+      </div>
+      <ErrorLine text={send.error ? errorText(send.error) : null} />
+    </form>
+  );
+}
 
 /** States in which the API accepts a gate run (service.py gate_run). */
 const GATE_STATES = new Set(['COLLECT', 'GATE', 'AWAIT_APPROVAL']);
@@ -37,6 +114,18 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
   const gate =
     view.gate && run.data && run.data.verdict_id === view.gate.verdict_id ? { ...view.gate, readiness: run.data.readiness } : view.gate;
   const anyDerived = gate?.controls.some((c) => c.verdictDerived) ?? false;
+  const exQ = useExceptions(planId, user?.token ?? '');
+  const [requesting, setRequesting] = useState<string | null>(null);
+  const openFor = (controlId: string): ControlException | undefined =>
+    exQ.data?.find((e) => e.control_id === controlId && (e.status === 'requested' || e.status === 'approved'));
+  const counts = { pass: 0, block: 0, exception: 0 };
+  for (const c of gate?.controls ?? []) {
+    if (c.verdict === 'PASS') counts.pass += 1;
+    else if (c.verdict === 'EXCEPTION') counts.exception += 1;
+    else counts.block += 1;
+  }
+  // Without a readable exceptions list the console cannot tell whether one is already open: no request button.
+  const canRequest = user?.role === 'operator' && !EXCEPTION_LOCKED.has(view.state) && !exQ.error && exQ.data !== undefined;
 
   return (
     <Panel
@@ -98,6 +187,11 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
             </p>
           )}
 
+          <p className="parity-summary" aria-label="동등 판정 요약">
+            통제 {gate.controls.length}개 · 통과 <b>{counts.pass}</b> · 막음 <b>{counts.block}</b> · 예외 승인 <b>{counts.exception}</b>
+            <span className="muted"> (예외 승인은 동등 판정에서 따로 빼서 셉니다)</span>
+            {exQ.error ? <span className="muted"> · 예외 목록 연결 안 됨: {exceptionsError(exQ.error)} · 예외 요청 버튼을 숨깁니다</span> : null}
+          </p>
           <div className="table-wrap" tabIndex={0} role="region" aria-label="통제 비교표">
             <table className="table">
               <caption className="sr-only">통제 ID별 원본, 대상, 판정</caption>
@@ -111,11 +205,16 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                     대상 <span className="th-sub">목적 환경</span>
                   </th>
                   <th scope="col">판정</th>
+                  <th scope="col">예외</th>
                 </tr>
               </thead>
               <tbody>
-                {gate.controls.map((c) => (
-                  <tr key={c.control_id} className={c.verdict === 'BLOCK' ? 'row--block' : undefined}>
+                {gate.controls.map((c) => {
+                  const applied = c.verdict === 'EXCEPTION' ? gate.exceptions.find((e) => e.exception_id === c.exception_id || e.control_id === c.control_id) : undefined;
+                  const open = openFor(c.control_id);
+                  return (
+                  <Fragment key={c.control_id}>
+                  <tr className={c.verdict === 'BLOCK' ? 'row--block' : undefined}>
                     <th scope="row">
                       <span className="mono">{c.control_id}</span>
                       {c.question && <span className="cell-sub">{c.question}</span>}
@@ -127,17 +226,56 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                       <ControlValueMark value={c.dst} />
                     </td>
                     <td>
-                      <Mark tone={c.verdict === 'PASS' ? 'pass' : 'block'}>
-                        {c.verdict}
-                        {c.verdictDerived && <sup title="API가 행 판정을 보내지 않아 화면에서 규칙으로 계산">*</sup>}
-                      </Mark>
-                      {c.reason && <span className="cell-sub mono">{c.reason}</span>}
+                      {c.verdict === 'EXCEPTION' ? (
+                        <>
+                          <Mark tone="neutral">예외 승인</Mark>
+                          <span className="cell-sub">
+                            승인 {applied?.approved_by ?? '—'} · 만료 {fmtTs(applied?.expires_at ?? null)}
+                          </span>
+                        </>
+                      ) : (
+                        <Mark tone={c.verdict === 'PASS' ? 'pass' : 'block'}>
+                          {c.verdict}
+                          {c.verdictDerived && <sup title="API가 행 판정을 보내지 않아 화면에서 규칙으로 계산">*</sup>}
+                        </Mark>
+                      )}
+                      {c.reason && c.verdict !== 'EXCEPTION' && <span className="cell-sub mono">{c.reason}</span>}
+                    </td>
+                    <td>
+                      {c.verdict === 'EXCEPTION' ? (
+                        <span className="muted">동등 판정에서 뺌</span>
+                      ) : open ? (
+                        <span className="muted">{EXCEPTION_STATUS[open.status]?.text ?? open.status} · {open.requested_by ?? '—'}</span>
+                      ) : exceptable(c) ? (
+                        canRequest ? (
+                          <button type="button" className="btn btn--ghost" onClick={() => setRequesting(requesting === c.control_id ? null : c.control_id)} aria-expanded={requesting === c.control_id}>
+                            예외 요청
+                          </button>
+                        ) : (
+                          <span className="muted">{user?.role !== 'operator' ? '요청은 operator' : `${view.state}에서는 요청 불가`}</span>
+                        )
+                      ) : c.src === 'UNKNOWN' || c.dst === 'UNKNOWN' ? (
+                        <span className="muted">UNKNOWN은 예외 불가</span>
+                      ) : c.verdict === 'BLOCK' && c.dst === 'FAIL' && c.evidence_digest === null ? (
+                        <span className="muted">증거 없음 · 예외 불가</span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  {requesting === c.control_id && (
+                    <tr className="row--form">
+                      <td colSpan={5}>
+                        <RequestException planId={planId} gate={gate} row={c} user={user} onDone={() => setRequesting(null)} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
                 {gate.controls.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="empty-cell">
+                    <td colSpan={5} className="empty-cell">
                       판정 결과에 통제 행이 없습니다.
                     </td>
                   </tr>
@@ -145,7 +283,7 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
               </tbody>
               <tbody className="tbody--readiness">
                 <tr className="row--section">
-                  <th scope="rowgroup" colSpan={4}>
+                  <th scope="rowgroup" colSpan={5}>
                     데이터 경로 준비
                   </th>
                 </tr>
@@ -164,11 +302,12 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
                         <Mark tone="unknown">판정 없음</Mark>
                       )}
                     </td>
+                    <td />
                   </tr>
                 ))}
                 {gate.readiness.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="empty-cell">
+                    <td colSpan={5} className="empty-cell">
                       준비 값(복제 지연, 스키마 해시)이 판정 결과에 없습니다.
                     </td>
                   </tr>
@@ -177,7 +316,7 @@ export function GatePanel({ planId, view, user }: { planId: string; view: Consol
             </table>
           </div>
           <p className="footnote">
-            규칙: 원본과 대상이 모두 PASS일 때만 통과합니다. FAIL이나 UNKNOWN이 하나라도 있으면 BLOCK입니다.
+            규칙: 원본과 대상이 모두 PASS일 때만 통과합니다. FAIL이나 UNKNOWN이 하나라도 있으면 BLOCK입니다. 측정된 대상 FAIL은 approver가 승인한 예외로만 "예외 승인"이 되어 동등 판정에서 빠집니다. UNKNOWN은 예외로 바꿀 수 없습니다.
             {anyDerived && ' * 표시는 API가 행 판정을 보내지 않아 이 규칙으로 화면에서 계산한 값입니다.'}
           </p>
         </>

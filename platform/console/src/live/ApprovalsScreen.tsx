@@ -10,6 +10,7 @@ import type { DevToken, PlanEvent } from '../api/types';
 import { useQuery } from '@tanstack/react-query';
 import { errorText } from '../api/client';
 import { ApprovalPanel } from '../components/ApprovalPanel';
+import { ExceptionsPanel } from '../components/ExceptionsPanel';
 import { useApi } from '../state';
 import { fmtTime, shortId } from '../lib/format';
 import { StreamBadge } from './AgentsScreen';
@@ -21,6 +22,7 @@ const KINDS = [
   { stage: 'change', title: '변경 승인 (change · S2)', what: 'REHEARSE 통과 뒤 diff · 이미지 digest · 정책 diff에 결속 → 목적지 반영 → 게이트 재대조' },
   { stage: 'cutover', title: '컷오버 승인 (cutover · S3)', what: '계획 · 게이트 결과에 결속 → Executor 컷오버' },
   { stage: 'failback', title: '되돌리기 승인 (failback)', what: '컷오버 뒤 원래 환경으로 되돌림' },
+  { stage: 'exception', title: '통제 예외 (S1 5b)', what: '측정된 목적지 FAIL을 예외로 승인하면 그 행은 "예외 승인"으로 동등 판정에서 빠짐. UNKNOWN은 예외 불가' },
 ] as const;
 
 function short(v: unknown, n = 12) {
@@ -55,7 +57,7 @@ function ChangesBlock({ planId, token }: { planId: string; token: string }) {
   );
 }
 
-export function ApprovalsScreen({ planId, view, events, status, detail, user }: { planId: string | null; view: ConsoleView | null; events: PlanEvent[]; status: StreamStatus; detail: string | null; user: DevToken | null }) {
+export function ApprovalsScreen({ planId, view, events, status, detail, user, names }: { planId: string | null; view: ConsoleView | null; events: PlanEvent[]; status: StreamStatus; detail: string | null; user: DevToken | null; names: { source: string | null; target: string | null } }) {
   const granted = eventsOf(events, ['approval.granted']);
   return (
     <Screen
@@ -70,7 +72,7 @@ export function ApprovalsScreen({ planId, view, events, status, detail, user }: 
           <Block title="승인 종류">
             <DataTable
               rows={KINDS.map((k) => {
-                const mine = granted.filter((e) => str(asRecord(e.data).stage) === k.stage);
+                const mine = k.stage === 'exception' ? eventsOf(events, ['exception.approved']) : granted.filter((e) => str(asRecord(e.data).stage) === k.stage);
                 return { k, mine, waiting: view.awaiting?.stage === k.stage };
               })}
               rowKey={(r) => r.k.stage}
@@ -100,6 +102,7 @@ export function ApprovalsScreen({ planId, view, events, status, detail, user }: 
         </>
       )}
       {planId && view && <ApprovalPanel planId={planId} view={view} user={user} />}
+      {planId && view && <ExceptionsPanel planId={planId} view={view} user={user} names={names} />}
     </Screen>
   );
 }

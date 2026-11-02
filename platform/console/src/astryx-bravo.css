@@ -609,3 +609,60 @@ h1, h2, h3 {
 .wrap-any {
   overflow-wrap: anywhere;
 }
+
+/* Control exceptions (contract 15 §9) */
+.parity-summary {
+  margin: 8px 0;
+  font-size: 14px;
+}
+.row--form td {
+  background: var(--panel-2);
+}
+.exception__form,
+.exception__decide {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+.exception__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.exceptions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.exception {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.exception__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.exception__reason {
+  margin: 6px 0;
+}
+.exception__h {
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+.evidence__json {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--panel-2);
+  padding: 8px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

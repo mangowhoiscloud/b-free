@@ -15,6 +15,8 @@ import {
   type ActorKind,
   type GateResult,
   type HashPair,
+  type AppliedException,
+  type ControlException,
   type Plan,
   type PlanAnalysis,
   type PlanEvent,
@@ -70,15 +72,17 @@ function controlRow(v: unknown): ControlRow | null {
   if (!o || !id) return null;
   const src = controlValue(o.src);
   const dst = controlValue(o.dst);
-  const sent = verdict(o.verdict);
+  const sentRaw = o.verdict === 'EXCEPTION' ? 'EXCEPTION' : verdict(o.verdict);
   return {
     control_id: id,
     question: asStr(o.question) ?? CONTROL_QUESTION[id] ?? '',
     src,
     dst,
-    verdict: sent ?? ruleVerdict(src, dst),
-    verdictDerived: sent === null,
+    verdict: sentRaw ?? ruleVerdict(src, dst),
+    verdictDerived: sentRaw === null,
     reason: asStr(o.reason),
+    evidence_digest: asStr(o.evidence_digest),
+    exception_id: asStr(o.exception_id),
   };
 }
 
@@ -193,8 +197,9 @@ export function parseGate(v: unknown): GateResult | null {
   const sent = verdict(o.verdict);
   const rows = Array.isArray(o.readiness) ? readiness(o.readiness) : readinessFromReasons(reasons, o.readiness, sent);
   if (!id && controls.length === 0) return null;
+  // EXCEPTION rows are out of parity (contract 15 §9.4): only BLOCK rows block.
   const derived: Verdict =
-    controls.every((c) => c.verdict === 'PASS') && rows.every((r) => r.verdict !== 'BLOCK') ? 'PASS' : 'BLOCK';
+    controls.every((c) => c.verdict !== 'BLOCK') && rows.every((r) => r.verdict !== 'BLOCK') ? 'PASS' : 'BLOCK';
   return {
     verdict_id: id ?? '(ID 없음)',
     verdict: sent ?? derived,
@@ -203,6 +208,41 @@ export function parseGate(v: unknown): GateResult | null {
     reasons,
     controls,
     readiness: rows,
+    exceptions: asArr(o.exceptions)
+      .map((x) => {
+        const e = asObj(x);
+        const eid = asStr(e?.exception_id);
+        if (!e || !eid) return null;
+        return { exception_id: eid, control_id: asStr(e.control_id) ?? '—', src: asStr(e.src), dst: asStr(e.dst), evidence_digest: asStr(e.evidence_digest), expires_at: asStr(e.expires_at), approved_by: asStr(e.approved_by) };
+      })
+      .filter((x): x is AppliedException => x !== null),
+  };
+}
+
+/** Control exception object (contract 15 §9.3). Unknown fields stay null. */
+export function parseException(v: unknown): ControlException | null {
+  const o = asObj(v);
+  const id = asStr(o?.exception_id);
+  if (!o || !id) return null;
+  const env = asObj(o.target_environment);
+  return {
+    exception_id: id,
+    control_id: asStr(o.control_id) ?? '—',
+    target_environment: asStr(env?.name) ?? asStr(env?.environment_id),
+    gate_verdict_id: asStr(o.gate_verdict_id),
+    src: asStr(o.src),
+    dst: asStr(o.dst),
+    evidence_digest: asStr(o.evidence_digest),
+    reason: asStr(o.reason),
+    expires_at: asStr(o.expires_at),
+    status: asStr(o.status) ?? 'requested',
+    stale_reason: asStr(o.stale_reason),
+    requested_by: asStr(o.requested_by),
+    requested_at: asStr(o.requested_at),
+    decided_by: asStr(o.decided_by),
+    decided_at: asStr(o.decided_at),
+    decision_note: asStr(o.decision_note),
+    applied: o.applied === true,
   };
 }
 
@@ -333,7 +373,8 @@ export function parsePlan(v: unknown): Plan {
     workload: asStr(o.workload),
     source: asStr(o.source_environment_id) ?? asStr(o.source),
     target: asStr(o.target_environment_id) ?? asStr(o.target),
-    created_by: asStr(o.created_by) ?? asStr(asObj(o.created_by)?.email),
+    // plan_get sends {created_by: {principal: <email>}} (service.py).
+    created_by: asStr(o.created_by) ?? asStr(asObj(o.created_by)?.principal) ?? asStr(asObj(o.created_by)?.email),
     last_gate: parseGate(o.last_gate ?? o.gate),
     awaiting_approval: approvalRequest(o.awaiting_approval),
     approval: parseApproval(o.approval),

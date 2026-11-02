@@ -5,8 +5,8 @@
  * SSE: EventSource cannot set headers, so the stream uses fetch via @microsoft/fetch-event-source.
  */
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { asObj, asStr, parseApproval, parseDevTokens, parseEvent, parseGate, parsePlan, parseRun } from './normalize';
-import type { Approval, ApprovalInput, CreatePlanInput, DevToken, GateResult, Plan, PlanEvent, Run } from './types';
+import { asObj, asStr, parseApproval, parseDevTokens, parseEvent, parseException, parseGate, parsePlan, parseRun } from './normalize';
+import type { Approval, ApprovalInput, ControlException, CreatePlanInput, DevToken, GateResult, Plan, PlanEvent, Run } from './types';
 import { parseEnvironments, parseMe, parsePlans, type EnvSummary, type Me, type PlanSummary } from './home';
 
 export type StreamStatus = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'denied';
@@ -22,6 +22,11 @@ export interface ApiClient {
   getMe(token: string): Promise<Me>;
   listPlans(token: string): Promise<PlanSummary[]>;
   listEnvironments(token: string): Promise<EnvSummary[]>;
+  /** Control exceptions (contract 15 §9.3). Writes are console-only and carry Idempotency-Key. */
+  listExceptions(token: string, planId: string): Promise<ControlException[]>;
+  requestException(token: string, planId: string, body: { control_id: string; gate_verdict_id: string; evidence_digest: string; reason: string; expires_at: string }, idemKey: string): Promise<ControlException | null>;
+  approveException(token: string, planId: string, exceptionId: string, body: { evidence_digest: string; note?: string }, idemKey: string): Promise<ControlException | null>;
+  rejectException(token: string, planId: string, exceptionId: string, body: { note?: string }, idemKey: string): Promise<ControlException | null>;
   /** GET /v1/plans/{id}/changes: change approvals' binding (diff, image digest, policy diff). */
   listChanges(token: string, planId: string): Promise<Record<string, unknown>[]>;
   createPlan(token: string, input: CreatePlanInput, idemKey: string): Promise<{ plan_id: string }>;
@@ -63,6 +68,13 @@ const REASON_TEXT: Record<string, string> = {
   wrong_audience: '콘솔용 토큰이 아닙니다(AUD 불일치).',
   not_a_member: '이 테넌트의 구성원이 아닙니다.',
   unknown_principal: 'Access 로그인은 되었지만 이 계정이 플랫폼 구성원으로 등록되어 있지 않습니다.',
+  exception_stale: '예외의 근거가 지금 판정과 맞지 않습니다(판정이 바뀌었거나 증거가 바뀜, 또는 만료). 게이트 결과를 새로 본 뒤 다시 하세요.',
+  exception_open: '이 통제에는 이미 열린 예외(승인 대기 또는 승인됨)가 있습니다.',
+  exception_not_pending: '이 예외는 이미 결정되어 승인 · 거절할 수 없습니다.',
+  exception_not_allowed: '이 행은 예외를 걸 수 없습니다(UNKNOWN은 예외 불가, 목적지가 FAIL이 아니거나 증거가 없음).',
+  exception_expiry_invalid: '만료 시각은 지금부터 5분 뒤에서 30일 뒤 사이여야 합니다.',
+  exception_not_found: '예외를 찾지 못했습니다.',
+  idempotency_key_reuse: '같은 Idempotency-Key에 다른 입력이 왔습니다.',
 };
 
 /** Plain Korean text for an error shown on screen. */
@@ -160,6 +172,23 @@ export function createHttpClient(base: string): ApiClient {
 
     async listEnvironments(token) {
       return parseEnvironments(await request('GET', '/v1/environments', { token }));
+    },
+
+    async listExceptions(token, planId) {
+      const body = asObj(await request('GET', `/v1/plans/${enc(planId)}/exceptions`, { token }));
+      return (Array.isArray(body?.exceptions) ? body.exceptions : []).map(parseException).filter((x): x is ControlException => x !== null);
+    },
+
+    async requestException(token, planId, body, idemKey) {
+      return parseException(await request('POST', `/v1/plans/${enc(planId)}/exceptions`, { token, body, idemKey }));
+    },
+
+    async approveException(token, planId, exceptionId, body, idemKey) {
+      return parseException(await request('POST', `/v1/plans/${enc(planId)}/exceptions/${enc(exceptionId)}/approve`, { token, body, idemKey }));
+    },
+
+    async rejectException(token, planId, exceptionId, body, idemKey) {
+      return parseException(await request('POST', `/v1/plans/${enc(planId)}/exceptions/${enc(exceptionId)}/reject`, { token, body, idemKey }));
     },
 
     async listChanges(token, planId) {

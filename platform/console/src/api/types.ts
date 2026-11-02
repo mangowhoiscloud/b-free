@@ -67,17 +67,57 @@ export interface PlanEvent {
 /** Executor control values (CONTRACT §6). */
 export type ControlValue = 'PASS' | 'FAIL' | 'UNKNOWN';
 export type Verdict = 'PASS' | 'BLOCK';
+/** Per-row verdict: EXCEPTION = an approved control exception took the row out of parity (contract 15 §9.4). */
+export type RowVerdict = Verdict | 'EXCEPTION';
 
 export interface ControlRow {
   control_id: string;
   question: string;
   src: ControlValue;
   dst: ControlValue;
-  verdict: Verdict;
+  verdict: RowVerdict;
   /** true when the API sent no per-row verdict and the console applied 04-governance §2. */
   verdictDerived: boolean;
-  /** Server reason code for a BLOCK row, e.g. regression. */
+  /** Server reason code for a BLOCK row, e.g. regression; `exception_approved` for EXCEPTION. */
   reason: string | null;
+  /** sha256 of the destination evidence; null when the row has no evidence (e.g. Executor rows). */
+  evidence_digest: string | null;
+  /** Set only on EXCEPTION rows. */
+  exception_id: string | null;
+}
+
+/** Exception applied in a gate verdict (`exceptions[]`, contract 15 §9.4). */
+export interface AppliedException {
+  exception_id: string;
+  control_id: string;
+  src: string | null;
+  dst: string | null;
+  evidence_digest: string | null;
+  expires_at: string | null;
+  approved_by: string | null;
+}
+
+export type ExceptionStatus = 'requested' | 'approved' | 'rejected' | 'stale' | 'expired';
+
+/** Control exception object (contract 15 §9.3). */
+export interface ControlException {
+  exception_id: string;
+  control_id: string;
+  target_environment: string | null;
+  gate_verdict_id: string | null;
+  src: string | null;
+  dst: string | null;
+  evidence_digest: string | null;
+  reason: string | null;
+  expires_at: string | null;
+  status: ExceptionStatus | (string & {});
+  stale_reason: string | null;
+  requested_by: string | null;
+  requested_at: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  applied: boolean;
 }
 
 /** Readiness check shown under the controls (복제 지연, 스키마 해시). */
@@ -101,6 +141,7 @@ export interface GateResult {
   reasons: string[];
   controls: ControlRow[];
   readiness: ReadinessRow[];
+  exceptions: AppliedException[];
 }
 
 /** run_stages row (CONTRACT §5). */
