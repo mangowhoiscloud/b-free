@@ -47,10 +47,16 @@ scram() {
 }
 
 step_rbac() {
-  k "$SOURCE" apply -f "$RBAC/source.yaml" >/dev/null
-  k "$ONPREM" apply -f "$RBAC/onprem.yaml" >/dev/null
-  k gke apply -f "$RBAC/gke.yaml" >/dev/null
-  log "RBAC bravo-gate-read on source, on-prem, GKE"
+  local ctx f pinned live
+  for pair in "$SOURCE:source" "$ONPREM:onprem" "gke:gke"; do
+    ctx=${pair%%:*}; f="$RBAC/${pair#*:}.yaml"
+    k "$ctx" apply -f "$f" >/dev/null
+    # The NET-PATHS admission policy pins the app image; a new app image fails closed until the pin follows.
+    pinned="$(sed -n 's/^  annotations: {bravo.io\/app-image: "\(.*\)"}$/\1/p' "$f")"
+    live="$(k "$ctx" -n chat get deploy chat-bravo-demo -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    [[ $pinned == "$live" ]] || log "WARNING ${pair#*:}: ValidatingAdmissionPolicy bravo-gate-netprobe pins $pinned but chat-bravo-demo runs $live (NET-PATHS probe Pods are denied until $f is updated)"
+  done
+  log "RBAC bravo-gate-read + ValidatingAdmissionPolicy bravo-gate-netprobe on source, on-prem, GKE"
 }
 
 step_onprem_token() {

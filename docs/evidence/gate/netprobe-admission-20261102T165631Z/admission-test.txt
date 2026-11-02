@@ -1,0 +1,20 @@
+== source-aws (2026-11-03 01:56:33 KST)
+gate: app image, compliant (allowed)                       rc=0 pod/gate-netprobe-xd4qf
+gate: other image (denied)                                 rc=1 The pods "gate-netprobe-mdwsk" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: only the app Deployment's image (pinned digest) is allowed
+gate: automountServiceAccountToken true (denied)           rc=1 The pods "gate-netprobe-mdsbz" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: automountServiceAccountToken must be false
+gate: activeDeadlineSeconds 300 (denied)                   rc=1 The pods "gate-netprobe-lpkqp" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: activeDeadlineSeconds must be set and at most 90
+gate: no probe label (denied)                              rc=1 The pods "gate-netprobe-jbp2x" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: label bravo.io/probe=gate-net-paths is required
+== target-onprem (2026-11-03 01:56:36 KST)
+gate: app image, compliant (allowed)                       rc=0 pod/gate-netprobe-vs6jq
+gate: other image (denied)                                 rc=1 The pods "gate-netprobe-htvz6" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: only the app Deployment's image (pinned digest) is allowed
+gate: automountServiceAccountToken true (denied)           rc=1 The pods "gate-netprobe-l8j4m" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: automountServiceAccountToken must be false
+gate: activeDeadlineSeconds 300 (denied)                   rc=1 The pods "gate-netprobe-8xqmd" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: activeDeadlineSeconds must be set and at most 90
+gate: no probe label (denied)                              rc=1 The pods "gate-netprobe-6vrdg" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: label bravo.io/probe=gate-net-paths is required
+== target-gcp (2026-11-03 01:56:36 KST)
+gate: app image, compliant (allowed)                       rc=0 pod/gate-netprobe-4l2kx
+gate: other image (denied)                                 rc=1 The pods "gate-netprobe-hjmk5" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: only the app Deployment's image (pinned digest) is allowed
+gate: automountServiceAccountToken true (denied)           rc=1 The pods "gate-netprobe-djp8s" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: automountServiceAccountToken must be false
+gate: activeDeadlineSeconds 300 (denied)                   rc=1 The pods "gate-netprobe-bp6z9" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: activeDeadlineSeconds must be set and at most 90
+gate: no probe label (denied)                              rc=1 The pods "gate-netprobe-plxrb" is invalid: : ValidatingAdmissionPolicy 'bravo-gate-netprobe' with binding 'bravo-gate-netprobe' denied request: gate probe Pod: label bravo.io/probe=gate-net-paths is required
+== scope: the policy matches only the gate identity (operator, other image, dry-run)
+operator on-prem: other image (policy not matched)         rc=0 pod/gate-netprobe-xr8xd

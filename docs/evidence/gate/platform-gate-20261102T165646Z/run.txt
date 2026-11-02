@@ -1,0 +1,6 @@
+target: svc/gate (context bravo-platform-rke2, ns bravo-control)
+deployment image: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate@sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959
+argocd control: f147be44c3a3dd021dfe6fe82e4083bae0261566 OutOfSync
+[{"environment_id":"source-aws","display_name":"출발지 · Amazon EKS (bravo-source)","sections":["object_store","postgres","kubernetes","aws","network","platform"]},{"environment_id":"target-gcp","display_name":"목적지 · GKE (b-free-target-20261102)","sections":["object_store","postgres","kubernetes","network","platform"]},{"environment_id":"target-onprem","display_name":"목적지 · 온프렘 RKE2 CIS (Lima VM 2대)","sections":["object_store","postgres","kubernetes","network","platform"]}]
+target-onprem: started 2026-11-03 01:56:47 KST, finished 01:57:01 KST
+target-gcp: started 2026-11-03 01:57:01 KST, finished 01:57:12 KST
