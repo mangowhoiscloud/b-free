@@ -1,0 +1,8 @@
+cilium-x6mqg 10.10.11.169:8000::cx_connect_fail::3457
+cilium-x6mqg 10.10.11.169:8000::cx_total::3869
+cilium-x6mqg 10.10.11.25:8000::cx_connect_fail::0
+cilium-x6mqg 10.10.11.25:8000::cx_total::4399
+cilium-wxckc 10.10.11.169:8000::cx_connect_fail::0
+cilium-wxckc 10.10.11.169:8000::cx_total::0
+cilium-wxckc 10.10.11.25:8000::cx_connect_fail::77
+cilium-wxckc 10.10.11.25:8000::cx_total::77

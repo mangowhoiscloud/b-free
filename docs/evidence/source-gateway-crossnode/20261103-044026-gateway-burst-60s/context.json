@@ -1,0 +1,8 @@
+{
+  "label": "gateway-burst-60s",
+  "app_url": "https://b-free-chat-src.mangowhois.ai",
+  "started_kst": "2026-11-03T04:40:26+09:00",
+  "git": "0a069e8d8ca5cabc8ce808aba6e1e6f95dca9e28",
+  "loadgen_or_scripts_uncommitted_paths": 0,
+  "runner": "Job in bravo-platform-rke2/bravo-control (loadgen@sha256:2d55f4b4b13d74cfe3b653e181e177fa03949ad3e0490be5ad926f60aa52672d)"
+}

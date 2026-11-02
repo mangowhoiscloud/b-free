@@ -1,0 +1,34 @@
+# 2026-11-03T04:32:45+09:00 helm upgrade cilium (cilium/cilium 1.20.4) -f deploy/landing-zone/overlays/eks/cilium-values.yaml --set k8sServiceHost=<EKS endpoint>
+STATUS: deployed
+REVISION: 4
+daemon set "cilium" successfully rolled out
+{
+  "enable-ipv4-masquerade": "true",
+  "enable-bpf-masquerade": "false",
+  "ipv4-native-routing-cidr": "10.0.0.0/16"
+}
+== cilium-4t4ld ip-10-10-11-107.ap-northeast-2.compute.internal
+-N CILIUM_POST_nat
+== cilium-hsvw8 ip-10-10-11-11.ap-northeast-2.compute.internal
+-N CILIUM_POST_nat
+-A POSTROUTING -s 10.0.1.0/24 -d 10.10.0.0/16 -o ens5 -m comment --comment "bravo L1 diag: SNAT cilium ingress IP to node IP (temporary)" -j MASQUERADE
+# 2026-11-03T04:33:02+09:00 restart cilium agents one node at a time (config changes do not roll the DaemonSet: rollOutCiliumPods=false)
+ip-10-10-11-107.ap-northeast-2.compute.internal agent cilium-wxckc ready=true
+-N CILIUM_POST_nat
+-A CILIUM_POST_nat -s 10.0.0.0/24 -m set --match-set cilium_node_set_v4 dst -m comment --comment "exclude traffic to cluster nodes from masquerade" -j ACCEPT
+-A CILIUM_POST_nat -s 10.0.0.0/24 ! -d 10.0.0.0/16 ! -o cilium_+ -m comment --comment "cilium masquerade non-cluster" -j MASQUERADE
+-A CILIUM_POST_nat -m mark --mark 0xa00/0xe00 -m comment --comment "exclude proxy return traffic from masquerade" -j ACCEPT
+-A CILIUM_POST_nat -s 127.0.0.1/32 -o cilium_host -m comment --comment "cilium host->cluster from 127.0.0.1 masquerade" -j SNAT --to-source 10.0.0.144
+-A CILIUM_POST_nat -o cilium_host -m mark --mark 0xf00/0xf00 -m conntrack --ctstate DNAT -m comment --comment "hairpin traffic that originated from a local pod" -j SNAT --to-source 10.0.0.144
+ip-10-10-11-11.ap-northeast-2.compute.internal agent cilium-x6mqg ready=true
+-N CILIUM_POST_nat
+-A CILIUM_POST_nat -s 10.0.1.0/24 -m set --match-set cilium_node_set_v4 dst -m comment --comment "exclude traffic to cluster nodes from masquerade" -j ACCEPT
+-A CILIUM_POST_nat -s 10.0.1.0/24 ! -d 10.0.0.0/16 ! -o cilium_+ -m comment --comment "cilium masquerade non-cluster" -j MASQUERADE
+-A CILIUM_POST_nat -m mark --mark 0xa00/0xe00 -m comment --comment "exclude proxy return traffic from masquerade" -j ACCEPT
+-A CILIUM_POST_nat -s 127.0.0.1/32 -o cilium_host -m comment --comment "cilium host->cluster from 127.0.0.1 masquerade" -j SNAT --to-source 10.0.1.35
+-A CILIUM_POST_nat -o cilium_host -m mark --mark 0xf00/0xf00 -m conntrack --ctstate DNAT -m comment --comment "hairpin traffic that originated from a local pod" -j SNAT --to-source 10.0.1.35
+removed
+-P POSTROUTING ACCEPT
+-A POSTROUTING -m comment --comment "cilium-feeder: CILIUM_POST_nat" -j CILIUM_POST_nat
+-A POSTROUTING -m comment --comment "kubernetes postrouting rules" -j KUBE-POSTROUTING
+-A POSTROUTING -m comment --comment "AWS SNAT CHAIN" -j AWS-SNAT-CHAIN-0

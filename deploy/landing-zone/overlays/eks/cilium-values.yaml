@@ -6,8 +6,23 @@
 cni:
   chainingMode: aws-cni
   exclusive: false
-enableIPv4Masquerade: false
 routingMode: native
+# Masquerade ONLY traffic sourced from the node's Cilium cluster-pool range (cilium_host, the Gateway Envoy's "ingress"
+# IP, cilium-health) when it leaves for a non-cluster-pool address. Pods keep their VPC IPs (aws-cni), so they are
+# never masqueraded: the rule is "-s <node allocCIDR> ! -d <ipv4NativeRoutingCIDR> ! -o cilium_+ -j MASQUERADE".
+# Why (measured 2026-11-03 04:2x KST, two app nodes): the Gateway Envoy opens upstream connections from the ingress
+# IP (10.0.1.134 on ip-10-10-11-11, ss state syn-sent), which is not a VPC address. To a backend on the same node the
+# BPF datapath delivers it; to the other node the SYN never arrives (AWS source/dest check, no VPC route for
+# 10.0.x.0/24): envoy cx_connect_fail 3171 of 3517 to the remote pod, 0 to the local one, about 3 % 503 "upstream
+# connect error ... connection timeout" at the edge. A temporary MASQUERADE for 10.0.1.0/24 -> 10.10.0.0/16 on that
+# node gave 0 connect failures in 12 new connections and 1500/1500 200. The Cilium docs' chaining example uses
+# enableIPv4Masquerade=false for pod traffic; this keeps that for pods and fixes only the proxy's own source.
+# ipv4NativeRoutingCIDR is the cluster-pool part actually allocated per node (10.0.<n>.0/24 from 10.0.0.0/8, mask
+# /24): 10.0.0.0/16 holds 256 nodes. bpf.masquerade stays false (iptables rule above, chaining has no BPF masq path).
+enableIPv4Masquerade: true
+ipv4NativeRoutingCIDR: 10.0.0.0/16
+bpf:
+  masquerade: false
 
 # Gateway API needs the eBPF kube-proxy replacement: with "false" cilium-operator logs
 # "Gateway API support requires kube-proxy-replacement enabled" and never accepts the GatewayClass
