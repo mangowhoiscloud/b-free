@@ -102,7 +102,7 @@ export function DemoAppScreen({ view }: { view: ConsoleView | null }) {
         </p>
       </Block>
 
-      <Block title="마지막 컷오버 영수증" meta={receipt ? <Tag variant={receipt.verdict === 'MATCH' ? 'success' : 'error'} label={receipt.verdict} /> : undefined}>
+      <Block title="마지막 컷오버 영수증" meta={receipt ? <Tag variant={receipt.verdict === 'MATCH' ? 'success' : receipt.verdict === 'MATCH_PARTIAL' ? 'warning' : 'error'} label={receipt.verdict === 'MATCH_PARTIAL' ? 'MATCH_PARTIAL · 일부만 확인' : receipt.verdict} /> : undefined}>
         {!view ? (
           <NotConnected title="계획 없음" endpoint="GET /v1/plans/{plan_id}" reason="영수증은 계획에 붙습니다. 홈의 계획 표에서 계획을 고르세요." />
         ) : !receipt ? (
@@ -114,9 +114,17 @@ export function DemoAppScreen({ view }: { view: ConsoleView | null }) {
                 { label: '저장 시각', value: fmtDateTime(receipt.created_at) },
                 { label: '쓰기 멈춤', value: <Val v={run?.write_pause_ms != null ? fmtMs(run.write_pause_ms) : null} unit="ms" why="값 없음" /> },
                 { label: '쓰기 멈춤 예산', value: <Val v={run?.write_pause_budget_ms != null ? fmtMs(run.write_pause_budget_ms) : null} unit="ms" why="실행 응답에 없음" /> },
-                { label: '행 수 src / dst', value: <span className="num">{receipt.rows.src ?? '—'} / {receipt.rows.dst ?? '—'}</span> },
-                { label: 'PK 집합 해시', value: receipt.pk_hash.src ? (receipt.pk_hash.src === receipt.pk_hash.dst ? '같음' : '다름') : '—' },
-                { label: '내용 해시', value: receipt.content_hash.src ? (receipt.content_hash.src === receipt.content_hash.dst ? '같음' : '다름') : '—' },
+                ...(receipt.tables.length
+                  ? [
+                      { label: '비교한 표', value: <span className="num">{receipt.tables.filter((t) => t.match).length} / {receipt.tables.length} 같음</span> },
+                      { label: '부분 판정', value: <span className="mono">표 {receipt.parts.tables ?? '—'} · 시퀀스 {receipt.parts.sequences ?? '—'} · 객체 {receipt.parts.objects ?? '—'}</span> },
+                      { label: '방향', value: <span className="mono">{receipt.direction ?? '—'} · {receipt.source ?? '—'} → {receipt.target ?? '—'}</span> },
+                    ]
+                  : [
+                      { label: '행 수 src / dst', value: <span className="num">{receipt.rows.src ?? '—'} / {receipt.rows.dst ?? '—'}</span> },
+                      { label: 'PK 집합 해시', value: receipt.pk_hash.src ? (receipt.pk_hash.src === receipt.pk_hash.dst ? '같음' : '다름') : '—' },
+                      { label: '내용 해시', value: receipt.content_hash.src ? (receipt.content_hash.src === receipt.content_hash.dst ? '같음' : '다름') : '—' },
+                    ]),
               ]}
             />
             <DataTable

@@ -231,45 +231,114 @@ function PairRow({ label, pair, expectEqual, note }: { label: string; pair: Hash
   );
 }
 
+export function receiptTone(verdict: string): Tone {
+  return verdict === 'MATCH' ? 'pass' : verdict === 'MATCH_PARTIAL' ? 'unknown' : 'block';
+}
+
+export const PART_TEXT: Record<string, string> = { MATCH: '같음', MISMATCH: '다름', NOT_CHECKED: '확인 안 함' };
+
 function ReceiptView({ receipt }: { receipt: Receipt | null }) {
   if (!receipt) {
     return <p className="empty">무결성 영수증은 5단계 최종 비교 뒤에 저장됩니다.</p>;
   }
-  const match = receipt.verdict === 'MATCH';
-  const noBody = [receipt.rows, receipt.pk_hash, receipt.content_hash, receipt.seq].every((p) => p.src === null && p.dst === null);
+  const sides = [...new Set(receipt.tables.flatMap((t) => Object.keys(t.rows)))];
+  const legacy = receipt.tables.length === 0;
+  const noBody = legacy && [receipt.rows, receipt.pk_hash, receipt.content_hash, receipt.seq].every((p) => p.src === null && p.dst === null);
   return (
     <div className="receipt">
       <div className="receipt__head">
         <h3 className="receipt__title">무결성 영수증</h3>
-        <Mark tone={match ? 'pass' : 'block'} size="lg">
-          {receipt.verdict}
+        <Mark tone={receiptTone(receipt.verdict)} size="lg">
+          {receipt.verdict === 'MATCH_PARTIAL' ? 'MATCH_PARTIAL · 일부만 확인' : receipt.verdict}
         </Mark>
         {receipt.receipt_id && <span className="mono muted">{receipt.receipt_id}</span>}
       </div>
-      {noBody && <p className="footnote">API가 영수증 본문(행 수, 해시, 시퀀스)을 아직 보내지 않아 판정만 보입니다.</p>}
-      <div className="table-wrap" tabIndex={0} role="region" aria-label="무결성 영수증">
-        <table className="table">
-          <caption className="sr-only">쓰기를 멈춘 뒤 출발지와 목적지의 최종 비교</caption>
-          <thead>
-            <tr>
-              <th scope="col">항목</th>
-              <th scope="col">
-                출발지 <span className="th-sub">AWS</span>
-              </th>
-              <th scope="col">
-                목적지 <span className="th-sub">온프렘</span>
-              </th>
-              <th scope="col">비교</th>
-            </tr>
-          </thead>
-          <tbody>
-            <PairRow label="행 수" pair={receipt.rows} expectEqual />
-            <PairRow label="PK 집합 해시" pair={receipt.pk_hash} expectEqual />
-            <PairRow label="내용 해시" pair={receipt.content_hash} expectEqual />
-            <PairRow label="시퀀스" pair={receipt.seq} expectEqual={false} note="목적지는 5단계에서 올려 둠" />
-          </tbody>
-        </table>
-      </div>
+      {(receipt.source || receipt.target) && (
+        <p className="muted">
+          {receipt.direction ?? '방향 —'} · {receipt.source ?? '—'} → {receipt.target ?? '—'}
+        </p>
+      )}
+      {(receipt.parts.tables || receipt.parts.sequences || receipt.parts.objects) && (
+        <p className="reason-codes">
+          <span className="muted">부분 판정</span> 표 <code>{receipt.parts.tables ?? '—'}</code> · 시퀀스 <code>{receipt.parts.sequences ?? '—'}</code> · 첨부 객체{' '}
+          <code>{receipt.parts.objects ?? '—'}</code>
+          {receipt.parts.objects === 'NOT_CHECKED' && (
+            <span className="muted">
+              {' '}
+              ({receipt.objects.reason ?? '이유 없음'}{receipt.objects.referenced !== null ? `, 참조 ${receipt.objects.referenced}개` : ''}). 첨부는 비교하지 않았으므로 전체 MATCH가 아닙니다.
+            </span>
+          )}
+        </p>
+      )}
+      {noBody && <p className="footnote">API가 영수증 본문(표 · 시퀀스)을 보내지 않아 판정만 보입니다.</p>}
+      {!legacy && (
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="표별 비교">
+          <table className="table">
+            <caption className="sr-only">쓰기를 멈춘 뒤 표마다 출발지와 목적지 비교</caption>
+            <thead>
+              <tr>
+                <th scope="col">표</th>
+                {sides.map((side) => (
+                  <th key={side} scope="col" className="num">
+                    행 수 <span className="th-sub">{side}</span>
+                  </th>
+                ))}
+                <th scope="col">PK 해시</th>
+                <th scope="col">내용 해시</th>
+                <th scope="col">비교</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receipt.tables.map((t) => {
+                const pk = Object.values(t.pkHash);
+                const ch = Object.values(t.contentHash);
+                return (
+                  <tr key={t.name} className={t.match === false ? 'row--block' : undefined}>
+                    <th scope="row" className="mono">{t.name}</th>
+                    {sides.map((side) => (
+                      <td key={side} className="mono num">{t.rows[side] ?? '—'}</td>
+                    ))}
+                    <td>{pk.length > 1 && pk.every((h) => h !== null) ? (pk.every((h) => h === pk[0]) ? '같음' : '다름') : '—'}</td>
+                    <td>{ch.length > 1 && ch.every((h) => h !== null) ? (ch.every((h) => h === ch[0]) ? '같음' : '다름') : '—'}</td>
+                    <td>{t.match === null ? <Mark tone="unknown">값 없음</Mark> : <Mark tone={t.match ? 'pass' : 'block'}>{t.match ? '같음' : '다름'}</Mark>}</td>
+                  </tr>
+                );
+              })}
+              {receipt.sequences.map((q) => (
+                <tr key={`seq-${q.name}`} className={q.match === false ? 'row--block' : undefined}>
+                  <th scope="row" className="mono">시퀀스 {q.name}</th>
+                  <td className="mono num" colSpan={Math.max(1, sides.length)}>
+                    출발 마지막 {q.originLast ?? '—'} · 목적 전 {q.targetBefore ?? '—'} → {q.targetSet ?? '—'}
+                  </td>
+                  <td colSpan={2} className="muted">목적지 값이 출발 마지막 이상이면 같음</td>
+                  <td>{q.match === null ? <Mark tone="unknown">값 없음</Mark> : <Mark tone={q.match ? 'pass' : 'block'}>{q.match ? '같음' : '다름'}</Mark>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {legacy && !noBody && (
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="무결성 영수증">
+          <table className="table">
+            <caption className="sr-only">쓰기를 멈춘 뒤 출발지와 목적지의 최종 비교</caption>
+            <thead>
+              <tr>
+                <th scope="col">항목</th>
+                <th scope="col">출발지</th>
+                <th scope="col">목적지</th>
+                <th scope="col">비교</th>
+              </tr>
+            </thead>
+            <tbody>
+              <PairRow label="행 수" pair={receipt.rows} expectEqual />
+              <PairRow label="PK 집합 해시" pair={receipt.pk_hash} expectEqual />
+              <PairRow label="내용 해시" pair={receipt.content_hash} expectEqual />
+              <PairRow label="시퀀스" pair={receipt.seq} expectEqual={false} note="목적지는 5단계에서 올려 둠" />
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -230,14 +230,31 @@ export function parseReceipt(v: unknown): Receipt | null {
   const body = asObj(o.body) ?? o;
   const verdictValue = asStr(o.verdict) ?? asStr(body.verdict);
   if (!verdictValue) return null;
+  const parts = asObj(body.verdict_parts) ?? {};
+  const objects = asObj(body.objects) ?? {};
+  const numMap = (x: unknown) => Object.fromEntries(Object.entries(asObj(x) ?? {}).map(([k, n]) => [k, typeof n === 'number' ? n : null]));
+  const strMap = (x: unknown) => Object.fromEntries(Object.entries(asObj(x) ?? {}).map(([k, n]) => [k, asStr(n)]));
   return {
-    receipt_id: asStr(o.receipt_id),
+    receipt_id: asStr(o.receipt_id) ?? asStr(body.receipt_id),
     verdict: verdictValue,
-    created_at: asStr(o.created_at),
+    created_at: asStr(o.created_at) ?? asStr(body.created_at),
+    source: asStr(body.source),
+    target: asStr(body.target),
+    direction: asStr(body.direction),
+    parts: { tables: asStr(parts.tables), sequences: asStr(parts.sequences), objects: asStr(parts.objects) },
+    objects: { verdict: asStr(objects.verdict), reason: asStr(objects.reason), referenced: typeof objects.referenced === 'number' ? objects.referenced : null },
+    tables: (Array.isArray(body.tables) ? body.tables : []).map((t) => {
+      const x = asObj(t) ?? {};
+      return { name: asStr(x.name) ?? '—', rows: numMap(x.rows), pkHash: strMap(x.pk_hash), contentHash: strMap(x.content_hash), match: typeof x.match === 'boolean' ? x.match : null };
+    }),
+    sequences: (Array.isArray(body.sequences) ? body.sequences : []).map((t) => {
+      const x = asObj(t) ?? {};
+      return { name: asStr(x.name) ?? '—', originLast: asNum(x.origin_last), targetBefore: asNum(x.target_before), targetSet: asNum(x.target_set), match: typeof x.match === 'boolean' ? x.match : null };
+    }),
     rows: pairStr(body.rows),
     pk_hash: pairStr(body.pk_hash),
     content_hash: pairStr(body.content_hash),
-    seq: pairStr(body.seq ?? body.sequences),
+    seq: pairStr(Array.isArray(body.sequences) ? null : body.seq ?? body.sequences),
   };
 }
 

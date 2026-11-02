@@ -119,11 +119,38 @@ export interface HashPair {
   dst: string | null;
 }
 
-/** receipts row; `body` fields follow CONTRACT §6 step 5 (rows, PK set hash, content hash, sequences). */
+/** One compared table in the Executor receipt (cutover.py): values keyed by side (src / dst). */
+export interface ReceiptTable {
+  name: string;
+  rows: Record<string, number | null>;
+  pkHash: Record<string, string | null>;
+  contentHash: Record<string, string | null>;
+  match: boolean | null;
+}
+
+export interface ReceiptSequence {
+  name: string;
+  originLast: number | null;
+  targetBefore: number | null;
+  targetSet: number | null;
+  match: boolean | null;
+}
+
+/** receipts row; `body` from the Executor (cutover.py): tables[], sequences[], objects, verdict_parts.
+ *  MATCH_PARTIAL = tables and sequences matched, objects NOT_CHECKED (audit B10). */
 export interface Receipt {
   receipt_id: string | null;
-  verdict: 'MATCH' | 'MISMATCH' | (string & {});
+  verdict: 'MATCH' | 'MATCH_PARTIAL' | 'MISMATCH' | (string & {});
   created_at: string | null;
+  /** Cluster names and direction as the Executor wrote them. */
+  source: string | null;
+  target: string | null;
+  direction: string | null;
+  parts: { tables: string | null; sequences: string | null; objects: string | null };
+  objects: { verdict: string | null; reason: string | null; referenced: number | null };
+  tables: ReceiptTable[];
+  sequences: ReceiptSequence[];
+  /** Older pilot body (single pairs); kept so older receipts still render. */
   rows: HashPair;
   pk_hash: HashPair;
   content_hash: HashPair;
