@@ -5,7 +5,13 @@ The file holds references only. Secrets stay in environment variables or the sta
     postgres.tls.sslrootcert_env     env var with the CA file path for the verify-full probe
     object_store.app_credential      how to get the app credential (profile, env var names, default chain)
     kubernetes.kubeconfig_env        env var with the kubeconfig path
-Keys the gate does not use are ignored, so the collector and the gate share one file.
+    kubernetes.provider eks          EKS endpoint + CA from eks:DescribeCluster, bearer token from the gate's own AWS
+                                     identity (standard chain, web identity on the platform); ``api_server`` dials a
+                                     D-16 link and TLS still checks the real endpoint host
+    kubernetes.provider gke          GKE DNS endpoint ``api_server``, bearer token from Google application default
+                                     credentials (Workload Identity Federation on the platform), public CA
+Keys the gate does not use are ignored, so the collector and the gate share one file. Each process brings its own
+credentials: the same entry gives the collector its read identity and the gate its own, separate one.
 """
 
 from __future__ import annotations
@@ -47,6 +53,11 @@ class ObjectStoreSection(_Section):
     # PUT probes (OBJ-03 anonymous PUT, OBJ-04 app PUT) write to the bucket. Off unless approved for this store.
     write_probes: bool = False
     timeout_s: float = 5.0
+    # CA bundle file for a private CA (e.g. the on-prem RGW). A public file path, not a secret. None = system CAs.
+    ca_file: str | None = None
+    # OBJ-06 sends its plain-HTTP request here instead of the https endpoint with the scheme swapped. For a store the
+    # gate reaches only through a TLS link, this is the store's own plain listener behind its own link.
+    plain_http_endpoint_url: str | None = None
 
 
 class PostgresTls(_Section):
@@ -55,6 +66,9 @@ class PostgresTls(_Section):
 
 class PostgresSection(_Section):
     dsn_env: str
+    # Dial this host (a D-16 link Service) while libpq still checks the server certificate against the DSN ``host``
+    # (libpq ``hostaddr``). Resolved on every probe run.
+    dial_host: str | None = None
     app_role: str | None = None
     app_tables: tuple[str, ...] = ()
     tls: PostgresTls = PostgresTls()
@@ -64,6 +78,11 @@ class PostgresSection(_Section):
 class KubernetesSection(_Section):
     kubeconfig_env: str | None = None
     context: str | None = None
+    provider: str | None = None  # eks | gke | None (kubeconfig)
+    eks_cluster_name: str | None = None
+    aws_region: str | None = None
+    api_server: str | None = None  # eks: D-16 link address; gke: the DNS endpoint
+    tls_server_name: str | None = None
     app_namespace: str | None = None
     app_secret: str | None = None
     # "namespace/name" of service accounts that must not read the app secret.

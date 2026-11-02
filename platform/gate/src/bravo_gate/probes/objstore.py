@@ -81,9 +81,15 @@ def _attempt(fn) -> Outcome:
 def _endpoint(section: ObjectStoreSection, *, plain_http: bool = False) -> str:
     url = section.endpoint_url or f"https://s3.{section.region}.amazonaws.com"
     if plain_http:
+        if section.plain_http_endpoint_url:  # the store's own plain listener behind its own link
+            return section.plain_http_endpoint_url
         parts = urlsplit(url)
         url = urlunsplit(("http", parts.netloc, parts.path, parts.query, parts.fragment))
     return url
+
+
+def _verify(section: ObjectStoreSection) -> str | bool:
+    return section.ca_file or True
 
 
 def _config(section: ObjectStoreSection, *, unsigned: bool) -> Config:
@@ -117,12 +123,12 @@ def _client(section: ObjectStoreSection, cred: Credential | None, *, plain_http:
     if cred is None:
         return boto3.session.Session().client(
             "s3", region_name=section.region, endpoint_url=_endpoint(section, plain_http=plain_http),
-            config=_config(section, unsigned=True), use_ssl=not plain_http)
+            config=_config(section, unsigned=True), use_ssl=not plain_http, verify=_verify(section))
     sess = _session(cred, section.region)
     if sess is None:
         return None
     return sess.client("s3", region_name=section.region, endpoint_url=_endpoint(section, plain_http=plain_http),
-                       config=_config(section, unsigned=False), use_ssl=not plain_http)
+                       config=_config(section, unsigned=False), use_ssl=not plain_http, verify=_verify(section))
 
 
 class ObjectStoreProbe:
@@ -289,22 +295,26 @@ class ObjectStoreProbe:
 
     # OBJ-06 plain HTTP must be refused: connection refused, or AccessDenied over http:// while the same
     # credential reads the canary over https:// (so the refusal is about the transport, not the identity).
+    # The credential is the app credential, else the read credential: the question is about the transport, and
+    # any identity that may read the canary over https shows that the http refusal is not an identity refusal.
     def obj06(self) -> Obs:
         endpoint = _endpoint(self.s)
         if endpoint.startswith("http://"):
             return failed("endpoint_is_plain_http", **self._ev())
-        if self.s.app_credential is None:
+        cred = self.s.app_credential or self.s.read_credential
+        if cred is None:
             return unknown("app_credential_missing", **self._ev())
-        https = _client(self.s, self.s.app_credential)
+        cred_kind = "app" if self.s.app_credential is not None else "read"
+        https = _client(self.s, cred)
         h = (_attempt(lambda: https.head_object(Bucket=self.s.bucket, Key=self.s.canary_key))
              if https is not None else Outcome("unverified", "app_credential_unavailable"))
         if h.kind == "missing_key":
             return unknown("canary_missing", **self._ev(canary=self.s.canary_key, head=h.detail))
         if h.kind != "ok":
             return unknown("https_control_failed", **self._ev(head=f"{h.kind} {h.detail}"))
-        plain = _client(self.s, self.s.app_credential, plain_http=True)
+        plain = _client(self.s, cred, plain_http=True)
         r = _attempt(lambda: plain.get_object(Bucket=self.s.bucket, Key=self.s.canary_key)["Body"].read(0))
-        ev = self._ev(request="app GET over http://", plain_endpoint=_endpoint(self.s, plain_http=True),
+        ev = self._ev(request=f"{cred_kind} GET over http://", plain_endpoint=_endpoint(self.s, plain_http=True),
                       https_head="ok", response=f"{r.kind} {r.detail}")
         if r.kind == "ok":
             return failed("plain_http_accepted", **ev)

@@ -1,0 +1,63 @@
+"""The gate's own read paths on the platform: EKS token over a D-16 link, a DB dialled through a link with
+verify-full against the DB's own name, and OBJ-06's plain request to a store reached through a link."""
+
+from __future__ import annotations
+
+import base64
+import urllib.parse
+
+import boto3
+import pytest
+from psycopg.conninfo import conninfo_to_dict
+
+from bravo_gate.environments import KubernetesSection, ObjectStoreSection, PostgresSection
+from bravo_gate.probes import kube_auth
+from bravo_gate.probes.objstore import _endpoint
+from bravo_gate.probes.postgres import PostgresProbe
+
+
+def test_eks_token_is_a_presigned_get_caller_identity_bound_to_the_cluster() -> None:
+    session = boto3.session.Session(aws_access_key_id="AKIAEXAMPLE", aws_secret_access_key="example",  # noqa: S106
+                                    region_name="ap-northeast-2")
+    token = kube_auth.eks_token(session, "bravo-source", "ap-northeast-2")
+    assert token.startswith("k8s-aws-v1.")
+    raw = token.removeprefix("k8s-aws-v1.")
+    url = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode()
+    q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+    assert url.startswith("https://sts.ap-northeast-2.amazonaws.com/")
+    assert q["Action"] == ["GetCallerIdentity"]
+    assert "x-k8s-aws-id" in q["X-Amz-SignedHeaders"][0]
+    assert q["X-Amz-Expires"] == ["60"]
+
+
+def test_gke_without_endpoint_is_not_configured() -> None:
+    with pytest.raises(kube_auth.NotConfigured):
+        kube_auth.api_client(KubernetesSection(provider="gke"))
+
+
+def test_db_dial_host_keeps_the_tls_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SRC_DSN", "host=chat-db-rw.chat.svc port=5432 dbname=chat user=gate_ro sslmode=verify-full")
+    monkeypatch.setattr("bravo_gate.probes.postgres.socket.gethostbyname", lambda h: "10.43.44.114")
+    probe = PostgresProbe(PostgresSection(dsn_env="SRC_DSN", dial_host="src-db.bravo-link.svc.cluster.local"))
+    d = conninfo_to_dict(probe.dsn() or "")
+    assert d["host"] == "chat-db-rw.chat.svc"  # libpq checks the certificate against this name
+    assert d["hostaddr"] == "10.43.44.114"  # and connects to the link
+
+
+def test_db_dial_host_that_does_not_resolve_is_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SRC_DSN", "host=chat-db-rw.chat.svc dbname=chat user=gate_ro")
+
+    def boom(_h: str) -> str:
+        raise OSError("no such host")
+
+    monkeypatch.setattr("bravo_gate.probes.postgres.socket.gethostbyname", boom)
+    probe = PostgresProbe(PostgresSection(dsn_env="SRC_DSN", dial_host="missing.bravo-link.svc"))
+    obs = probe.archive()
+    assert (obs.verdict, obs.reason) == ("UNKNOWN", "db_unreachable")
+
+
+def test_obj06_plain_request_goes_to_the_plain_listener_when_set() -> None:
+    s = ObjectStoreSection(bucket="b", endpoint_url="https://127.0.0.1:18443",
+                           plain_http_endpoint_url="http://127.0.0.1:18080")
+    assert _endpoint(s, plain_http=True) == "http://127.0.0.1:18080"
+    assert _endpoint(ObjectStoreSection(bucket="b", endpoint_url="https://h:18443"), plain_http=True) == "http://h:18443"

@@ -10,6 +10,7 @@ DR-ARCHIVE    WAL archiving on, archived at least once, last failure older than 
 from __future__ import annotations
 
 import os
+import socket
 from typing import Any
 
 import psycopg
@@ -75,7 +76,16 @@ class PostgresProbe:
 
     # --- connection helpers ---------------------------------------------------------------------------
     def dsn(self) -> str | None:
-        return os.environ.get(self.s.dsn_env) or None
+        """The probe DSN. With ``dial_host`` (a D-16 link Service) libpq connects to that address (``hostaddr``)
+        while ``verify-full`` still checks the certificate against the DSN ``host`` (the database's own name)."""
+        raw = os.environ.get(self.s.dsn_env) or None
+        if raw and self.s.dial_host:
+            try:
+                raw = make_conninfo(raw, hostaddr=socket.gethostbyname(self.s.dial_host))
+            except OSError as exc:
+                self._facts_error = f"dial_host {self.s.dial_host} does not resolve: {type(exc).__name__}"
+                return None
+        return raw
 
     def _connect(self, conninfo: str) -> psycopg.Connection:
         return psycopg.connect(conninfo, connect_timeout=self.s.connect_timeout_s,
@@ -83,14 +93,15 @@ class PostgresProbe:
 
     def _target(self) -> dict[str, Any]:
         d = conninfo_to_dict(self.dsn() or "")
-        return {"host": d.get("host"), "port": d.get("port", "5432"), "dbname": d.get("dbname")}
+        return {"host": d.get("host"), "port": d.get("port", "5432"), "dbname": d.get("dbname"),
+                "dial_host": self.s.dial_host}
 
     def facts(self) -> dict[str, Any] | None:
         if self._facts is not None or self._facts_error is not None:
             return self._facts
         dsn = self.dsn()
         if not dsn:
-            self._facts_error = f"dsn_env {self.s.dsn_env} is not set"
+            self._facts_error = self._facts_error or f"dsn_env {self.s.dsn_env} is not set"
             return None
         try:
             with self._connect(dsn) as conn:

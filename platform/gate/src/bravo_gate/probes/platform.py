@@ -12,7 +12,6 @@ DR-RESTORE        a CNPG Cluster bootstrapped by recovery is healthy            
 from __future__ import annotations
 
 import json
-import os
 import socket
 from typing import Any
 
@@ -21,6 +20,7 @@ from botocore.config import Config
 
 from ..environments import AwsSection, KubernetesSection, NetworkSection
 from ..result import Obs, error_text, failed, passed, unknown, worst
+from . import kube_auth
 
 _BOTO = Config(retries={"max_attempts": 3, "mode": "standard"}, connect_timeout=5, read_timeout=10)
 
@@ -44,18 +44,12 @@ class KubernetesProbe:
         self.s = section
         self._api: Any = None
         self._error: str | None = None
+        self._secret_existence = "not_asked"  # noqa: S105 - a state label, not a secret
 
     def api_client(self) -> Any:
         if self._api is None and self._error is None:
             try:
-                from kubernetes import client, config
-
-                path = os.environ.get(self.s.kubeconfig_env) if self.s.kubeconfig_env else None
-                if self.s.kubeconfig_env and not path:
-                    raise RuntimeError(f"kubeconfig_env {self.s.kubeconfig_env} is not set")
-                cfg = client.Configuration()
-                config.load_kube_config(config_file=path, context=self.s.context, client_configuration=cfg)
-                self._api = client.ApiClient(cfg)
+                self._api = kube_auth.api_client(self.s)  # kubeconfig, or eks / gke with the gate's own identity
             except Exception as exc:  # noqa: BLE001
                 self._error = error_text(exc)
         return self._api
@@ -65,13 +59,25 @@ class KubernetesProbe:
 
     def _missing(self, api: Any, ns: str, secret: str | None) -> Obs | None:
         """A question about an app that is not deployed is UNKNOWN, never PASS (a SAR on a missing
-        namespace is "denied" and would look like a pass)."""
+        namespace is "denied" and would look like a pass). The gate's read identity has no ``get`` on Secrets
+        (least privilege: RBAC has no metadata-only verb). Then the Secret's existence is not checked (403) and
+        the namespace check alone guards the question; the evidence says so (``secret_existence``)."""
+        from kubernetes.client.exceptions import ApiException
+
+        self._secret_existence = "not_asked"  # noqa: S105 - a state label, not a secret
         try:
             if _metadata_get(api, "/api/v1/namespaces/{name}", {"name": ns}) == 404:
                 return unknown("app_namespace_missing", namespace=ns)
-            if secret and _metadata_get(api, "/api/v1/namespaces/{namespace}/secrets/{name}",
-                                        {"namespace": ns, "name": secret}) == 404:
-                return unknown("app_secret_missing", secret=f"{ns}/{secret}")
+            if secret:
+                try:
+                    code = _metadata_get(api, "/api/v1/namespaces/{namespace}/secrets/{name}",
+                                         {"namespace": ns, "name": secret})
+                except ApiException as exc:
+                    code = int(exc.status or 0)
+                if code == 404:
+                    return unknown("app_secret_missing", secret=f"{ns}/{secret}")
+                self._secret_existence = ("not_checked_no_get_right" if code == 403
+                                          else "present" if code == 200 else f"http_{code}")
         except Exception as exc:  # noqa: BLE001
             return unknown("cluster_read_error", error=error_text(exc))
         return None
@@ -104,7 +110,8 @@ class KubernetesProbe:
                 except Exception as exc:  # noqa: BLE001
                     parts.append(unknown("sar_error", identity=ref, verb=verb, error=error_text(exc)))
                     continue
-                ev = {"identity": ref, "verb": verb, "secret": f"{ns}/{name or '*'}"}
+                ev = {"identity": ref, "verb": verb, "secret": f"{ns}/{name or '*'}",
+                      "secret_existence": self._secret_existence}
                 if st.allowed:
                     parts.append(failed("other_identity_can_read_secret", **ev))
                 elif st.evaluation_error:
