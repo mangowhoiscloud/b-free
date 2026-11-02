@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "cutover": {
+    "status": "NOT_STARTED",
+    "write_pause_ms": null,
+    "verdict": null
+  },
+  "failback_status": "skipped"
+}

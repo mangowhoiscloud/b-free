@@ -1,0 +1,5 @@
+{"env":{"id":"onprem","label":"온프렘","label_ja":"オンプレ"},"instance":"chat-bravo-demo-594fccc5cf-w2455","poll_age_ms":36,"ws_connections":0,"attachments":"ok"}
+{"message":{"id":3,"room":"ops-check","author":"bravo-ops","body":"d16 path check onprem->src","idem_key":"f7c00254…(가림)","created_at":"2026-11-02T13:20:43.654547+00:00","attachment":null},"created":true}
+http 201 3.836476s
+{"message":{"id":4,"room":"ops-check","author":"bravo-ops","body":"d16 path check after laptop links down","idem_key":"58577a74…(가림)","created_at":"2026-11-02T13:21:31.105339+00:00","attachment":null},"created":true}
+http 201 3.287314s

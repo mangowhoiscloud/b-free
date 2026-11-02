@@ -1,0 +1,2 @@
+attachment_store,attachments,bravo_barrier,bravo_fence,message_attachments,messages,write_block
+app_writer:scram,chat_owner:none,executor_ctl:scram,executor_observe:scram,replicator:scram

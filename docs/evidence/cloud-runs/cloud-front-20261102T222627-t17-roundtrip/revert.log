@@ -1,0 +1,4 @@
+[cloud 22:39:12] front shift to dst: run 41aa9080-9b62-4751-abdc-6e4f6077c2ab
+{"status":"DONE","stages":[{"name":"front.preflight","ms":951,"result":"OK","judgement":null},{"name":"front.step_10","ms":0,"result":"OK","judgement":null},{"name":"front.step_50","ms":0,"result":"OK","judgement":null},{"name":"front.step_100","ms":0,"result":"OK","judgement":null},{"name":"front.summary","ms":0,"result":"OK","judgement":null}]}
+{"active_env":"dst","weights":{"bravo-b-free-chat-src":0,"bravo-b-free-chat-dst":1},"probe":{"status":200,"env_id":"aws","ok":true,"latency_ms":46.7}}
+<repo>/deploy/pilot/runs/cloud-front-20261102T222627-t17-roundtrip/revert

@@ -1,0 +1,1 @@
+[{"control_id":"DB-ANON-READ","question":"Can PUBLIC read the messages table?","src":"PASS","dst":"PASS"},{"control_id":"DB-AUTH","question":"Can the app role connect without a password?","src":"FAIL","dst":"FAIL"}]

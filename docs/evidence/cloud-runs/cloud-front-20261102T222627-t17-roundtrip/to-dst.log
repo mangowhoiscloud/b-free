@@ -1,0 +1,4 @@
+[cloud 22:26:28] front shift to dst: run 98d969c2-10c8-4309-8a6c-bf96dcd7fc6f
+{"status":"DONE","stages":[{"name":"front.preflight","ms":899,"result":"OK","judgement":null},{"name":"front.step_10","ms":0,"result":"OK","judgement":null},{"name":"front.step_50","ms":0,"result":"OK","judgement":null},{"name":"front.step_100","ms":0,"result":"OK","judgement":null},{"name":"front.summary","ms":0,"result":"OK","judgement":null}]}
+{"active_env":"dst","weights":{"bravo-b-free-chat-src":0,"bravo-b-free-chat-dst":1},"probe":{"status":200,"env_id":"onprem","ok":true,"latency_ms":86.7}}
+deploy/pilot/runs/cloud-front-20261102T222627-t17-roundtrip

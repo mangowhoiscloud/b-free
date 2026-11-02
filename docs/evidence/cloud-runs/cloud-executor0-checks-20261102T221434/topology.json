@@ -1,0 +1,75 @@
+{
+  "label": "D-16 링크(Cloudflare Access, bravo-link)",
+  "chat_db": "chat",
+  "store_ids": {
+    "src": "src",
+    "dst": "dst"
+  },
+  "cluster_names": {
+    "src": "chat-db",
+    "dst": "chat-db"
+  },
+  "db": {
+    "src": {
+      "conninfo": "host=src-db.bravo-link.svc.cluster.local port=5432",
+      "secret": "envs/source-aws/chat-db"
+    },
+    "dst": {
+      "conninfo": "host=dst-db.bravo-link.svc.cluster.local port=5432",
+      "secret": "envs/target-onprem/chat-db"
+    }
+  },
+  "pools": [
+    {
+      "name": "src",
+      "conninfo": "host=src-pgb.bravo-link.svc.cluster.local port=6432",
+      "secret": "envs/source-aws/chat-db",
+      "switch": {
+        "kind": "k8s-exec",
+        "context": "bravo-source",
+        "namespace": "chat",
+        "workload": "selector:app.kubernetes.io/name=chat-pgbouncer",
+        "container": "pgbouncer"
+      }
+    },
+    {
+      "name": "dst",
+      "conninfo": "host=dst-pgb.bravo-link.svc.cluster.local port=6432",
+      "secret": "envs/target-onprem/chat-db",
+      "switch": {
+        "kind": "k8s-exec",
+        "context": "bravo-onprem",
+        "namespace": "chat",
+        "workload": "selector:app.kubernetes.io/name=chat-pgbouncer",
+        "container": "pgbouncer"
+      }
+    }
+  ],
+  "entries": [
+    {
+      "name": "aws",
+      "side": "src",
+      "url": "k8s-pf://bravo-source/chat/app.kubernetes.io/name=bravo-demo/8081",
+      "secret": "envs/source-aws/chat-admin"
+    },
+    {
+      "name": "onprem",
+      "side": "dst",
+      "url": "k8s-pf://bravo-onprem/chat/app.kubernetes.io/name=bravo-demo/8081",
+      "secret": "envs/target-onprem/chat-admin"
+    }
+  ],
+  "object_stores": {
+    "src": {
+      "secret": "envs/source-aws/object-store"
+    },
+    "dst": {
+      "secret": "envs/target-onprem/object-store"
+    }
+  },
+  "replication": {
+    "fwd_conninfo": "host=src-db-link.chat.svc port=5432",
+    "rev_conninfo": "host=dst-db-link.chat.svc port=5432",
+    "label": "D-16 환경 간 링크(cloudflared access tcp, 토큰 dst-src-db / src-dst-db)"
+  }
+}

@@ -1,0 +1,5 @@
+NAME                               READY   STATUS      RESTARTS   AGE
+bravo-obj-tests-z7ftl              0/1     Completed   0          13m
+chat-bravo-demo-594fccc5cf-85fsc   1/1     Running     0          14m
+chat-bravo-demo-594fccc5cf-w2455   1/1     Running     0          14m
+chat-db-1                          1/1     Running     0          11m

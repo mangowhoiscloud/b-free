@@ -1,0 +1,1 @@
+harness dry run (SKIP_FRONT=1, FAULT_RATE=0, WAIT_RUN_S short): no console-started cutover existed, NOT_STARTED is expected. Checks load + NFR-2 only.

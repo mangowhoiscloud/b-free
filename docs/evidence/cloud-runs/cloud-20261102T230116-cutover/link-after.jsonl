@@ -1,0 +1,12 @@
+{"name":"bao","label":"임시 링크(D-16 전)","state":"stopped","restarts":0,"last_ok":"2026-11-02T12:03:08+00:00","last_error":null}
+{"name":"dst-admin","label":"임시 링크(D-16 전)","state":"stopped","restarts":96,"last_ok":"2026-11-02T13:21:20+00:00","last_error":"ConnectionError: kubectl port-forward did not start: Error from server (NotFound): services \"chat-admin\" not found\n"}
+{"name":"dst-db","label":"임시 링크(D-16 전)","state":"stopped","restarts":63,"last_ok":"2026-11-02T13:21:16+00:00","last_error":"ConnectionError: kubectl exited with 1"}
+{"name":"dst-pgb","label":"임시 링크(D-16 전)","state":"stopped","restarts":92,"last_ok":"2026-11-02T13:21:20+00:00","last_error":"ConnectionError: kubectl exited with 1"}
+{"name":"relay-agent-port","label":"임시 링크(D-16 전)","state":"stopped","restarts":2,"last_ok":"2026-11-02T12:55:44+00:00","last_error":"ConnectionError: kubectl exited with 1"}
+{"name":"target","label":"임시 링크(D-16 전)","state":"stopped","restarts":59,"last_ok":"2026-11-02T12:14:53+00:00","last_error":"ConnectionError: kubectl port-forward did not start: "}
+{"name":"reverse","label":"임시 링크(D-16 전)","state":"stopped","restarts":0,"last_ok":"2026-11-02T12:55:40+00:00","last_error":"relay: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 17070)"}
+{"name":"src-admin","label":"임시 링크(D-16 전)","state":"stopped","restarts":23,"last_ok":"2026-11-02T13:21:17+00:00","last_error":"ConnectionError: kubectl exited with 1"}
+{"name":"src-db-app","label":"임시 링크(D-16 전)","state":"stopped","restarts":20,"last_ok":"2026-11-02T13:21:18+00:00","last_error":"ConnectionError: kubectl exited with 1"}
+{"name":"src-db-repl","label":"임시 링크(D-16 전)","state":"stopped","restarts":0,"last_ok":"2026-11-02T13:21:19+00:00","last_error":null}
+{"name":"src-db","label":"임시 링크(D-16 전)","state":"stopped","restarts":3,"last_ok":"2026-11-02T13:21:19+00:00","last_error":"ConnectionError: kubectl exited with 1"}
+{"name":"src-pgb","label":"임시 링크(D-16 전)","state":"up","restarts":0,"last_ok":"2026-11-02T14:01:48+00:00","last_error":null}

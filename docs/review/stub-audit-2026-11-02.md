@@ -1,12 +1,60 @@
 # 가짜 · 스텁 감사 (2026-11-02 20:19–20:37 KST)
 
-읽기 전용 감사 결과입니다. 번호는 담당에게 넘길 때 쓰는 ID입니다. 상태 칸은 고친 갈래가 갱신합니다.
+읽기 전용 감사 결과입니다. 번호는 담당에게 넘길 때 쓰는 ID입니다. 지금 상태는 바로 아래 "현재 상태" 표가 정본입니다. 그 아래 원문 표의 "경과" 칸은 갈래가 적은 기록이라 낡은 문장이 남아 있습니다.
 
-| # | 등급 | 위치 | 문제 | 담당 | 상태 |
+## 현재 상태 (2026-11-03 02:40 KST, 문서 갈래가 git log · 실행 중 digest · 증거로 확인)
+
+상태를 세 단계로 나눕니다. 한 단계가 됐다고 다음 단계가 된 것은 아닙니다.
+
+- **코드**: 고친 코드가 들어간 커밋. 갈래가 큰 체크포인트로 커밋해서, 갈래 기록의 고침 시각 뒤 첫 커밋을 적습니다. 게이트 · 수집기 · Executor · 리허설 · 부하 생성기는 `240856f`(11/2 21:12), 플랫폼 API · 콘솔 로그인은 `d52c8b3`(21:47)입니다.
+- **배포**: 그 코드가 든 이미지가 지금 돈다. 02:32에 `bravo-control`의 실행 digest가 모두 `deploy/platform/control/kustomization.yaml` 고정 값과 같았습니다(api `59f6ba2b`, console `91678860`, gate `ec47f7c3`, collector `af3c66c1`, executor `f5ec7dfd`, rehearsal `1e1337fa`). 모두 아래 고침 커밋보다 뒤의 트리에서 빌드했습니다. 원본: `docs/evidence/cloud-runs/platform-snapshot-20261103T0232KST.txt`.
+- **실행 확인**: 실제 환경에서 그 고침이 동작한 기록. 단위 시험만 있으면 "없음"입니다.
+
+플랫폼 DB(02:32)에는 계획 · 승인 · 변경 · 리허설 · 영수증이 모두 0건입니다. 그래서 콘솔 · API 경로가 있어야 확인되는 항목은 실행 확인이 "없음"입니다.
+
+| # | 코드 | 배포 | 실행 확인 | 남은 것 |
+|---|---|---|---|---|
+| A1 | 문서 `240856f`(21:12) | 해당 없음(문서) | 해당 없음. 원본 사본 `docs/evidence/pilot-notebook/` | 파일럿 수치를 클라우드 값으로 인용하지 않기 |
+| A2 | Executor `approvals.py`, API 마이그레이션 0004: `240856f`(21:12). API 쪽 21:4x 고침: `d52c8b3`(21:47) | 예. executor `f5ec7dfd`, api `59f6ba2b`. 플랫폼 DB 0001–0008 적용 | **없음.** 승인 0건, cutover · failback run 0회 | 콘솔 승인으로 컷오버 1회(사람 승인 필요) |
+| A3 | API Access JWT 검증 · 허용 목록 JIT: `d52c8b3`(21:47). 콘솔 자동 로그인 제거: `d52c8b3`(`state.tsx` "Login is Cloudflare Access only") | 예. api `59f6ba2b`, console `91678860` | 부분. `b-free` 302 → Access 로그인(02:32). approver(gmail) 첫 로그인으로 역할이 생김(`principals` 1). 목록 밖 이메일의 403은 기록 없음 | operator(naver) 첫 로그인. 아래 원문의 "콘솔 자동 로그인 열림"은 낡은 표기(닫힘) |
+| A4 | API: `d52c8b3`(21:47). 콘솔: `4115767`(23:24) | 예. api, console | 없음. 계획 0건이라 운영 화면에서 본 적 없음(서버 렌더 확인만) | 계획 1건으로 확인 |
+| A5 | 게이트 `240856f`(21:12) | 예. gate `ec47f7c3` | 예. `docs/evidence/gate/platform-gate-20261102T170251Z/TABLES.md`: 온프렘 OBJ-05 FAIL `other_credential_read_allowed`, GKE OBJ-06 FAIL `plain_http_accepted`, 나머지는 PASS 사유와 함께 | 없음 |
+| A6 | 문서 `240856f` | 해당 없음 | 해당 없음 | N12 시험 결과 |
+| B7 | `b7671d6`(23:47) | 예. rehearsal `1e1337fa` | 부분. Trial `t-3ac2e611…` PASS(`behavioral+static_rules`), `docs/evidence/s1-s2-bucket/`. **노트북 CLI 러너**로 돌림. 플랫폼 리허설 서비스 경로는 0회(`rehearsals` 0행) | 콘솔 → API → 리허설 서비스 1회. 평문 HTTP · 앱 PUT · 다른 자격 거부 검사(리뷰 B11) |
+| B8 | 리허설 `240856f` | 예. rehearsal | 부분. 같은 Trial이 INFRA_ERROR 없이 채점됨(노트북 CLI) | B7과 같음 |
+| B9 | 리허설 `240856f`(`snapshot.py` 추가) | 예. rehearsal | 부분. 같은 Trial이 스냅숏 37파일을 씀(CLI `--snapshot`). `PUT /v1/snapshots` 플랫폼 경로는 0회 | B7과 같음 |
+| B10 | Executor `MATCH_PARTIAL` · `verdict_parts`: `240856f`. 콘솔: `0d47efa`(23:26) | 예. executor `f5ec7dfd`, console `91678860` | **없음.** 영수증 0건 | 컷오버 전 첨부 대조, 영수증의 검증 범위 표시(리뷰 B28) |
+| B11 | API `d52c8b3`(21:47) | 예. api. API의 OpenBao 토큰(`BRAVO_BAO_TOKEN_FILE`, `deploy/platform/control/api.yaml`)도 배포에 있음. 아래 원문의 "남음: API OpenBao 자격"은 닫힘 | 없음. 환경 등록 0건(`environments` 0행) | API로 환경 등록 1회 |
+| B12 | `deploy/cloud/contract.sh` E5: `240856f` | 해당 없음(스크립트) | **없음.** 클라우드 E5 0회(콘솔 cutover 승인 두 개 필요) | E1 · E5 · E6 |
+| B13 | `240856f` | 해당 없음(스크립트) | 없음. 클라우드 컷오버 0회 | - |
+| B14 | 부하 생성기 `stats.py`: `240856f` | 해당 없음(운영자 도구) | 예. `docs/evidence/cloud-runs/cloud-20261102T225937-cutover/`, `…230116-cutover/`의 부하 요약: 보냄 = 확인, 유실 · 중복 0, `accounted: true` | - |
+| B15 | README만 `240856f` | 해당 없음 | 해당 없음 | **요구 미충족.** 쓰기 50 · 읽기 150 req/s 부하가 없음(리뷰 B15) |
+| B16 | 게이트 `240856f` | 예. gate `ec47f7c3` | 예. `platform-gate-20261102T170251Z`: 두 쌍 모든 절 측정, UNKNOWN 0 | - |
+| B17 | 게이트 `240856f`, 이후 게이트 커밋들 | 예. gate | 예. 같은 실행. 출발지 OBJ-04는 실요청이 아니라 IAM 시뮬레이션(리뷰 B12) | 스펙 시험 ↔ 게이트 질문 대응표(리뷰 B12) |
+| B18 | 수집기 `240856f` | 예. collector `af3c66c1` | 없음. 시험만(`test_masks_cover_secret_shapes`) | - |
+| B19 | 수집기 · 데모 앱 스키마 `240856f` | 해당 없음(DB 초기화 · 스크립트) | 부분. 온프렘 RKE2 역할이 SCRAM(`docs/evidence/cloud-runs/cloud-dbroles-onprem-rke2-20261102T221719/state.txt`) | 구독 conninfo 안 비밀번호(PG16 제약)는 남음 |
+| B20 | `1fc9db3`(23:22) | 해당 없음 | 예. `deploy/pilot/.env` 없음(02:30 확인) | - |
+| B21 | `TARGET_SHARE` 판정: executor `98f57c71` 고정 `212b930`(22:48) | 예. executor `f5ec7dfd`(같은 판정) | 예, **하네스 실행만.** `docs/evidence/cloud-runs/`: LB 10/50/100 이동 4회(1회는 거짓 DONE 결함), 자동 0% 복귀 2회. 콘솔 · 상태 머신 경로는 0회. 아래 원문의 "증거는 9ca7af4"는 틀림(그 커밋에 실행 기록 없음) | 상태 머신 SHIFT · 콘솔 시작(리뷰 B02), 업무 트래픽 판정(B14) |
+| B22 | 파일럿 사본 `240856f`, 클라우드 사본은 이 갱신과 같은 커밋 | 해당 없음 | 예. `docs/evidence/pilot-notebook/`, `docs/evidence/cloud-runs/` | 앞으로 생기는 `deploy/pilot/runs/cloud-*`도 옮기기 |
+| G1 | `ac4e1aa`(00:43) | 예. 온프렘 RGW(Rook) 설정 | 예. `docs/evidence/gate/obj-enc-onprem-20261102T152228Z/`, 게이트 OBJ-ENC 온프렘 PASS(170251Z) | 기존 객체 5개 평문, 링크가 끊기면 PUT · GET 500(리뷰 B13 · B17) |
+| G2 | `8542cda`(00:11) | 예. 세 환경 CNPG 백업 설정 | 예. `docs/evidence/gate/dr-restore-*`, DR-RESTORE · DR-ARCHIVE PASS(170251Z) | 정기 백업 없음 |
+| G3 | 해당 없음(측정) | - | 예. `docs/evidence/gate/obj06-gke-orgpolicy-20261102T143014Z/`, 170251Z GKE OBJ-06 FAIL | 예외 승인 0건, 대체 통제 시험 없음(리뷰 P10) |
+| G4 | `db4c4e3` · `1a84e8c` · `0980ff7`(00:55–01:14), 게이트 고정 `ec47f7c3`은 `f147be4`(01:52) | **예(닫힘).** origin/main에 있고 Deployment `gate`가 `ec47f7c3`(02:32). 원문의 "push 필요"는 해소 | 예. `platform-gate-20261102T170251Z`(svc/gate, Deployment 이미지 `ec47f7c3`). 측정 때 Argo `control`은 OutOfSync(리뷰 B20) | - |
+| G5 | `50218ea` … `50399a7`, `badb7e2`(01:35–01:49) | 예. gate · api · collector. OpenBao NetworkPolicy `openbao` · `health-from-observe`가 있고 Argo `openbao` Synced. 원문의 "남음"은 해소 | 예. `platform-gate-20261102T165054Z`(미리 보기 Pod), `…170251Z`(Deployment) | - |
+| G6 | `624013d`(02:07) | 예. `executor-0`이 02:08:44 KST에 새 topology(verify-full 6곳)로 다시 뜸. 고객 클러스터 설정은 손으로 적용(Argo 밖) | 예. `docs/evidence/db-tls-audit-netpol/`, 170251Z DB-TLS · DB-AUDIT · NET-DEFAULT-DENY PASS. E4는 push 전에 같은 topology로 executor-0 안에서 실행 | E1 · E5 · E6(사람 승인 필요). 복제 타임아웃 60초는 `d532c68`(02:31, `docs/evidence/repl-timeouts/`) |
+| G7 | `cd22cc7`(01:57) | 예. 세 클러스터 VAP | 예. `docs/evidence/gate/netprobe-admission-20261102T165631Z/`, Deployment 기준 실행 165445Z · 165646Z UNKNOWN 0 | - |
+
+중간 항목(23–50)은 문서 · 시험 기준으로 고쳤고, 운영 실행 확인은 따로 하지 않았습니다. 아직 열린 것은 31(`mode: recorded`를 쓰는 코드 없음, 리뷰 P21)과 44(금고 보관 파일 집중)입니다. 26은 API 코드가 `security_holds: null`, `security_holds_reason: not_implemented:D-20`으로 둡니다(D-20 미구현). 계획이 0건이라 운영 응답으로는 보지 못했습니다.
+
+**갱신 규칙.** 항목을 닫는 갈래는 이 표의 세 칸을 갱신합니다. 실행 확인 칸에는 증거 경로와 시각을 적습니다. 아래 원문 표의 "경과" 칸에는 한 줄만 덧붙입니다.
+
+## 원문(2026-11-02 20:19–20:37 감사)과 갈래 경과
+
+| # | 등급 | 위치 | 문제 | 담당 | 경과(갈래 기록) |
 |---|---|---|---|---|---|
 | A1 | 치명 | `deploy/pilot/README.md:39,40,42` | 증거 파일 없는 수치(18:52 107 ms, 18:58 97 ms). 19:26 불일치 42 ms는 run.json과 모순(`write_pause_ms: null`, 단계 합 66 ms). 실제 DONE 기록: 76, 80, 87, 92, 94, 101, 105, 139 ms | 문서 | 고침(T29, 문서 갈래 21:0x). 실행 ID 표로 바꾸고 "파일럿(노트북) 기록"으로 표시. 원본 사본 `docs/evidence/pilot-notebook/` |
 | A2 | 치명 | `platform/executor/src/bravo_executor/app.py:31`, `service.py:175`, `cutover.py:61,152` | Executor가 아무 `approval_id`나 받음(최소 길이만 확인). 승인 표를 확인하지 않음. 스크립트가 가짜 ID(`smoke-approval`, `e1`)에 기댐 | 데이터 · 컷오버 | 고침(Executor 쪽, 21:0x): `approvals.py`가 플랫폼 DB `approvals`를 읽어 계획 · 단계 · 요청자≠승인자 · 만료 · 재사용을 확인, 아니면 403. 표가 없거나 못 읽으면 거부(APPROVAL_SOURCE_UNAVAILABLE). 시험 `tests/test_approvals.py`. 스크립트는 실제 승인 ID를 env로만 받음. **남음**: platform/api가 `bravo_executor`에 `approvals` SELECT · 정책을 주고 `stage`에 `failback`을 더해야 함. executor-0은 아직 예전 이미지(검증 없음)라 새 이미지 `bravo-platform/executor@sha256:32c2b92b…`로 바꿔야 적용됨 / **API 쪽 고침(21:4x)**: 마이그레이션 0004가 `bravo_executor`에 `approvals` SELECT와 RLS 정책 `executor_cell`(읽기만)을 줌. `stage`는 `change` · `cutover` · `failback`. 계약은 `docs/architecture/15-r2-contracts.md` 5절. 시험 `platform/api/tests/test_changes.py::test_executor_role_reads_approvals_for_its_a2_check`. 서명된 승인 토큰은 만들지 않음. 남음: 0003–0006이 플랫폼 DB에 적용돼야 함(EKS 판은 0001–0002만 적용됨) / **닫힘(23:3x)**: 플랫폼 RKE2 DB에 0001–0007 적용 확인(`schema_migrations`). executor-0은 A2 검사가 든 이미지(`kustomization.yaml` 고정 digest)로 동작 |
-| A3 | 치명 | `platform/api/src/bravo_api/rest.py:159-171`, `devseed.py`, `console/src/state.tsx:66` | 개발용 IdP가 스텁. 인증 없이 operator · approver JWT를 주는 `/v1/dev/tokens`, 존재하지 않는 발급자 · 사용자, 콘솔 자동 로그인 | 플랫폼 API | 고침(플랫폼 API, 21:3x): Access JWKS를 certs URL에서 받아 캐시, 받기 실패 · 모르는 kid는 거부(fail closed). `/mcp`는 MCP AUD, 나머지는 콘솔 AUD. 설정이 없으면 503 `access_not_connected`("연결 안 됨: Cloudflare Access"). `/v1/dev/tokens` · `BRAVO_DEV_AUTH` · 개발 시드 제거, `deploy/pilot/devauth` 삭제. 첫 로그인 역할은 설정 파일 허용 목록(`BRAVO_ACCESS_MEMBERS_FILE`, 마이그레이션 0006)만, 그 밖은 403 `unknown_principal`. 시험 `tests/test_auth.py`, `tests/test_landing.py`. 콘솔 자동 로그인(`console/src/state.tsx:66`)은 콘솔 갈래 몫, 열림 |
+| A3 | 치명 | `platform/api/src/bravo_api/rest.py:159-171`, `devseed.py`, `console/src/state.tsx:66` | 개발용 IdP가 스텁. 인증 없이 operator · approver JWT를 주는 `/v1/dev/tokens`, 존재하지 않는 발급자 · 사용자, 콘솔 자동 로그인 | 플랫폼 API | 고침(플랫폼 API, 21:3x): Access JWKS를 certs URL에서 받아 캐시, 받기 실패 · 모르는 kid는 거부(fail closed). `/mcp`는 MCP AUD, 나머지는 콘솔 AUD. 설정이 없으면 503 `access_not_connected`("연결 안 됨: Cloudflare Access"). `/v1/dev/tokens` · `BRAVO_DEV_AUTH` · 개발 시드 제거, `deploy/pilot/devauth` 삭제. 첫 로그인 역할은 설정 파일 허용 목록(`BRAVO_ACCESS_MEMBERS_FILE`, 마이그레이션 0006)만, 그 밖은 403 `unknown_principal`. 시험 `tests/test_auth.py`, `tests/test_landing.py`. 콘솔 자동 로그인(`console/src/state.tsx:66`)은 콘솔 갈래 몫, 열림 / 정정(11/3 02:40, 문서 갈래): 콘솔 자동 로그인은 `d52c8b3`에서 없어짐(`state.tsx`는 `GET /v1/me`만 씀) |
 | A4 | 치명 | `platform/api/src/bravo_api/service.py:303,336-341`, `console App.tsx:194`, `api/types.ts:45`, `StateProgress.tsx:42` | 수집기가 설정 안 됐는데 "의존성 공백 없음"으로 처리해 ANALYZE를 건너뜀. 콘솔은 ANALYZE · PROPOSE · REHEARSE를 "파일럿 범위 밖"이라고 거짓 표시 | 플랫폼 API · 콘솔 | API 쪽 고침(21:2x): 수집기가 없거나 못 읽으면 ANALYZE에 머물고 `state_reason`=`collector_unconfigured` · `collector_*`. 수집기 실제 형식(`inventory/v1`의 `findings` · `unclassified` `tier_code`)을 읽음. `plan.analysis`는 `GET /v1/plans/{id}`에 있음. 시험 `tests/test_changes.py::test_unconfigured_collector_keeps_analyze_with_the_reason`. 콘솔 고침(23:3x, 닫힘): "파일럿 범위 밖" 표시(`OUT_OF_SCOPE_STATES`) 삭제. 현재 단계에 `state_reason`이 있으면 "멈춤"으로 그리고 끝난 단계로 세지 않음, 이유를 문장과 `state_reason=…`으로 보임(`collector_unconfigured` · `inventory_root_empty` · `collector_*`). 이벤트에 들어간 기록이 없는 앞 단계는 "지남"이 아니라 "기록 없음". 분석 칸은 `plan.analysis`를 읽고 인벤토리가 `ok`가 아니면 "분석 안 됨"과 이유. 홈 계획 표도 "ANALYZE · 멈춤"과 이유. 렌더 확인: `StateProgress`를 서버 렌더로 그려 ANALYZE+`collector_unconfigured`에서 ANALYZE가 `halted`(멈춤)이고 `done`이 아님(콘솔 `src/components/StateProgress.tsx`, `src/App.tsx`, `src/api/normalize.ts`) |
 | A5 | 치명 | `platform/gate/src/bravo_gate/probes/objstore.py:27-28,271-273` | OBJ-06은 시간 초과 · 차단도 PASS, OBJ-05는 잘못된 자격도 "거부됨"으로 PASS | 보안 · 게이트 | 고침(20:46). OBJ-05는 `AccessDenied`일 때만 PASS, 자격 오류는 UNKNOWN. OBJ-06은 연결 거부 또는 https로 canary를 읽는 같은 자격이 http에서 `AccessDenied`일 때만 PASS, 시간 초과 · 끊김 · DNS는 UNKNOWN. `tests/test_verdict_rules.py` |
 | A6 | 치명 | `docs/spec/TECH-STACK-SPEC.md:50` | "cloudflared 2026.10.7 (N12 통과 판)" 주장. N12는 11/3 예정 | 문서 | 고침(T29). "후보 판, N12 전" |
@@ -24,7 +72,7 @@
 | B18 | 높음 | `collector/inventory/detector.py:83-88` | 증거 마스킹이 `aws_secret_access_key=`, `DB_PASSWORD=`, JSON password를 못 가림(D-26) | 보안 · 게이트 | 고침(20:46). 키 이름 안 어디에든 비밀 단어가 있으면 가림(`DB_PASSWORD=`, `aws_secret_access_key =`, JSON `"password"`, URL userinfo, `password=`). `test_masks_cover_secret_shapes` |
 | B19 | 높음 | `collector/sql/collector_ro.sql:6-10`, `apps/demo/schema/00-bravo-init.sh:30-35`, `repl-setup.sh:35,42,55` | 비밀번호가 psql 인자 · SQL 문자열에 평문(D-26) | 보안 · 게이트, 데모 앱 | 수집기 부분 고침(20:46): `collector_ro.sql`은 `\getenv` + 클라이언트 쪽 SCRAM-SHA-256 검증값만 받고 평문이면 거부(`python -m bravo_collector scram-verifier`). 데모 앱 부분 고침(21:00): `00-bravo-init.sh`가 비밀번호마다 클라이언트 쪽 SCRAM-SHA-256 검증값을 만들고 `02_roles.sql`이 `\getenv`로 읽음(psql 인자 · SQL에 평문 없음, 시험 `test_roles_store_scram_verifiers_made_client_side`). `repl-setup.sh`는 인자 대신 psql 안에서 `\getenv`로 conninfo를 만들고, 그 세션은 `log_statement = none` · `log_min_error_statement = panic`. 남는 것: PG16은 비슈퍼유저 구독 소유자(`executor_ctl`)에게 conninfo 안 비밀번호를 요구해(`passfile=` 거부 실측) `CREATE SUBSCRIPTION` 한 문장과 `pg_subscription.subconninfo`(슈퍼유저만 읽음)에는 남음. 서버 · repl-setup 로그에 비밀번호 0건 실측 |
 | B20 | 높음 | `deploy/pilot/.env`, `compose.data.yaml:136-144` | 로컬 파일의 장기 평문 비밀(Compose는 내렸음, 파일 정리 필요) | 플랫폼 EKS | 닫힘(23:3x): `deploy/pilot/.env`의 비밀 값 6개를 플랫폼 OpenBao 값과 해시로 대조해 하나도 쓰이지 않음을 확인(Compose 전용 값). 파일은 휴지통으로 옮김. `CLOUDFLARE_API_TOKEN`은 이미 비어 있었고 `secret/platform/cloudflare`에 있음. `keys.sh status` · `with-cloudflare` 정상 |
-| B21 | 높음 | `deploy/CLOUD-E2E-CONTRACT.md:45`, `executor/README.md:31-32`, `14-provisioning-scenarios.md:89` | Cloudflare 가중치 전환을 동작하는 것처럼 씀. 실제는 미실행(`front.py` 주석) | 문서, 데이터 · 컷오버 | 표시는 문서 갈래가 넣음(코드만, 미실행). `front.py`는 `b-free`(플랫폼) 전환을 거부하고 `b-free-chat`만 다룸. 실제 실행(LB 포함)은 클라우드 앱 · 터널 연결 뒤. 문서 갈래(T29): `CLOUD-E2E-CONTRACT.md` 6절, `platform/executor/README.md`, `14-provisioning-scenarios.md`, `docs/demo/SCRIPT.md`에 표시함 / 닫힘: 실제 실행함. Cloudflare LB `b-free-chat` 가중치 10/50/100을 양방향으로 바꾸고 오류 0, 결함 주입 때 `REVERT_DST_0` · `ABORT_PRE_WRITE`로 되돌림(T17, `TARGET_SHARE` 판정). 증거는 9ca7af4의 클라우드 E2E 하네스 실행 기록 |
+| B21 | 높음 | `deploy/CLOUD-E2E-CONTRACT.md:45`, `executor/README.md:31-32`, `14-provisioning-scenarios.md:89` | Cloudflare 가중치 전환을 동작하는 것처럼 씀. 실제는 미실행(`front.py` 주석) | 문서, 데이터 · 컷오버 | 표시는 문서 갈래가 넣음(코드만, 미실행). `front.py`는 `b-free`(플랫폼) 전환을 거부하고 `b-free-chat`만 다룸. 실제 실행(LB 포함)은 클라우드 앱 · 터널 연결 뒤. 문서 갈래(T29): `CLOUD-E2E-CONTRACT.md` 6절, `platform/executor/README.md`, `14-provisioning-scenarios.md`, `docs/demo/SCRIPT.md`에 표시함 / 닫힘: 실제 실행함. Cloudflare LB `b-free-chat` 가중치 10/50/100을 양방향으로 바꾸고 오류 0, 결함 주입 때 `REVERT_DST_0` · `ABORT_PRE_WRITE`로 되돌림(T17, `TARGET_SHARE` 판정). 증거는 9ca7af4의 클라우드 E2E 하네스 실행 기록 / 정정(11/3 02:40, 문서 갈래): 9ca7af4에는 실행 기록 파일이 없음(문서 · 콘솔 2파일). 실행 기록은 `docs/evidence/cloud-runs/`로 옮김. 하네스 실행이고 콘솔 · 상태 머신 경로는 아님 |
 | B22 | 높음 | `.gitignore:1`(`runs/`), `smoke-…191253/s4-ac1.json`, `smoke-…194436` | 증거가 커밋되지 않고, 실패한 실행이 섞여 있음 | 문서 | 고침(T29). `docs/evidence/pilot-notebook/`에 스모크 11 · 계약 5 사본, `RUNS.tsv`에 실행별 PASS · FAIL(FAIL 3, 보류 4) |
 
 중간 · 낮음(23–50)은 감사 원문 기준으로 각 담당에게 넘겼습니다.

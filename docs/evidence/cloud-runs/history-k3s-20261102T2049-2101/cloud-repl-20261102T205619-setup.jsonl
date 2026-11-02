@@ -1,0 +1,1 @@
+{"event": "failed", "at": "2026-11-02T20:56:20+0900", "error": "OperationalError", "detail": "connection failed: connection to server at \"127.0.0.1\", port 15432 failed: could not receive data from server: Connection refused"}

@@ -1,0 +1,9 @@
+2026-11-02 22:22 KST  b-free-chat-src 503 (upstream connect error ... connection timeout)
+cause (cilium-dbg monitor --type drop on bravo-source):
+  xx drop (Policy denied) ... identity ingress->46971: 10.10.11.107:59416 -> 10.10.11.64:8000 tcp SYN
+  NetworkPolicy chat-admin-from-mgmt-connector (deploy/platform/link) selects the bravo-demo pods, so the
+  Gateway Envoy (Cilium identity `ingress`) lost its implicit allow on :8000. The app chart's own policy
+  is disabled on source (networkPolicy.enabled=false).
+fix: CiliumNetworkPolicy chat-app-from-gateway (fromEntities ingress -> :8000), appended to
+  deploy/landing-zone/overlays/eks/gateway.yaml, applied to bravo-source only.
+after: b-free-chat-src 200 (0.85s, 0.70s, 1.11s), b-free-chat 200

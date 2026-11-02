@@ -1,0 +1,4 @@
+[cloud 22:35:43] front shift to src: run 41fe9064-694b-4dce-be88-24c82e691f2d
+{"status":"DONE","stages":[{"name":"front.preflight","ms":907,"result":"OK","judgement":null},{"name":"front.step_10","ms":0,"result":"OK","judgement":null},{"name":"front.step_50","ms":0,"result":"OK","judgement":null},{"name":"front.step_100","ms":0,"result":"OK","judgement":null},{"name":"front.summary","ms":0,"result":"OK","judgement":null}]}
+{"active_env":"src","weights":{"bravo-b-free-chat-src":1,"bravo-b-free-chat-dst":0},"probe":{"status":200,"env_id":"aws","ok":true,"latency_ms":37.9}}
+deploy/pilot/runs/cloud-front-20261102T222627-t17-roundtrip

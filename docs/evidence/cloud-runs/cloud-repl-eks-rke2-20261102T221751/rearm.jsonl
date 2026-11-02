@@ -1,0 +1,10 @@
+{"event": "sub_dropped", "at": "2026-11-02T13:17:53+0000", "side": "src", "sub": "bravo_rev_sub"}
+{"event": "slot_dropped", "at": "2026-11-02T13:17:53+0000", "side": "src", "slot": "bravo_fwd_sub"}
+{"event": "slot_dropped", "at": "2026-11-02T13:17:53+0000", "side": "dst", "slot": "bravo_rev_sub"}
+{"event": "dst_truncated", "at": "2026-11-02T13:17:53+0000", "tables": ["message_attachments", "attachments", "messages", "bravo_barrier"]}
+{"event": "writer_reset", "at": "2026-11-02T13:17:53+0000", "side": "src", "login": true, "active_store": "src"}
+{"event": "writer_reset", "at": "2026-11-02T13:17:54+0000", "side": "dst", "login": false, "active_store": "dst"}
+{"event": "fwd_created", "at": "2026-11-02T13:17:58+0000", "side": "dst", "label": "D-16 환경 간 링크(cloudflared access tcp, 토큰 dst-src-db / src-dst-db)"}
+{"event": "fwd_streaming", "at": "2026-11-02T13:18:17+0000", "tables": 4, "received_lsn": "0/B0075F0"}
+{"event": "rev_slot_created", "at": "2026-11-02T13:18:17+0000", "side": "dst"}
+{"event": "failed", "at": "2026-11-02T13:18:17+0000", "error": "InsufficientPrivilege", "sqlstate": "42501"}

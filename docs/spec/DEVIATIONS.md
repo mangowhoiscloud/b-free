@@ -2,37 +2,40 @@
 
 스펙 v0.1에 없거나 스펙과 다른 것을 모읍니다. 모두 "제안"이며, 회의에서 정하기 전에는 구현하지 않습니다. 정해지면 상태를 "채택" 또는 "기각"으로 바꾸고 ADR 번호를 적습니다.
 
+**실제로는 이 규칙을 지키지 못했습니다(2026-11-03 02:40 KST 확인).** "제안" 상태인 편차 여럿이 회의 전에 구현되어 운영 환경에서 돕니다. 아래 표의 상태 칸에 "구현 선행"으로 적었습니다. 11/3 회의에서 채택 · 기각을 정할 목록과 스펙 → 구현 대응표는 [MEETING-2026-11-03-deviations.md](MEETING-2026-11-03-deviations.md)입니다.
+
 스펙이 정하지 않은 구현 선택(언어, 라이브러리, 판 번호)은 편차가 아닙니다. 영역 담당이 정하고 `docs/architecture/06-tech-stack.md`에 적습니다(`README.md` 규칙 5).
 
 | ID | 제목 | 스펙 위치 | 정할 사람 | 상태 |
 |---|---|---|---|---|
-| D-01 | GCP 고객 환경을 P0 연결 뒤에 세움 | §4 비목표, §11 P2 | 전원 | 제안 |
+| D-01 | GCP 고객 환경을 P0 연결 뒤에 세움 | §4 비목표, §11 P2 | 전원 | 제안. **구현 선행**: GKE가 비교 열 · 예외 장면으로 운영 중, 컷오버 대상 아님(아래 본문 "지금 범위") |
 | D-02 | Harbor(에이전트 샌드박스 · 평가 프레임워크, CNCF 레지스트리 Harbor와 다름)를 리허설 실행 계층으로 씀 | §8.4, §12 | 에이전트 · 리허설 담당 | 류지환 결정(2026-11-02), 회의 공유. ADR 0002 |
 | D-03 | 거버넌스 팩과 소재 사전 심사 | §2.1, §8.5 | 보안 통제 · 게이트, 데이터 · 컷오버 | 제안 |
-| D-04 | 첨부 파일 이전을 컷오버와 되돌리기에 넣음 | §7.3, §8.6 | 데이터 · 컷오버, 데모 앱 | 제안 |
-| D-05 | FR-1 수집기를 맡을 작업을 정함 | §5.1 FR-1, §11.1 | 전원 | 제안 |
+| D-04 | 첨부 파일 이전을 컷오버와 되돌리기에 넣음 | §7.3, §8.6 | 데이터 · 컷오버, 데모 앱 | 제안. **구현 선행**: Executor에 배포, 단독 복사 1회(`docs/evidence/cloud-runs/`) |
+| D-05 | FR-1 수집기를 맡을 작업을 정함 | §5.1 FR-1, §11.1 | 전원 | 제안. **구현 선행**: 수집기 운영 중. 작업 번호 T30은 r2의 T30(목적지 워크로드)과 겹침 |
 | D-06 | 도구 계층을 구조화한 작업으로 바꿈 | §8.3, §8.4 | 에이전트 · 리허설 담당 | 프로토타입 반영(담당 승인 2026-11-02), 회의 공유 |
 | D-07 | 리전 이전은 설계 문서에만 | 없음 | 전원 | 제안 |
 | D-08 | 이전 완수 증거표를 DONE 보고서로 냄 | §8.2 | 데이터 · 컷오버 | 제안 |
-| D-09 | 컷오버 6단계를 확정 지점 앞뒤로 나눔 | §8.6 | 데이터 · 컷오버 | 제안 |
-| D-10 | 가중치 단계 API와 콘솔의 LIVE · RECORDED 표시 | §8.7, §8.9 | 콘솔 · 관측 · Edge | 제안 |
-| D-11 | 예외 승인도 승인 API의 단계로 받음 | §8.5, §8.9 | 보안 통제 · 게이트 | 제안 |
-| D-12 | 리허설 NetworkPolicy에 필요한 예외 | §7.5, §8.4 | 에이전트 · 리허설, 보안 통제 · 게이트 | 제안 |
+| D-09 | 컷오버 6단계를 확정 지점 앞뒤로 나눔 | §8.6 | 데이터 · 컷오버 | 제안. **구현 선행**: Executor 코드(6a · 6b)에 배포, 클라우드 컷오버 0회 |
+| D-10 | 가중치 단계 API와 콘솔의 LIVE · RECORDED 표시 | §8.7, §8.9 | 콘솔 · 관측 · Edge | 제안. **일부 구현 선행**: Executor `POST /v1/front/shift`로 LB 전환 6회. 계획 API · 콘솔 버튼 · `recorded` 없음. 대표 CNAME은 FR-8 경로 아님(본문) |
+| D-11 | 예외 승인도 승인 API의 단계로 받음 | §8.5, §8.9 | 보안 통제 · 게이트 | 제안. **구현 선행**: 별도 경로 `/v1/plans/{id}/exceptions`, 0008 적용. 사용 0건 |
+| D-12 | 리허설 NetworkPolicy에 필요한 예외 | §7.5, §8.4 | 에이전트 · 리허설, 보안 통제 · 게이트 | 제안. **구현 선행**: 리허설 서비스(검증 Job의 RGW 송신 허용) |
 | D-13 | 승인 요약과 사후 리포트를 P0에서 템플릿으로 | §8.3 | 에이전트 · 리허설 | 제안 |
 | D-14 | 데모 이미지를 GHCR 공개 패키지로 | §7.5, NFR-6 | 인프라 · CI | 제안 |
 | D-15 | 플랫폼 클러스터에 Istio ambient(L4)와 OTel 관측 백엔드를 더함 | §7.4, §8.8 | 인프라 · CI, 콘솔 · 관측 · Edge, 에이전트 · 리허설 | 제안 |
-| D-16 | 환경 사이 연결을 Tailscale에서 Cloudflare Tunnel + Access 링크로 바꿈 | §6 S3 시작 조건, §7.5, §8.6, §8.8, T1, T2, T8 | 인프라 · CI, 데이터 · 컷오버 | 제안(설계안 2026-11-02). ADR 0003(제안) |
+| D-16 | 환경 사이 연결을 Tailscale에서 Cloudflare Tunnel + Access 링크로 바꿈 | §6 S3 시작 조건, §7.5, §8.6, §8.8, T1, T2, T8 | 인프라 · CI, 데이터 · 컷오버 | 제안(설계안 2026-11-02). ADR 0003(제안). **구현 선행**: 환경 사이 유일한 경로 |
 | D-17 | 플랫폼을 단일 노드에서 3-AZ RKE2 HA로 | §7.2 | 인프라 · CI | D-21로 대체됐음. D-21 부분 철회(2026-11-02 21:10) 뒤 플랫폼은 스펙 §7.2 단일 노드("스펙 그대로 전부")라 적용하지 않음(해석, ADR 0010) |
 | D-18 | 운영자 MCP 서버를 더함(REST · 콘솔 유지) | §7.1, §8.9 | 데이터 · 컷오버(T10), 콘솔 · 관측 · Edge | 류지환 결정(2026-11-02), 회의 공유 |
-| D-19 | Executor에 효과 원장과 인계 차단을 더함 | §8.2, §8.6 | 데이터 · 컷오버 | 제안(팀원 메모, 2026-11-02) |
+| D-19 | Executor에 효과 원장과 인계 차단을 더함 | §8.2, §8.6 | 데이터 · 컷오버 | 제안(팀원 메모, 2026-11-02). **구현 선행**: 앞단 전환 run이 효과 행을 남김 |
 | D-20 | 이전 건과 따로 사는 보안 보류와 별도 해제 승인 | §8.2, §8.5, §8.9 | 보안 통제 · 게이트, 데이터 · 컷오버 | 제안(팀원 메모, 2026-11-02) |
 | D-21 | GCP 목적지는 GKE로(처음 안: RKE2를 빼고 플랫폼 EKS, 온프렘 K3s) | §4, D-01 범위 | 인프라 · CI, 보안 통제 · 게이트 | **부분 철회**(류지환, 2026-11-02 21:10 KST): RKE2 관련은 스펙 그대로. 남은 범위는 GKE 목적지뿐. ADR 0004는 ADR 0010으로 대체 |
 | D-22 | SeaweedFS를 빼고 객체 저장을 "같은 S3 계약 + 환경별 엔진"으로(온프렘 Rook-Ceph RGW) | FR-3, FR-4, §6 S1 · S2, §7.2, §7.3, §8.3, §8.4, §8.8, §9, §12, T9 | 보안 통제 · 게이트, 인프라 · CI | 류지환 결정(2026-11-02): SeaweedFS 제외, 온프렘 Rook-Ceph RGW · EKS S3 · GKE Cloud Storage |
 | D-23 | 온프렘 · GKE · EKS에 같은 랜딩 존 | §4, §7.2, §7.3, §8.8 | 전원 | 류지환 결정(2026-11-02), 회의 공유. ADR 0006 |
 | D-24 | 관리형 PostgreSQL(RDS · Aurora · Cloud SQL)을 DB 끝점으로 받고, 온보딩에 PgBouncer 끼워 넣기를 둠 | FR-9, FR-10, FR-11, §7.3, §8.6, §8.8, §8.10 | 데이터 · 컷오버, 인프라 · CI, 보안 통제 · 게이트 | 제안 |
-| D-25 | 전체 상태 경로의 구현 선택(ANALYZE 분기, WATCH 재시험, NEEDS_HUMAN 재개, 도구 이름) | §8.2, §8.3, FR-5 | 에이전트 · 리허설, 데이터 · 컷오버 | 제안(구현 2026-11-02) |
+| D-25 | 전체 상태 경로의 구현 선택(ANALYZE 분기, WATCH 재시험, NEEDS_HUMAN 재개, 도구 이름) | §8.2, §8.3, FR-5 | 에이전트 · 리허설, 데이터 · 컷오버 | 제안(구현 2026-11-02). **구현 선행**: 플랫폼 API에 배포 |
 | D-26 | 키와 비밀은 플랫폼 금고 하나만 보관 | §7.2, §7.3, §7.5, §8.4, §8.8, NFR | 전원 | 류지환 결정(2026-11-02). ADR 0007 |
 | D-27 | 역할별 에이전트 여섯(CI 에이전트 포함)과 구조화 출력 채널 | §8.1, §8.3, §8.4, FR-2, FR-4, FR-5 | 에이전트 · 리허설 | 류지환 지시(2026-11-02) 설계안, 회의 공유 |
+| D-28 | 빌드 · 서명 · 배포 경로를 플랫폼 쪽으로(Actions → GHCR 대신) | §7.2, §7.5, §8.8, T7, T31, FR-7 | 인프라 · CI, 에이전트 · 리허설 | 제안(2026-11-03 등록). **구현 선행**: 지금 모든 배포가 이 경로 |
 
 ## D-01. GCP 고객 환경을 P0 연결 뒤에 세움
 
@@ -43,6 +46,17 @@
 **늘어나는 작업.** `network/gcp`, `cluster/gke`, `ci_identity/gcp`, `envs/target-gcp`, GCP용 통제 시험 실행, 삭제 절차입니다. GKE에도 온프렘과 같은 랜딩 존을 설치합니다(D-23). 객체 저장은 온프렘과 같은 S3 호환 저장소(후보 Rook-Ceph RGW, 제안 D-22, 검증 중), 비밀은 온프렘과 같은 금고입니다. 비용 상한은 GKE 클러스터 2일분으로 둡니다. GKE 요금은 채택할 때 확인합니다.
 
 **반론(리뷰).** 심사위원 · 팀원 리뷰는 P2로 내리자고 했습니다. 킥오프가 "하나를 깊게"를 강조했고, GCP 장면이 270초 각본에 없고, 인프라 · CI 담당이 가장 긴 경로의 첫 작업(T1, T6)을 맡기 때문입니다. 소재 판정은 환경 없이 계산으로도 보일 수 있습니다. 회의에서 이 반론과 함께 정합니다.
+
+**지금 범위(2026-11-03 02:40 KST, 리뷰 B21).** 이 제안은 "컷오버 1회 뒤" 조건을 기다리지 않고 구현됐습니다. 클라우드 컷오버는 아직 0회입니다.
+
+| 구분 | 내용 | 근거 |
+|---|---|---|
+| 도는 것 | GKE Standard `bravo-target-gcp`(asia-northeast1-b, Arm 노드)에 같은 랜딩 존. 앱 `b-free-chat-gke`(02:32 HTTP 200, `env.id=gcp`). 게이트 쌍 `source-aws ↔ target-gcp`, 수집기 · 게이트가 링크 `gke-k8s` · `gke-db`로 읽음 | `docs/evidence/cloud-runs/platform-snapshot-20261103T0232KST.txt`, `docs/evidence/gate/platform-gate-20261102T170251Z/TABLES.md` |
+| 데모에서 맡는 일 | (1) 통제 비교표의 셋째 열. (2) S1 5b 예외 장면. GKE는 OBJ-06(평문 HTTP 허용)이 FAIL이라 게이트가 이 쌍을 ENC-01로 늘 BLOCK합니다. 조직 없는 프로젝트라 조직 정책으로 막지 못했습니다 | `docs/evidence/gate/obj06-gke-orgpolicy-20261102T143014Z/` |
+| 아직 안 된 것 | 예외 승인 0건(`control_exceptions` 0행). 대체 통제(평문 80 차단)를 재는 게이트 질문이 없음(리뷰 P10) | 같은 snapshot |
+| 하지 않는 것 | GKE로 컷오버하지 않습니다. 앱 LB에 gke pool이 없습니다(요금제 포함 끝점 2개, `lb_environments = ["src", "dst"]`). Executor topology에 GKE가 없습니다. T31 반영 경로도 GKE에 닿지 않습니다(`gke_driver_not_wired`). GKE 앱 digest(`df08e969…`)는 출발지 · 온프렘(`b5c0e764…`)과 다릅니다 | `deploy/CLOUD-E2E-CONTRACT.md` 0.3 · 5절, `platform/apply/README.md` |
+
+GKE 컷오버는 팀이 범위에 더하기로 정하기 전까지 범위 밖입니다. 더하려면 LB pool(요금제 변경), Executor topology, PgBouncer 전환 권한, 같은 digest가 먼저 필요합니다. 발표에서 "GKE RUNNING"을 "GKE로 옮길 준비가 됐다"로 말하지 않습니다. 게이트 BLOCK과 함께 보입니다.
 
 ## D-02. Harbor를 리허설 실행 계층으로 씀
 
@@ -176,6 +190,13 @@
 
 - `POST /v1/plans/{id}/weights`(목표 가중치, `Idempotency-Key`) → 반영 시각, 관측 비율. Edge 제어 코드는 `platform/api/edge/`에 두고 작업 주인은 콘솔 · 관측 · Edge(T17)입니다.
 - SSE 이벤트와 콘솔 패널마다 `mode`(`live`, `recorded`)와 `run_id`, 시각을 둡니다. 사전 실행 기록은 언제나 `recorded`로 보입니다.
+
+**지금(2026-11-03 02:40 KST).** 계획 단위 API(`/v1/plans/{id}/weights`)와 콘솔 버튼은 없습니다. Executor의 `POST /v1/front/shift`가 LB 가중치를 10 → 50 → 100%로 바꾸고, 단계마다 판정해 실패면 0%로 되돌립니다. 하네스가 이 API를 직접 불러 6회 돌렸습니다(`docs/evidence/cloud-runs/`). `mode: recorded` 재생 코드는 없습니다(리뷰 P21).
+
+**대표 CNAME은 FR-8 경로가 아닙니다(리뷰 B23).** 전에는 "LB가 없으면 대표 CNAME으로 0%와 100%만 바꾸고 10 · 50%는 'LB 구독 필요'로 기록"을 대체 경로로 적었습니다(`front.py` CNAME 방식). 이 방식은 중간 단계가 없어 FR-8 · T17(10 → 50 → 100%, 단계별 판정)을 만족하지 않습니다. 중간 단계를 빼도 된다는 승인도 없습니다. 그래서 이렇게 정리합니다.
+- 데모의 S3 전환은 LB로만 합니다. LB는 2026-11-02 20:4x부터 켜져 있습니다(`lb_enabled = true`, pool src · dst).
+- 대표 CNAME은 스펙 §8.7의 비상 경로("DNS 전환")로만 남깁니다. LB를 끄면 응답하는 레코드이고, 0%와 100%만 바꿉니다.
+- LB를 쓸 수 없으면 FR-8은 "미충족"으로 표시합니다. CNAME 전환을 FR-8의 대체 장면으로 보이지 않습니다.
 
 ## D-11. 예외 승인도 승인 API의 단계로 받음
 
@@ -335,7 +356,7 @@ D-02의 "격리 규칙 그대로"는 이 예외를 포함한 규칙을 뜻합니
 
 **제안(2026-11-02, 사용자 진입 쪽 보완, 정하지 않음).** 근거는 `docs/architecture/15-multicloud-traffic.md`입니다.
 - F1의 "LB monitor가 다른 pool로 넘김"은 앱 장애를 잡는다는 보장이 없습니다. Cloudflare 문서의 Tunnel 끝점 모니터 예시는 `cloudflared` 도달만 확인합니다. 앱 품질 판정은 Executor가 합니다. 시험 T-E5로 확인합니다.
-- 대표 CNAME을 LB 아래에 남깁니다. 같은 이름이면 LB가 우선하고, LB를 끄면 그 CNAME이 응답합니다(Cloudflare 문서). 스펙 §8.7의 "비상 경로는 DNS 전환"이 이 레코드입니다. 지금 모듈은 LB를 켜면 CNAME을 지웁니다.
+- 대표 CNAME을 LB 아래에 남깁니다. 같은 이름이면 LB가 우선하고, LB를 끄면 그 CNAME이 응답합니다(Cloudflare 문서). 스펙 §8.7의 "비상 경로는 DNS 전환"이 이 레코드입니다. 지금 모듈은 LB를 켜면 CNAME을 지웁니다. (2026-11-03 덧붙임: CNAME 전환은 0%와 100%뿐이라 FR-8을 대신하지 않습니다. D-10 참고.)
 - 비용의 "LB 월 약 $5"는 공식 가격 페이지의 시작 금액입니다. GKE pool을 더해 끝점이 셋이 되면 늘 수 있습니다(확인 필요).
 - 클러스터를 넘는 메시(ClusterMesh, Istio 다중 클러스터, Submariner, Skupper)는 사용자 경로에 쓰지 않습니다. 모두 인바운드나 클러스터 사이 망을 요구해 이 편차의 인바운드 0과 부딪힙니다.
 
@@ -712,3 +733,46 @@ D-02의 "격리 규칙 그대로"는 이 예외를 포함한 규칙을 뜻합니
 
 **상태.** 설계안과 코드(`platform/agent/`). 회의에서 공유합니다. 도구 계층의 허용 목록 로더와 제안서 검사가 이 형식을 읽도록 바꾸는 일이 남았습니다(13 9절 연결 메모).
 
+## D-28. 빌드 · 서명 · 배포 경로를 플랫폼 쪽으로 옮김(Actions → GHCR 대신)
+
+**스펙.** 앱 이미지는 GitHub Actions가 빌드해 GHCR에 올리고(digest 고정), 출발지와 목적지가 같은 digest를 pull합니다. 온프렘은 AWS 자격 없이 받습니다(§7.2 배치 표의 GitHub 줄, §8.8). 클러스터에는 GHCR 읽기 전용 pull 토큰을 둡니다(§7.5). T7 완료 기준은 "Actions에서 OIDC로 플랫폼에 배포 1회 성공, 앱 이미지가 GHCR에 digest로"입니다. T31은 "승인된 diff를 브랜치에 커밋 → Actions 빌드 → GHCR digest → 승인 digest와 대조 후 목적지 배포"입니다.
+
+**실제(2026-11-03 02:40 KST 관측).**
+
+| 대상 | 스펙 | 지금 |
+|---|---|---|
+| 플랫폼 서비스 이미지 | Actions 빌드 → GHCR → OIDC로 배포 | 운영자가 buildx(linux/arm64)로 빌드 → ECR `bravo-platform/<name>` → `deploy/platform/control/kustomization.yaml` digest → Argo CD. GHCR → ECR 복사 워크플로 `platform-images`는 11/3 01:56–02:07 KST 실행이 모두 실패(`digests` 아티팩트 없음) |
+| 데모 앱(출발지) | GHCR pull | ECR `bravo-source/bravo-demo` |
+| 데모 앱(온프렘) | GHCR pull, 같은 digest | OCI tar → 노드 containerd import(`deploy/landing-zone/install.sh`, 이름 `bravo.local/…`). 레지스트리 · pull 토큰 없음 |
+| 데모 앱(GKE) | (스펙에 GKE 없음, D-01) | Artifact Registry `asia-northeast1-docker.pkg.dev/b-free-target-20261102/bravo/…` |
+| S2 변경 반영(T31) | Actions 빌드 → GHCR → 대조 → 배포 | `platform/apply`: 플랫폼 쪽 buildx(OCI, `rewrite-timestamp`) → syft · trivy → 내용 주소 OCI 아카이브 → cosign 서명(`hashivault://bravo-supply-chain`, 플랫폼 OpenBao transit, 공개 로그 없음) → 승인 digest 대조 → 목적지 import → 배포 → 정책 적용 → 게이트 재대조 |
+| CI | 빌드 · push · 배포 | `images` 워크플로: 빌드 → SBOM · trivy → GHCR push(GITHUB_TOKEN만). 서명 없음. 어느 클러스터도 GHCR에서 받지 않음 |
+
+**이유: D-26(키는 플랫폼 OpenBao에만, ADR 0007).**
+- 서명 키를 CI에 두지 않습니다. cosign 키는 OpenBao transit 키 `bravo-supply-chain`이고 내보낼 수 없습니다. 플랫폼이 승인 digest에 서명할 때만 씁니다. Actions에 서명 자격을 넣으면 키가 플랫폼 밖에 생깁니다.
+- 비공개 GHCR 패키지는 classic PAT로만 pull합니다(D-14). 고객 클러스터마다 pull 토큰을 두면 장기 비밀이 고객 쪽에 생깁니다(D-26, NFR-6). 그래서 온프렘은 폐쇄망 방식(containerd import)으로 받습니다.
+- 플랫폼이 GHCR digest를 끌어오는 경로도 비공개 패키지 읽기 자격이 없어 연결하지 않았습니다(`platform/apply/README.md`).
+
+**재현성과 승인 결속: 기존 증거로 잰 것.**
+
+| 질문 | 측정 | 근거 |
+|---|---|---|
+| 양쪽이 같은 digest를 쓰는가 | 출발지 · 온프렘은 같음: `bravo-demo@sha256:b5c0e764…`, `bravo-pgbouncer@sha256:68c4a15e…`(02:32). GKE는 `df08e969…`로 다름(01:56 게이트 VAP 기록) | `docs/evidence/cloud-runs/platform-snapshot-20261103T0232KST.txt`, `deploy/platform/link/gate-rbac/gke.yaml` |
+| 배포 digest = 승인 digest인가 | T31 CLI 1회: 준비 digest `a9f7b866…`, 서명 검증 통과, 온프렘 Pod 2개가 그 digest로 Ready | `docs/evidence/t31/t31-20261102T120416Z/apply/`, `onprem-after.txt` |
+| 다르면 거부하는가 | 승인 값 `92592b87…`, 준비 값 `a9f7b866…` → `approved_digest_mismatch`. 서명 · import · 배포 전에 거부 | 같은 폴더 `refuse/result.json` |
+| 사람 · 콘솔 승인에 묶였나 | **아님.** `approval_id: null`, 서명 주석 `bravo.dev/approval-id: None`. CLI 실행자가 digest를 넘겼습니다. 그 뒤 CLI는 플랫폼 DB 승인만 받게 고쳤습니다. 플랫폼 DB `approvals`는 02:32에 0행 | `apply/signature.json`, `binding.apply.json` |
+| 정책도 같이 반영되나 | **아님.** `policies.scope` SKIPPED. `rgw_bucket_policy` · `openbao_policy`는 적용 수단이 없어 `policy_target_not_connected` | `apply/result.json`, `platform/apply/README.md` |
+| 빌드가 재현되나 | **측정 기록 없음.** 준비는 1회뿐입니다. README는 "`--no-cache` 두 번에서 마지막 층 `/app/.venv` 바이트코드만 다름"이라고 쓰지만 원본 출력이 증거 폴더에 없습니다. 결속은 다시 빌드하지 않고, 준비 때의 OCI 아카이브를 쓸 때마다 다시 해시해서 지킵니다 | `platform/apply/README.md` |
+| 지금 운영 digest가 서명됐나 | **확인 안 됨.** `b5c0e764…`는 랜딩 존 설치 스크립트로 들어갔고 T31 경로를 지나지 않았습니다 | `deploy/landing-zone/versions.env` |
+| 누가 돌렸나 | 운영자 노트북(custody 파일, Lima, kubectl). 그때 온프렘은 K3s. 플랫폼 Pod에서 돈 적 없음 | T31 `prepare/result.json` |
+
+**제안.** 스펙 문장 "Actions → GHCR → 같은 digest pull"을 이렇게 바꿉니다: "플랫폼 쪽 신뢰된 빌드 → 플랫폼 서명(OpenBao transit) → 목적지별 전달(ECR · containerd import · Artifact Registry). 결속은 digest로 한다." Actions는 빌드 · SBOM · 검사 · GHCR 게시까지만 합니다. T7 완료 기준의 "Actions에서 OIDC로 플랫폼 배포 1회"는 이 편차로 바뀝니다. 바뀌기 전까지는 미충족으로 셉니다.
+
+**남은 일.**
+1. 플랫폼 Pod에서 콘솔 `change` 승인으로 T31 1회(에이전트 · 리허설 갈래).
+2. RGW 버킷 정책 · OpenBao 정책 적용 단계(리뷰 P3).
+3. GKE 반영 수단을 만들거나, GKE를 T31 범위에서 뺀다고 적기(D-01).
+4. 지금 운영 digest의 서명과 대조 기록.
+5. 2회 빌드 비교의 원본 출력을 증거로 남기기.
+
+**상태.** 제안(2026-11-03 등록). 구현이 먼저였습니다. 11/3 회의에서 채택 여부를 정합니다. ADR 번호 제안은 [MEETING-2026-11-03-deviations.md](MEETING-2026-11-03-deviations.md)에 있습니다.

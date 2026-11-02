@@ -1,0 +1,1 @@
+{"env": "target-onprem", "secret": "secret/envs/target-onprem/chat-db", "generated_fields": [], "copied": [], "schema_applied": "01,02,03_dst", "roles_set": ["executor_ctl", "executor_observe", "replicator"], "roles_missing_in_db": [], "pod": "chat-db-1"}

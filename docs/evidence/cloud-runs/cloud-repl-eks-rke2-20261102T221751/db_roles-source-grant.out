@@ -1,0 +1,1 @@
+{"env": "source-aws", "secret": "secret/envs/source-aws/chat-db", "generated_fields": [], "copied": [], "schema_applied": false, "roles_set": ["executor_ctl", "executor_observe", "replicator"], "roles_missing_in_db": [], "pod": "chat-db-1"}

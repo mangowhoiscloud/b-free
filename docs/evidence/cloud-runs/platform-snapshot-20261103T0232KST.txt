@@ -1,0 +1,80 @@
+# 읽기 전용 관측 2026-11-03 02:32:08 KST. 명령과 출력 그대로. 쓰기 없음.
+## git
+HEAD d532c68, origin/main d532c68
+## Argo CD (bravo-platform-rke2)
+NAME               SYNC        HEALTH    REV
+argocd             Synced      Healthy   <none>
+cilium             OutOfSync   Healthy   <none>
+cnpg-operator      Synced      Healthy   <none>
+control            OutOfSync   Healthy   624013dff1c883133aa637e86c959f36aa60ae0b
+ebs-csi            Synced      Healthy   <none>
+edge               Synced      Healthy   624013dff1c883133aa637e86c959f36aa60ae0b
+gateway-api-crds   Synced      Healthy   624013dff1c883133aa637e86c959f36aa60ae0b
+link-d16           Synced      Healthy   624013dff1c883133aa637e86c959f36aa60ae0b
+observability      Synced      Healthy   d532c68013c545ee9ff23a66778e421dcad57baa
+openbao            Synced      Healthy   624013dff1c883133aa637e86c959f36aa60ae0b
+platform-root      Synced      Healthy   624013dff1c883133aa637e86c959f36aa60ae0b
+storage            Synced      Healthy   624013dff1c883133aa637e86c959f36aa60ae0b
+## bravo-control 이미지
+NAME           READY   IMAGE
+api            2       721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api@sha256:59f6ba2b9fcddcf3b106663319bbaadfa7ea6f969be7bbbd7c3548eab2e51ae4
+collector      1       721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/collector@sha256:af3c66c17932423a23a4121f184b149fdf83f526f4b3d9e8dcd97645fdab5a79
+console        2       721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console@sha256:91678860257abd4a5e97418368e17715491b23047f697e2cb59c4c6511cb7426
+gate           1       721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate@sha256:ec47f7c35ef9d83f0a5ef2bdf16b0be2e9c1e9eef813647c2db3c3f864aa5959
+operator-mcp   2       721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/api@sha256:59f6ba2b9fcddcf3b106663319bbaadfa7ea6f969be7bbbd7c3548eab2e51ae4
+rehearsal      1       721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/rehearsal@sha256:1e1337fa61e03e7dbbcbf19ab101021ab2abe455e0e28736412fde39f4f6cacd
+executor       1       721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/executor@sha256:f5ec7dfdbe01e7a37a6fdbdde4125c12b921f99cbe51dee787b9c8b8de0caeb0
+## executor-0
+START                  CM
+2026-11-02T17:08:44Z   executor-topology-t84mhc9t7h
+## 플랫폼 DB 집계(DB bravo)
+$ psql: select version from schema_migrations order by 1
+0001_schema.sql
+0002_rls_grants.sql
+0003_full_path.sql
+0004_change_approval.sql
+0005_access_bootstrap.sql
+0006_console_landing.sql
+0007_owner_definer_rls.sql
+0008_control_exceptions.sql
+$ psql: select 'plans', count(*) from plans
+plans|0
+$ psql: select 'principals', count(*) from principals
+principals|1
+$ psql: select role, count(*) from memberships group by 1 order by 1
+approver|1
+viewer|1
+$ psql: select 'approvals', count(*) from approvals
+approvals|0
+$ psql: select 'control_exceptions', count(*) from control_exceptions
+control_exceptions|0
+$ psql: select 'changes', count(*) from changes
+changes|0
+$ psql: select 'rehearsals', count(*) from rehearsals
+rehearsals|0
+$ psql: select 'gate_verdicts', count(*) from gate_verdicts
+gate_verdicts|0
+$ psql: select 'environments', count(*) from environments
+environments|0
+$ psql: select 'receipts', count(*) from receipts
+receipts|0
+$ psql: select kind, status, count(*) from runs group by 1,2 order by 1,2
+shift|ABORT_PRE_WRITE|2
+shift|DONE|4
+$ psql: select 'attachment_copies', count(*) from attachment_copies
+attachment_copies|3
+## 고객 앱 이미지
+### bravo-source
+NAME              IMAGE
+chat-bravo-demo   721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+chat-pgbouncer    721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-source/bravo-pgbouncer@sha256:68c4a15e2c33f01cd5733e11208d5518a1a4a23aec9ecc4daf49a220792db23c
+### bravo-onprem
+NAME              IMAGE
+chat-bravo-demo   bravo.local/bravo-demo@sha256:b5c0e7647924f37c2179fecb75c5161912cd95c0a4f1ec4524deb62fc0d135e6
+chat-pgbouncer    bravo.local/bravo-pgbouncer@sha256:68c4a15e2c33f01cd5733e11208d5518a1a4a23aec9ecc4daf49a220792db23c
+## 공개 이름(GET /api/config의 env.id)
+b-free-chat aws HTTP 200
+b-free-chat-src aws HTTP 200
+b-free-chat-dst onprem HTTP 200
+b-free-chat-gke gcp HTTP 200
+b-free HTTP 302 -> https://falling-rain-1f1c.cloudflareaccess.com/cdn-cgi/access/login/b-free.mangowhois.ai…

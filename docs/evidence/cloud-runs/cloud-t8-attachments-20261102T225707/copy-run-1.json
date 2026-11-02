@@ -1,0 +1,1 @@
+{"ms": 2626, "source": {"store_id": "src", "bucket": "bravo-source-attachments-e8c4128d1fe51a0ea466556c84", "endpoint": "aws-default"}, "target": {"store_id": "dst", "bucket": "bravo-demo-attachments", "endpoint": "https://127.0.0.1:18443"}, "referenced": 3, "already_verified": 0, "copied": 3, "verified_in_place": 0, "failed": [], "failed_count": 0, "complete": true}

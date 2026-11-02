@@ -1,0 +1,1 @@
+{"sent": 37, "acked": 37, "resent": 0, "reconnects": 0, "nack_final": 0, "unacked": 0, "hello_by_env": {"aws": 1}, "max_latency_ms": 1540.8, "nfr2": {"ok": true, "lost": 0, "duplicated": 0}}

@@ -26,7 +26,7 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 
 - CNI는 모든 환경에서 Cilium입니다(팀장 결정 2026-11-02, 1급 원천 「기술 스택(툴) 조합」). Hubble 흐름 기록이 네트워크 통제(NET-01)의 증거가 됩니다. Tetragon은 P1입니다.
 - 공통 안전선: Kyverno `generate` 정책이 리허설 · 검증 네임스페이스에 "기본 차단 + DNS 허용" NetworkPolicy를 만들고 지우지 못하게 합니다. 정책 검사에는 OPA를 함께 씁니다.
-- 진입: 환경 사이 가중치는 Cloudflare LB(FR-8), 환경 안 진입점은 Gateway API(Envoy, Cilium 구현)입니다. cloudflared는 앱이 아니라 Gateway로 보냅니다. LB 구독 전에는 대표 CNAME으로 0%와 100%만 바꿉니다(`docs/architecture/15-multicloud-traffic.md`).
+- 진입: 환경 사이 가중치는 Cloudflare LB(FR-8), 환경 안 진입점은 Gateway API(Envoy, Cilium 구현)입니다. cloudflared는 앱이 아니라 Gateway로 보냅니다. LB는 2026-11-02 20:4x부터 켜져 있습니다(pool src · dst). 대표 CNAME은 비상 경로이고 0%와 100%만 바꾸므로 FR-8을 대신하지 않습니다(`docs/spec/DEVIATIONS.md` D-10).
 - StorageClass 이름 `bravo-db`, `bravo-general`은 모든 환경에서 같습니다.
 - 객체 저장은 같은 S3 계약 + 환경별 엔진입니다. 온프렘 Rook-Ceph RGW, EKS 목적지 Amazon S3, GKE 목적지 Cloud Storage(D-22, 팀장 해석 "같은 계약 · 같은 경험", ADR 0005). 비밀 값은 모든 환경에서 플랫폼 OpenBao 한 곳이고, 고객 클러스터에는 ESO만 둡니다(D-26, ADR 0007).
 - 근거: EKS standard support 목록(1.34–1.37), RKE2 GitHub 릴리스(v1.36.5+rke2r1, 2026-09-30 게시, 2026-11-02 조회. v1.36.6-rc1은 사전 릴리스라 제외), Istio ambient 플랫폼 요건.
@@ -48,7 +48,7 @@ Bravo 플랫폼이 쓰는 기술을 한 곳에 고정합니다. 작성 2026-11-0
 | 구성요소 | 판 | 역할 | 누가 쓰나 | 대안과 이유 | 상태 |
 |---|---|---|---|---|---|
 | Cloudflare Tunnel · Access | cloudflared 2026.10.7(후보 판, N12 전. N12는 11/3 예정) | 사용자 진입, 운영자 로그인, MCP 인가 서버, 환경 사이 링크 | Cloudflare Zero Trust(인증 목록은 검증 중) | Tailscale: 팀장 판단으로 제외. S2S VPN: UDP 필요, 폴백 | 제안(D-16) |
-| Cloudflare Load Balancing(Edge 가중치) | 부가 기능(월 $5부터, 끝점 수에 따른 금액은 확인 필요). provider `cloudflare/cloudflare` ~> 5.28 | 환경 사이 가중치 10, 50, 100, 0%(FR-8, T17). 환경마다 pool 하나, 끝점은 그 환경의 Tunnel. 대표 CNAME은 LB 아래 비상 경로로 남김. 판정과 0% 복귀는 Executor 규칙 코드 | 앞단 가중치로 환경을 옮기는 방식은 Mercari(Fastly · Route 53, 2020), ZOZO(Akamai 엣지 LB, 2021)와 같음. 비교와 출처는 `docs/architecture/15-multicloud-traffic.md` | Route 53 · Cloud DNS 가중: 한 클라우드가 전역층이 됨. k8gb · ClusterMesh · Istio 다중 클러스터 · Submariner: 인바운드나 클러스터 사이 망이 필요. Akamai GTM · NS1 · F5 XC: 같은 가중치 계약의 출구 대안 | 스펙(§8.7). 구독은 **열림**(11/3 회의). 지금은 CNAME 0%와 100%만 실제로 됨 |
+| Cloudflare Load Balancing(Edge 가중치) | 부가 기능(월 $5부터, 끝점 수에 따른 금액은 확인 필요). provider `cloudflare/cloudflare` ~> 5.28 | 환경 사이 가중치 10, 50, 100, 0%(FR-8, T17). 환경마다 pool 하나, 끝점은 그 환경의 Tunnel. 대표 CNAME은 LB 아래 비상 경로로 남김. 판정과 0% 복귀는 Executor 규칙 코드 | 앞단 가중치로 환경을 옮기는 방식은 Mercari(Fastly · Route 53, 2020), ZOZO(Akamai 엣지 LB, 2021)와 같음. 비교와 출처는 `docs/architecture/15-multicloud-traffic.md` | Route 53 · Cloud DNS 가중: 한 클라우드가 전역층이 됨. k8gb · ClusterMesh · Istio 다중 클러스터 · Submariner: 인바운드나 클러스터 사이 망이 필요. Akamai GTM · NS1 · F5 XC: 같은 가중치 계약의 출구 대안 | 스펙(§8.7). LB 켬(2026-11-02 20:4x, pool src · dst, gke pool 없음). Executor로 10/50/100 실제 이동 4회 · 자동 0% 복귀 2회(`docs/evidence/cloud-runs/`). CNAME 0/100은 FR-8 대체 아님 |
 | Istio ambient(L4) | 1.31.3 | 플랫폼 클러스터 안 mTLS와 신원 인가 | CNCF 졸업 프로젝트. ambient는 GA | Cilium: CNI가 관리형마다 달라 뺌. 메시 없음: 서비스 사이 암호화를 앱마다 해야 함 | 제안(D-15), 11/4 판정 |
 | Kyverno + OPA | Kyverno 1.19.2 | 정책 적용(digest 강제, 기본 차단 생성) · 계획 · IaC 정책 검사(OPA) | CNCF 프로젝트. 1급 원천이 OPA + Kyverno를 지정 | Calico 전역 정책: 뺌 | 결정 |
 | Cilium + Hubble | 판은 인프라 갈래가 고정 | CNI, 네트워크 정책 집행, 흐름 관측, Gateway API(Envoy) | CNCF 졸업. GKE Dataplane V2의 바탕. 1급 원천이 지정 | 환경별 기본 CNI(flannel, VPC CNI 단독): 보안 관측이 환경마다 달라 뺌 | 결정(2026-11-02) |
