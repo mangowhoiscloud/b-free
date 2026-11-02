@@ -92,6 +92,22 @@ def _verify(section: ObjectStoreSection) -> str | bool:
     return section.ca_file or True
 
 
+def _is_gcs(section: ObjectStoreSection) -> bool:
+    return urlsplit(section.endpoint_url or "").hostname == "storage.googleapis.com"
+
+
+def gcs_bucket_encryption(bucket: str) -> dict[str, Any] | None:
+    """``encryption`` of a GCS bucket through the JSON API with Google application default credentials."""
+    import google.auth
+    from google.auth.transport.requests import AuthorizedSession
+
+    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/devstorage.read_only"])
+    resp = AuthorizedSession(creds).get(f"https://storage.googleapis.com/storage/v1/b/{bucket}",
+                                        params={"fields": "encryption"}, timeout=10)
+    resp.raise_for_status()
+    return resp.json().get("encryption")
+
+
 def _config(section: ObjectStoreSection, *, unsigned: bool) -> Config:
     kwargs: dict[str, Any] = {
         "connect_timeout": section.timeout_s,
@@ -272,6 +288,8 @@ class ObjectStoreProbe:
             code = str(exc.response.get("Error", {}).get("Code", ""))
             if code == "ServerSideEncryptionConfigurationNotFoundError":
                 return failed("no_default_encryption", **self._ev(code=code))
+            if code == "NotImplemented" and _is_gcs(self.s):
+                return self._gcs_enc(s3_code=code)
             return unknown("encryption_unreadable", **self._ev(code=code))
         except Exception as exc:  # noqa: BLE001
             return unknown("encryption_unreadable", **self._ev(error=error_text(exc)))
@@ -292,6 +310,19 @@ class ObjectStoreProbe:
             if managers != ["CUSTOMER"]:
                 return failed("aws_managed_key", key_managers=managers, **ev)
         return passed("customer_managed_key", **ev)
+
+    def _gcs_enc(self, **extra: Any) -> Obs:
+        """GCS has no S3 GetBucketEncryption (XML API answers NotImplemented). Read the bucket's default key with the
+        JSON API ``buckets.get?fields=encryption`` (gate's Google identity, ``storage.buckets.get`` only).
+        ``defaultKmsKeyName`` set = Cloud KMS key the customer manages (CMEK); unset = Google-managed encryption."""
+        ev = self._ev(api="storage/v1 buckets.get fields=encryption", **extra)
+        try:
+            enc = gcs_bucket_encryption(self.s.bucket)
+        except Exception as exc:  # noqa: BLE001
+            return unknown("encryption_unreadable", error=error_text(exc), **ev)
+        key = (enc or {}).get("defaultKmsKeyName")
+        ev["rules"] = [{"algorithm": "cloud-kms" if key else "google-managed", "kms_key": key}]
+        return passed("customer_managed_key", **ev) if key else failed("not_customer_key", **ev)
 
     # OBJ-06 plain HTTP must be refused: connection refused, or AccessDenied over http:// while the same
     # credential reads the canary over https:// (so the refusal is about the transport, not the identity).

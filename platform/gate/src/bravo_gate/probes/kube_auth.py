@@ -21,7 +21,8 @@ from ..environments import KubernetesSection
 
 TOKEN_PREFIX = "k8s-aws-v1."  # noqa: S105 - token format prefix, not a secret
 TOKEN_EXPIRES_S = 60
-GKE_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
+# userinfo.email: GKE then names the caller by its email (the RBAC subject), not by the numeric unique id.
+GKE_SCOPES = ("https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email")
 
 
 class NotConfigured(Exception):

@@ -61,3 +61,26 @@ def test_obj06_plain_request_goes_to_the_plain_listener_when_set() -> None:
                            plain_http_endpoint_url="http://127.0.0.1:18080")
     assert _endpoint(s, plain_http=True) == "http://127.0.0.1:18080"
     assert _endpoint(ObjectStoreSection(bucket="b", endpoint_url="https://h:18443"), plain_http=True) == "http://h:18443"
+
+
+def test_gcs_obj_enc_reads_the_json_api_default_kms_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    from botocore.exceptions import ClientError
+
+    from bravo_gate.probes import objstore
+
+    class FakeS3:
+        def get_bucket_encryption(self, Bucket: str) -> dict:  # noqa: N803
+            raise ClientError({"Error": {"Code": "NotImplemented"}}, "GetBucketEncryption")
+
+    monkeypatch.setenv("GCS_AK", "x")
+    monkeypatch.setenv("GCS_SK", "y")
+    monkeypatch.setattr(objstore, "_client", lambda *a, **k: FakeS3())
+    s = ObjectStoreSection(bucket="b", endpoint_url="https://storage.googleapis.com",
+                           app_credential={"access_key_env": "GCS_AK", "secret_key_env": "GCS_SK"})
+    key = "projects/p/locations/asia-northeast1/keyRings/r/cryptoKeys/k"
+    monkeypatch.setattr(objstore, "gcs_bucket_encryption", lambda b: {"defaultKmsKeyName": key})
+    obs = objstore.ObjectStoreProbe(s).obj_enc()
+    assert (obs.verdict, obs.reason) == ("PASS", "customer_managed_key")
+    monkeypatch.setattr(objstore, "gcs_bucket_encryption", lambda b: None)
+    obs = objstore.ObjectStoreProbe(s).obj_enc()
+    assert (obs.verdict, obs.reason) == ("FAIL", "not_customer_key")
