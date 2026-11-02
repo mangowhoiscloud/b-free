@@ -1,0 +1,16 @@
+# GKE: same chart; GCS through its XML API with HMAC keys, same variable names as S3.
+image: {repository: ghcr.io/example/bravo-demo, digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"}
+environment: {id: gcp, label: GCP, labelJa: GCP}
+db:
+  dsnSecret: {name: bravo-demo-db, key: dsn}
+  passwordSource: env-file
+  passwordSecret: {name: bravo-demo-db, key: password}
+attachments:
+  storeId: gcp
+  s3:
+    bucket: bravo-demo-attachments
+    endpointUrl: https://storage.googleapis.com
+    region: auto
+    addressingStyle: path
+    credentialsSecret: {name: bravo-demo-gcs-hmac}
+otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}

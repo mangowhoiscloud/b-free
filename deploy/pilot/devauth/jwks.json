@@ -1,0 +1,15 @@
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "key_ops": [
+        "verify"
+      ],
+      "n": "06lJbcl4quhq3RLa4kwEG8F5gN630VLWY_kKkClLVmUelJz1W1n6H79-rVJVSkJfohWEvfaLnZ6_tCIvB6njgxLXvVii9xOWMmA9H1PdxZgAwyhaANeH9zYUQiJqsGX5dWajFyufUa8FDX8MFG3JjNontKncDqDAaMviIGwnpkEhPv0mTNuXIDdOKk6RK0AQIJRRzsInUf8yCS57LbOhij6RJS43wgKmURzvZmw8oq0Ebk5l7e625hY8KaKAOCJcBdMeE0zx5jCsbzypYagLCCDmGFhPGX-4w6HyDupwRXk3QPn_8KPGxG3hIscTKA8_ZjWzz-JUEnykmukl9jAGMQ",
+      "e": "AQAB",
+      "kid": "bravo-dev-1",
+      "alg": "RS256",
+      "use": "sig"
+    }
+  ]
+}

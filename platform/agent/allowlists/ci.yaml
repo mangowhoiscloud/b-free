@@ -1,0 +1,68 @@
+apiVersion: bravo.agent/v1
+kind: AgentAllowlist
+role: ci
+description: Containerizes the app inside fixed templates, builds and tests in the sandbox, and fixes build failures.
+responsibility:
+  does:
+    - Fill the fixed build template parameters and the bravo-app chart values.
+    - Run tests, lint and offline misconfiguration scans in the sandbox and fix build failures in /app.
+    - Request new dependencies in dependency_requests (a person approves; the trusted pipeline fetches them).
+  never:
+    - Push images, sign, tag, deploy or set imageRef. The trusted pipeline builds and records the digest.
+    - Write a free-form Dockerfile or change the chart templates.
+states: [PROPOSE, REHEARSE]
+model_tier: opus
+limits: { max_turns: 40, max_budget_usd: 3.0, timeout_s: 1200, max_attempts: 3 }
+mcp_tools: [inventory_describe, repo_read, evidence_read, rehearsal_exec]
+sandbox:
+  image: bravo/agent-sandbox-ci-agent
+  user: 65532
+  egress: [llm-gateway, tool-layer]
+  binaries: [sh, cat, ls, base64, python3, helm, hadolint, kubeconform, trivy, syft, diff]
+  ops: [read_file, list_dir, write_file, run_check]
+  paths: { read: [/src, /app, /out], write: [/app, /out] }
+  write_max_bytes: 262144
+  checks:
+    unit_tests:
+      argv: [python3, -m, pytest, -q, -p, no:cacheprovider, /app]
+      env: { PYTHONPYCACHEPREFIX: /work/pycache, PYTHONDONTWRITEBYTECODE: "1" }
+      cwd: /app
+      timeout_s: 300
+      executes_agent_code: true   # 샌드박스 안 임의 코드 실행을 인정. 네트워크 없음 · 자격 없음 · 결과는 검증기가 다시 판정
+    compile:
+      # -I는 PYTHON* 환경 변수를 무시하므로 -X로 캐시 위치를 /work로 돌림(/app에 __pycache__를 남기지 않음)
+      argv: [python3, -I, -X, pycache_prefix=/work/pycache, -m, compileall, -q, /app]
+      cwd: /app
+      timeout_s: 60
+    values_render:
+      argv: [helm, template, app, /opt/bravo/charts/bravo-app, --values, "{path}",
+             --set-string, "imageRef=registry.invalid/render-check@sha256:0000000000000000000000000000000000000000000000000000000000000000"]
+      params: { path: { kind: path, under: [/out] } }
+      env: { HELM_CACHE_HOME: /work/helm/cache, HELM_CONFIG_HOME: /work/helm/config, HELM_DATA_HOME: /work/helm/data }
+      timeout_s: 30
+    manifest_schema:
+      argv: [kubeconform, -strict, -summary, -output, json,
+             -schema-location, "/opt/bravo/schemas/{{.ResourceKind}}{{.KindSuffix}}.json",
+             -schema-location, "/opt/bravo/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+             "{path}"]
+      params: { path: { kind: path, under: [/out] } }
+      timeout_s: 30
+    dockerfile_lint:
+      argv: [hadolint, --no-color, --format, json, "{path}"]
+      params: { path: { kind: path, under: [/src, /app] } }
+      timeout_s: 30
+    misconfig_scan:
+      argv: [trivy, fs, --scanners, misconfig, --skip-db-update, --skip-check-update, --offline-scan,
+             --format, json, --quiet, "{path}"]
+      params: { path: { kind: path, under: [/app, /out] } }
+      env: { TRIVY_DISABLE_TELEMETRY: "true", TRIVY_SKIP_VERSION_CHECK: "true", TRIVY_CACHE_DIR: /work/trivy }
+      timeout_s: 120
+    sbom:
+      argv: [syft, scan, dir:/app, --output, spdx-json, --quiet]
+      env: { SYFT_CHECK_FOR_APP_UPDATE: "false" }
+      cwd: /app
+      timeout_s: 120
+    make_diff:
+      argv: [diff, -ruN, /src, /app]
+      cwd: /work
+      timeout_s: 20

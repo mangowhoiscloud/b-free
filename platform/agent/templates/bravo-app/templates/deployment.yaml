@@ -1,0 +1,48 @@
+{{- if not .Values.imageRef }}{{ fail "imageRef is injected by the platform after the trusted build" }}{{ end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels: { app.kubernetes.io/name: {{ .Release.Name }}, app.kubernetes.io/managed-by: bravo-platform }
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: {{ .Release.Name }} }
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: {{ .Values.imageRef | quote }}
+          {{- with .Values.command }}
+          command: {{ toJson . }}
+          {{- end }}
+          ports:
+            - { name: http, containerPort: {{ .Values.port }} }
+          env:
+            {{- range .Values.env }}
+            - { name: {{ .name | quote }}, value: {{ .value | quote }} }
+            {{- end }}
+            {{- range .Values.secretEnv }}
+            - name: {{ .name | quote }}
+              valueFrom: { secretKeyRef: { name: {{ printf "%s-app" $.Release.Name | quote }}, key: {{ .secretKey | quote }} } }
+            {{- end }}
+          readinessProbe: { httpGet: { path: {{ .Values.probes.readinessPath | quote }}, port: http } }
+          livenessProbe: { httpGet: { path: {{ .Values.probes.livenessPath | quote }}, port: http } }
+          resources: {{ toJson .Values.resources }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }

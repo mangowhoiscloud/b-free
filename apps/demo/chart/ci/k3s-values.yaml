@@ -1,0 +1,31 @@
+# Destination on-prem (K3s landing zone): password from an External Secrets Secret, S3-compatible RGW.
+image: {repository: ghcr.io/example/bravo-demo, digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"}
+environment: {id: onprem, label: 온프렘, labelJa: オンプレ}
+publicUrl: https://chat.example.test
+db:
+  dsnSecret: {name: bravo-demo-db, key: dsn}
+  passwordSource: env-file
+  passwordSecret: {name: bravo-demo-db, key: password}
+attachments:
+  storeId: dst
+  s3:
+    bucket: bravo-demo-attachments
+    endpointUrl: http://rook-ceph-rgw-bravo.rook-ceph.svc
+    region: us-east-1
+    addressingStyle: path
+    credentialsSecret: {name: bravo-demo-s3}
+networkPolicy:
+  enabled: true
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cf-edge}}}]
+      ports: [{port: 8000, protocol: TCP}]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-data}}}]
+      ports: [{port: 6432, protocol: TCP}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: rook-ceph}}}]
+      ports: [{port: 80, protocol: TCP}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-observability}}}]
+      ports: [{port: 4317, protocol: TCP}]
+    - to: [{namespaceSelector: {}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}

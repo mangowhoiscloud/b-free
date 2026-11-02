@@ -1,0 +1,103 @@
+# Demo app on the pilot (§8.10, T4/T22): two instances that share nothing but the write path.
+#   app-src  env label AWS   attachments on Amazon S3     (bucket from infra/envs/source-aws outputs)
+#   app-dst  env label 온프렘 attachments on Rook-Ceph RGW (endpoint from infra/envs/target-onprem)
+# Both write through the pilot PgBouncer, so before cutover both reach src-db and after cutover
+# both reach dst-db. Fan-out polls the database; there is no pub/sub between the two.
+#
+# Use with the pilot files (same project, same network). App settings: apps/demo/pilot-app.env.example
+# (apps/demo/scripts/render-pilot-env.sh fills the bucket values from the Terraform outputs).
+#   docker compose -p bravo-pilot --env-file .env --env-file ../../apps/demo/pilot-app.env \
+#     -f compose.yaml -f compose.app.yaml up -d --build app-src app-dst
+#
+# Object storage uses the same S3_* variables on every environment; there is no local S3 stand-in.
+# An empty *_S3_BUCKET turns attachments off for that instance (the page hides the attach button).
+#   app-src: no static key. The AWS SDK default chain reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY /
+#            AWS_SESSION_TOKEN passed through from the shell (short-lived credentials, NFR-6); the
+#            bucket policy decides whether this principal may write.
+#   app-dst: the RGW user's keys (APP_DST_S3_ACCESS_KEY_ID, secret through a Compose secret).
+#
+# Attachments need chat DBs initialised with the D-04 tables (apps/demo/schema, any data plane
+# created after 2026-11-02 19:10). attachment_store.active_store defaults to the side name, so the
+# store ids below default to src / dst.
+#
+# Locally both instances read the DB password from a mounted file (DB_PASSWORD_SOURCE=env-file).
+# On EKS the chart runs the source app with DB_PASSWORD_SOURCE=aws-secrets-manager (S2 material).
+
+x-app: &app
+  build:
+    context: ../../apps/demo
+  image: bravo-demo:pilot
+  # Not read_only here: Compose materialises `environment:` secrets by writing them into the
+  # container, which a read-only root refuses. The Helm chart sets readOnlyRootFilesystem.
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  depends_on:
+    pgbouncer:
+      condition: service_healthy
+
+x-app-env: &app-env
+  DB_DSN: host=pgbouncer port=6432 dbname=${CHAT_DB_NAME:?set CHAT_DB_NAME} user=app_writer
+  DB_PASSWORD_SOURCE: env-file
+  DB_PASSWORD_FILE: /run/secrets/app_writer_password
+  WRITE_WAIT_S: ${APP_WRITE_WAIT_S:?set APP_WRITE_WAIT_S}
+  POLL_INTERVAL_S: ${APP_POLL_INTERVAL_S:?set APP_POLL_INTERVAL_S}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?set OTEL_EXPORTER_OTLP_ENDPOINT}
+  OTEL_SERVICE_NAME: bravo-demo
+  FORWARDED_ALLOW_IPS: ${APP_FORWARDED_ALLOW_IPS:-127.0.0.1}
+
+services:
+  app-src:
+    <<: *app
+    secrets:
+      - source: app_writer_password
+        target: app_writer_password
+        mode: 0o444
+    environment:
+      <<: *app-env
+      APP_ENV_ID: aws
+      APP_ENV_LABEL: AWS
+      APP_ENV_LABEL_JA: AWS
+      APP_INSTANCE_ID: app-src
+      APP_PUBLIC_URL: ${APP_SRC_PUBLIC_URL:-}
+      S3_BUCKET: ${APP_SRC_S3_BUCKET:-}
+      S3_REGION: ${APP_SRC_S3_REGION:-}
+      S3_ENDPOINT_URL: ${APP_SRC_S3_ENDPOINT_URL:-}
+      S3_ADDRESSING_STYLE: ${APP_SRC_S3_ADDRESSING_STYLE:-virtual}
+      ATTACHMENT_STORE_ID: ${APP_SRC_STORE_ID:-src}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    ports:
+      - "${APP_SRC_HOST_PORT:?set APP_SRC_HOST_PORT}:8000"
+
+  app-dst:
+    <<: *app
+    secrets:
+      - source: app_writer_password
+        target: app_writer_password
+        mode: 0o444
+      - source: app_dst_s3_secret_key
+        target: app_dst_s3_secret_key
+        mode: 0o444
+    environment:
+      <<: *app-env
+      APP_ENV_ID: onprem
+      APP_ENV_LABEL: 온프렘
+      APP_ENV_LABEL_JA: オンプレ
+      APP_INSTANCE_ID: app-dst
+      APP_PUBLIC_URL: ${APP_DST_PUBLIC_URL:-}
+      S3_BUCKET: ${APP_DST_S3_BUCKET:-}
+      S3_REGION: ${APP_DST_S3_REGION:-}
+      S3_ENDPOINT_URL: ${APP_DST_S3_ENDPOINT_URL:-}
+      S3_ADDRESSING_STYLE: ${APP_DST_S3_ADDRESSING_STYLE:-path}
+      S3_ACCESS_KEY_ID: ${APP_DST_S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY_FILE: /run/secrets/app_dst_s3_secret_key
+      ATTACHMENT_STORE_ID: ${APP_DST_STORE_ID:-dst}
+    ports:
+      - "${APP_DST_HOST_PORT:?set APP_DST_HOST_PORT}:8000"
+
+secrets:
+  app_writer_password:
+    environment: APP_WRITER_PASSWORD           # from .env, never written to a file in the repository
+  app_dst_s3_secret_key:
+    environment: APP_DST_S3_SECRET_ACCESS_KEY  # from pilot-app.env (RGW user secret); empty = no key

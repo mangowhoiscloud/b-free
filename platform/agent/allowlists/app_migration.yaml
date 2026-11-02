@@ -1,0 +1,39 @@
+apiVersion: bravo.agent/v1
+kind: AgentAllowlist
+role: app_migration
+description: Changes code that calls cloud SDKs directly and replaces cloud-specific configuration.
+responsibility:
+  does:
+    - Replace direct cloud SDK calls (for example Secrets Manager GetSecretValue) with the landing-zone interface (injected Secret file, S3 API endpoint from config).
+    - Replace cloud-specific configuration keys with landing-zone keys.
+    - Return a unified diff of /app against /src.
+  never:
+    - Add dependencies, credentials or secret values to code.
+    - Change tests, CI files or deployment files.
+states: [PROPOSE, REHEARSE]
+model_tier: opus
+limits: { max_turns: 40, max_budget_usd: 3.0, timeout_s: 900, max_attempts: 3 }
+mcp_tools: [inventory_describe, repo_read, rehearsal_exec]
+sandbox:
+  image: bravo/agent-sandbox-app-migration-agent
+  user: 65532
+  egress: [llm-gateway, tool-layer]
+  binaries: [sh, cat, ls, base64, rg, python3, diff]
+  ops: [read_file, list_dir, write_file, run_check]
+  paths: { read: [/src, /app], write: [/app] }
+  write_max_bytes: 262144
+  checks:
+    search:
+      argv: [rg, --no-config, --json, --max-count, "50", --regexp, "{pattern}", /app]
+      params: { pattern: { kind: pattern, max_len: 256 } }
+      cwd: /app
+      timeout_s: 20
+    compile:
+      # -I는 PYTHON* 환경 변수를 무시하므로 -X로 캐시 위치를 /work로 돌림(/app에 __pycache__를 남기지 않음)
+      argv: [python3, -I, -X, pycache_prefix=/work/pycache, -m, compileall, -q, /app]
+      cwd: /app
+      timeout_s: 60
+    make_diff:
+      argv: [diff, -ruN, /src, /app]
+      cwd: /work
+      timeout_s: 20

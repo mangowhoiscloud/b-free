@@ -1,0 +1,2 @@
+{{ include "bravo-demo.fullname" . }} serves "{{ .Values.environment.label }}" ({{ .Values.environment.id }}) from {{ .Values.image.repository }}@{{ .Values.image.digest }}.
+Join page with QR: <public URL>/join   Health: /healthz   Readiness: /readyz

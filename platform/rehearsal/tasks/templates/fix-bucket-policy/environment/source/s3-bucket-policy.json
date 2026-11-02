@@ -1,0 +1,10 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Sid": "AppReadWrite", "Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::000000000000:role/chat-app"},
+     "Action": ["s3:GetObject", "s3:PutObject"], "Resource": "arn:aws:s3:::chat-attachments/*"},
+    {"Sid": "DenyAnonymous", "Effect": "Deny", "Principal": "*", "Action": "s3:*",
+     "Resource": ["arn:aws:s3:::chat-attachments", "arn:aws:s3:::chat-attachments/*"],
+     "Condition": {"Bool": {"aws:SecureTransport": "false"}}}
+  ]
+}

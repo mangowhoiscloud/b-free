@@ -1,0 +1,13 @@
+# imageRef is injected by the platform after the trusted build (repository@sha256:digest). Agents never set it.
+imageRef: ""
+replicas: 1
+port: 8080
+command: []
+env: []
+secretEnv: []
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+probes:
+  readinessPath: /healthz
+  livenessPath: /healthz

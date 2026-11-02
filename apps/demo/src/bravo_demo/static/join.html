@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>상담실 참여</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="join">
+<main class="join-card">
+  <button id="lang" class="lang" type="button" aria-label="언어">日本語</button>
+  <h1 data-i18n="joinTitle">휴대폰으로 상담실에 들어오세요</h1>
+  <p class="sub" data-i18n="joinHelp">카메라로 QR 코드를 비추면 채팅방이 열려요.</p>
+  <img id="qr" class="qr" alt="QR" src="/qr.svg">
+  <p class="url"><a id="join-url" href="/">…</a></p>
+  <p class="servedby"><span data-i18n="servedBy">지금 이 화면을 보내는 곳</span>: <strong id="env-text">…</strong></p>
+</main>
+<script src="/static/i18n.js"></script>
+<script src="/static/join.js"></script>
+</body>
+</html>

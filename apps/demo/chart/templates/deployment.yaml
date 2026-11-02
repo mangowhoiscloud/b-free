@@ -1,0 +1,255 @@
+{{- $v := .Values -}}
+{{- if and (eq $v.db.passwordSource "env-file") (not $v.db.passwordSecret.name) }}
+{{- fail "db.passwordSecret.name is required when db.passwordSource=env-file" }}
+{{- end }}
+{{- if and (eq $v.db.passwordSource "aws-secrets-manager") (not $v.db.secretsManager.secretId) }}
+{{- fail "db.secretsManager.secretId is required when db.passwordSource=aws-secrets-manager" }}
+{{- end }}
+{{- if $v.attachments.enabled }}
+{{- $_ := required "attachments.s3.bucket is required when attachments.enabled" $v.attachments.s3.bucket }}
+{{- $_ := required "attachments.storeId is required when attachments.enabled" $v.attachments.storeId }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bravo-demo.fullname" . }}
+  labels:
+    {{- include "bravo-demo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $v.replicaCount }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "bravo-demo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bravo-demo.labels" . | nindent 8 }}
+        {{- with $v.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $v.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "bravo-demo.serviceAccountName" . }}
+      automountServiceAccountToken: {{ $v.serviceAccount.automountToken }}
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ $v.terminationGracePeriodSeconds }}
+      {{- with $v.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: "{{ required "image.repository is required" $v.image.repository }}@{{ required "image.digest is required (sha256:...)" $v.image.digest }}"
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: APP_ENV_ID
+              value: {{ required "environment.id is required" $v.environment.id | quote }}
+            - name: APP_ENV_LABEL
+              value: {{ required "environment.label is required" $v.environment.label | quote }}
+            {{- with $v.environment.labelJa }}
+            - name: APP_ENV_LABEL_JA
+              value: {{ . | quote }}
+            {{- end }}
+            - name: APP_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: APP_PORT
+              value: "8000"
+            {{- with $v.publicUrl }}
+            - name: APP_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            - name: APP_DEFAULT_ROOM
+              value: {{ $v.defaultRoom | quote }}
+            - name: FORWARDED_ALLOW_IPS
+              value: {{ $v.forwardedAllowIps | quote }}
+            - name: LOG_LEVEL
+              value: {{ $v.logLevel | quote }}
+            - name: DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "db.dsnSecret.name is required" $v.db.dsnSecret.name }}
+                  key: {{ $v.db.dsnSecret.key }}
+            - name: DB_PASSWORD_SOURCE
+              value: {{ $v.db.passwordSource | quote }}
+            {{- if eq $v.db.passwordSource "env-file" }}
+            - name: DB_PASSWORD_FILE
+              value: /var/run/bravo/db/password
+            {{- else }}
+            - name: DB_PASSWORD_SECRET_ID
+              value: {{ $v.db.secretsManager.secretId | quote }}
+            {{- with $v.db.secretsManager.jsonKey }}
+            - name: DB_PASSWORD_SECRET_KEY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $v.db.secretsManager.region }}
+            - name: DB_PASSWORD_SECRET_REGION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $v.db.secretsManager.endpointUrl }}
+            - name: DB_PASSWORD_SECRET_ENDPOINT_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            - name: WRITE_WAIT_S
+              value: {{ $v.db.writeWaitSeconds | quote }}
+            - name: DB_STATEMENT_TIMEOUT_MS
+              value: {{ $v.db.statementTimeoutMs | quote }}
+            - name: DB_POOL_MIN
+              value: {{ $v.db.poolMin | quote }}
+            - name: DB_POOL_MAX
+              value: {{ $v.db.poolMax | quote }}
+            {{- if $v.attachments.enabled }}
+            - name: ATTACHMENT_STORE_ID
+              value: {{ $v.attachments.storeId | quote }}
+            - name: ATTACHMENT_MAX_BYTES
+              value: {{ $v.attachments.maxBytes | quote }}
+            - name: S3_BUCKET
+              value: {{ $v.attachments.s3.bucket | quote }}
+            {{- with $v.attachments.s3.endpointUrl }}
+            - name: S3_ENDPOINT_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $v.attachments.s3.region }}
+            - name: S3_REGION
+              value: {{ . | quote }}
+            {{- end }}
+            - name: S3_ADDRESSING_STYLE
+              value: {{ $v.attachments.s3.addressingStyle | quote }}
+            - name: S3_CONDITIONAL_PUT
+              value: {{ $v.attachments.s3.conditionalPut | quote }}
+            {{- with $v.attachments.s3.credentialsSecret }}
+            {{- if .name }}
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .name }}
+                  key: {{ .accessKeyIdKey }}
+            - name: S3_SECRET_ACCESS_KEY_FILE
+              value: /var/run/bravo/s3/secret-access-key
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            - name: AWS_REQUEST_CHECKSUM_CALCULATION
+              value: when_required
+            - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+              value: when_required
+            {{- with $v.otel.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ $v.otel.serviceName | quote }}
+            {{- with $v.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq $v.db.passwordSource "env-file" }}
+            - name: db-password
+              mountPath: /var/run/bravo/db
+              readOnly: true
+            {{- end }}
+            {{- if and $v.attachments.enabled $v.attachments.s3.credentialsSecret.name }}
+            - name: s3-credentials
+              mountPath: /var/run/bravo/s3
+              readOnly: true
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            # Does not query the database: a PgBouncer PAUSE must not drop every pod at once.
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ $v.preStopSleepSeconds }}"]
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        {{- if eq $v.db.passwordSource "env-file" }}
+        - name: db-password
+          secret:
+            secretName: {{ $v.db.passwordSecret.name }}
+            defaultMode: 0440
+            items:
+              - key: {{ $v.db.passwordSecret.key }}
+                path: password
+        {{- end }}
+        {{- if and $v.attachments.enabled $v.attachments.s3.credentialsSecret.name }}
+        - name: s3-credentials
+          secret:
+            secretName: {{ $v.attachments.s3.credentialsSecret.name }}
+            defaultMode: 0440
+            items:
+              - key: {{ $v.attachments.s3.credentialsSecret.secretAccessKeyKey }}
+                path: secret-access-key
+        {{- end }}
+      {{- with $v.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $v.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $v.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $v.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml $v.topologySpreadConstraints | nindent 8 }}
+      {{- else }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "bravo-demo.selectorLabels" . | nindent 14 }}
+      {{- end }}

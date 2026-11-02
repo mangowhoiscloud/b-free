@@ -1,0 +1,36 @@
+apiVersion: bravo.agent/v1
+kind: AgentAllowlist
+role: governance
+description: Maps the six controls and translates IAM, bucket policies and secrets to destination formats.
+responsibility:
+  does:
+    - Translate IAM to Kubernetes RBAC, S3 bucket policy to rgw_bucket_policy, gcs_iam_policy or s3_bucket_policy, Secrets Manager to openbao_policy plus external_secret.
+    - Map every translation to the six controls (SEC-01 ENC-02 ENC-01 AUD-01 NET-01 IAM-01 ISO-01 DR-01).
+    - Draft exception justifications and an audit summary for a human approver.
+  never:
+    - Decide the gate verdict or mark a control as passed.
+    - Grant wildcard actions, wildcard principals, cluster-scoped roles or secret list/watch.
+states: [ANALYZE, PROPOSE, REHEARSE]
+model_tier: opus
+limits: { max_turns: 30, max_budget_usd: 2.0, timeout_s: 600, max_attempts: 3 }
+mcp_tools: [inventory_describe, controls_describe, policy_evaluate, rehearsal_exec]
+sandbox:
+  image: bravo/agent-sandbox-governance-agent
+  user: 65532
+  egress: [llm-gateway, tool-layer]
+  binaries: [sh, cat, ls, base64, jq, kubeconform]
+  ops: [read_file, list_dir, write_file, run_check]
+  paths: { read: [/src, /work, /out], write: [/work, /out] }
+  write_max_bytes: 262144
+  checks:
+    json_syntax:
+      argv: [jq, empty, "{path}"]
+      params: { path: { kind: path, under: [/work, /out] } }
+      timeout_s: 10
+    k8s_schema:
+      argv: [kubeconform, -strict, -summary, -output, json,
+             -schema-location, "/opt/bravo/schemas/{{.ResourceKind}}{{.KindSuffix}}.json",
+             -schema-location, "/opt/bravo/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+             "{path}"]
+      params: { path: { kind: path, under: [/work, /out] } }
+      timeout_s: 30

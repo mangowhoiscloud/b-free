@@ -1,0 +1,11 @@
+# 필드 이름은 Harbor 0.25.0으로 확인해야 합니다(docs/notes/C-RHS-002.md).
+artifacts = ["/app"]
+
+[agent]
+network_mode = "no-network"
+timeout_sec = 300
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 120

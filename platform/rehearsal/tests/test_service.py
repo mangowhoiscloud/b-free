@@ -1,0 +1,422 @@
+"""Rehearsal service: Trial token, role allowlists, proposal checks, SDK options, worker fail-closed,
+service preconditions, and the MCP tool layer over Streamable HTTP (real HTTP, real MCP JSON-RPC).
+
+Nothing here talks to a model. Tests that need one are marked ``llm`` and skip with
+``llm_unconfigured``; tests that need the destination cluster are marked ``cluster``.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from bravo_rehearsal import allowlist, proposal, sdk_options, trial_token
+from bravo_rehearsal.cluster import Names
+from bravo_rehearsal.service import ServiceSettings, create_app
+from bravo_rehearsal.trials import Trial
+
+KEY = b"k" * 32
+TASKS = Path(__file__).resolve().parents[1] / "tasks" / "templates"
+_ids = itertools.count(1)
+AGENT_ALLOWLISTS = Path(__file__).resolve().parents[2] / "agent" / "allowlists"
+PLAN = "11111111-2222-3333-4444-555555555555"
+ENV_PLAN = f"p-{PLAN}"
+
+
+def use_allowlists(directory: Path, *roles: str) -> None:
+    """The real platform/agent allowlists, copied so each test owns its directory."""
+    for role in roles:
+        (directory / f"{role}.yaml").write_text((AGENT_ALLOWLISTS / f"{role}.yaml").read_text())
+
+
+def bucket_policy(principal: Any = None, actions: Any = None) -> dict[str, Any]:
+    return {"Version": "2012-10-17", "Statement": [{
+        "Effect": "Allow", "Principal": principal or {"AWS": ["arn:aws:iam::111122223333:user/chat-app"]},
+        "Action": actions or ["s3:GetObject", "s3:PutObject"], "Resource": ["arn:aws:s3:::chat-attachments/*"]}]}
+
+
+def good_proposal(trial_id: str = "t-governance-1", attempt: int = 1) -> dict[str, Any]:
+    """A GovernanceProposal (bravo_agents.schemas) bound to the test Trial."""
+    return {
+        "role": "governance", "step": "translate", "plan_id": ENV_PLAN, "trial_id": trial_id, "attempt": attempt,
+        "rationale": "Same app-only read/write as the S3 policy; anonymous access stays denied.", "risk": "low",
+        "evidence_refs": [],
+        "translations": [{"source": {"type": "aws_s3_bucket_policy", "id": "chat-attachments"},
+                          "target": {"type": "rgw_bucket_policy", "name": "chat-attachments"},
+                          "document": bucket_policy(), "control_ids": ["IAM-01", "ISO-01"]}],
+        "audit_summary": "One bucket policy translated; no exception requested.",
+    }
+
+
+def legacy_bucket_proposal() -> dict[str, Any]:
+    """The pre-schema shape the legacy tasks/templates/fix-bucket-policy verifier still grades."""
+    policy = {"anonymous": "deny", "actions": ["s3:GetObject", "s3:PutObject"], "principal": "chat-app"}
+    return {
+        "step": "translate",
+        "source": {"type": "aws_s3_bucket_policy", "id": "chat-attachments"},
+        "target": {"type": "rgw_bucket_policy", "name": "chat-attachments"},
+        "proposal": policy,
+        "rationale": "Same app-only read/write and anonymous deny as the S3 policy.",
+        "risk": "low",
+        "manifest": {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "chat-attachments-policy"},
+                     "data": {"policy.json": json.dumps(policy)}},
+    }
+
+
+BINDING = proposal.Binding(plan_id=ENV_PLAN, trial_id="t-governance-1", attempt=1)
+
+
+def llm_configured() -> bool:
+    try:
+        sdk_options.llm_env("opus")
+        return True
+    except sdk_options.LLMUnconfigured:
+        return False
+
+
+# Trial token ------------------------------------------------------------------------------
+
+
+def claims(**kw: Any) -> trial_token.TrialClaims:
+    base = dict(trial_id="t-1", tenant_id="t1", plan_id="p1", attempt=1, namespace="rehearsal-p1-1",
+                ops=("kubectl",), budget_usd=2.0, exp=int(time.time()) + 60)
+    return trial_token.TrialClaims(**{**base, **kw})
+
+
+def test_token_roundtrip_and_tamper() -> None:
+    tok = trial_token.issue(KEY, claims())
+    assert trial_token.verify(KEY, tok).trial_id == "t-1"
+    payload, sig = tok.split(".")
+    with pytest.raises(trial_token.TokenError, match="token_bad_signature"):
+        trial_token.verify(KEY, payload + "." + sig[::-1])
+    with pytest.raises(trial_token.TokenError, match="token_bad_signature"):
+        trial_token.verify(b"x" * 32, tok)
+    with pytest.raises(trial_token.TokenError, match="token_expired"):
+        trial_token.verify(KEY, trial_token.issue(KEY, claims(exp=int(time.time()) - 1)))
+    with pytest.raises(ValueError):
+        trial_token.issue(b"short", claims())
+
+
+# Role allowlists (deny by default) ---------------------------------------------------------
+
+
+def test_allowlist_missing_dir_denies_everything(tmp_path: Path) -> None:
+    al = allowlist.load("governance", tmp_path / "nope")
+    assert al.problem == "role_allowlist_missing"
+    assert al.tool_denied("inventory_describe") == "role_allowlist_missing"
+    assert allowlist.load("root", tmp_path).problem == "role_unknown"
+
+
+def test_allowlist_loads_and_narrows(tmp_path: Path) -> None:
+    use_allowlists(tmp_path, "governance", "discovery")
+    gov = allowlist.load("governance", tmp_path)
+    assert gov.problem is None and gov.kinds == frozenset() and gov.kubectl_verbs == frozenset()
+    assert gov.tool_denied("controls_describe") is None and gov.tool_denied("plan_propose") is None  # worker-only
+    assert gov.tool_denied("db_inspect") == "tool_not_in_role_allowlist"
+    assert gov.op_denied({"op": "kubectl", "verb": "apply"}) == "kubectl_not_allowed"  # 13 4: no role
+    assert gov.path_denied("/work/../etc/passwd", write=False)[0] == "path_outside_workspace"
+    assert gov.path_denied("/out/policy.json", write=True) == (None, "/out/policy.json")
+    assert gov.path_denied("/src/x", write=True)[0] == "path_outside_workspace"  # /src is read-only
+    assert gov.check("json_syntax", {"path": "/work/a.json"})[:2] == (None, ["jq", "empty", "/work/a.json"])
+    assert gov.check("json_syntax", {"path": "-n"})[0] == "path_outside_workspace"  # flag injection
+    assert gov.check("rm", {})[0] == "check_not_allowed"
+    disc = allowlist.load("discovery", tmp_path)
+    assert disc.tool_denied("policy_evaluate") == "tool_not_in_role_allowlist"
+    assert disc.op_denied({"op": "write_file", "path": "/src/x"}) == "op_not_in_role_allowlist"
+
+
+@pytest.mark.parametrize("body", [
+    "role: governance\ntools: [inventory_describe]\n",  # the old flat format is refused
+    "role: db\ntools: [inventory_describe]\n",
+    ":::",
+])
+def test_allowlist_invalid_files_deny(tmp_path: Path, body: str) -> None:
+    (tmp_path / "governance.yaml").write_text(body)
+    assert allowlist.load("governance", tmp_path).problem == "role_allowlist_invalid"
+
+
+@pytest.mark.parametrize(("old", "new"), [
+    ("mcp_tools: [inventory_describe, controls_describe, policy_evaluate, rehearsal_exec]",
+     "mcp_tools: [inventory_describe, controls_describe, policy_evaluate, rehearsal_exec, plan_propose]"),
+    ("states: [ANALYZE, PROPOSE, REHEARSE]", "states: [ANALYZE, CUTOVER]"),
+    ("role: governance", "role: db"),
+])
+def test_allowlist_refuses_widening_edits(tmp_path: Path, old: str, new: str) -> None:
+    text = (AGENT_ALLOWLISTS / "governance.yaml").read_text()
+    assert old in text
+    (tmp_path / "governance.yaml").write_text(text.replace(old, new))
+    assert allowlist.load("governance", tmp_path).problem == "role_allowlist_invalid"
+
+
+# Proposal: per-role schema (bravo_agents.schemas) + binding + lint -------------------------------
+
+
+def test_good_proposal_passes_and_digest_is_canonical() -> None:
+    p, problems = proposal.check(good_proposal(), "governance", BINDING)
+    assert p is not None and problems == []
+    artifact = p.model_dump(mode="json")
+    d = proposal.digest(artifact)
+    assert d == proposal.digest(json.loads(json.dumps(artifact)))  # key order does not matter
+    assert d.startswith("sha256:") and len(d) == 71
+
+
+def _rbac(kind: str) -> dict[str, Any]:
+    return {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": kind, "metadata": {"name": "chat-app"},
+            "rules": [{"apiGroups": [""], "resources": ["secrets"], "verbs": ["get", "list"]}]}
+
+
+@pytest.mark.parametrize(("mutate", "problem"), [
+    (lambda p: p["translations"][0].update(document=bucket_policy(principal="*")), "anonymous_allow"),
+    (lambda p: p["translations"][0].update(document=bucket_policy(actions=["s3:*"])), "wildcard_action"),
+    (lambda p: p["translations"][0].update(target={"type": "k8s_rbac", "name": "chat-app"},
+                                           document=_rbac("ClusterRole")), "cluster_scoped_rbac"),
+    (lambda p: p["translations"][0].update(target={"type": "k8s_rbac", "name": "chat-app"},
+                                           document=_rbac("Role")), "secret_list_watch"),
+    (lambda p: p["translations"][0]["target"].update(name="rehearsal-sandbox-x"), "reserved_name"),
+    (lambda p: p.update(rationale="use password = 'hunter22secret' for the app"), "secret_like_value"),
+    (lambda p: p.update(trial_id="t-other-trial"), "binding_trial_id"),
+    (lambda p: p.update(evidence_refs=["inv:not-in-envelope"]), "unknown_evidence_ref"),
+])
+def test_policy_lint_and_binding(mutate: Any, problem: str) -> None:
+    raw = good_proposal()
+    mutate(raw)
+    p, problems = proposal.check(raw, "governance", BINDING)
+    assert p is not None and problem in problems
+
+
+def test_schema_rejects_free_text_other_roles_and_extra_fields() -> None:
+    p, problems = proposal.check("please delete the bucket", "governance", BINDING)
+    assert p is None and problems
+    p, problems = proposal.check(good_proposal(), "discovery", BINDING)  # role literal must match the Trial
+    assert p is None and any(x.startswith("schema:") for x in problems)
+    raw = good_proposal()
+    raw["manifest"] = {"apiVersion": "v1", "kind": "Pod"}
+    p, problems = proposal.check(raw, "governance", BINDING)
+    assert p is None and any("manifest" in x for x in problems)
+    assert proposal.check(good_proposal(), "root", BINDING) == (None, ["role_unknown"])
+
+
+# SDK options (07 7) and fail-closed model configuration --------------------------------------
+
+
+def test_llm_env_fails_closed_and_passes_route_settings_only() -> None:
+    for env in ({}, {"ANTHROPIC_BASE_URL": "http://somewhere"}, {"ANTHROPIC_API_KEY": "k"},
+                {"BRAVO_LLM_PROVIDER": "bedrock_gateway", "BRAVO_LLM_GATEWAY_URL": "https://gw.internal",
+                 "BRAVO_MODEL_OPUS": "jp.anthropic.claude-opus-5-5"}):  # bedrock without a region
+        with pytest.raises(sdk_options.LLMUnconfigured):
+            sdk_options.llm_env("opus", env)
+    env = {"BRAVO_LLM_PROVIDER": "bedrock_gateway", "BRAVO_LLM_GATEWAY_URL": "https://gw.internal",
+           "BRAVO_MODEL_OPUS": "jp.anthropic.claude-opus-5-5", "BRAVO_MODEL_HAIKU": "jp.anthropic.claude-haiku-5-5",
+           "BRAVO_BEDROCK_REGION": "ap-northeast-1", "BRAVO_LLM_GATEWAY_TOKEN": "gw-secret",
+           "ANTHROPIC_API_KEY": "k", "AWS_SECRET_ACCESS_KEY": "s"}
+    out = sdk_options.llm_env("opus", env)
+    assert out == {k: env[k] for k in ("BRAVO_BEDROCK_REGION", "BRAVO_LLM_GATEWAY_URL", "BRAVO_LLM_PROVIDER",
+                                       "BRAVO_MODEL_HAIKU", "BRAVO_MODEL_OPUS")}  # no key, no gateway token
+    env2 = {**env, "BRAVO_WORKER_ENV_PASSTHROUGH": "CODEX_HOME, bad name"}
+    env2["CODEX_HOME"] = "/srv/codex"
+    assert sdk_options.llm_env("opus", env2)["CODEX_HOME"] == "/srv/codex"
+
+
+def test_worker_sdk_options_match_13_section_6(tmp_path: Path) -> None:
+    """The options bravo_agents.run_agent builds for our worker: MCP tool layer only, no submit tool."""
+    from datetime import UTC, datetime, timedelta
+
+    from bravo_agents import StateEnvelope, load_allowlist
+    from bravo_agents.llm import resolve_llm
+    from bravo_agents.options import build_options
+
+    al = load_allowlist("governance", AGENT_ALLOWLISTS)
+    env = StateEnvelope.model_validate({
+        "tenant_id": "t1", "plan_id": ENV_PLAN, "trial_id": "t-governance-1", "attempt": 1, "state": "REHEARSE",
+        "role": "governance", "task": "governance", "deadline": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
+        "budget_usd": 1.5, "approved_scope": {"mcp_tools": list(al.mcp_tools)}})
+    route = resolve_llm("opus", {"BRAVO_LLM_PROVIDER": "bedrock_gateway",
+                                 "BRAVO_LLM_GATEWAY_URL": "https://gw.internal",
+                                 "BRAVO_MODEL_OPUS": "jp.anthropic.claude-opus-5-5",
+                                 "BRAVO_BEDROCK_REGION": "ap-northeast-1"})
+    hooks = {k: None for k in ("PreToolUse", "PostToolUse", "UserPromptSubmit")}
+    o = build_options(al, env, "http://tools/mcp", "TOKEN", route, str(tmp_path), hooks)  # type: ignore[arg-type]
+    assert o.tools == [] and o.setting_sources == [] and o.strict_mcp_config is True and o.permission_mode == "dontAsk"
+    assert "mcp__platform__plan_propose" not in o.allowed_tools and "mcp__platform__plan_propose" in o.disallowed_tools
+    assert set(o.allowed_tools) == {f"mcp__platform__{t}" for t in al.mcp_tools}
+    assert o.max_budget_usd == min(al.limits.max_budget_usd, 1.5) and o.model == "jp.anthropic.claude-opus-5-5"
+    assert o.env["ANTHROPIC_CUSTOM_HEADERS"] == "Authorization: Bearer TOKEN" and o.env["AWS_SECRET_ACCESS_KEY"] == ""
+
+
+def test_worker_exits_llm_unconfigured_without_model_credentials(tmp_path: Path) -> None:
+    clean = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path)}
+    r = subprocess.run([sys.executable, "-m", "bravo_rehearsal.worker"], env=clean, capture_output=True,
+                       text=True, timeout=60, check=False)
+    assert r.returncode == 20 and "llm_unconfigured" in r.stderr
+
+
+@pytest.mark.llm
+@pytest.mark.skipif(not llm_configured(), reason="llm_unconfigured")
+def test_live_agent_proposes_bucket_policy() -> None:  # pragma: no cover - needs a model and a cluster
+    pytest.skip("cluster_unconfigured" if not os.environ.get("BRAVO_REHEARSAL_KUBECONFIG") else "run via service")
+
+
+# Service: preconditions and the tool layer over HTTP ------------------------------------------
+
+
+def settings(tmp_path: Path, **kw: Any) -> ServiceSettings:
+    base = dict(api_token="svc-token", token_key=KEY, kubeconfig=None, kube_context=None,
+                sandbox_image=None, verifier_image=None, tool_layer_url="http://127.0.0.1:1",
+                tasks_dir=TASKS, allowlists_dir=tmp_path, trial_deadline_s=60, verifier_deadline_s=30,
+                budget_usd=1.0, idle_s=60)
+    return ServiceSettings(**{**base, **kw})
+
+
+def trial_body(**kw: Any) -> dict[str, Any]:
+    return {"plan_id": "11111111-2222-3333-4444-555555555555", "tenant_id": "t1", "rehearsal_id": "r1",
+            "attempt": 1, "max_attempts": 3, "task": "fix-bucket-policy", "role": "governance", **kw}
+
+
+@pytest.mark.skipif(llm_configured(), reason="asserts the unconfigured path")
+def test_start_fails_closed_with_llm_unconfigured(tmp_path: Path) -> None:
+    use_allowlists(tmp_path, "governance")
+    with TestClient(create_app(settings(tmp_path))) as c:
+        assert c.post("/v1/trials", json=trial_body(), headers={"Idempotency-Key": "k1"}).status_code == 401
+        r = c.post("/v1/trials", json=trial_body(),
+                   headers={"Idempotency-Key": "k1", "Authorization": "Bearer svc-token"})
+        assert r.status_code == 503
+        body = r.json()
+        assert body["error"] == "llm_unconfigured"
+        assert body["missing"] == ["llm_unconfigured", "cluster_unconfigured", "verifier_unconfigured"]
+        assert c.app.state.store.get("anything") is None  # nothing was created
+        r = c.post("/v1/trials", json=trial_body(task="nope", role="ci"),
+                   headers={"Idempotency-Key": "k2", "Authorization": "Bearer svc-token"})
+        assert {"task_unknown", "role_allowlist_missing"} <= set(r.json()["missing"])
+
+
+def rpc(c: TestClient, token: str | None, method: str, params: dict[str, Any] | None = None) -> Any:
+    h = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+         "MCP-Protocol-Version": "2025-11-25"}
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return c.post("/mcp", json={"jsonrpc": "2.0", "id": next(_ids), "method": method, "params": params or {}},
+                  headers=h)
+
+
+def call(c: TestClient, token: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    r = rpc(c, token, "tools/call", {"name": name, "arguments": args})
+    assert r.status_code == 200, r.text
+    return json.loads(r.json()["result"]["content"][0]["text"])
+
+
+@pytest.fixture()
+def layer(tmp_path: Path) -> Any:
+    use_allowlists(tmp_path, "governance", "discovery")
+    s = settings(tmp_path)
+    app = create_app(s)
+    with TestClient(app) as c:
+        store = app.state.store
+
+        def add(role: str, attempt: int = 1) -> tuple[Trial, str]:
+            plan = PLAN
+            t = Trial(trial_id=f"t-{role}-{attempt}", tenant_id="t1", plan_id=plan, rehearsal_id="r", attempt=attempt,
+                      max_attempts=3, task="fix-bucket-policy", role=role, idem_key=f"k-{role}-{attempt}",
+                      request_digest="d", deadline=time.time() + 60, allowlist=allowlist.load(role, tmp_path),
+                      envelope={"plan_id": ENV_PLAN, "prior_failures": [], "inputs": {},
+                                "evidence": [{"id": "inv:bucket-1", "kind": "inventory", "summary": "s3 policy"}]})
+            t.names = Names.of(plan, attempt, t.trial_id)
+            t.phase = "agent_running"
+            store.add(t)
+            tok = trial_token.issue(KEY, claims(trial_id=t.trial_id, plan_id=plan, attempt=attempt,
+                                                namespace=t.names.rehearsal_ns))
+            return t, tok
+
+        yield c, add
+
+
+def test_tool_layer_identity_failures(layer: Any) -> None:
+    c, add = layer
+    trial, tok = add("governance")
+    assert rpc(c, None, "tools/list").status_code == 401
+    assert rpc(c, "garbage", "tools/list").status_code == 401
+    forged = trial_token.issue(b"z" * 32, claims(trial_id=trial.trial_id))
+    assert rpc(c, forged, "tools/list").json()["error"] == "token_bad_signature"
+    other_ns = trial_token.issue(KEY, claims(trial_id=trial.trial_id, plan_id=trial.plan_id, namespace="prod"))
+    assert rpc(c, other_ns, "tools/list").status_code == 403  # token bound to a different namespace
+
+
+def test_tool_layer_enforces_role_allowlist_and_sandbox_rules(layer: Any) -> None:
+    c, add = layer
+    trial, tok = add("governance")
+    names = {t["name"] for t in rpc(c, tok, "tools/list").json()["result"]["tools"]}
+    assert names == {"inventory_describe", "controls_describe", "policy_evaluate", "rehearsal_exec"}  # no submit tool
+    ns = trial.names.rehearsal_ns
+    assert call(c, tok, "rehearsal_exec", {"op": "rm -rf /app"})["blocked"] == "free_text_command"
+    assert call(c, tok, "rehearsal_exec", {"op": {"op": "kubectl", "verb": "delete", "kind": "namespace", "name": ns}}
+                )["blocked"] == "kubectl_not_allowed"  # V4: no role applies or deletes anything
+    assert call(c, tok, "rehearsal_exec", {"op": {"op": "write_file", "path": "/src/app.py", "content": "x"}}
+                )["blocked"] == "path_outside_workspace"  # /src is read-only for governance
+    assert call(c, tok, "rehearsal_exec", {"op": {"op": "write_file", "path": "/out/p.json", "content": "x" * 300_000}}
+                )["blocked"] == "write_too_large"
+    assert call(c, tok, "rehearsal_exec", {"op": {"op": "run_check", "name": "json_syntax", "args": {"path": "-n"}}}
+                )["blocked"] == "path_outside_workspace"
+    r = call(c, tok, "repo_read", {"path": "source/s3-bucket-policy.json"})
+    assert r["blocked"] == "tool_not_in_role_allowlist"
+    assert call(c, tok, "db_inspect", {"query": "extensions"})["blocked"] == "tool_not_in_role_allowlist"
+    assert call(c, tok, "controls_describe", {})["blocked"] == "gate_unconfigured"  # server tool, fails closed
+    # Allowed op, but no sandbox in this test: refused, never simulated.
+    check = {"op": "run_check", "name": "json_syntax", "args": {"path": "/work/a.json"}}
+    assert call(c, tok, "rehearsal_exec", {"op": check})["blocked"] == "sandbox_unavailable"
+    rules = [(e["tool"], e["allowed"], e["rule"]) for e in trial.tool_events]
+    assert ("rehearsal_exec", False, "free_text_command") in rules
+    assert ("rehearsal_exec", False, "sandbox_unavailable") in rules and ("db_inspect", False,
+                                                                          "tool_not_in_role_allowlist") in rules
+
+
+def test_role_allowlist_hides_and_blocks_tools(layer: Any) -> None:
+    c, add = layer
+    trial, tok = add("discovery")
+    names = {t["name"] for t in rpc(c, tok, "tools/list").json()["result"]["tools"]}
+    assert names == {"inventory_describe", "repo_read", "rehearsal_exec"}
+    assert call(c, tok, "policy_evaluate", {"proposal": good_proposal()})["blocked"] == "tool_not_in_role_allowlist"
+    r = call(c, tok, "plan_propose", {"proposal": good_proposal(trial.trial_id)})  # a governance shape
+    assert r["blocked"] == "proposal_rejected" and trial.artifact is None
+    src = call(c, tok, "repo_read", {"path": "source/s3-bucket-policy.json"})
+    assert "chat-attachments" in src["content"]
+    assert call(c, tok, "repo_read", {"path": "../tests/verify.py"})["blocked"] == "path_outside_repo"  # V2
+
+
+def test_plan_propose_freezes_artifact_and_locks_trial(layer: Any) -> None:
+    c, add = layer
+    trial, tok = add("governance", attempt=2)
+    bad = good_proposal(trial.trial_id, attempt=2)
+    bad["translations"][0]["document"] = bucket_policy(principal="*")
+    r = call(c, tok, "plan_propose", {"proposal": bad})
+    assert r["accepted"] is False and "anonymous_allow" in r["problems"] and trial.artifact is None
+    assert call(c, tok, "plan_propose", {"proposal": good_proposal(trial.trial_id, attempt=1)}
+                )["problems"] == ["binding_attempt"]
+    r = call(c, tok, "plan_propose", {"proposal": good_proposal(trial.trial_id, attempt=2)})
+    assert r["accepted"] is True and r["artifact_digest"] == proposal.digest(trial.artifact)
+    assert trial.locked and trial.phase == "proposed"
+    assert rpc(c, tok, "tools/call", {"name": "inventory_describe", "arguments": {}}).status_code == 403
+
+
+def test_evidence_ingest_takes_trial_token_and_dedups(layer: Any) -> None:
+    c, add = layer
+    trial, tok = add("governance")
+    ev = {"trial_id": trial.trial_id, "seq": 1, "kind": "tool_request", "tool_name": "mcp__platform__x",
+          "tool_input": {"a": 1}, "at": "2026-11-02T00:00:00Z"}
+    assert c.post("/v1/evidence", json=ev).status_code == 401
+    assert c.post("/v1/evidence", json=ev, headers={"Authorization": f"Bearer {tok}"}).status_code == 202
+    assert c.post("/v1/evidence", json=ev, headers={"Authorization": f"Bearer {tok}"}).status_code == 409
+    assert c.post("/v1/evidence", json={**ev, "trial_id": "t-other"},
+                  headers={"Authorization": f"Bearer {tok}"}).status_code == 422
+    assert trial.hook_events[0]["authoritative"] is False and "tool_input" not in trial.hook_events[0]
+
+
+# Destination cluster: the namespace, baseline, isolation and exec tests run through the Harbor
+# environment in tests/test_harbor.py (test_every_environment_method_on_real_cluster).

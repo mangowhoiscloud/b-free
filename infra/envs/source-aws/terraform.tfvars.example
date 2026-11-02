@@ -1,0 +1,11 @@
+# 이 세 값만 고르면 됩니다. 나머지는 안전한 기본값입니다.
+name            = "bravo-source"
+region          = "ap-northeast-2"
+size            = "small"
+gitops_repo_url = "https://github.com/<org>/<deploy-repo>.git"
+
+# S1 데모에서 통제 차이를 만들 때만 true로 바꿉니다. 공개 접근 차단은 그대로입니다.
+demo_weak_bucket_policy = false
+
+# 강한 정책에서도 첨부 객체를 다룰 관리자(선택)
+# bucket_admin_principal_arns = ["arn:aws:iam::<account>:role/<admin-role>"]

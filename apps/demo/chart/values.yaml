@@ -1,0 +1,108 @@
+# Bravo demo app. The chart has no per-cloud branch: K3s, EKS and GKE differ only in these values.
+
+image:
+  # Registry path without tag, e.g. ghcr.io/<org>/bravo-demo. Deployed by digest only (§8.8).
+  repository: ""
+  # Required. sha256:<64 hex>. Source and destination receive the same digest.
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 2
+
+# What the page shows as "connected to" (AWS / 온프렘 / GCP) and the OTel environment.
+environment:
+  id: ""        # lowercase ASCII: aws | onprem | gcp ...
+  label: ""     # shown in Korean UI, e.g. AWS, 온프렘, GCP
+  labelJa: ""   # optional Japanese label, e.g. オンプレ
+
+# URL that the QR code points at (the public hostname through the edge). Empty: the request URL.
+publicUrl: ""
+defaultRoom: consult-1
+
+db:
+  # Secret holding the libpq DSN WITHOUT password, e.g.
+  #   host=pgbouncer.bravo-data.svc port=6432 dbname=chat user=app_writer
+  # (the PgBouncer write path; the Executor moves its target at cutover).
+  dsnSecret:
+    name: ""
+    key: dsn
+  # env-file: password from a mounted Secret (landing zone: OpenBao + External Secrets).
+  # aws-secrets-manager: direct SDK call at startup (source app on AWS; S2 "code fix" material).
+  passwordSource: env-file
+  passwordSecret:
+    name: ""
+    key: password
+  secretsManager:
+    secretId: ""
+    jsonKey: ""      # key inside a JSON secret; empty when the secret string is the password
+    region: ""
+    endpointUrl: ""  # optional VPC endpoint
+  writeWaitSeconds: 8
+  statementTimeoutMs: 200
+  poolMin: 1
+  poolMax: 8
+
+attachments:
+  enabled: true
+  # Must equal attachment_store.active_store of the database this environment writes to after cutover.
+  storeId: ""
+  maxBytes: 5242880
+  s3:
+    # Same variable names on every environment: Amazon S3, Rook-Ceph RGW, GCS XML API (HMAC).
+    bucket: ""
+    endpointUrl: ""          # empty = AWS default endpoint; https://storage.googleapis.com for GCS
+    region: ""
+    addressingStyle: auto    # auto | path | virtual
+    conditionalPut: true     # If-None-Match: * (never overwrite a key)
+    # Optional static keys (on-prem RGW, GCS HMAC). Empty name = SDK default chain (IRSA, Pod Identity).
+    credentialsSecret:
+      name: ""
+      accessKeyIdKey: access-key-id
+      secretAccessKeyKey: secret-access-key
+
+otel:
+  endpoint: ""               # e.g. http://otel-agent.bravo-observability.svc:4317
+  serviceName: bravo-demo
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}            # EKS IRSA: eks.amazonaws.com/role-arn (Secrets Manager / S3 access)
+  automountToken: false      # IRSA and Pod Identity inject their own projected token
+
+service:
+  type: ClusterIP
+  port: 80
+
+forwardedAllowIps: "127.0.0.1"  # proxies whose X-Forwarded-* headers are trusted (e.g. the ingress/tunnel pod CIDR)
+logLevel: INFO
+extraEnv: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+terminationGracePeriodSeconds: 30
+# Endpoint removal propagates before SIGTERM; then uvicorn closes WebSockets with 1012.
+preStopSleepSeconds: 5
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+  # Raw NetworkPolicy rules: allow the edge/ingress in, and PgBouncer, S3, OTel and DNS out.
+  ingress: []
+  egress: []
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []

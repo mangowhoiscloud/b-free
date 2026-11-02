@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["imageRef", "port", "resources", "probes"],
+  "properties": {
+    "imageRef": { "type": "string", "pattern": "^([a-z0-9.-]+(:[0-9]+)?/)?[a-z0-9._/-]+@sha256:[a-f0-9]{64}$" },
+    "replicas": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+    "command": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 256 } },
+    "env": {
+      "type": "array", "maxItems": 32,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "value"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,62}$", "not": { "pattern": "(PASSWORD|SECRET|TOKEN|KEY)" } },
+          "value": { "type": "string", "maxLength": 1024 }
+        }
+      }
+    },
+    "secretEnv": {
+      "type": "array", "maxItems": 16,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "secretKey"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,62}$" },
+          "secretKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,62}$" }
+        }
+      }
+    },
+    "resources": {
+      "type": "object", "additionalProperties": false, "required": ["requests", "limits"],
+      "properties": {
+        "requests": { "$ref": "#/definitions/res" },
+        "limits": { "$ref": "#/definitions/res" }
+      }
+    },
+    "probes": {
+      "type": "object", "additionalProperties": false, "required": ["readinessPath", "livenessPath"],
+      "properties": {
+        "readinessPath": { "type": "string", "pattern": "^/[A-Za-z0-9/_.-]{0,127}$" },
+        "livenessPath": { "type": "string", "pattern": "^/[A-Za-z0-9/_.-]{0,127}$" }
+      }
+    }
+  },
+  "definitions": {
+    "res": {
+      "type": "object", "additionalProperties": false, "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": { "type": "string", "pattern": "^([1-9][0-9]{0,2}m|[1-2])$" },
+        "memory": { "type": "string", "pattern": "^[1-9][0-9]{0,3}Mi$" }
+      }
+    }
+  }
+}

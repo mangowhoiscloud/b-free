@@ -1,0 +1,13 @@
+# P0 configuration task (S2 live scene, §10): translate the source S3 bucket policy for the
+# chat attachments bucket into a Rook-Ceph RGW bucket policy, delivered as one ConfigMap.
+role = "governance"
+artifacts = ["manifest"]
+
+[agent]
+network_mode = "no-network"
+timeout_sec = 600
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 120

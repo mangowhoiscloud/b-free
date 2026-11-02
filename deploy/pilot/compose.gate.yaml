@@ -1,0 +1,83 @@
+# Collector (FR-1, FR-2) and gate (FR-6, FR-12) on the pilot network. Not in compose.yaml's include list yet;
+# run next to the pilot with the same project name so the services share its network:
+#   docker compose -p bravo-pilot -f deploy/pilot/compose.gate.yaml up -d --build
+# Settings come from deploy/pilot/.env (read automatically) or the shell:
+#   BRAVO_ENVIRONMENTS_FILE_HOST  host path of the environment registry (references only, no secrets)
+#   BRAVO_GATE_SECRETS_ENV_FILE   host path of an env file with the DSNs the registry names (dsn_env), kept out of Git
+#   BRAVO_INVENTORY_ROOT_HOST     host path of the app repository to scan (default ../../apps/demo)
+#   COLLECTOR_HOST_PORT, GATE_HOST_PORT  (default 8083, 8084)
+#   BRAVO_PILOT_NETWORK           pilot network name (default bravo-pilot_default, from compose project bravo-pilot)
+#   BRAVO_AWS_CONFIG_DIR_HOST     host AWS config dir mounted read-only into the collector only (default ~/.aws);
+#                                 used for EKS DescribeCluster + the EKS bearer token of GET /v1/clusters.
+#   AWS_PROFILE                   optional; passed through to the collector when set in the shell
+# The gate gets no AWS or Kubernetes credentials here: questions that need them answer UNKNOWN (fail closed).
+# On the target platform the services use Pod Identity and a read-only ServiceAccount instead (NFR-6).
+
+x-hardening: &hardening
+  read_only: true
+  user: "10001:10001"
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+  restart: unless-stopped
+
+services:
+  collector:
+    <<: *hardening
+    build:
+      context: ../../platform/collector
+    image: bravo-collector:pilot
+    command: ["serve"]
+    env_file:
+      - ${BRAVO_GATE_SECRETS_ENV_FILE:?set BRAVO_GATE_SECRETS_ENV_FILE}
+    environment:
+      BRAVO_ENVIRONMENTS_FILE: /etc/bravo/environments.yaml
+      BRAVO_INVENTORY_ROOT: /srv/app
+      BRAVO_COLLECTOR_HOST: 0.0.0.0
+      BRAVO_COLLECTOR_PORT: "8083"
+      BRAVO_EVIDENCE_TTL_S: ${BRAVO_EVIDENCE_TTL_S:-3600}
+      # Read-only AWS shared config for the EKS live view (no aws CLI in the image; boto3 signs the token).
+      AWS_SHARED_CREDENTIALS_FILE: /etc/bravo/aws/credentials
+      AWS_CONFIG_FILE: /etc/bravo/aws/config
+      AWS_PROFILE:
+    volumes:
+      - ${BRAVO_ENVIRONMENTS_FILE_HOST:?set BRAVO_ENVIRONMENTS_FILE_HOST}:/etc/bravo/environments.yaml:ro
+      - ${BRAVO_INVENTORY_ROOT_HOST:-../../apps/demo}:/srv/app:ro
+      - ${BRAVO_AWS_CONFIG_DIR_HOST:-~/.aws}:/etc/bravo/aws:ro
+    ports:
+      - "${COLLECTOR_HOST_PORT:-8083}:8083"
+    networks: [pilot]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8083/healthz', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  gate:
+    <<: *hardening
+    build:
+      context: ../../platform/gate
+    image: bravo-gate:pilot
+    command: ["serve"]
+    env_file:
+      - ${BRAVO_GATE_SECRETS_ENV_FILE:?set BRAVO_GATE_SECRETS_ENV_FILE}
+    environment:
+      BRAVO_ENVIRONMENTS_FILE: /etc/bravo/environments.yaml
+      BRAVO_GATE_HOST: 0.0.0.0
+      BRAVO_GATE_PORT: "8084"
+      BRAVO_EVIDENCE_TTL_S: ${BRAVO_EVIDENCE_TTL_S:-3600}
+    volumes:
+      - ${BRAVO_ENVIRONMENTS_FILE_HOST:?set BRAVO_ENVIRONMENTS_FILE_HOST}:/etc/bravo/environments.yaml:ro
+    ports:
+      - "${GATE_HOST_PORT:-8084}:8084"
+    networks: [pilot]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8084/healthz', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+networks:
+  pilot:
+    external: true
+    name: ${BRAVO_PILOT_NETWORK:-bravo-pilot_default}

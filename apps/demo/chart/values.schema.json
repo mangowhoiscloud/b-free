@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "environment", "db"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "digest"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1, "pattern": "^[^:@]+(:[0-9]+)?(/[^:@]+)*$"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"},
+        "label": {"type": "string", "minLength": 1}
+      }
+    },
+    "db": {
+      "type": "object",
+      "properties": {
+        "passwordSource": {"enum": ["env-file", "aws-secrets-manager"]},
+        "statementTimeoutMs": {"type": "integer", "minimum": 10, "maximum": 200},
+        "writeWaitSeconds": {"type": "number", "minimum": 0.5, "maximum": 60},
+        "dsnSecret": {"type": "object", "required": ["name", "key"],
+                      "properties": {"name": {"type": "string", "minLength": 1}}}
+      }
+    },
+    "attachments": {
+      "type": "object",
+      "properties": {
+        "maxBytes": {"type": "integer", "minimum": 1, "maximum": 5242880},
+        "s3": {"type": "object", "properties": {"addressingStyle": {"enum": ["auto", "path", "virtual"]}}}
+      }
+    }
+  }
+}

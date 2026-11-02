@@ -1,0 +1,54 @@
+# kube-bench -> control ID mapping (review condition 1, 2026-11-02). Results are 근사(approximate):
+# CIS item sets differ per distribution and kube-bench lags the current benchmarks
+# (K3s latest vs CIS 1.9 profile; EKS only up to eks-1.8.0 while CIS EKS 2.0.0 is current).
+# A topic with items on one platform only is reported as 미검증 (UNKNOWN) for the other side, never dropped.
+version: kube-bench-map/2026-11-02.1
+label: 근사(approximate)
+kube_bench:
+  version: v0.16.0
+  commit: 5c6c22d51b926020e7414e1f1e051851d1a2feff
+  image: docker.io/aquasec/kube-bench@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679
+# Always passed explicitly as --benchmark (no auto-detection).
+benchmarks:
+  k3s: k3s-cis-1.9
+  rke2: rke2-cis-1.9
+  eks: eks-1.8.0
+  gke: gke-1.9.0
+# kube-bench status -> verdict. WARN/INFO need a manual check, so they are UNKNOWN.
+status_map: {PASS: PASS, FAIL: FAIL, WARN: UNKNOWN, INFO: UNKNOWN}
+topics:
+  secrets-encryption-at-rest:
+    control_id: SEC-01
+    k3s: ["1.2.27", "1.2.28"]
+    rke2: ["1.2.27", "1.2.28"]
+    eks: ["5.3.1"]
+  secrets-access:
+    control_id: SEC-01
+    k3s: ["5.1.2", "5.4.1", "5.4.2"]
+    rke2: ["5.1.2", "5.4.1", "5.4.2"]
+    eks: ["4.1.2", "4.4.1", "4.4.2"]
+  apiserver-tls:
+    control_id: ENC-01
+    k3s: ["1.2.24"]
+    rke2: ["1.2.24"]
+    eks: []
+  audit-log:
+    control_id: AUD-01
+    k3s: ["1.2.16", "1.2.17", "1.2.18", "1.2.19", "3.2.1", "3.2.2"]
+    rke2: ["1.2.16", "1.2.17", "1.2.18", "1.2.19", "3.2.1", "3.2.2"]
+    eks: ["2.1.1", "2.1.2"]
+  network-policy:
+    control_id: NET-01
+    k3s: ["5.3.1", "5.3.2"]
+    rke2: ["5.3.1", "5.3.2"]
+    eks: ["5.4.4"]
+  control-plane-endpoint:
+    control_id: NET-01
+    k3s: []
+    rke2: []
+    eks: ["5.4.1", "5.4.2", "5.4.3"]
+  rbac-least-privilege:
+    control_id: IAM-01
+    k3s: ["1.2.8", "5.1.1", "5.1.3", "5.1.6", "5.1.13"]
+    rke2: ["1.2.8", "5.1.1", "5.1.3", "5.1.6", "5.1.13"]
+    eks: ["4.1.1", "4.1.3", "4.1.6", "4.1.12"]

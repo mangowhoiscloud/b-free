@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bravo-app
+description: Fixed workload template. The CI agent may only supply values that pass values.schema.json; the platform injects imageRef (digest) after the trusted build.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

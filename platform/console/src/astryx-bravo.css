@@ -1,0 +1,189 @@
+/*
+ * Astryx -> Bravo ledger bridge. Astryx tokens are scoped to [data-astryx-theme]; they are
+ * re-pointed at the console's own tokens (styles.css), which already switch between paper (light)
+ * and graphite (dark) on :root[data-theme] and prefers-color-scheme. One source of color.
+ */
+[data-astryx-theme] {
+  --color-background-body: var(--bg);
+  --color-background-surface: var(--panel);
+  --color-background-card: var(--panel);
+  --color-background-popover: var(--panel);
+  --color-background-muted: var(--panel-2);
+  --color-text-primary: var(--ink);
+  --color-text-secondary: var(--ink-2);
+  --color-text-disabled: var(--ink-3);
+  --color-text-accent: var(--accent);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--accent-ink);
+  --color-accent-muted: var(--accent-soft);
+  --color-border: var(--line);
+  --color-border-emphasized: var(--line-2);
+  --font-family-heading: var(--font-sans);
+  --font-family-body: var(--font-sans);
+  --font-family-mono: var(--font-mono);
+}
+
+/* App shell: the shell owns the page background (ledger grid) */
+.shell-root {
+  min-height: 100dvh;
+}
+.shell-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+.shell-brand__mark {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  color: var(--accent);
+}
+.shell-brand__name {
+  font-weight: 600;
+  font-size: 15px;
+}
+.shell-foot {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  padding: 8px 4px;
+  line-height: 1.6;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: screen-in 260ms ease-out both;
+}
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .screen {
+    animation: none;
+  }
+}
+.screen__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--ink);
+}
+.screen__head h2 {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.screen__head p {
+  max-width: 72ch;
+  margin-top: 4px;
+}
+.screen__aside {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.block {
+  min-width: 0;
+}
+.block h3 {
+  font-size: 15px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  min-width: 0;
+}
+.stat__value {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+.stat__unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+  margin-left: 4px;
+}
+.stat .mono {
+  overflow-wrap: anywhere;
+}
+
+.pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.pipeline__step {
+  counter-increment: step;
+  position: relative;
+  padding: 6px 14px 6px 22px;
+  font-size: 12px;
+  border: 1px dashed var(--line-2);
+  margin-right: -1px;
+  color: var(--ink-3);
+  background: var(--panel);
+}
+.pipeline__step::before {
+  content: counter(step);
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.muted {
+  color: var(--ink-3);
+}
+.small {
+  font-size: 11px;
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.screen-wrap {
+  padding: 16px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 1680px;
+}
+@media (max-width: 640px) {
+  .screen-wrap {
+    padding: 12px 16px 24px;
+  }
+}
+
+/* AppShell's built-in skip link has fixed English text; App.tsx renders a Korean one instead. */
+[data-testid='skip-to-content'] {
+  display: none;
+}
+.screen__head h2,
+.block h3 {
+  text-wrap: balance;
+}
+.app:focus {
+  outline: none;
+}

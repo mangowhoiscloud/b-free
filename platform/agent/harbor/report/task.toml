@@ -1,0 +1,31 @@
+# Harbor 0.25.0 task (schema_version 1.4). 필드는 harbor.models.task.config.TaskConfig로 검증합니다(tests/test_harbor_tasks.py).
+# 리허설 서비스가 Trial마다 이 템플릿을 복사하고 tests/expected.json과 /src 스냅샷을 넣습니다.
+schema_version = "1.4"
+# 검증기로 넘어가는 것은 제안서 파일 하나뿐입니다. reward 경로(/logs/verifier)는 검증기 환경에만 있습니다.
+artifacts = ["/out/proposal.json"]
+
+[task]
+name = "bravo/report"
+version = "0.1.0"
+description = "Bravo report proposal task (proposal only; the state machine decides)."
+
+[environment]
+# 로컬 빌드 digest(images/build.sh). GHCR push 뒤에는 ghcr.io 경로 + 같은 방식의 digest로 바꿉니다.
+docker_image = "bravo/agent-sandbox-discovery-agent@sha256:1f478c237d190612c295d917b01260314e6b0c48d781d1c19b433484fd673f96"
+workdir = "/work"
+network_mode = "no-network"   # 샌드박스는 네트워크 없음. 에이전트 루프는 샌드박스 밖 에이전트 Pod에서 돎
+
+[agent]
+network_mode = "no-network"   # 샌드박스는 네트워크 없음. 에이전트 루프는 샌드박스 밖 에이전트 Pod에서 돎
+timeout_sec = 300
+user = "65532"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 120
+
+[verifier.environment]
+# 검증기 이미지는 에이전트 샌드박스와 다릅니다. 표준 라이브러리 Python만 씁니다.
+docker_image = "python:3.12.16-slim-trixie@sha256:8523d6abeb48ceae0b7240d30c5808fc26cb79c1a635bacdf19cf3baecfbec07"
+network_mode = "no-network"

@@ -1,0 +1,43 @@
+# 잠시 꺼 둠(2026-11-02 19:4x): modules/landing_zone가 아직 없어 init이 실패함.
+# 인프라 갈래가 모듈을 만들면 이 파일을 landing_zone.tf로 되돌림. AWS 자원 생성과는 무관(파일만 씀).
+
+# 고객 클러스터 공통 landing zone 묶음(deploy/landing-zone). eks overlay는 EBS StorageClass와
+# 객체 저장 계약(S3 버킷, 리전)만 다름. Argo CD Application 파일만 쓰고 클러스터에 적용하지 않음.
+module "landing_zone" {
+  source = "../../modules/landing_zone"
+
+  provider_kind = module.cluster.storage_platform
+  delivery      = module.cluster.addon_delivery
+  argocd = {
+    repo_url        = var.gitops_repo_url
+    target_revision = "main"
+    path            = "infra/envs/source-aws/gitops"
+  }
+  output_dir = local.gitops_dir
+  vars = {
+    cluster_name          = module.cluster.name
+    region                = var.region
+    kms_key_arn           = module.cluster.ebs_kms_key_arn
+    storage_quota         = local.preset.storage_quota
+    object_store_bucket   = aws_s3_bucket.attachments.bucket
+    object_store_region   = var.region
+    object_store_endpoint = "https://s3.${var.region}.amazonaws.com"
+    app_secret_name       = aws_secretsmanager_secret.db_app.name
+  }
+}
+
+output "storage_classes" {
+  description = "모든 환경에서 같은 StorageClass 이름"
+  value       = module.landing_zone.storage_class_names
+}
+
+output "gitops_files" {
+  description = "Argo CD가 당겨 갈 파일"
+  value       = module.landing_zone.files
+}
+
+output "landing_zone_components" {
+  description = "landing zone 구성요소와 차트 판(모든 고객 클러스터 공통)"
+  value       = module.landing_zone.components
+}
+

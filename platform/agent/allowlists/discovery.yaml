@@ -1,0 +1,31 @@
+# 허용 목록: 여기 없는 도구 · 작업 · 경로 · 바이너리는 모두 거부합니다(기본 거부).
+# 집행은 플랫폼 도구 계층(서버)이 합니다. 에이전트 워커는 같은 파일로 SDK 도구 목록과 한도를 정합니다.
+apiVersion: bravo.agent/v1
+kind: AgentAllowlist
+role: discovery
+description: Classifies dependencies that static detection could not grade (FR-2).
+responsibility:
+  does:
+    - Classify only the items listed in inputs.unclassified into config_swap, adapter, code_change or no_change.
+    - Give a reason and evidence ids for each item.
+  never:
+    - Reclassify items that static detection already graded.
+    - Decide whether data is personal credit information (a person decides, D-03).
+states: [ANALYZE]
+model_tier: haiku
+limits: { max_turns: 12, max_budget_usd: 0.5, timeout_s: 300, max_attempts: 3 }
+mcp_tools: [inventory_describe, repo_read, rehearsal_exec]
+sandbox:
+  image: bravo/agent-sandbox-discovery-agent
+  user: 65532
+  egress: [llm-gateway, tool-layer]
+  binaries: [sh, cat, ls, rg]
+  ops: [read_file, list_dir, run_check]
+  paths: { read: [/src], write: [] }
+  write_max_bytes: 0
+  checks:
+    search:
+      argv: [rg, --no-config, --json, --max-count, "50", --max-filesize, 1M, --regexp, "{pattern}", /src]
+      params: { pattern: { kind: pattern, max_len: 256 } }
+      cwd: /src
+      timeout_s: 20

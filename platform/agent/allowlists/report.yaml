@@ -1,0 +1,31 @@
+apiVersion: bravo.agent/v1
+kind: AgentAllowlist
+role: report
+description: Writes the approval summary (P1) and the post-migration report from recorded evidence only.
+responsibility:
+  does:
+    - Summarize gate, rehearsal and cutover evidence for a human reader.
+    - Attach evidence ids to every claim.
+  never:
+    - Approve, reject or recommend approval.
+    - State a result that is not in the evidence bundle.
+states: [AWAIT_APPROVAL, DONE, DONE_ROLLED_BACK]
+model_tier: haiku
+limits: { max_turns: 10, max_budget_usd: 0.5, timeout_s: 300, max_attempts: 3 }
+mcp_tools: [evidence_read, rehearsal_exec]
+sandbox:
+  image: bravo/agent-sandbox-discovery-agent   # 같은 읽기 전용 도구 묶음을 씀
+  user: 65532
+  egress: [llm-gateway, tool-layer]
+  binaries: [sh, cat, ls, jq]
+  ops: [read_file, list_dir, run_check]
+  paths: { read: [/src], write: [] }
+  write_max_bytes: 0
+  checks:
+    json_extract:
+      argv: [jq, --compact-output, "{filter}", "{path}"]
+      params:
+        filter: { kind: jq_filter, max_len: 512 }
+        path: { kind: path, under: [/src] }
+      cwd: /src
+      timeout_s: 10

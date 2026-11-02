@@ -1,0 +1,123 @@
+# Platform side of the pilot (CONTRACT.md 2, 5, 7): platform-db, migrate, api, operator-mcp.
+# Secrets and settings come from deploy/pilot/.env (see .env.example, PLATFORM_* entries).
+# Relative paths resolve against this file's directory. The Executor (compose.data.yaml)
+# is reached at PLATFORM_EXECUTOR_URL; without it the gate returns BLOCK executor_unreachable.
+
+x-platform-env: &platform-env
+  BRAVO_JWKS_PATH: /etc/bravo/jwks.json
+  BRAVO_JWT_ISSUER: ${PLATFORM_JWT_ISSUER:?set PLATFORM_JWT_ISSUER}
+  BRAVO_CONSOLE_AUD: ${PLATFORM_CONSOLE_AUD:?set PLATFORM_CONSOLE_AUD}
+  BRAVO_MCP_AUD: ${PLATFORM_MCP_AUD:?set PLATFORM_MCP_AUD}
+  BRAVO_EXECUTOR_URL: ${PLATFORM_EXECUTOR_URL:?set PLATFORM_EXECUTOR_URL}
+  BRAVO_CONSOLE_BASE_URL: ${PLATFORM_CONSOLE_BASE_URL:?set PLATFORM_CONSOLE_BASE_URL}
+  BRAVO_GATE_MAX_LAG_BYTES: ${PLATFORM_GATE_MAX_LAG_BYTES:?set PLATFORM_GATE_MAX_LAG_BYTES}
+  BRAVO_GATE_REQUIRED_CONTROLS: ${PLATFORM_GATE_REQUIRED_CONTROLS:?set PLATFORM_GATE_REQUIRED_CONTROLS}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${PLATFORM_OTEL_ENDPOINT:?set PLATFORM_OTEL_ENDPOINT}
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+
+services:
+  platform-db:
+    # Official image: the CNPG operand image (ghcr.io/cloudnative-pg/postgresql:16.13-*) has no
+    # docker-entrypoint and does not initialise from POSTGRES_* env outside the operator.
+    image: postgres:16.13@sha256:5d143123fdf80462d1778cd4f24b9f7ca13c87174bca19141fb194c5a1ebca59
+    environment:
+      POSTGRES_USER: bravo_owner
+      POSTGRES_PASSWORD: ${PLATFORM_DB_OWNER_PASSWORD:?set PLATFORM_DB_OWNER_PASSWORD}
+      POSTGRES_DB: ${PLATFORM_DB_NAME:?set PLATFORM_DB_NAME}
+    ports:
+      - "${PLATFORM_DB_HOST_PORT:?set PLATFORM_DB_HOST_PORT}:5432"
+    volumes:
+      - platform-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bravo_owner -d ${PLATFORM_DB_NAME}"]
+      interval: 2s
+      retries: 30
+
+  migrate:
+    build:
+      context: ../../platform/api
+    image: bravo-api:pilot
+    command: ["python", "-m", "bravo_api.migrate"]
+    environment:
+      BRAVO_MIGRATE_DATABASE_URL: postgresql://bravo_owner:${PLATFORM_DB_OWNER_PASSWORD}@platform-db:5432/${PLATFORM_DB_NAME}
+      BRAVO_API_DB_PASSWORD: ${PLATFORM_DB_API_PASSWORD:?set PLATFORM_DB_API_PASSWORD}
+      BRAVO_MCP_DB_PASSWORD: ${PLATFORM_DB_MCP_PASSWORD:?set PLATFORM_DB_MCP_PASSWORD}
+      BRAVO_EXECUTOR_DB_PASSWORD: ${PLATFORM_DB_EXECUTOR_PASSWORD:?set PLATFORM_DB_EXECUTOR_PASSWORD}
+      BRAVO_SEED_DEV: ${PLATFORM_DEV_AUTH:?set PLATFORM_DEV_AUTH}
+      BRAVO_SEED_TENANT: ${PLATFORM_TENANT:?set PLATFORM_TENANT}
+      BRAVO_JWT_ISSUER: ${PLATFORM_JWT_ISSUER}
+    depends_on:
+      platform-db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: bravo-api:pilot
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${PLATFORM_API_HOST_PORT:?set PLATFORM_API_HOST_PORT}:8080"
+    environment:
+      <<: *platform-env
+      BRAVO_MODE: api
+      PORT: "8080"
+      OTEL_SERVICE_NAME: api
+      BRAVO_DATABASE_URL: postgresql://bravo_api:${PLATFORM_DB_API_PASSWORD}@platform-db:5432/${PLATFORM_DB_NAME}
+      BRAVO_CORS_ORIGINS: ${PLATFORM_CORS_ORIGINS:?set PLATFORM_CORS_ORIGINS}
+      BRAVO_DEV_AUTH: ${PLATFORM_DEV_AUTH}
+      BRAVO_DEV_TOKENS_DIR: /etc/bravo/devtokens
+      BRAVO_SSE_TICKET_SECRET: ${PLATFORM_SSE_TICKET_SECRET:?set PLATFORM_SSE_TICKET_SECRET}
+    volumes:
+      - ./devauth/jwks.json:/etc/bravo/jwks.json:ro
+      - ./devauth/tokens:/etc/bravo/devtokens:ro
+
+  operator-mcp:
+    image: bravo-api:pilot
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${PLATFORM_MCP_HOST_PORT:?set PLATFORM_MCP_HOST_PORT}:8082"
+    environment:
+      <<: *platform-env
+      BRAVO_MODE: mcp
+      PORT: "8082"
+      OTEL_SERVICE_NAME: operator-mcp
+      BRAVO_DATABASE_URL: postgresql://bravo_mcp:${PLATFORM_DB_MCP_PASSWORD}@platform-db:5432/${PLATFORM_DB_NAME}
+      BRAVO_MCP_ALLOWED_HOSTS: ${PLATFORM_MCP_ALLOWED_HOSTS:?set PLATFORM_MCP_ALLOWED_HOSTS}
+      BRAVO_MCP_ALLOWED_ORIGINS: ${PLATFORM_MCP_ALLOWED_ORIGINS:-}
+    volumes:
+      - ./devauth/jwks.json:/etc/bravo/jwks.json:ro
+
+  platform-bao:
+    # D-26: the platform's only key store. Production mode (never -dev): raft storage on a named
+    # volume, TLS listener, file audit in the volume (bao/bao.hcl). Host port on 127.0.0.1 only.
+    # Before the first start: scripts/keys.sh tls. Then init/unseal/import (README.md).
+    image: openbao/openbao@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f  # 2.7.2
+    entrypoint: ["dumb-init", "--"]
+    command: ["bao", "server", "-config=/openbao/config/bao.hcl"]
+    user: "100:1000" # openbao (image default, non-root)
+    ports:
+      - "127.0.0.1:${PLATFORM_BAO_HOST_PORT:-8200}:8200"
+    volumes:
+      - ./bao/bao.hcl:/openbao/config/bao.hcl:ro
+      - ./bao/tls:/openbao/tls:ro
+      - platform-bao-data:/openbao/file
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Healthy only when unsealed (bao status exits 2 while sealed).
+      test: ["CMD", "bao", "status", "-address=https://127.0.0.1:8200", "-ca-cert=/openbao/tls/ca.crt"]
+      interval: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  platform-db:
+  platform-bao-data:

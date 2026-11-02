@@ -1,0 +1,23 @@
+# 운영자 노트북 도구(macOS). 설치: brew bundle --file tools/toolchain/Brewfile
+# 판 확인은 check.sh가 합니다. Homebrew는 판을 고정하지 못하므로, check.sh의 최소 판으로 검사합니다.
+# Terraform은 tools/toolchain/install-terraform.sh로 설치(공식 릴리스 + SHA256 확인). IaC는 Terraform으로 결정(2026-11-02)
+brew "kubectl"
+brew "helm"
+brew "argocd"
+brew "kyverno"         # 정책 시험(kyverno test)
+brew "kubeconform"     # 매니페스트 스키마 검사
+brew "cosign"          # 이미지 서명 · 검증
+brew "syft"            # SBOM
+brew "trivy"           # 이미지 · IaC 취약점과 설정 검사(tflint 대신 IaC 검사도 맡음)
+brew "gitleaks"        # 비밀 누출 검사
+brew "jq"
+brew "yq"
+brew "libpq"           # psql 최신 클라이언트(keg-only: $(brew --prefix libpq)/bin/psql)
+brew "infracost"       # 비용 추정(NFR-8)
+brew "gh"
+brew "awscli"
+brew "uv"
+brew "lima"            # 온프렘 데모 VM
+cask "cloudflared"
+cask "session-manager-plugin"   # SSM 비상 접속(D-16 Cloudflare 출구 표)
+cask "google-cloud-sdk"         # gcloud + `gcloud components install gke-gcloud-auth-plugin`

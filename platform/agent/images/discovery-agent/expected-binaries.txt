@@ -1,0 +1,6 @@
+busybox
+cat
+jq
+ls
+rg
+sh

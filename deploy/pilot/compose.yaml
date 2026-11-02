@@ -1,0 +1,59 @@
+# 파일럿 전체 실행: docker compose -f deploy/pilot/compose.yaml up -d --build
+# 세 갈래가 각자 파일을 갖고, 이 파일은 묶기와 관측만 맡습니다(CONTRACT.md 2절).
+name: bravo-pilot
+
+include:
+  - compose.data.yaml       # src-db, dst-db, pgbouncer, executor, loadgen
+  - compose.platform.yaml   # platform-db, migrate, api, operator-mcp
+  - compose.console.yaml    # console
+
+services:
+  # 관측: OTel Collector → Prometheus(지표) · Tempo(트레이스) · Loki(로그) → Grafana. 이미지는 digest 고정.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b  # 0.164.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      BRAVO_ENV: ${BRAVO_ENV:-pilot}
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports: ["4317:4317", "4318:4318"]
+    depends_on: [prometheus, tempo, loki]
+  prometheus:
+    image: prom/prometheus@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2  # v3.15.1
+    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--web.enable-otlp-receiver", "--storage.tsdb.retention.time=72h"]
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+    ports: ["9090:9090"]
+  tempo:
+    image: grafana/tempo@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38  # 2.10.10
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    user: "10001"
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+  loki:
+    image: grafana/loki@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28  # 3.7.9
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+  grafana:
+    image: grafana/grafana@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205  # 13.3.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["${GRAFANA_HOST_PORT:-3300}:3000"]
+    depends_on: [prometheus, tempo, loki]
+
+secrets:
+  grafana_admin_password:
+    environment: GRAFANA_ADMIN_PASSWORD   # .env에서 받음. 파일에 비밀 값을 두지 않음
+
+volumes:
+  prometheus-data: {}
+  tempo-data: {}
+  loki-data: {}

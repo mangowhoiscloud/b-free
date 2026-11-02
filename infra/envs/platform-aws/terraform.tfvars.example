@@ -1,0 +1,5 @@
+# 이 세 값만 고르면 됩니다. 나머지는 안전한 기본값입니다.
+name            = "bravo-platform"
+region          = "ap-northeast-2"
+size            = "small"
+gitops_repo_url = "https://github.com/<org>/<deploy-repo>.git"

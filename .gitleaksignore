@@ -1,0 +1,4 @@
+# 확인한 오탐: 시험용 가짜 AWS 키(마스킹 시험), 차트 주석 문장. 실제 비밀 아님(2026-11-02 확인).
+apps/demo/chart/ci/k3s-values.yaml:generic-api-key:1
+platform/collector/tests/test_inventory.py:aws-access-token:217
+platform/rehearsal/tests/test_server_tools.py:aws-access-token:103

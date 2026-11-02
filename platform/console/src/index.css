@@ -1,0 +1,8 @@
+/* Cascade order: Astryx reset < Astryx theme tokens < console ledger styles < Astryx components.
+   The bridge (astryx-bravo.css) is unlayered so its token overrides win over theme-neutral. */
+@layer reset, astryx-theme, app, astryx-base;
+@import '@astryxdesign/core/reset.css';
+@import '@astryxdesign/core/astryx.css';
+@import '@astryxdesign/theme-neutral/theme.css';
+@import './styles.css' layer(app);
+@import './astryx-bravo.css';

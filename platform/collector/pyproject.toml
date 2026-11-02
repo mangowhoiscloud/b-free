@@ -1,0 +1,43 @@
+[project]
+name = "bravo-collector"
+version = "0.1.0"
+description = "Bravo read-only collector (FR-1) and static dependency inventory (FR-2, T16, T30/D-05)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.162.0",
+  "pydantic==2.14.2",
+  "uvicorn==0.54.0",
+  "psycopg[binary]==3.3.6",
+  "boto3==1.43.123",
+  "kubernetes==37.0.1",
+  "pyyaml==6.0.3",
+]
+
+[project.scripts]
+bravo-collector = "bravo_collector.__main__:main"
+
+[dependency-groups]
+dev = ["pytest==8.4.2", "httpx==0.28.1", "ruff==0.14.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bravo_collector"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "aws: read-only calls against the real AWS account from the default credential chain",
+  "k8s: read-only calls against the cluster in the configured kubeconfig",
+  "pg: runs against a real postgres:16 container",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101", "S608"]

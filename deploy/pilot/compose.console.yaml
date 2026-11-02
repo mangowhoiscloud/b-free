@@ -1,0 +1,44 @@
+# Console (CONTRACT.md 2, 8). compose.yaml includes this file.
+# The image holds no API address. BRAVO_API_BASE is the API origin the browser calls;
+# the container reads it at start and writes config.json, so one image runs anywhere.
+# Set in deploy/pilot/.env:
+#   CONSOLE_HOST_PORT  host port of the console (contract: 5173)
+#   CONSOLE_API_BASE   API origin as the browser sees it (contract: the api service on port 8080)
+# The API must list the console origin in PLATFORM_CORS_ORIGINS.
+# Live screens read other pilot services through the console's own read-only GET proxy
+# (/svc/<name>/, docker/40-bravo-config.sh). Optional overrides, defaults in brackets:
+#   CONSOLE_COLLECTOR_UPSTREAM [http://collector:8083]  CONSOLE_GATE_UPSTREAM [http://gate:8084]
+#   CONSOLE_EXECUTOR_UPSTREAM [http://executor:8081]    CONSOLE_PROMETHEUS_UPSTREAM [http://prometheus:9090]
+#   CONSOLE_APP_SRC_UPSTREAM [http://app-src:8000]      CONSOLE_APP_DST_UPSTREAM [http://app-dst:8000]
+#   CONSOLE_GRAFANA_URL [http://localhost:3300]          CONSOLE_PROMETHEUS_URL [http://localhost:9090]
+#   CONSOLE_TEMPO_URL [empty: Tempo opens through Grafana Explore]
+#   CONSOLE_PUBLIC_FRONT_HOST [b-free.mangowhois.ai]
+#   CONSOLE_DOH_URL [https://cloudflare-dns.com/dns-query]  public DNS-over-HTTPS (JSON) for the edge-name check
+services:
+  console:
+    build:
+      context: ../../platform/console
+    image: bravo-console:pilot
+    environment:
+      BRAVO_API_BASE: ${CONSOLE_API_BASE:?set CONSOLE_API_BASE}
+      BRAVO_COLLECTOR_UPSTREAM: ${CONSOLE_COLLECTOR_UPSTREAM:-http://collector:8083}
+      BRAVO_GATE_UPSTREAM: ${CONSOLE_GATE_UPSTREAM:-http://gate:8084}
+      BRAVO_EXECUTOR_UPSTREAM: ${CONSOLE_EXECUTOR_UPSTREAM:-http://executor:8081}
+      BRAVO_PROMETHEUS_UPSTREAM: ${CONSOLE_PROMETHEUS_UPSTREAM:-http://prometheus:9090}
+      BRAVO_APP_SRC_UPSTREAM: ${CONSOLE_APP_SRC_UPSTREAM:-http://app-src:8000}
+      BRAVO_APP_DST_UPSTREAM: ${CONSOLE_APP_DST_UPSTREAM:-http://app-dst:8000}
+      BRAVO_GRAFANA_URL: ${CONSOLE_GRAFANA_URL:-http://localhost:3300}
+      BRAVO_PROMETHEUS_URL: ${CONSOLE_PROMETHEUS_URL:-http://localhost:9090}
+      BRAVO_TEMPO_URL: ${CONSOLE_TEMPO_URL:-}
+      BRAVO_PUBLIC_FRONT_HOST: ${CONSOLE_PUBLIC_FRONT_HOST:-b-free.mangowhois.ai}
+      BRAVO_DOH_URL: ${CONSOLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
+    ports:
+      - "${CONSOLE_HOST_PORT:?set CONSOLE_HOST_PORT}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

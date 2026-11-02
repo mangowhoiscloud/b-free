@@ -1,0 +1,206 @@
+# Data plane and Executor (CONTRACT.md 2-4, 6). Included by compose.yaml.
+# platform-db and migrate are defined in compose.platform.yaml (API side).
+# Every secret, host port and DSN comes from deploy/pilot/.env (see .env.example).
+# Relative paths below resolve against this file's directory.
+
+x-chat-db: &chat-db
+  image: ${CHAT_DB_IMAGE:?set CHAT_DB_IMAGE}
+  healthcheck:
+    # TCP check: the init-time temporary server listens on the unix socket only.
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d \"$$POSTGRES_DB\""]
+    interval: 2s
+    timeout: 3s
+    retries: 60
+
+x-chat-db-env: &chat-db-env
+  POSTGRES_DB: ${CHAT_DB_NAME:?set CHAT_DB_NAME}
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+  POSTGRES_INITDB_ARGS: --auth-local=scram-sha-256 --auth-host=scram-sha-256
+  BRAVO_SCHEMA_DIR: /bravo-schema/sql
+  APP_WRITER_PASSWORD: ${APP_WRITER_PASSWORD:?set APP_WRITER_PASSWORD}
+  REPLICATOR_PASSWORD: ${REPLICATOR_PASSWORD:?set REPLICATOR_PASSWORD}
+  EXECUTOR_CTL_PASSWORD: ${EXECUTOR_CTL_PASSWORD:?set EXECUTOR_CTL_PASSWORD}
+  EXECUTOR_OBSERVE_PASSWORD: ${EXECUTOR_OBSERVE_PASSWORD:?set EXECUTOR_OBSERVE_PASSWORD}
+
+services:
+  src-db:
+    <<: *chat-db
+    command: [postgres, -c, wal_level=logical, -c, max_replication_slots=10, -c, max_wal_senders=10,
+              -c, max_slot_wal_keep_size=1GB, -c, password_encryption=scram-sha-256, -c, cluster_name=src]
+    environment:
+      <<: *chat-db-env
+      BRAVO_SIDE: src
+      BRAVO_ATTACHMENT_STORE_ID: ${ATTACHMENT_SRC_STORE_ID:?set ATTACHMENT_SRC_STORE_ID}
+    ports:
+      - "${SRC_DB_HOST_PORT:?set SRC_DB_HOST_PORT}:5432"
+    volumes:
+      - src-data:/var/lib/postgresql/data
+      - ../../apps/demo/schema/00-bravo-init.sh:/docker-entrypoint-initdb.d/00-bravo-init.sh:ro
+      - ../../apps/demo/schema/sql:/bravo-schema/sql:ro
+
+  dst-db:
+    <<: *chat-db
+    command: [postgres, -c, wal_level=logical, -c, max_replication_slots=10, -c, max_wal_senders=10,
+              -c, max_slot_wal_keep_size=1GB, -c, password_encryption=scram-sha-256, -c, cluster_name=dst]
+    environment:
+      <<: *chat-db-env
+      BRAVO_SIDE: dst
+      BRAVO_ATTACHMENT_STORE_ID: ${ATTACHMENT_DST_STORE_ID:?set ATTACHMENT_DST_STORE_ID}
+    ports:
+      - "${DST_DB_HOST_PORT:?set DST_DB_HOST_PORT}:5432"
+    volumes:
+      - dst-data:/var/lib/postgresql/data
+      - ../../apps/demo/schema/00-bravo-init.sh:/docker-entrypoint-initdb.d/00-bravo-init.sh:ro
+      - ../../apps/demo/schema/sql:/bravo-schema/sql:ro
+
+  # One-shot: forward subscription (dst <- src) and disabled reverse subscription (src <- dst).
+  repl-setup:
+    image: ${CHAT_DB_IMAGE:?set CHAT_DB_IMAGE}
+    entrypoint: ["bash", "/bravo/repl-setup.sh"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      REPLICATOR_PASSWORD: ${REPLICATOR_PASSWORD:?set REPLICATOR_PASSWORD}
+      SRC_HOST: src-db
+      DST_HOST: dst-db
+      DB_PORT: "5432"
+      CHAT_DB: ${CHAT_DB_NAME:?set CHAT_DB_NAME}
+      SYNC_TIMEOUT_S: "120"
+    volumes:
+      - ../../apps/demo/schema/repl-setup.sh:/bravo/repl-setup.sh:ro
+    depends_on:
+      src-db:
+        condition: service_healthy
+      dst-db:
+        condition: service_healthy
+    restart: "no"
+
+  # One-shot: seeds pgbouncer.ini (only if absent) and renders userlist.txt from .env.
+  pgbouncer-config:
+    image: bravo-pgbouncer:pilot
+    build:
+      context: ./pgbouncer
+    user: "0:0"
+    entrypoint: ["sh", "/seed/render-config.sh"]
+    environment:
+      APP_WRITER_PASSWORD: ${APP_WRITER_PASSWORD:?set APP_WRITER_PASSWORD}
+      PGB_ADMIN_PASSWORD: ${PGB_ADMIN_PASSWORD:?set PGB_ADMIN_PASSWORD}
+      PGB_STATS_PASSWORD: ${PGB_STATS_PASSWORD:?set PGB_STATS_PASSWORD}
+      CONF_DIR: /etc/pgbouncer
+      SEED_INI: /seed/pgbouncer.ini
+      PGB_UID: "10070"
+      PGB_GID: "10070"
+    volumes:
+      - pgbouncer-config:/etc/pgbouncer
+      - ./pgbouncer/pgbouncer.ini:/seed/pgbouncer.ini:ro
+      - ./pgbouncer/render-config.sh:/seed/render-config.sh:ro
+    restart: "no"
+
+  pgbouncer:
+    image: bravo-pgbouncer:pilot
+    build:
+      context: ./pgbouncer
+    environment:
+      PGBOUNCER_INI: /etc/pgbouncer/pgbouncer.ini
+    ports:
+      - "${PGBOUNCER_HOST_PORT:?set PGBOUNCER_HOST_PORT}:6432"
+    volumes:
+      - pgbouncer-config:/etc/pgbouncer
+    depends_on:
+      pgbouncer-config:
+        condition: service_completed_successfully
+      repl-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6432"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  executor:
+    build:
+      context: ../../platform/executor
+    image: bravo-executor:pilot
+    ports:
+      - "${EXECUTOR_HOST_PORT:?set EXECUTOR_HOST_PORT}:8081"
+    group_add:
+      - "10070"   # PGB_GID: rewrite pgbouncer.ini on the shared volume through the group bit
+    environment:
+      OTEL_SERVICE_NAME: executor
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?set OTEL_EXPORTER_OTLP_ENDPOINT}
+      BRAVO_EXECUTOR_HOST: 0.0.0.0
+      BRAVO_EXECUTOR_PORT: "8081"
+      PLATFORM_DB_DSN: ${PLATFORM_DB_DSN:?set PLATFORM_DB_DSN}
+      BRAVO_CHAT_DB: ${CHAT_DB_NAME:?set CHAT_DB_NAME}
+      BRAVO_SRC_DSN: host=src-db port=5432 dbname=${CHAT_DB_NAME} user=executor_ctl password=${EXECUTOR_CTL_PASSWORD:?set EXECUTOR_CTL_PASSWORD}
+      BRAVO_DST_DSN: host=dst-db port=5432 dbname=${CHAT_DB_NAME} user=executor_ctl password=${EXECUTOR_CTL_PASSWORD:?set EXECUTOR_CTL_PASSWORD}
+      BRAVO_SRC_APP_DSN: host=src-db port=5432 dbname=${CHAT_DB_NAME} user=app_writer password=${APP_WRITER_PASSWORD:?set APP_WRITER_PASSWORD}
+      BRAVO_DST_APP_DSN: host=dst-db port=5432 dbname=${CHAT_DB_NAME} user=app_writer password=${APP_WRITER_PASSWORD:?set APP_WRITER_PASSWORD}
+      BRAVO_PGB_APP_DSN: host=pgbouncer port=6432 dbname=${CHAT_DB_NAME} user=app_writer password=${APP_WRITER_PASSWORD:?set APP_WRITER_PASSWORD}
+      BRAVO_PGB_ADMIN_DSN: host=pgbouncer port=6432 dbname=pgbouncer user=pgb_admin password=${PGB_ADMIN_PASSWORD:?set PGB_ADMIN_PASSWORD}
+      BRAVO_SRC_OBSERVE_DSN: host=src-db port=5432 dbname=${CHAT_DB_NAME} user=executor_observe password=${EXECUTOR_OBSERVE_PASSWORD:?set EXECUTOR_OBSERVE_PASSWORD}
+      BRAVO_DST_OBSERVE_DSN: host=dst-db port=5432 dbname=${CHAT_DB_NAME} user=executor_observe password=${EXECUTOR_OBSERVE_PASSWORD:?set EXECUTOR_OBSERVE_PASSWORD}
+      BRAVO_PGB_STATS_DSN: host=pgbouncer port=6432 dbname=pgbouncer user=pgb_stats password=${PGB_STATS_PASSWORD:?set PGB_STATS_PASSWORD}
+      BRAVO_LOCK_LEASE_S: "600"
+      BRAVO_SRC_STORE_ID: ${ATTACHMENT_SRC_STORE_ID:?set ATTACHMENT_SRC_STORE_ID}
+      BRAVO_DST_STORE_ID: ${ATTACHMENT_DST_STORE_ID:?set ATTACHMENT_DST_STORE_ID}
+      BRAVO_FAULT_CRASH_AFTER: ${BRAVO_FAULT_CRASH_AFTER:-}
+      BRAVO_PGB_INI_PATH: /etc/pgbouncer/pgbouncer.ini
+      BRAVO_PGB_DB_NAME: ${CHAT_DB_NAME}
+      BRAVO_PGB_SRC_TARGET: host=src-db port=5432 dbname=${CHAT_DB_NAME}
+      BRAVO_PGB_DST_TARGET: host=dst-db port=5432 dbname=${CHAT_DB_NAME}
+    volumes:
+      - pgbouncer-config:/etc/pgbouncer
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      repl-setup:
+        condition: service_completed_successfully
+      executor-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=2).status == 200 else 1)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: Executor-owned platform tables (resource_locks, attachment_copies) after the API migrations.
+  # platform/api owns the shared schema; this adds only what the Executor needs (D-19).
+  executor-migrate:
+    image: ${CHAT_DB_IMAGE:?set CHAT_DB_IMAGE}
+    entrypoint: ["sh", "-c", "for f in /migrations/*.sql; do echo \"executor-migrate: $$f\"; psql -v ON_ERROR_STOP=1 --no-psqlrc -f \"$$f\" || exit 1; done"]
+    environment:
+      PGHOST: platform-db
+      PGPORT: "5432"
+      PGDATABASE: ${PLATFORM_DB_NAME:?set PLATFORM_DB_NAME}
+      PGUSER: bravo_owner
+      PGPASSWORD: ${PLATFORM_DB_OWNER_PASSWORD:?set PLATFORM_DB_OWNER_PASSWORD}
+    volumes:
+      - ../../platform/executor/migrations:/migrations:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  loadgen:
+    build:
+      context: ../../tools/loadgen
+    image: bravo-loadgen:pilot
+    profiles: ["load"]
+    environment:
+      OTEL_SERVICE_NAME: loadgen
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?set OTEL_EXPORTER_OTLP_ENDPOINT}
+      LOADGEN_DSN: host=pgbouncer port=6432 dbname=${CHAT_DB_NAME} user=app_writer password=${APP_WRITER_PASSWORD:?set APP_WRITER_PASSWORD}
+      LOADGEN_RATE: ${LOADGEN_RATE:?set LOADGEN_RATE}
+      LOADGEN_DURATION_S: ${LOADGEN_DURATION_S:?set LOADGEN_DURATION_S}
+      LOADGEN_CONCURRENCY: ${LOADGEN_CONCURRENCY:?set LOADGEN_CONCURRENCY}
+      LOADGEN_VERIFY: "1"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+
+volumes:
+  src-data:
+  dst-data:
+  pgbouncer-config:

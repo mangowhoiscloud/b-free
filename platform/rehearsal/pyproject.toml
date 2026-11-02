@@ -1,0 +1,38 @@
+[project]
+name = "bravo-rehearsal"
+version = "0.0.1"
+requires-python = ">=3.12"  # harbor 0.25.0 requires Python 3.12+
+dependencies = []
+
+[project.optional-dependencies]
+# 리허설 서비스(T11, T15). 모두 정확한 판으로 고정합니다(2026-11-02 PyPI 최신 확인).
+service = [
+  "harbor==0.25.0",
+  "claude-agent-sdk==0.2.176",
+  "kubernetes==37.0.1",
+  "mcp==2.3.0",
+  "fastapi==0.162.0",
+  "uvicorn[standard]==0.54.0",
+  "httpx==0.28.1",
+  "pydantic==2.14.2",
+  "pyyaml==6.0.3",
+  "psycopg[binary]==3.3.6",   # db_inspect / db_rehearse (same pin as platform/collector, platform/gate)
+  "bravo-agents",             # platform/agent: allowlists and per-role proposal schemas (path source below)
+]
+harbor = ["bravo-rehearsal[service]"]
+dev = ["pytest==8.4.2", "pytest-asyncio==1.2.0"]
+
+[tool.uv.sources]
+bravo-agents = { path = "../agent", editable = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "scripts"]
+asyncio_mode = "auto"
+markers = [
+  "llm: needs a configured model (ANTHROPIC_API_KEY or BRAVO_LLM_GATEWAY_URL + BRAVO_LLM_GATEWAY_TOKEN)",
+  "cluster: needs a reachable destination cluster (BRAVO_REHEARSAL_KUBECONFIG)",
+  "docker: needs a local Docker daemon for real postgres:16 / OpenBao containers",
+]

@@ -1,0 +1,7 @@
+# 이 값만 고르면 됩니다. 나머지는 안전한 기본값입니다.
+project_id      = "<gcp-project-id>"
+name            = "bravo-target-gcp"
+region          = "asia-northeast3"
+size            = "small"
+gitops_repo_url = "https://github.com/<org>/<deploy-repo>.git"
+# 지울 때만: deletion_protection = false 로 한 번 apply한 뒤 destroy

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bravo-demo
+description: Bravo demo app (financial consultation chat) migrated by the platform. Same chart on K3s, EKS and GKE (§8.10, D-23).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

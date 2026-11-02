@@ -1,0 +1,11 @@
+# 계정 · 영역 ID는 비밀이 아니지만 저장소에는 예시만 둠. 실제 값은 terraform.tfvars(gitignore).
+account_id = "<cloudflare account id>"
+zone_id    = "<zone id>"
+app        = "chat"
+lb_enabled = false # Load Balancing 구독 뒤 true
+active_env = "src" # LB 없을 때 대표 이름이 처음 가리킬 환경
+
+environments = {
+  src = { origin_service = "http://bravo-gateway.bravo-edge.svc.cluster.local:80", weight = 1 }
+  dst = { origin_service = "http://bravo-gateway.bravo-edge.svc.cluster.local:80", weight = 0 }
+}
