@@ -38,6 +38,7 @@ spec:
             - {name: BRAVO_PROMETHEUS_UPSTREAM, value: "http://prometheus.bravo-observe.svc.cluster.local:9090"}
             - {name: BRAVO_APP_SRC_UPSTREAM, value: "https://b-free-chat-src.mangowhois.ai"}
             - {name: BRAVO_APP_DST_UPSTREAM, value: "https://b-free-chat-dst.mangowhois.ai"}
+            - {name: BRAVO_APP_ENVS, value: "source-aws=b-free-chat-src.mangowhois.ai,target-onprem=b-free-chat-dst.mangowhois.ai,target-gcp=b-free-chat-gke.mangowhois.ai"}
             - {name: BRAVO_DNS_RESOLVER, value: "10.43.0.10"} # RKE2 kube-dns (service CIDR 10.43.0.0/16)
             # Grafana behind the same Access app at /grafana/ (Tempo and Loki through Grafana Explore).
             - {name: BRAVO_GRAFANA_URL, value: "https://b-free.mangowhois.ai/grafana/"}
