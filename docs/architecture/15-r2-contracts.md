@@ -12,6 +12,7 @@
 | 6. 리허설 Trial 요청 · 저장소 스냅숏 | T10 → T15 `platform/rehearsal` | `platform/api/src/bravo_api/rehearsal.py`, `upstreams.py` |
 | 7. 관측 API(콘솔 관측 화면) | 플랫폼 관측 백엔드(T18) → T21 콘솔 | `deploy/platform/observability`, `deploy/landing-zone/base/otel-agent-values.yaml`, `deploy/landing-zone/observability` |
 | 8. 비용 영수증 API(마무리 장면, NFR-8) | T1 수집기 → T10 API → T21 콘솔 | `platform/collector/src/bravo_collector/costing/`, `platform/api/src/bravo_api/service.py`(`cost`), `deploy/platform/control/config/cost.yaml` |
+| 9. 통제 예외(S1 5b) | T10 API ↔ T21 콘솔, T19 게이트 | `platform/api/src/bravo_api/exceptions.py`, `gate.py`, 마이그레이션 `0008_control_exceptions.sql`, `platform/gate/src/bravo_gate/controls.py` |
 
 ## 1. SSE 이벤트
 
@@ -69,7 +70,7 @@ S2 장면의 순서(시험 `tests/test_changes.py`로 고정): `trial.verdict` P
 | `rule_version` | `gate-controls/2026-11-02.1` |
 | `source`, `target` | 환경 ID |
 | `gate_verdict`, `blocked_controls[]` | PASS · BLOCK, BLOCK인 통제 ID |
-| `questions[]` | 질문마다: `control_id`(질문 ID), `parent_control`, `question`, `src`, `dst`, `src_status`, `dst_status`(충족 · 보완 필요 · 미검증), `verdict`, `reason`(`regression` · `fail_both` · `unknown` · `not_equivalent`), `src_evidence`, `dst_evidence` |
+| `questions[]` | 질문마다: `control_id`(질문 ID), `parent_control`, `question`, `src`, `dst`, `src_status`, `dst_status`(충족 · 보완 필요 · 미검증), `verdict`, `reason`(`regression` · `fail_both` · `unknown` · `not_equivalent`), `src_evidence`, `dst_evidence`, `src_evidence_digest`, `dst_evidence_digest`(9.5) |
 | `controls[]` | 통제마다(SEC-01, ENC-01, AUD-01, NET-01, IAM-01, DR-01): `control_id`, `aliases`, `name_ko`, `question`, `src`, `dst`, `src_status`, `dst_status`, `verdict`, `reason`, `questions[]` |
 | `input_digest` | 관찰 결과(시각 제외)의 sha256. 같은 입력 → 같은 값 |
 | `test_version`, `collected_at`, `expires_at` | 시험기 판, 수집 시각, 만료 시각(`BRAVO_EVIDENCE_TTL_S`, 기본 3600초). 만료된 증거로는 승인하지 않음 |
@@ -373,6 +374,146 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | 삭제된 자원 | Describe가 더는 돌려주지 않는 자원(종료 1시간 뒤의 인스턴스, 지운 EKS `bravo-platform`)은 추정에서 빠짐. 태그 청구가 켜지면 그 몫이 청구 줄에 들어감 |
 
 **측정 예(2026-11-02 13:45Z, 노트북 실행, 운영자 자격 · Cloudflare 토큰 · 실행 기록 포함).** 기간 11/1 00:00Z부터 13:44Z까지 63줄, 합계 추정 $2.51(출발지 $0.89, 플랫폼 $0.84, 목적지 GKE $0.78, edge $0), 금액을 모르는 줄 8개, API 가격 환산(청구 아님) $0.39(실행 2개, 토큰 42,154개와 62,471개). Cost Explorer 계정 전체는 $1.02(추정값, 하루 지연). 플랫폼 수집기 Pod(웹 신원, 13:41Z)는 48줄, 합계 $1.99였습니다. 그때는 GCP 가장 권한이 퍼지기 전이라 GCP가 연결 안 됨이었고, 13:46Z에 같은 신원으로 GKE · Compute · KMS · Artifact Registry · Billing Catalog가 모두 200인 것을 확인했습니다. 계획이 아직 없어(플랫폼 DB `plans` 0행) 단계 배분 값은 `tests/test_cost.py`의 계산 시험으로만 확인했습니다.
+
+## 9. 통제 예외(S1 5b)
+
+스펙 S1 예외 흐름 5b: "목적지에서 대체할 수 없는 통제가 있다 → 승인자가 예외를 승인하면 '예외 승인'으로 따로 표시하고 동등 판정에서 뺀다." 5a는 그대로입니다. UNKNOWN은 예외로 바꿀 수 없고 늘 막습니다. 인수 조건 "예외 승인 없는 FAIL이나 UNKNOWN이면 이전 후보 등록이 막힌다"의 "예외 승인"이 이 절입니다. 이 절은 2026-11-02 23:3x KST에 코드보다 먼저 고정했습니다. 코드가 다르면 코드를 고칩니다.
+
+실제 사례: GKE `target-gcp`의 OBJ-06(평문 HTTP 거부). GCS XML API는 `http://`를 받고, 막는 조직 정책 `storage.secureHttpTransport`는 조직이 없는 이 프로젝트에 걸 수 없습니다(`infra/envs/target-gcp/README.md`).
+
+### 9.1 무엇에 결속되는가
+
+예외 하나는 아래 값에 묶입니다. 하나라도 바뀌면 예외는 효력을 잃습니다.
+
+| 값 | 출처 |
+|---|---|
+| 계획 `plan_id` | 경로 |
+| 통제 ID `control_id` | 게이트 판정 `controls[].control_id`(질문 ID, 예: `OBJ-06`) |
+| 목적지 환경 `target_environment_id` | 계획의 목적지. DB 트리거가 같은지 확인 |
+| 요청 때 본 게이트 판정 `gate_verdict_id` | 계획의 마지막 판정(`last_gate.verdict_id`)이어야 요청 가능 |
+| 값 쌍 `src`, `dst` | 그 판정의 행. `dst`는 `FAIL`, `src`는 `PASS` 또는 `FAIL`만 |
+| 증거 digest `evidence_digest` | 그 판정 행의 `evidence_digest`(목적지 증거의 sha256, 9.5) |
+| 사유 `reason`, 만료 `expires_at` | 요청 본문 |
+
+예외를 걸 수 있는 행은 마지막 게이트 판정의 `controls[]` 가운데 `verdict == "BLOCK"`, `dst == "FAIL"`, `src`가 `PASS` 또는 `FAIL`, `evidence_digest`가 `null`이 아닌 행입니다. 증거가 없는 행(Executor가 낸 `DB-ANON-READ`, `DB-AUTH`)은 걸 수 없습니다.
+
+### 9.2 상태
+
+| `status` | 뜻 | 콘솔 문구(제안) | 다음 |
+|---|---|---|---|
+| `requested` | operator가 요청함 | 승인 대기 | `approved` · `rejected` · `stale` · `expired` |
+| `approved` | approver가 승인함. 만료 전이고 증거가 같으면 게이트 판정에서 그 행이 `EXCEPTION` | 예외 승인 | `stale` · `expired` |
+| `rejected` | approver가 거절함 | 거절됨 | 끝 |
+| `stale` | 측정 결과가 바뀜(`stale_reason`: `evidence_changed` · `verdict_changed`) | 무효(증거 바뀜) | 끝. 새로 요청 |
+| `expired` | `expires_at`이 지남 | 만료 | 끝. 새로 요청 |
+
+- `stale`은 게이트를 다시 돌렸을 때 그 통제가 양쪽 모두 측정됐고(UNKNOWN 아님) 값 쌍이나 증거 digest가 다를 때 API가 기록합니다. 목적지를 고쳐 PASS가 되면 `verdict_changed`입니다.
+- 그 통제가 UNKNOWN이거나 판정에 없으면(게이트에 못 닿음 등) 예외는 그 판정에 쓰이지 않고 상태도 그대로입니다. 그 판정은 UNKNOWN으로 막힙니다(5a).
+- `expired`는 요청 · 승인 · 게이트 실행 때 API가 기록합니다. 목록 응답은 아직 기록 전이어도 `expires_at`이 지났으면 `expired`로 보입니다.
+- 계획마다 통제 하나에 열린 예외(`requested` · `approved`)는 하나뿐입니다.
+
+### 9.3 엔드포인트
+
+인증 · 오류 형식은 4절과 같습니다(Access JWT, 콘솔 AUD). 쓰기에는 `Idempotency-Key`(8–200자)가 필요합니다. MCP에는 없습니다.
+
+| 요청 | 누가 | 응답 |
+|---|---|---|
+| `GET /v1/plans/{id}/exceptions` | viewer 이상 | 200 `{"plan_id", "exceptions": [예외, …]}` 최신순 |
+| `POST /v1/plans/{id}/exceptions` | 콘솔 operator | 201 예외(`status: "requested"`) |
+| `POST /v1/plans/{id}/exceptions/{exception_id}/approve` | 콘솔 approver | 200 예외(`status: "approved"`) |
+| `POST /v1/plans/{id}/exceptions/{exception_id}/reject` | 콘솔 approver | 200 예외(`status: "rejected"`) |
+
+요청 본문:
+
+```json
+{"control_id": "OBJ-06", "gate_verdict_id": "<last_gate.verdict_id>",
+ "evidence_digest": "sha256:<last_gate.controls[].evidence_digest>",
+ "reason": "GCS XML API는 평문 HTTP를 받음. 조직이 없어 storage.secureHttpTransport를 걸 수 없음. 보완: 노드 바깥 80 차단, 앱 NetworkPolicy 443만",
+ "expires_at": "2026-11-09T18:00:00+09:00"}
+```
+
+- `reason`: 10–2000자. 왜 대체할 수 없는지와 보완 통제를 씁니다.
+- `expires_at`: 시간대가 있는 ISO 8601. 지금부터 5분 뒤 ~ 30일 뒤.
+
+승인 본문 `{"evidence_digest": "sha256:…", "note": "<0–2000자, 생략 가능>"}`. `evidence_digest`는 승인자가 화면에서 본 값입니다. 거절 본문 `{"note": "<0–2000자, 생략 가능>"}`.
+
+예외 객체(목록 · 요청 · 승인 · 거절 응답 모두 같음):
+
+```json
+{"exception_id": "<uuid>", "plan_id": "<uuid>", "control_id": "OBJ-06",
+ "target_environment": {"environment_id": "<uuid>", "name": "target-gcp"},
+ "gate_verdict_id": "<uuid>", "src": "PASS", "dst": "FAIL", "evidence_digest": "sha256:…",
+ "reason": "…", "expires_at": "2026-11-09T09:00:00+00:00",
+ "status": "approved", "stale_reason": null,
+ "requested_by": "<operator 이메일>", "requested_at": "…",
+ "decided_by": "<approver 이메일>", "decided_at": "…", "decision_note": null,
+ "applied": true}
+```
+
+- `applied`: 계획의 마지막 게이트 판정이 이 예외로 그 행을 `EXCEPTION`으로 바꿨으면 `true`.
+- 승인해도 지금 판정은 바뀌지 않습니다. operator가 게이트를 다시 돌리면(`POST /v1/plans/{id}/gate`) 새 판정에 반영됩니다. 그때 게이트가 증거를 다시 재고 digest를 다시 비교합니다.
+
+직무 분리: 승인 · 거절하는 사람 ≠ 요청한 사람 ≠ 계획 작성자. approver 역할이 있어야 합니다. API가 먼저 보고 DB 트리거(`bravo_control_exceptions_guard`)가 다시 확인합니다.
+
+오류:
+
+| 코드 | 이유 | `detail` |
+|---|---|---|
+| 400 | `idempotency_key_required` | |
+| 403 | `insufficient_scope`(역할 · 채널), `separation_of_duties` | |
+| 404 | `plan_not_found`, `exception_not_found` | |
+| 409 | `state_mismatch`(계획이 CUTOVER · FAILBACK · DONE · DONE_ROLLED_BACK · SAFE_HOLD · ABORT_PRE_WRITE) | `state` |
+| 409 | `exception_stale` | `cause`: `no_gate_verdict`, `gate_verdict_superseded`(요청의 판정이 마지막 판정이 아님), `evidence_changed`, `verdict_changed`, `evidence_mismatch`(승인 본문 digest ≠ 예외), `exception_expired` |
+| 409 | `exception_open`(그 통제에 열린 예외가 있음) | `exception_id`, `status` |
+| 409 | `exception_not_pending`(승인 · 거절할 수 없는 상태) | `status` |
+| 409 | `idempotency_key_reuse` | |
+| 422 | `exception_not_allowed` | `cause`: `unknown`(src나 dst가 UNKNOWN, 5a), `not_failed`(dst가 FAIL이 아님), `evidence_missing`(증거 digest 없음), `control_not_in_verdict` |
+| 422 | `exception_expiry_invalid` | `min`, `max` |
+| 422 | 본문 형식 오류(FastAPI 기본 `detail` 목록) | |
+
+### 9.4 게이트 판정에서
+
+`POST /v1/plans/{id}/gate`, 시스템 재대조(`change_recheck`), WATCH 재시험 모두 같은 규칙입니다. 규칙 판 `gate-rules/2026-11-02.2`.
+
+- 행이 `dst == "FAIL"`, `src`가 `PASS` 또는 `FAIL`이고, 그 계획 · 그 목적지 · 그 통제의 `approved` 예외가 만료 전이며 `src` · `dst` · `evidence_digest`가 모두 같으면: 그 행은 `verdict: "EXCEPTION"`, `reason: "exception_approved"`, `exception_id`. `reasons[]`에 넣지 않습니다(동등 판정에서 뺌).
+- 나머지 행은 그대로입니다. UNKNOWN은 늘 `BLOCK` · `unknown`입니다. 준비 상태(`readiness:*`)와 수집 오류도 그대로 막습니다.
+- 판정 `verdict`는 여전히 `PASS` · `BLOCK`입니다. `EXCEPTION` 행만 남고 나머지가 통과하면 `PASS`입니다.
+- `input_digest`에 적용한 예외(`exception_id`, `control_id`, `src`, `dst`, `evidence_digest`)가 들어갑니다. 같은 관측 + 같은 예외 → 같은 판정.
+
+판정 응답 · `gate.verdict` 이벤트 · `GET /v1/plans/{id}`의 `last_gate`에 더한 키:
+
+| 키 | 뜻 |
+|---|---|
+| `controls[].evidence_digest` | 목적지 증거 digest(게이트 보고서의 `dst_evidence_digest`). 증거가 없으면 `null` |
+| `controls[].exception_id` | `EXCEPTION`인 행만, 아니면 `null` |
+| `controls[].verdict` | `PASS` · `BLOCK` · `EXCEPTION` |
+| `exceptions[]` | 이 판정에 적용한 예외. `{"exception_id", "control_id", "src", "dst", "evidence_digest", "expires_at", "approved_by"}`. 콘솔은 "예외 승인"으로 따로 보임 |
+
+### 9.5 게이트 서비스 쪽(`platform/gate`)
+
+- `GET /v1/controls/report`의 `questions[]` 행에 `src_evidence_digest`, `dst_evidence_digest`를 더합니다. 값은 `"sha256:" + sha256(JSON(증거 객체))`. 증거 객체는 `src_evidence` · `dst_evidence` 그대로(`{"verdict", "reason", "evidence"}`), JSON은 키 정렬 · 구분자 `,` `:` · UTF-8. 시각은 증거에 없으므로 같은 관측이면 같은 값입니다.
+- `GET /v1/controls`(4개 키 계약)는 바뀌지 않습니다.
+- 예외는 게이트 서비스가 모릅니다. `EXCEPTION`은 API가 판정을 조립할 때만 나옵니다.
+- API는 이제 `GET /v1/controls/report?source=<출발지 환경 이름>&target=<목적지 환경 이름>`을 읽습니다(전에는 인자 없는 `/v1/controls`라 게이트가 422로 답했습니다). 질문 행을 `{control_id, src, dst, evidence_digest}`로 받습니다. 시간 제한 `BRAVO_GATE_TIMEOUT_S`(기본 60초). 게이트가 모르는 환경 이름이면 `gate_controls_unknown_environment`로 막습니다. 같은 통제 ID가 Executor와 게이트 양쪽에서 오면 지금처럼 UNKNOWN입니다.
+
+### 9.6 이벤트
+
+| kind | data |
+|---|---|
+| `exception.requested` | `exception_id`, `control_id`, `target_environment_id`, `gate_verdict_id`, `src`, `dst`, `evidence_digest`, `expires_at` |
+| `exception.approved` | `exception_id`, `control_id`, `evidence_digest`, `expires_at` |
+| `exception.rejected` | `exception_id`, `control_id` |
+| `exception.stale` | `exception_id`, `control_id`, `cause`(`evidence_changed` · `verdict_changed`), `verdict_id`(바뀐 것을 본 판정), `was` {`src`, `dst`, `evidence_digest`}, `now` {`src`, `dst`, `evidence_digest`} |
+| `exception.expired` | `exception_id`, `control_id`, `expires_at` |
+
+봉투 `actor`는 요청 · 승인 · 거절이 콘솔 사람, `stale` · `expired`는 그 게이트를 돌린 주체(시스템 재대조면 `system`)입니다.
+
+### 9.7 DB(마이그레이션 0008)
+
+- 표 `control_exceptions`: 9.1의 값, `status`, `stale_reason`, `requested_by`, `requested_at`, `decided_by`, `decided_at`, `decision_note`, `updated_at`. RLS는 다른 표와 같습니다(`tenant_isolation` to `bravo_api` · `bravo_mcp`, 소유자 `owner_definer`). `bravo_api`는 읽기 · 쓰기, `bravo_mcp`는 읽기와 `stale` · `expired` 기록만(MCP `gate_run`이 같은 처리기를 씀). Executor · T31 워커 역할은 권한 없음.
+- 트리거 `bravo_control_exceptions_guard`: 요청 때 요청자 = 세션 주체, 목적지 = 계획의 목적지, 판정 = 계획의 마지막 판정이고 그 행이 `dst = FAIL`, `src ∈ {PASS, FAIL}`, 같은 digest인지 확인. 결속 값은 바꿀 수 없음. 허용 전이만(9.2). 승인 · 거절은 결정자 = 세션 주체, approver 멤버십, 결정자 ≠ 요청자 ≠ 계획 작성자. 승인은 만료 전이고 마지막 판정의 그 행이 아직 같을 때만.
+- 부분 유일 색인: 계획 · 통제마다 `requested` · `approved` 하나.
+- `gate_verdicts.exceptions`(jsonb, 기본 `[]`): 그 판정에 적용한 예외.
 
 ## 스펙 밖
 
