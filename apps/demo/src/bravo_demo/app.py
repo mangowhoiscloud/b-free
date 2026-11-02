@@ -447,6 +447,26 @@ def create_app(settings: Settings) -> FastAPI:
             instruments.write_ms.record((time.monotonic() - t0) * 1000.0, {"kind": "message", "outcome": outcome})
             instruments.writes.add(1, {"kind": "message", "outcome": outcome})
 
+    @app.get("/api/rooms/{room}/messages")
+    async def read_messages(
+        room: str, after: int = Query(default=0, ge=0), limit: int = Query(default=0, ge=0)
+    ) -> Response:
+        """HTTP form of the WebSocket history read (``/ws?room=&after=``): the same rows in the same order, at most
+        BACKLOG_LIMIT. ``after`` > 0: rows with a larger id; 0: the newest rows. A keep-alive GET instead of a new
+        WebSocket per read (spec §5.3 reads). Read only, through PgBouncer like every other query."""
+        if not state.get("ready"):
+            return _err(503, "starting", retryable=True)
+        if not ROOM_RE.match(room):
+            return _err(400, "invalid_room")
+        n = min(limit or settings.backlog_limit, settings.backlog_limit)
+        db: ChatDb = state["db"]
+        try:
+            items = await (db.fetch_after(room, after, n) if after > 0 else db.fetch_recent(room, n))
+        except WriteTimeout:
+            return JSONResponse({"error": "db_waiting", "retryable": True}, status_code=503,
+                                headers={"Retry-After": retry_after})
+        return JSONResponse({"room": room, "after": after, "items": items}, headers={"Cache-Control": "no-store"})
+
     @app.get("/api/attachments/{attachment_id}")
     async def download(attachment_id: str) -> Response:
         store: ObjectStore | None = state.get("store")

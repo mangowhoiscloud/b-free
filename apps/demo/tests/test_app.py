@@ -158,6 +158,15 @@ def test_fanout_across_instances_and_resume_after(pgb: Stack, tmp_path: Path) ->
             wb2.receive_json()
             backlog = _recv_until(wb2, "messages")
             assert [m["body"] for m in backlog["items"]] == ["두 번째"]
+        # The HTTP history read returns exactly what the WebSocket backlog returns.
+        r = b.get(f"/api/rooms/{room}/messages", params={"after": first_id})
+        assert r.status_code == 200 and r.headers["x-served-by"] == "onprem"
+        assert r.json()["items"] == backlog["items"]
+        everything = b.get(f"/api/rooms/{room}/messages").json()["items"]
+        assert [m["body"] for m in everything] == ["무엇을 도와드릴까요?", "두 번째"]
+        assert [m["id"] for m in b.get(f"/api/rooms/{room}/messages", params={"limit": 1}).json()["items"]] \
+            == [everything[-1]["id"]]
+        assert b.get("/api/rooms/BAD ROOM/messages").status_code == 400
 
 
 def test_write_waits_during_pause_then_retry_is_exactly_once(pgb: Stack, tmp_path: Path) -> None:
