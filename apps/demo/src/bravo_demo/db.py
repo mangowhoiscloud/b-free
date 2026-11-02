@@ -119,6 +119,19 @@ _MESSAGE_FROM = """
     LEFT JOIN message_attachments ma ON ma.message_id = m.id
     LEFT JOIN attachments a ON a.id = ma.attachment_id
 """
+# One write, one round trip (contract 15 §10, 2026-11-03): during SHIFT the destination app writes to the source
+# primary over the D-16 link, where every statement paid one link round trip (measured 340 ms on-prem). The
+# transaction BEGIN, set_config, guard, INSERT, SELECT, COMMIT cost 6 of them (2,040 ms). Sent as one simple-query
+# message (client-side binding), the statements run in one implicit transaction and cost one round trip.
+# The guard keeps its FOR SHARE (the ROW SHARE lock the block switch waits for); a blocked row fails the batch
+# with division by zero, so the INSERT never runs, and the caller reads ``since`` afterwards.
+_SEND_BATCH = (
+    "SELECT set_config('statement_timeout', %s, true);"
+    "SELECT since, 1 / CASE WHEN blocked THEN 0 ELSE 1 END AS open FROM write_block WHERE env_id = %s FOR SHARE;"
+    "INSERT INTO messages (room, author, body, idem_key) VALUES (%s, %s, %s, %s)"
+    " ON CONFLICT (idem_key) DO NOTHING RETURNING id;"
+    f"SELECT {_MESSAGE_COLUMNS} {_MESSAGE_FROM} WHERE m.idem_key = %s"
+)
 _ATTACHMENT_COLUMNS = (
     "id, logical_id, idem_key, room, author, object_key, sha256, size_bytes, content_type, filename, "
     "store_id, created_at, deleted_at"
@@ -318,7 +331,31 @@ class ChatDb:
     ) -> tuple[dict[str, Any], bool]:
         """Insert once per idempotency key. Returns (message, created)."""
 
+        async def one_round_trip(conn: AsyncConnection) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+            cur = psycopg.AsyncClientCursor(conn, row_factory=dict_row)
+            try:
+                await cur.execute(_SEND_BATCH, (f"{self.settings.statement_timeout_ms}ms", self.env_id, room, author,
+                                                body, idem_key, idem_key))
+            except psycopg.errors.DivisionByZero:
+                since = await (await conn.execute(
+                    "SELECT since FROM write_block WHERE env_id = %s", (self.env_id,))).fetchone()
+                raise WritesBlocked(since[0] if since else None) from None
+            # result sets in order: set_config, guard, INSERT ... RETURNING id, the message row
+            cur.nextset()
+            cur.nextset()
+            inserted = await cur.fetchone()
+            cur.nextset()
+            return inserted, await cur.fetchone()
+
         async def op(conn: AsyncConnection) -> tuple[dict[str, Any], bool]:
+            if attachment_id is None:
+                inserted, row = await one_round_trip(conn)
+                if row is None:  # unreachable: the row was inserted or already existed
+                    raise RuntimeError("message vanished after insert")
+                if inserted is None and not (row["room"] == room and row["author"] == author
+                                             and row["body"] == body and row["att_id"] is None):
+                    raise IdempotencyConflict(str(idem_key))
+                return message_public(row), inserted is not None
             async with conn.transaction():
                 await self._set_local_timeout(conn)
                 await self._guard_writes(conn)
