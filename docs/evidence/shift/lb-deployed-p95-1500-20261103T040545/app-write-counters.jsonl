@@ -1,0 +1,2 @@
+{"label":"before-to-dst","at":"2026-11-02T19:05:48Z","counters":[{"env":"target-onprem","outcome":"ok","total":"69"},{"env":"source-aws","outcome":"ok","total":"17738"},{"env":"source-aws","outcome":"timeout","total":"104"}]}
+{"label":"after-to-dst","at":"2026-11-02T19:06:23Z","counters":[{"env":"target-onprem","outcome":"ok","total":"178"},{"env":"source-aws","outcome":"ok","total":"18265"},{"env":"source-aws","outcome":"timeout","total":"104"}]}

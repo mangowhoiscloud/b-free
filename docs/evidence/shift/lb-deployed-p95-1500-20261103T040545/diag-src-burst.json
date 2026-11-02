@@ -1,0 +1,1 @@
+{"at_kst": "2026-11-03 04:06:3x", "what": "600 writes at 60/s, a new connection each, through b-free-chat with the LB at source 100 % (executor-0)", "result": {"201 aws": 582, "503 no X-Served-By, body: upstream connect error or disconnect/reset before headers. reset reason: connection timeout": 18}}
