@@ -16,6 +16,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 case "${1:-measure}" in fault|fault-clear) ;; *) executor_url; URL="$EXECUTOR_URL" ;; esac
 OUT="$RUNS/cloud-t25-$(date +%Y%m%dT%H%M%S)-${1:-measure}"; mkdir -p "$OUT"
+"$REPO/deploy/scripts/argo-state.sh" >"$OUT/argo-state.txt" || true  # Argo revision of this evidence run (B20)
 latest_ev() { ls -dt "$RUNS"/cloud-*-"$1" 2>/dev/null | head -n 1; }
 # N real chat writes through the front (room fault-probe): status and X-Served-By per environment.
 front_writes() {

@@ -107,10 +107,14 @@ POST_CUTOVER=0
 repl_status() { ex python -m bravo_executor.repl_setup status 2>"$TMP/repl.err" | grep '^{' | jq -c 'select(.event == "status")' | tail -n 1; }
 # Pre-cutover baseline (same as repl_setup.rearm): forward subscription flowing into the destination, reverse
 # subscription ready but disabled on the source, only the source writer can log in, attachment stores not frozen.
-PRE_CUTOVER_JQ='(.dst.subscriptions.bravo_fwd_sub.enabled == true and .dst.subscriptions.bravo_fwd_sub.worker_pid != null)
+# No reverse slot on the destination: the cutover creates it at step 6a (contract 15 §10). A pre-created slot keeps
+# WAL while the reverse subscription is off (2026-11-03, about 3.6 MB/min) and can be invalidated before S4.
+PRE_CUTOVER_BASE_JQ='(.dst.subscriptions.bravo_fwd_sub.enabled == true and .dst.subscriptions.bravo_fwd_sub.worker_pid != null)
   and (.src.subscriptions.bravo_rev_sub.exists == true and .src.subscriptions.bravo_rev_sub.enabled == false)
   and .src.writer.login == true and .dst.writer.login == false
   and .src.attachment_store.frozen == false and .dst.attachment_store.frozen == false'
+NO_REV_SLOT_JQ='(.src.subscriptions.bravo_rev_sub.slot == null) and (.dst.slots.bravo_rev_sub == null)'
+PRE_CUTOVER_JQ="($PRE_CUTOVER_BASE_JQ) and ($NO_REV_SLOT_JQ)"
 guard() {
   if ! ex_ok; then GUARD="NOT_CONNECTED executor-0에 exec 못 함($BRAVO_PLATFORM_CONTEXT $PLATFORM_NS)"; return; fi
   REPL_ST="$(repl_status || true)"
@@ -264,7 +268,19 @@ step_data() {
     pool_reset "$name" "$a" "$ns" "${wl#selector:}"
   done < <(jq -r '.pools[]? | [.name, .switch.context, .switch.namespace, .switch.workload] | @tsv' <<<"$topo")
   if jq -e "$PRE_CUTOVER_JQ" >/dev/null <<<"$REPL_ST"; then
-    report data repl ALREADY "정방향 흐름, 역방향 준비(꺼짐), 쓰기는 출발지만, 첨부 저장소 얼지 않음"; return
+    report data repl ALREADY "정방향 흐름, 역방향 준비(꺼짐, 슬롯 없음), 쓰기는 출발지만, 첨부 저장소 얼지 않음"; return
+  fi
+  if jq -e "$PRE_CUTOVER_BASE_JQ" >/dev/null <<<"$REPL_ST"; then
+    # Only a leftover reverse slot differs: detach and drop it, no re-copy.
+    if ((DRY)); then report data repl PLAN "역방향 슬롯만 남음. executor-0 repl_setup drop-rev-slot"; return; fi
+    ex python -m bravo_executor.repl_setup drop-rev-slot >"$TMP/droprev.out" 2>"$TMP/err" || true
+    st="$(repl_status || true)"
+    if [[ -n $st ]] && jq -e "$PRE_CUTOVER_JQ" >/dev/null <<<"$st"; then
+      report data repl DONE "역방향 슬롯을 떼고 지움. 다시 읽은 상태가 컷오버 전 기준과 같음"
+    else
+      report data repl FAIL "drop-rev-slot 뒤에도 기준과 다름: $(grep '^{' "$TMP/droprev.out" | jq -r 'select(.event == "failed") | "\(.error): \(.detail)"' 2>/dev/null | tail -n 1 | head -c 200)"
+    fi
+    return
   fi
   if ((DRY)); then report data repl PLAN "컷오버 전 기준과 다름. executor-0 repl_setup rearm(구독 · 슬롯 정리, 목적지 표 비움, 다시 복사)"; return; fi
   ex python -m bravo_executor.repl_setup rearm >"$TMP/rearm.out" 2>"$TMP/err" || true

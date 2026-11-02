@@ -160,7 +160,9 @@ def test_write_sampler_counts_acks_by_served_by_and_stops_on_the_rule() -> None:
     finally:
         srv.shutdown()
     assert target_count(samples, "onprem") >= 10
-    assert all(r["path"] == "/api/rooms/shift-probe/messages" and r["author"] == "bravo-shift" for r in seen)
+    assert all(str(r["path"]).split("?")[0] == "/api/rooms/shift-probe/messages" for r in seen)
+    assert all(r["author"] == "bravo-shift" for r in seen)
+    assert len({r["path"] for r in seen}) == len(seen)  # a distinct query per write (Cloudflare steering)
     assert len({r["key"] for r in seen}) == len(seen)  # a new Idempotency-Key per write
     bad = [s for s in samples if not s.ok]
     assert len(bad) == 1 and bad[0].status == 500 and bad[0].env_id == "onprem"

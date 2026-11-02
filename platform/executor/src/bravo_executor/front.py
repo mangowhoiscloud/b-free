@@ -67,8 +67,13 @@ class FrontConfig:
     # LB-mode step judgement: real chat writes through the front (contract 15 §10.4)
     write_rate: float = 60.0                   # writes per second, open loop
     write_room: str = "shift-probe"
-    write_timeout_s: float = 5.0
+    # Longer than the app's own write deadline (apps/demo WRITE_WAIT_S, 8 s): a slow write then comes back as the
+    # app's 503 with X-Served-By, so only edge and transport failures stay unattributed.
+    write_timeout_s: float = 10.0
     write_max_in_flight: int = 128
+    # Kept-alive connections. Measured 2026-11-03 KST on b-free-chat (docs/evidence/shift/): without keep-alive the
+    # client's own TLS work raised the p95 of GET /api/status from 184 ms to 552 ms; both followed the weights.
+    write_keepalive: bool = True
     min_target_samples: int = 100              # writes the target answered; below this the step is not judged
     min_hold_s: float = 5.0
     max_hold_s: float = 30.0
@@ -107,8 +112,9 @@ class FrontConfig:
             propagation_timeout_s=f("BRAVO_FRONT_PROPAGATION_TIMEOUT_S", 180.0),
             write_rate=f("BRAVO_FRONT_WRITE_RATE", 60.0),
             write_room=room,
-            write_timeout_s=f("BRAVO_FRONT_WRITE_TIMEOUT_S", 5.0),
+            write_timeout_s=f("BRAVO_FRONT_WRITE_TIMEOUT_S", 10.0),
             write_max_in_flight=int(f("BRAVO_FRONT_WRITE_MAX_IN_FLIGHT", 128)),
+            write_keepalive=(e.get("BRAVO_FRONT_WRITE_KEEPALIVE") or "1").strip() in ("1", "true"),
             min_target_samples=int(f("BRAVO_FRONT_MIN_TARGET_SAMPLES", 100)),
             min_hold_s=f("BRAVO_FRONT_MIN_HOLD_S", 5.0),
             max_hold_s=f("BRAVO_FRONT_MAX_HOLD_S", 30.0),
@@ -331,7 +337,7 @@ class WriteSampler:
         self._http = httpx.AsyncClient(
             timeout=cfg.write_timeout_s,
             limits=httpx.Limits(max_connections=cfg.write_max_in_flight,
-                                max_keepalive_connections=cfg.write_max_in_flight),
+                                max_keepalive_connections=cfg.write_max_in_flight if cfg.write_keepalive else 0),
             headers={"Cache-Control": "no-cache", "User-Agent": "bravo-executor-shift"},
         )
 
@@ -343,7 +349,11 @@ class WriteSampler:
         body = {"author": WRITE_AUTHOR, "body": f"shift sample {self.label} {self.sent}"}
         start = time.monotonic()
         try:
-            resp = await self._http.post(self.url, json=body, headers={"Idempotency-Key": str(uuid.uuid4())})
+            # A distinct query per write, so no edge layer can treat the writes as one repeated request.
+            # (Measured 2026-11-03: POSTs reached the 10 % pool 0.6-2.2 % of the time with or without it while
+            # that pool's writes were slow; GETs with it followed the weight. Cause not confirmed.)
+            resp = await self._http.post(self.url, params={"_s": f"{self.label}-{self.sent}"}, json=body,
+                                         headers={"Idempotency-Key": str(uuid.uuid4())})
             latency = (time.monotonic() - start) * 1000
             env_id = resp.headers.get("x-served-by") or None
             acked = False

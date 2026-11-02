@@ -1,0 +1,1 @@
+{"active_env":"dst","pool_weights":{"bravo-b-free-chat-src":0,"bravo-b-free-chat-dst":1},"probe":{"status":200,"env_id":"onprem","ok":true,"latency_ms":430.8}}

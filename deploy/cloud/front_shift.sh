@@ -9,6 +9,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 target="${1:?usage: front_shift.sh <dst|src> [evidence-dir]}"
 EV="${2:-$RUNS/cloud-front-$(date +%Y%m%dT%H%M%S)-to-$target}"
 mkdir -p "$EV"
+"$REPO/deploy/scripts/argo-state.sh" >"$EV/argo-state.txt" || true  # Argo revision of this evidence run (B20)
 executor_url
 curl -fsS -m 90 "$EXECUTOR_URL/v1/front" > "$EV/front-before-to-$target.json"
 code="$(curl -sS -o "$EV/shift-accepted-to-$target.json" -w '%{http_code}' -X POST "$EXECUTOR_URL/v1/front/shift" \

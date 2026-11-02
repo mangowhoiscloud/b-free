@@ -1,0 +1,3 @@
+{"read_at": "2026-11-03T02:55:30+09:00", "source": "Cloudflare API GET /zones/{zone}/load_balancers (lbhealth.py in executor-0)",
+ "lb": {"name": "b-free-chat.mangowhois.ai", "steering_policy": "random", "session_affinity": "none", "adaptive_routing": {"failover_across_pools": false}, "location_strategy": {"prefer_ecs": "proximity", "mode": "pop"}, "proxied": true, "zero_downtime_failover": "none"},
+ "pool_health": {"bravo-b-free-chat-dst": {"healthy": true, "Seoul, KR rtt": "11ms"}, "bravo-b-free-chat-src": {"healthy": true, "Seoul, KR rtt": "9.7ms"}}}

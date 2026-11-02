@@ -10,7 +10,10 @@ Cutover  (origin=src, target=dst)                Failback (origin=dst, target=sr
      terminate sessions, prove login rejected         terminate sessions, prove login rejected
   5  barrier on src, arrival on dst, compare,      3-4 barrier on dst, arrival on src, compare,
      raise dst sequences, receipt (before writes)     raise src sequences, receipt
-  6a forward apply off, reverse subscription on    6  reverse subscription off (apply stopped)
+  6a forward apply off, reverse slot created on    6  reverse subscription off (apply stopped)
+     dst now (known LSN, after the barrier with
+     both sides paused), attached to src's
+     reverse subscription, which is enabled
   6b commit point; drop forward slot (src)         6  commit point; drop reverse slot (dst)
   7  dst writer GRANT + LOGIN, pool -> dst,        6  src writer GRANT + LOGIN, pool -> src,
      RELOAD, RESUME                                   RELOAD, RESUME
@@ -79,6 +82,8 @@ class Applied:
     writer_insert_revoked: str | None = None
     subs_disabled: list[tuple[str, str]] = field(default_factory=list)
     subs_enabled: list[tuple[str, str]] = field(default_factory=list)
+    rev_slot_created: bool = False      # cutover 6a: reverse slot on dst (no pre-created slot holds WAL)
+    rev_slot_attached: bool = False     # cutover 6a: src reverse subscription points at it
     attachments_prior: dict[str, dict[str, Any]] = field(default_factory=dict)  # side -> state before freeze
 
 
@@ -225,6 +230,7 @@ class CutoverRunner:
             if cutover:
                 async with rec.stage("6a_switch_replication") as st:
                     await self._set_sub(fx, sides.db["dst"], s.fwd_sub, False, req.epoch, applied)
+                    st.detail["reverse_slot"] = await self._create_reverse_slot(req, fx, sides, applied)
                     await self._set_sub(fx, sides.db["src"], s.rev_sub, True, req.epoch, applied)
                     st.detail["forward"] = (await sides.db["dst"].subscription(s.fwd_sub)).as_dict()
                     st.detail["reverse"] = (await sides.db["src"].subscription(s.rev_sub)).as_dict()
@@ -305,6 +311,8 @@ class CutoverRunner:
             lag = await dst.slot_lag_bytes(s.rev_sub)
             streaming = await src.subscription(s.rev_sub)
             standby = await dst.subscription(s.fwd_sub)
+        reverse_slot = await dst.slot(s.rev_sub) if cutover else None
+        detail["reverse_slot_before"] = reverse_slot
         writer_origin = await sides.db[origin].writer_state(s.app_role)
         writer_target = await sides.db[target].writer_state(s.app_role)
         for side in ("src", "dst"):
@@ -370,6 +378,9 @@ class CutoverRunner:
             "REPLICATION_NOT_STREAMING": not streaming.streaming,
             # cutover: reverse must exist and be off; failback: forward must be off.
             "STANDBY_SUBSCRIPTION_NOT_READY": (not standby.exists or standby.enabled) if cutover else standby.enabled,
+            # The reverse slot is created inside the cutover (6a). A slot left from an older setup keeps WAL on
+            # dst while the reverse subscription is off and can be invalidated before S4 (ops lane, 2026-11-03).
+            "REVERSE_SLOT_PRESENT": cutover and reverse_slot is not None,
             "ORIGIN_WRITER_NOT_OPEN": writer_origin.get("login") is not True or writer_origin.get("insert") is not True,
             "TARGET_WRITER_NOT_CLOSED": writer_target.get("login") is not False,
             "IDENTICAL_SERVERS": sides.identity.get("src") == sides.identity.get("dst"),
@@ -752,6 +763,74 @@ class CutoverRunner:
 
         await fx.apply(Resources.subscription(db.side, sub), "ENABLE" if enabled else "DISABLE", call, observe)
 
+    async def _create_reverse_slot(
+        self, req: CutoverRequest, fx: EffectRunner, sides: Sides, applied: Applied
+    ) -> dict[str, Any]:
+        """Cutover 6a (spec S3 "역방향 복제를 켠다"): writes are blocked on both sides and the barrier compare
+        matched, so the reverse slot created now starts exactly where both databases are equal."""
+        s = self._s
+        src, dst = sides.db["src"], sides.db["dst"]
+        out: dict[str, Any] = {}
+        applied.rev_slot_created = True
+
+        async def create() -> dict[str, Any]:
+            out["consistent_lsn"] = await dst.create_logical_slot(req.epoch, s.rev_sub)
+            return {"consistent_lsn": out["consistent_lsn"]}
+
+        async def obs_create() -> Observation:
+            info = await dst.slot(s.rev_sub)
+            return info is not None, {"slot": info}
+
+        await fx.apply(Resources.slot("dst", s.rev_sub), "CREATE_SLOT", create, obs_create)
+        applied.rev_slot_attached = True
+
+        async def attach() -> dict[str, Any]:
+            await src.attach_subscription_slot(req.epoch, s.rev_sub, s.rev_sub)
+            return {}
+
+        async def obs_attach() -> Observation:
+            name = await src.subscription_slot_name(s.rev_sub)
+            return name == s.rev_sub, {"slot_name": name}
+
+        await fx.apply(Resources.subscription("src", s.rev_sub), "ATTACH_SLOT", attach, obs_attach)
+        return {"slot": s.rev_sub, **out}
+
+    async def _undo_reverse_slot(self, req: CutoverRequest, fx: EffectRunner, dbs: dict[str, ChatDb],
+                                 applied: Applied) -> list[str]:
+        """ABORT_PRE_WRITE: the reverse subscription forgets the slot and the slot is dropped, so the next
+        attempt starts again without a slot holding WAL."""
+        s = self._s
+        done: list[str] = []
+        if applied.rev_slot_attached and await dbs["src"].subscription_slot_name(s.rev_sub) is not None:
+
+            async def detach() -> dict[str, Any]:
+                await dbs["src"].detach_subscription_slot(req.epoch, s.rev_sub)
+                return {}
+
+            async def obs_detach() -> Observation:
+                name = await dbs["src"].subscription_slot_name(s.rev_sub)
+                return name is None, {"slot_name": name}
+
+            await fx.apply(Resources.subscription("src", s.rev_sub), "DETACH_SLOT_UNDO", detach, obs_detach)
+            done.append(f"src/{s.rev_sub} slot detached")
+        if applied.rev_slot_created and await dbs["dst"].slot(s.rev_sub) is not None:
+
+            async def drop() -> dict[str, Any]:
+                async def inactive() -> bool:
+                    info = await dbs["dst"].slot(s.rev_sub)
+                    return info is None or not info["active"]
+
+                await wait_until(inactive, s.subscription_timeout_s, 0.05)
+                await dbs["dst"].drop_slot(req.epoch, s.rev_sub)
+                return {}
+
+            async def obs_drop() -> Observation:
+                return await dbs["dst"].slot(s.rev_sub) is None, {}
+
+            await fx.apply(Resources.slot("dst", s.rev_sub), "DROP_SLOT_UNDO", drop, obs_drop)
+            done.append(f"dst/{s.rev_sub} slot dropped")
+        return done
+
     async def _commit_point(
         self, req: CutoverRequest, fx: EffectRunner, rec: StageRecorder, sides: Sides, cutover: bool,
         detail: dict[str, Any],
@@ -950,6 +1029,7 @@ class CutoverRunner:
             for side, sub in reversed(applied.subs_enabled):
                 await self._set_sub(fx, dbs[side], sub, False, req.epoch, None)
                 restored.append(f"{side}/{sub} disabled")
+            restored.extend(await self._undo_reverse_slot(req, fx, dbs, applied))
             for side, sub in reversed(applied.subs_disabled):
                 await self._set_sub(fx, dbs[side], sub, True, req.epoch, None)
                 restored.append(f"{side}/{sub} enabled")

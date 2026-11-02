@@ -7,6 +7,9 @@ prints one JSON line; nothing here prints a password.
   python -m bravo_executor.repl_setup status
   python -m bravo_executor.repl_setup setup      # forward bravo_fwd_sub (dst <- src, initial copy)
                                                  # and the prepared reverse bravo_rev_sub on src
+                                                 # (disabled, slot_name = NONE: no slot on dst)
+  python -m bravo_executor.repl_setup drop-rev-slot   # pre-cutover only: detach and drop a reverse slot
+                                                      # an older setup left on dst
   python -m bravo_executor.repl_setup rearm      # after a cutover + failback: back to the
                                                  # pre-cutover state, then setup again (T25 runs)
 
@@ -18,7 +21,9 @@ Replicator passwords: field ``replicator`` of each side's chat-db secret.
 
 The reverse subscription is created with ``connect = true`` so PostgreSQL records its tables; if
 the reverse link is not up, setup stops and says so (no connect = false shortcut that would
-leave the subscription without tables).
+leave the subscription without tables). It has no slot: the cutover creates the reverse slot on dst at
+step 6a, after the write block and the barrier compare, from a known LSN (contract 15 §10, ops lane
+2026-11-03: a pre-created slot held about 3.6 MB of WAL per minute on dst while the subscription was off).
 """
 
 from __future__ import annotations
@@ -135,16 +140,13 @@ class ReplSetup:
             if (await src.subscription("bravo_rev_sub")).exists:
                 emit("rev_exists", side="src")
             else:
-                if await dst.slot("bravo_rev_sub") is None:
-                    await dst.conn.execute("SELECT pg_create_logical_replication_slot('bravo_rev_sub', 'pgoutput')")
-                    emit("rev_slot_created", side="dst")
                 conninfo = await self._conninfo("rev_conninfo", "dst")
                 await self._quiet(src)
                 try:
                     await src.conn.execute(
                         sql.SQL("CREATE SUBSCRIPTION bravo_rev_sub CONNECTION {} PUBLICATION bravo_rev WITH "
                                 "(enabled = false, copy_data = false, origin = none, create_slot = false, "
-                                "slot_name = 'bravo_rev_sub')").format(sql.Literal(conninfo))
+                                "slot_name = NONE)").format(sql.Literal(conninfo))
                     )
                 except Exception as exc:
                     emit("rev_not_created", reason="reverse link unreachable or rejected",
@@ -152,10 +154,33 @@ class ReplSetup:
                     raise
                 finally:
                     await self._loud(src)
-                emit("rev_created", side="src", enabled=False, label=self.label)
+                emit("rev_created", side="src", enabled=False, slot=None, label=self.label)
+            await self.drop_rev_slot(src, dst)
         finally:
             await src.close()
             await dst.close()
+
+    async def drop_rev_slot(self, src: ChatDb | None = None, dst: ChatDb | None = None) -> None:
+        """Pre-cutover only: the disabled reverse subscription forgets its slot and the dst slot is dropped."""
+        own = src is None or dst is None
+        if src is None or dst is None:
+            src, dst = await self._db("src"), await self._db("dst")
+        try:
+            rev = await src.subscription("bravo_rev_sub")
+            if rev.exists and rev.enabled:
+                raise RuntimeError("src/bravo_rev_sub is enabled (after a cutover): failback first")
+            if rev.exists and await src.subscription_slot_name("bravo_rev_sub") is not None:
+                await src.conn.execute("ALTER SUBSCRIPTION bravo_rev_sub SET (slot_name = NONE)")
+                emit("rev_slot_detached", side="src")
+            if await dst.slot("bravo_rev_sub") is not None:
+                await dst.conn.execute("SELECT pg_drop_replication_slot('bravo_rev_sub')")
+                emit("rev_slot_dropped", side="dst")
+            else:
+                emit("rev_slot_absent", side="dst")
+        finally:
+            if own:
+                await src.close()
+                await dst.close()
 
     async def rearm(self, sync_timeout_s: float) -> None:
         """Back to the pre-cutover state after a full cutover + failback, then setup()."""
@@ -218,6 +243,9 @@ async def _main(args: argparse.Namespace) -> int:
         elif args.cmd == "rearm":
             await tool.rearm(args.sync_timeout)
             emit("status", **(await tool.status()))
+        elif args.cmd == "drop-rev-slot":
+            await tool.drop_rev_slot()
+            emit("status", **(await tool.status()))
         return 0
     except Exception as exc:  # noqa: BLE001 - reported as one JSON line, non-zero exit
         # psycopg messages can quote statement text (LINE 1: ...), which may hold a connection string:
@@ -236,7 +264,7 @@ async def _main(args: argparse.Namespace) -> int:
 def main() -> None:
     p = argparse.ArgumentParser(prog="bravo-repl-setup", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("cmd", choices=("status", "setup", "rearm"))
+    p.add_argument("cmd", choices=("status", "setup", "rearm", "drop-rev-slot"))
     p.add_argument("--sync-timeout", type=float, default=300.0)
     sys.exit(asyncio.run(_main(p.parse_args())))
 

@@ -27,6 +27,7 @@ WAIT_RUN_S="${WAIT_RUN_S:-900}"
 HOLD_S="${HOLD_S:-20}"; LOAD_S="${LOAD_S:-3600}"; CUTOVER_AFTER_S="${CUTOVER_AFTER_S:-15}"; BUDGET_MS="${BUDGET_MS:-5000}"
 EV="$RUNS/cloud-$(date +%Y%m%dT%H%M%S)-$SCENARIO"
 mkdir -p "$EV"
+"$REPO/deploy/scripts/argo-state.sh" >"$EV/argo-state.txt" || true  # Argo revision of this evidence run (B20)
 echo "{\"link\": \"$LINK_LABEL\", \"src\": \"$SRC_CONTEXT\", \"dst\": \"$DST_CONTEXT\", \"scenario\": \"$SCENARIO\"}" > "$EV/run-context.json"
 log "evidence: $EV"
 

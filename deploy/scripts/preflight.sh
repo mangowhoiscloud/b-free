@@ -150,7 +150,13 @@ g_repl() {
   if row="$(psql_ro source "SELECT subname, subenabled FROM pg_subscription WHERE subname='bravo_rev_sub'" 2>/dev/null)"; then
     IFS=$'\t' read -r name en <<<"$(tail -n 1 <<<"$row")"
     if [[ -z $name ]]; then res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "없음: 되돌리기(S4) 준비 안 됨"
-    elif [[ $en == f ]]; then res PASS repl "역방향 구독 bravo_rev_sub(출발지)" "있음, 꺼짐(컷오버 전 상태)"
+    elif [[ $en == f ]]; then
+      # Contract 15 §10: before the cutover there is no reverse slot on on-prem; the cutover creates it at step 6a.
+      if [[ -n $(psql_ro onprem "SELECT slot_name FROM pg_replication_slots WHERE slot_name='bravo_rev_sub'" 2>/dev/null | tail -n 1) ]]; then
+        res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "꺼짐인데 온프렘에 역방향 슬롯이 남음(WAL 보존). reset-demo.sh(drop-rev-slot)"
+      else
+        res PASS repl "역방향 구독 bravo_rev_sub(출발지)" "있음, 꺼짐, 온프렘 슬롯 없음(컷오버 전 상태)"
+      fi
     else res WARN repl "역방향 구독 bravo_rev_sub(출발지)" "켜짐: 컷오버 뒤 상태. reset-demo.sh 전에 콘솔에서 되돌리기"; fi
   else
     res FAIL repl "역방향 구독 bravo_rev_sub(출발지)" "조회 실패"

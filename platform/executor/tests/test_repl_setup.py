@@ -119,7 +119,8 @@ async def test_setup_streams_forward_and_prepares_reverse(pair: dict[str, Any], 
         await asyncio.sleep(0.2)
     assert row is not None and row[0] == 25
     rev = await _q(pair, "src", "SELECT subenabled, subslotname FROM pg_subscription WHERE subname = 'bravo_rev_sub'")
-    assert rev == (False, "bravo_rev_sub")
+    assert rev == (False, None)  # no slot before the cutover: nothing holds WAL on dst
+    assert await _q(pair, "dst", "SELECT 1 FROM pg_replication_slots WHERE slot_name = 'bravo_rev_sub'") is None
     rel = await _q(pair, "src", "SELECT count(*) FROM pg_subscription_rel r JOIN pg_subscription s "
                                 "ON s.oid = r.srsubid WHERE s.subname = 'bravo_rev_sub'")
     assert rel is not None and rel[0] == 4  # connect = true recorded the reverse tables
@@ -129,6 +130,29 @@ async def test_setup_streams_forward_and_prepares_reverse(pair: dict[str, Any], 
 
 async def test_setup_is_idempotent(tool: ReplSetup) -> None:
     await tool.setup(sync_timeout_s=60)  # second run: both subscriptions exist, nothing recreated
+
+
+async def test_cutover_creates_the_reverse_slot_and_pre_cutover_drop_removes_it(
+    pair: dict[str, Any], tool: ReplSetup
+) -> None:
+    """Contract 15 §10 / cutover 6a: the reverse slot is created at the cutover from a known LSN and attached
+    to the disabled reverse subscription; drop-rev-slot (pre-cutover) detaches and drops it again."""
+    from bravo_executor.chatdb import ChatDb
+
+    src, dst = await tool._db("src"), await tool._db("dst")  # noqa: SLF001 - same sessions the tool uses
+    try:
+        lsn = await dst.create_logical_slot(1, "bravo_rev_sub")
+        assert "/" in lsn and await dst.slot("bravo_rev_sub") is not None
+        await src.attach_subscription_slot(1, "bravo_rev_sub", "bravo_rev_sub")
+        assert await src.subscription_slot_name("bravo_rev_sub") == "bravo_rev_sub"
+        assert isinstance(src, ChatDb)
+    finally:
+        await src.close()
+        await dst.close()
+    await tool.drop_rev_slot()
+    rev = await _q(pair, "src", "SELECT subenabled, subslotname FROM pg_subscription WHERE subname = 'bravo_rev_sub'")
+    assert rev == (False, None)
+    assert await _q(pair, "dst", "SELECT 1 FROM pg_replication_slots WHERE slot_name = 'bravo_rev_sub'") is None
 
 
 async def test_a_failing_create_subscription_leaves_no_password_in_the_server_log(

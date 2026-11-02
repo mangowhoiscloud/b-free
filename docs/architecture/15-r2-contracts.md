@@ -45,7 +45,8 @@
 | `approval.granted` | `approval_id`, `approval_request_id`, `stage`, `revision`, `gate_verdict_id`, `artifact_digest`, `bound_run_id`, `change_id`, `diff_digest`, `image_digest`, `policy_diff_digest`, `expires_at`(해당 없는 키는 `null`) |
 | `trial.started` | `rehearsal_id`, `attempt`, `task`, `role`, `status` |
 | `trial.proposed` | `rehearsal_id`, `trial_id`, `artifact_digest` |
-| `tool.denied` | `rehearsal_id`, `trial_id`, `seq`, `tool`, `rule`, `at` |
+| `tool.denied` | `rehearsal_id`, `trial_id`, `seq`, `tool`, `rule`, `origin`(`agent` · `probe`: 운영자 데모 probe는 에이전트 행동이 아님), `at` |
+| `trial.progress` | `rehearsal_id`, `trial_id`, `role`, `phase`(provisioning · agent_running · proposed · verifying · done), `elapsed_s`, `phase_s`, `tool_summary`(주체별 허용 · 거부 수). 단계마다 한 번(마이그레이션 0010) |
 | `trial.verdict` | `rehearsal_id`, `trial_id`, `attempt`, `verdict`(PASS · FAIL · INFRA_ERROR), `reason`, `artifact_digest`, `verifier` |
 | `change.requested` | `change_id`, `rehearsal_id`, `role`, `plan_revision`, `artifact_digest`, `diff_digest`, `policy_diff_digest`, `policy_targets[]` {`type`, `name`} |
 | `change.stage` | `change_id`, `seq`, `phase`(prepare · apply), `name`, `started_at`, `ms`, `result`(OK · FAIL · REFUSED · NOT_CONNECTED · SKIPPED), `detail`(비밀 없음) |
@@ -568,6 +569,7 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 - 컷오버 승인 하나가 SHIFT와 CUTOVER를 함께 덮습니다. API는 SHIFT 시작 때 승인을 소비합니다(`consumed_at`, `consumed_by` = 시작한 운영자, `run_idem_key` = `cutover-<approval_id>`).
 - Executor 멱등 키는 shift가 `shift-<approval_id>`, 컷오버가 `cutover-<approval_id>`입니다.
 - 컷오버 실행이 쓰기 전에 실패하면(ABORT_PRE_WRITE) 가중치는 목적지 100%에 그대로 둡니다. 그 상태에서도 목적지 앱은 목적지 PgBouncer를 거쳐 출발지 DB에 씁니다. 다음 승인으로 SHIFT를 다시 시작하면 10%부터 다시 걷습니다.
+- 역방향 복제 슬롯은 미리 만들지 않습니다. 컷오버 6a 단계에서 양쪽 쓰기가 막히고 barrier 비교가 맞은 뒤, Executor가 목적지에 슬롯 `bravo_rev_sub`를 만들고(그때의 LSN을 기록) 출발지의 꺼진 역방향 구독에 붙인 뒤 켭니다. 미리 만든 슬롯은 구독이 꺼진 동안 목적지 WAL을 붙잡습니다(2026-11-03 운영 갈래 실측: 분당 약 3.6 MB, `max_slot_wal_keep_size` 2 GB에 약 7시간). 컷오버 전 점검은 슬롯이 없어야 통과합니다(`REVERSE_SLOT_PRESENT`). 쓰기 전에 실패하면 슬롯을 떼고 지웁니다. `repl_setup setup`은 역방향 구독을 `slot_name = NONE`으로 만들고, `repl_setup drop-rev-slot`은 컷오버 전의 남은 슬롯을 지웁니다(`reset-demo.sh`가 부름).
 
 **Executor의 승인 확인(감사 A2, 5절에 더함).** shift와 컷오버 모두 아래를 모두 만족해야 실행합니다. 어긋나면 403과 코드로 거부하고 실행 행을 만들지 않습니다.
 
@@ -625,8 +627,9 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 | 표본 판정 | 규칙 |
 |---|---|
 | 성공(ACK) | HTTP 200 또는 201, JSON `message.id`가 정수, `X-Served-By` 헤더 있음 |
-| 오류 | 그 밖의 모두. 5xx(장애 주입 `X-Bravo-Fault` 포함), 4xx, 503 `blocked`, 5초 시간 초과, 연결 오류. 다시 보내지 않음 |
-| 어느 환경 | `X-Served-By`(`aws` = 출발지, `onprem` = 목적지). 헤더 없는 오류(Cloudflare 52x, 연결 오류)는 목적지 오류로 셈(보수적) |
+| 오류 | 그 밖의 모두. 5xx(장애 주입 `X-Bravo-Fault`, 앱의 503 `write_timeout` 포함), 4xx, 503 `blocked`, 10초 시간 초과, 연결 오류. 다시 보내지 않음 |
+| 어느 환경 | `X-Served-By`(`aws` = 출발지, `onprem` = 목적지). 시간 제한 10초는 앱의 쓰기 기한(`WRITE_WAIT_S` 8초)보다 길어서, 느린 쓰기도 앱의 503과 헤더로 돌아옴. 헤더 없는 오류(Cloudflare 52x, 연결 오류)만 남고 이것은 목적지 오류로 셈(보수적) |
+| 연결 | 연결 유지(keep-alive). 쓰기마다 다른 쿼리(`?_s=<run>-<n>`) |
 
 | 값 | 기본값(환경 변수) | 이유 |
 |---|---|---|
@@ -651,9 +654,23 @@ Executor는 단계마다 `cutover.stage.<이름>` span을 냅니다. 플랫폼 C
 
 Executor는 그 단계의 판정이 끝난 즉시 목적지 pool 가중치를 0, 출발지를 1로 바꾸고 반영을 확인합니다(`front.revert_0`). 실행 상태는 ABORT_PRE_WRITE입니다. DB는 건드리지 않았으므로 쓰기 전 실패와 같습니다. API는 SHIFT → AWAIT_APPROVAL로 옮기고 새 컷오버 승인 요청을 냅니다. 소비한 승인은 다시 쓸 수 없습니다. 0% 복귀 자체를 확인하지 못하면 SAFE_HOLD입니다.
 
-### 10.6 실측
+### 10.6 실측(2026-11-03 02:51–03:03 KST)
 
-실측 기록은 `docs/evidence/shift/`에 둡니다. 측정 뒤 이 절에 편도 시간과 단계별 표본을 적습니다.
+Cloudflare LB `b-free-chat.mangowhois.ai`에서 Executor 도구 경로(10.9절)로 쟀습니다. 이미지 핀을 아직 올리지 않아서, 커밋 `9253b8b`의 `bravo_executor`(와 이 절의 표본 설정)를 executor-0의 `/tmp`에 복사해 그 Pod 안에서 돌렸습니다. 실행 · 단계 · 효과 행은 플랫폼 원장에 그대로 남았습니다. 원기록은 `docs/evidence/shift/lb-oneway-20261103T025135/`입니다.
+
+| 시각 | 실행 | 표본 | 결과 | 편도(실행 시작부터 끝까지) | 10% 단계 목적지 몫 |
+|---|---|---|---|---|---|
+| 02:57:07 | `c7f71737` | 실험: `GET /api/status`(DB 쓰기 없음), 연결마다 새로 | DONE | 30.4초 | 109/782(13.9%), 보유 13.5초 |
+| 03:01:18 | `910e45fb` | 실험: `GET /api/status`, 연결 유지 | DONE | 37.2초 | 101/1215(8.3%), 보유 20.8초 |
+| 02:51:41 | `6318c256` | 실제 쓰기, 연결 유지 | 10%에서 0% 복귀 | 34.9초 | 10/1801(0.6%), 목적지 p95 2,639 ms |
+| 02:53:40 | `9ba7bf66` | 실제 쓰기, 연결마다 새로 | 10%에서 0% 복귀 | 38.4초 | 40/1801(2.2%), 그중 오류 29 |
+| 03:02:40 | `59fbeecb` | 실제 쓰기, 최종 설정(연결 유지, 쓰기마다 다른 쿼리, 10초) | 10%에서 0% 복귀 | 33.8초 | 26/1801(1.4%), 모두 오류 |
+
+- **보유 규칙은 60초 안에 듭니다(측정함).** 목적지가 빨리 답하면 편도가 30.4초와 37.2초였습니다. 10% 단계 보유가 13.5초와 20.8초, 50%가 6.8초와 5.3초, 100%가 6.0초와 5.1초입니다. 이전 기준(단계마다 60초 보유)의 편도는 184.8초였습니다.
+- **실제 쓰기로는 목적지 전환이 통과하지 못했습니다(FAIL, 측정함).** 목적지 앱의 쓰기 경로(목적지 PgBouncer, 링크, 출발지 DB)가 느립니다. LB를 거치지 않고 `b-free-chat-dst`에 차례로 보낸 쓰기 8건은 02:56 KST에 2,095–2,454 ms, 다른 부하가 없던 03:10 KST에 1,710–2,633 ms였습니다(모두 201). 같은 때 출발지는 98–415 ms였습니다. 03:02 실행은 다른 갈래의 부하 실행과 겹쳤습니다. 이 측정이 LB를 목적지 100%에 둔 02:58–03:00과 03:01:55–03:02:15에 열린 부하 생성기 WebSocket이 목적지에 남아, 목적지 쓰기가 8초 시간 초과로 쌓였습니다(앱 카운터 `timeout` 17에서 19,006으로). 그래서 그 실행의 오류 수는 판단에 쓰지 않습니다. 단계 판정은 매번 1a대로 목적지를 0%로 돌렸습니다. 링크 쪽 지연을 고치기 전에는 S3 SHIFT가 10%에서 멈춥니다.
+- **원인 미확인(UNKNOWN).** 목적지 쓰기가 느릴 때 Cloudflare는 10% 가중치에서도 쓰기(POST)를 목적지로 0.6–2.2%만 보냈습니다. 앱 쪽 카운터(`chat_writes_total`)도 같은 수를 보였습니다. 같은 pool로 가는 `GET /api/status`는 가중치를 따랐습니다(8.3–13.9%). 연결 유지 여부와 쿼리 차이로는 바뀌지 않았습니다.
+- p95 기준 800 ms는 그대로 둡니다. 스펙은 이 기준을 실측 지연(T8)으로 정하라고 합니다. 지금 잰 값(쓰기 한 건 2.1–2.5초)은 고장 난 경로의 값이므로 기준으로 삼지 않습니다. 링크를 고친 뒤 다시 재고 `BRAVO_FRONT_MAX_P95_MS`를 정합니다.
+- 측정이 끝난 뒤 LB는 출발지 100%입니다(03:03 KST `front-after-final.json`).
 
 ### 10.7 S4 되돌리기의 앞단
 

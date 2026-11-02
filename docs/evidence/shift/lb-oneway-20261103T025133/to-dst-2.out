@@ -1,0 +1,1 @@
+{"run_id": "9ba7bf66-2e89-4824-8fd1-20dc4501f06c", "idem_key": "shift-measure-to-dst-noka-<uuid>", "target_env": "dst", "wall_ms": 38398, "config": {"write_rate": 60.0, "min_target_samples": 100, "min_hold_s": 5.0, "max_hold_s": 30.0, "max_error_rate": 0.01, "max_p95_ms": 800.0}}

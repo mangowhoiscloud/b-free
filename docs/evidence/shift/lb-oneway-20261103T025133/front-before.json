@@ -1,0 +1,26 @@
+{
+  "at": "2026-11-02T17:51:35Z",
+  "front": "b-free-chat.mangowhois.ai",
+  "mode": "lb",
+  "active_env": "src",
+  "pool_weights": {
+    "bravo-b-free-chat-src": 1,
+    "bravo-b-free-chat-dst": 0
+  },
+  "tunnels": {
+    "src": {
+      "status": "healthy",
+      "connections": 8
+    },
+    "dst": {
+      "status": "healthy",
+      "connections": 8
+    }
+  },
+  "probe": {
+    "status": 200,
+    "env_id": "aws",
+    "ok": true,
+    "latency_ms": 424.9
+  }
+}

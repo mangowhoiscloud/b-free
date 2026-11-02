@@ -1,0 +1,1 @@
+{"run_id": "737efe64-1528-4d5e-b027-f8feff3b9cc1", "idem_key": "shift-measure-to-src-<uuid>", "target_env": "src", "wall_ms": 16473, "config": {"write_rate": 60.0, "min_target_samples": 100, "min_hold_s": 5.0, "max_hold_s": 30.0, "max_error_rate": 0.01, "max_p95_ms": 800.0}}

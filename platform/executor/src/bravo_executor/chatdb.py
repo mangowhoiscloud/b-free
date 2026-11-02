@@ -341,6 +341,27 @@ class ChatDb:
                 sql.SQL("ALTER SUBSCRIPTION {} SET (slot_name = NONE)").format(sql.Identifier(name))
             )
 
+    async def create_logical_slot(self, epoch: int, name: str) -> str:
+        """Create a pgoutput slot now; returns its consistent LSN (changes after it are decoded).
+
+        PostgreSQL refuses to create a logical slot in a transaction that has written, so the fence runs in
+        its own transaction right before (a newer epoch on this resource rejects the call there)."""
+        async with fenced(self.conn, epoch, self.side):
+            pass
+        cur = await self.conn.execute("SELECT lsn::text FROM pg_create_logical_replication_slot(%s, 'pgoutput')",
+                                      (name,))
+        row = await cur.fetchone()
+        if row is None:  # pragma: no cover
+            raise RuntimeError(f"{self.side}: slot {name} creation returned no row")
+        return str(row[0])
+
+    async def attach_subscription_slot(self, epoch: int, name: str, slot: str) -> None:
+        """ALTER SUBSCRIPTION ... SET (slot_name = <slot>) on a disabled subscription."""
+        async with fenced(self.conn, epoch, self.side):
+            await self.conn.execute(
+                sql.SQL("ALTER SUBSCRIPTION {} SET (slot_name = {})").format(sql.Identifier(name), sql.Literal(slot))
+            )
+
     async def drop_slot(self, epoch: int, name: str) -> None:
         async with fenced(self.conn, epoch, self.side):
             await self.conn.execute("SELECT pg_drop_replication_slot(%s)", (name,))
