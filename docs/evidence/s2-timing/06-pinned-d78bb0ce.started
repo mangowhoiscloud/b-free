@@ -1,0 +1,2 @@
+2026-11-03T04:46:56+0900
+preview Pod rehearsal-preview-s2final (10.42.0.118), rehearsal@sha256:d78bb0ce... (the pin in 3bc6054) with the committed destination profiles (secret_store.eso_api_version) from ConfigMap rehearsal-preview-profiles. Both tasks at 0:00, probes on, gate report on.
