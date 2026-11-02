@@ -43,31 +43,39 @@ def _probe_for(env: Environment, section: str, allow_writes: bool = False,
     return None
 
 
-def observe(env: Environment, sections: set[str] | None = None, *, allow_writes: bool = False) -> dict[str, Obs]:
-    """Run every question (all five sections by default). Questions run in a fixed order per section.
-    ``allow_writes`` (POST runs only) lets OBJ-03/OBJ-04 PUT their probe keys on stores with ``write_probes``."""
+def _observe_section(env: Environment, section: str, allow_writes: bool,
+                     kube: KubernetesProbe | None) -> dict[str, Obs]:
     out: dict[str, Obs] = {}
-    kube = KubernetesProbe(env.kubernetes) if env.kubernetes else None  # one API client per environment
-    for section in sorted(sections or SECTIONS):
-        probe = None
-        try:
-            probe = _probe_for(env, section, allow_writes, kube)
-        except Exception as exc:  # noqa: BLE001
-            err = unknown("probe_setup_error", error=error_text(exc))
-            for q in QUESTIONS:
-                if q.needs == section:
-                    out[q.qid] = err
+    try:
+        probe = _probe_for(env, section, allow_writes, kube)
+    except Exception as exc:  # noqa: BLE001
+        err = unknown("probe_setup_error", error=error_text(exc))
+        return {q.qid: err for q in QUESTIONS if q.needs == section}
+    for q in QUESTIONS:  # fixed order within a section
+        if q.needs != section:
             continue
-        for q in QUESTIONS:
-            if q.needs != section:
-                continue
-            if probe is None:
-                out[q.qid] = unknown("not_configured", section=section)
-                continue
-            try:
-                out[q.qid] = getattr(probe, q.probe)()
-            except Exception as exc:  # noqa: BLE001 - a probe crash is UNKNOWN, never PASS
-                out[q.qid] = unknown("probe_crashed", error=error_text(exc))
+        if probe is None:
+            out[q.qid] = unknown("not_configured", section=section)
+            continue
+        try:
+            out[q.qid] = getattr(probe, q.probe)()
+        except Exception as exc:  # noqa: BLE001 - a probe crash is UNKNOWN, never PASS
+            out[q.qid] = unknown("probe_crashed", error=error_text(exc))
+    return out
+
+
+def observe(env: Environment, sections: set[str] | None = None, *, allow_writes: bool = False) -> dict[str, Obs]:
+    """Run every question (all five sections by default). Sections run in parallel (the NET-PATHS probe Pod and
+    the audit window take seconds); questions keep a fixed order within a section. The result does not depend on
+    the order. ``allow_writes`` (POST runs only) lets OBJ-03/OBJ-04 PUT their probe keys (``write_probes``)."""
+    kube = KubernetesProbe(env.kubernetes) if env.kubernetes else None  # one API client per environment
+    if kube is not None:
+        kube.api_client()  # build once before the threads share it
+    names = sorted(sections or SECTIONS)
+    out: dict[str, Obs] = {}
+    with ThreadPoolExecutor(max_workers=len(names) or 1) as pool:
+        for part in pool.map(lambda sec: _observe_section(env, sec, allow_writes, kube), names):
+            out.update(part)
     return out
 
 
