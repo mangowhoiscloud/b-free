@@ -106,9 +106,12 @@ for _ in $(seq 1 20); do k -n "$ns_t" get networkpolicy default-deny >/dev/null 
 np="$(k -n "$ns_t" get networkpolicy default-deny -o jsonpath='{.spec.policyTypes}' 2>/dev/null)"
 [[ $np == *Ingress*Egress* ]] && pass kyverno.generates "labelled ns $ns_t got NetworkPolicy default-deny $np" || fail kyverno.generates "no default-deny in $ns_t"
 k delete namespace "$ns_t" --wait=false >/dev/null 2>&1
-dd="$(k -n chat get networkpolicy -l bravo.dev/generated-by=kyverno-bravo-default-deny -o name 2>/dev/null)"
-[[ -z $dd ]] && pend kyverno.chat-not-enrolled "ns chat has no default-deny: the S2 gap, fixed only through the change approval" \
-  || pass kyverno.chat-enrolled "$dd"
+# ns chat: the landing zone's own default deny (base/chat-netpol.yaml, 2026-11-03) or a Kyverno-generated one.
+dd="$(k -n chat get networkpolicy -o json 2>/dev/null | jq -r '[.items[] | select((.spec.podSelector // {}) == {}
+  and ((.spec.policyTypes // []) | index("Ingress") and index("Egress")) and (.spec.ingress == null) and (.spec.egress == null))
+  | .metadata.name] | join(",")')"
+[[ -z $dd ]] && fail chat.default-deny "ns chat has no default-deny NetworkPolicy (gate NET-DEFAULT-DENY)" \
+  || pass chat.default-deny "NetworkPolicy $dd (all pods, Ingress + Egress, no allow)"
 
 # --- object store --------------------------------------------------------------------------------
 if [[ $overlay == rke2 ]]; then

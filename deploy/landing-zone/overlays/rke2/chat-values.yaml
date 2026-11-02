@@ -20,10 +20,15 @@ networkPolicy:
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
 # RGW serves TLS with the landing zone's private CA (ConfigMap bravo-rgw-ca); botocore reads
 # AWS_CA_BUNDLE. The TLS-only bucket policy denies plain HTTP, so this is required.
+# DB CA bundle (ConfigMap bravo-db-ca, scripts/db-ca.sh): the DSN in Secret bravo-demo-db (install.sh step secrets)
+# has sslmode=verify-full sslrootcert=/var/run/bravo/db-ca/ca.crt; PgBouncer serves the chat-db certificate.
 extraEnv:
   - {name: AWS_CA_BUNDLE, value: /var/run/bravo/rgw-ca/ca.crt}
 extraVolumes:
   - name: rgw-ca
     configMap: {name: bravo-rgw-ca}
+  - name: db-ca
+    configMap: {name: bravo-db-ca, items: [{key: ca.crt, path: ca.crt}]}
 extraVolumeMounts:
   - {name: rgw-ca, mountPath: /var/run/bravo/rgw-ca, readOnly: true}
+  - {name: db-ca, mountPath: /var/run/bravo/db-ca, readOnly: true}

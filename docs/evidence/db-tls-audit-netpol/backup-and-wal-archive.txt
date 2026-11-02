@@ -1,0 +1,6 @@
+# 2026-11-03 02:05:11 KST CNPG on-demand Backup chat-db-netpol-check-20261102t170005 under default deny (source S3 via Pod Identity, on-prem RGW)
+{"ctx":"ks","phase":"completed","method":"barmanObjectStore","started":"2026-11-02T17:00:07Z","stopped":"2026-11-02T17:00:13Z","beginWal":"000000010000000000000022","endWal":"000000010000000000000022","error":null}
+{"ctx":"ko","phase":"completed","method":"barmanObjectStore","started":"2026-11-02T17:00:06Z","stopped":"2026-11-02T17:00:09Z","beginWal":"00000001000000000000001C","endWal":"00000001000000000000001C","error":null}
+# WAL archive after pg_logical_emit_message + pg_switch_wal under default deny (pg_stat_archiver)
+on-prem: segment 00000001000000000000001A archived 2026-11-02 16:58:13 UTC (archived_count 26 -> 27)
+source:  segment 000000010000000000000020 archived 2026-11-02 16:59:41 UTC (failed_count 0)

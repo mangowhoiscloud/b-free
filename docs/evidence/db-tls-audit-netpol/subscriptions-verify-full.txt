@@ -1,0 +1,10 @@
+# 2026-11-03 01:35:25 KST on-prem: ALTER SUBSCRIPTION bravo_fwd_sub (verify-full, CA bundle)
+psql:<stdin>:10: ERROR:  syntax error at or near ":"
+LINE 4: ...o INTO STRICT c FROM pg_subscription WHERE subname = :'sub';
+                                                                ^
+command terminated with exit code 3
+bravo_fwd_sub|t|host=src-db-link.chat.svc port=5432 dbname=chat user=replicator password=*** sslmode=verify-full sslrootcert=/projected/db-ca/ca.crt
+2026-11-02 16:35:43.642361+00|bravo_fwd_sub|153|0/1C000000|0/1C000000|2026-11-02 16:35:41.803039+00
+source pg_stat_replication: bravo_fwd_sub|streaming|t|TLSv1.3|10.10.11.110
+# 2026-11-03 01:40:04 KST source: ALTER SUBSCRIPTION bravo_rev_sub (stays disabled; the Executor enables it at cutover)
+bravo_rev_sub|f|host=dst-db-link.chat.svc port=5432 dbname=chat user=replicator password=*** sslmode=verify-full sslrootcert=/projected/db-ca/ca.crt

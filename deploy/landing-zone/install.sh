@@ -127,6 +127,15 @@ step_cnpg() {
   k -n chat wait --for=condition=Ready cluster/chat-db --timeout=10m
 }
 
+# DB CA bundle (ENC-01): ConfigMap chat/bravo-db-ca with the CNPG CA of every chat-db (scripts/db-ca.sh; it
+# writes every reachable cluster, so the other environments learn this CA too). PgBouncer and the app mount it and
+# wait for it; CNPG mounts it optionally (/projected/db-ca/ca.crt for the subscription). PgBouncer reads it at start.
+step_db_ca() {
+  log "DB CA bundle chat/bravo-db-ca (CNPG CAs of every environment)"
+  "$here/scripts/db-ca.sh" apply
+  k -n chat rollout restart deploy/chat-pgbouncer >/dev/null 2>&1 || true
+}
+
 # secret_from_bao <ns> <secret> <key>=<bao name>/<bao field> ...
 # Each value goes keys.sh env-pipe -> base64 -> jq -> kubectl apply, all on pipes (bash 3.2 safe).
 secret_from_bao() {
@@ -139,7 +148,7 @@ secret_from_bao() {
     printf '\n'
   done | jq -Rn --arg ns "$ns" --arg name "$name" \
     '{apiVersion: "v1", kind: "Secret", type: "Opaque", metadata: {name: $name, namespace: $ns},
-      data: ([inputs | split("\t") | {(.[0]): .[1]}] | add)}' | k apply -f - >/dev/null
+      data: ([inputs | split("\t") | {(.[0]): .[1]}] | add)}' | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   echo "secret $ns/$name <- OpenBao secret/envs/$ENV_ID: $(printf '%s ' "$@" | sed 's/[a-z_-]*=//g; s/ $//') (values not shown)"
 }
 
@@ -153,15 +162,16 @@ step_secrets() {
   "$keys" env-generate "$ENV_ID" chat-db pgb_stats
   secret_from_bao chat chat-admin token=chat-admin/token
   secret_from_bao chat chat-pgbouncer-auth app_writer=chat-db/app_writer pgb_admin=chat-db/pgb_admin pgb_stats=chat-db/pgb_stats
-  # The DSN carries no password; the password is a separate key (chart db.passwordSecret).
-  local dsn="host=chat-pgbouncer.chat.svc.cluster.local port=6432 dbname=chat user=app_writer"
+  # The DSN carries no password; the password is a separate key (chart db.passwordSecret). TLS to PgBouncer with
+  # the name and the CNPG CA checked (ConfigMap bravo-db-ca mounted by overlays/rke2/chat-values.yaml, ENC-01).
+  local dsn="host=chat-pgbouncer.chat.svc.cluster.local port=6432 dbname=chat user=app_writer sslmode=verify-full sslrootcert=/var/run/bravo/db-ca/ca.crt"
   "$keys" env-pipe "$ENV_ID" chat-db app_writer -- \
     kubectl --context "$ctx" -n chat create secret generic bravo-demo-db --from-literal=dsn="$dsn" \
-      --from-file=password=/dev/stdin --dry-run=client -o yaml | k apply -f - >/dev/null
+      --from-file=password=/dev/stdin --dry-run=client -o yaml | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   echo "secret chat/bravo-demo-db <- dsn (no password) + OpenBao chat-db/app_writer"
   "$keys" env-pipe "$ENV_ID" cf-tunnel token -- \
     kubectl --context "$ctx" -n cf-edge create secret generic cf-tunnel --from-file=token=/dev/stdin \
-      --dry-run=client -o yaml | k apply -f - >/dev/null
+      --dry-run=client -o yaml | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   echo "secret cf-edge/cf-tunnel <- OpenBao cf-tunnel/token"
   k -n chat rollout restart deploy/chat-pgbouncer >/dev/null 2>&1 || true
   k -n cf-edge rollout restart deploy/cloudflared >/dev/null 2>&1 || true
@@ -175,7 +185,7 @@ step_app() {
   k -n chat get secret bravo-demo-attachments -o json \
     | jq '{apiVersion: "v1", kind: "Secret", type: "Opaque", metadata: {name: "bravo-demo-s3", namespace: "chat"},
            data: {"access-key-id": .data.AWS_ACCESS_KEY_ID, "secret-access-key": .data.AWS_SECRET_ACCESS_KEY}}' \
-    | k apply -f - >/dev/null
+    | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
   echo "secret chat/bravo-demo-s3 <- chat/bravo-demo-attachments (OBC keys, values not shown)"
   local gen="$repo/apps/demo/chart/values-onprem.generated.yaml"
   "$repo/apps/demo/scripts/render-values.sh" onprem --image-repository "$DEMO_IMAGE_REPO" \
@@ -244,7 +254,7 @@ step_rgw_tls() {
     jq -n --arg c "$srv_crt"$'\n'"$ca_crt" --arg k "$srv_key" \
       '{apiVersion: "v1", kind: "Secret", type: "kubernetes.io/tls",
         metadata: {name: "rgw-bravo-tls", namespace: "rook-ceph"},
-        data: {"tls.crt": ($c + "\n" | @base64), "tls.key": ($k + "\n" | @base64)}}' | k apply -f - >/dev/null
+        data: {"tls.crt": ($c + "\n" | @base64), "tls.key": ($k + "\n" | @base64)}}' | k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null
     unset srv_key
     for n in chat rook-ceph; do
       k -n "$n" create configmap bravo-rgw-ca --from-literal=ca.crt="$ca_crt" --dry-run=client -o yaml | k apply -f - >/dev/null
@@ -314,7 +324,7 @@ step_gateway() {
   k -n bravo-edge get svc cilium-gateway-bravo-gateway
 }
 
-all_steps=(cilium base images rook rbd storage cnpg secrets kyverno eso otel rgw_tls rgw db_backup app gateway)
+all_steps=(cilium base images rook rbd storage cnpg db_ca secrets kyverno eso otel rgw_tls rgw db_backup app gateway)
 steps=("$@"); ((${#steps[@]})) || steps=("${all_steps[@]}")
 helm_repos
 for s in "${steps[@]}"; do "step_$s"; done

@@ -1,0 +1,7 @@
+# 2026-11-03 01:34:24 KST source chat-db after phase 1, tested from on-prem pod chat/chat-db-1 over the D-16 link src-db-link
+- plaintext: psql: error: connection to server at "src-db-link.chat.svc" (10.43.128.57), port 5432 failed: FATAL:  pg_hba.conf rejects connection for host "10.10.11.110", user "gate_ro", database "chat", no encryption command terminated with exit code 2 
+- verify-full, bundle, src-db-link.chat.svc.cluster.local (PgBouncer target-src.ini name): psql: error: connection to server at "src-db-link.chat.svc.cluster.local" (10.43.128.57), port 5432 failed: fe_sendauth: no password supplied command terminated with exit code 2 
+- verify-full, wrong CA (on-prem CA only): psql: error: connection to server at "src-db-link.chat.svc" (10.43.128.57), port 5432 failed: SSL error: certificate verify failed command terminated with exit code 2 
+# GKE chat-db, from GKE pod chat/chat-db-1 to its own chat-db-rw
+- plaintext: psql: error: connection to server at "chat-db-rw.chat.svc" (10.73.83.136), port 5432 failed: FATAL:  pg_hba.conf rejects connection for host "169.254.42.1", user "gate_ro", database "chat", no encryption command terminated with exit code 2 
+- verify-full, bundle, chat-pgbouncer.chat.svc.cluster.local -> hostaddr chat-db-rw (new SAN): psql: error: connection to server at "10.73.83.136", port 5432 failed: fe_sendauth: no password supplied command terminated with exit code 2 

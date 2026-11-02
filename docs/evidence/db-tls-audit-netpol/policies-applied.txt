@@ -1,0 +1,36 @@
+# bravo-source ns chat policies (2026-11-03 02:03:01 KST)
+NAME                                                             POD-SELECTOR                                                        AGE
+networkpolicy.networking.k8s.io/allow-dns                        <none>                                                              4m12s
+networkpolicy.networking.k8s.io/chat-admin-from-mgmt-connector   app.kubernetes.io/name=bravo-demo                                   3h51m
+networkpolicy.networking.k8s.io/chat-bravo-demo                  app.kubernetes.io/instance=chat,app.kubernetes.io/name=bravo-demo   4m11s
+networkpolicy.networking.k8s.io/chat-db                          cnpg.io/cluster=chat-db                                             4m12s
+networkpolicy.networking.k8s.io/chat-db-backup                   cnpg.io/cluster in (chat-db,chat-db-restore)                        4m12s
+networkpolicy.networking.k8s.io/chat-db-restore                  cnpg.io/cluster=chat-db-restore                                     4m12s
+networkpolicy.networking.k8s.io/chat-pgbouncer                   app.kubernetes.io/name=chat-pgbouncer                               4m11s
+networkpolicy.networking.k8s.io/default-deny                     <none>                                                              4m11s
+networkpolicy.networking.k8s.io/dst-db-link                      app.kubernetes.io/name=dst-db-link                                  4h7m
+networkpolicy.networking.k8s.io/env-link-egress                  app.kubernetes.io/component=env-link                                4m11s
+networkpolicy.networking.k8s.io/gate-canary                      app.kubernetes.io/name=gate-canary                                  4m11s
+
+NAME                                                  AGE     VALID
+ciliumnetworkpolicy.cilium.io/chat-app-from-gateway   3h39m   True
+ciliumnetworkpolicy.cilium.io/chat-db-apiserver       4m12s   True
+ciliumnetworkpolicy.cilium.io/pod-identity-agent      4m12s   True
+
+# bravo-onprem ns chat policies (2026-11-03 02:03:02 KST)
+NAME                                                             POD-SELECTOR                                                        AGE
+networkpolicy.networking.k8s.io/allow-dns                        <none>                                                              9m19s
+networkpolicy.networking.k8s.io/chat-admin-from-mgmt-connector   app.kubernetes.io/name=bravo-demo                                   3h51m
+networkpolicy.networking.k8s.io/chat-bravo-demo                  app.kubernetes.io/instance=chat,app.kubernetes.io/name=bravo-demo   4h2m
+networkpolicy.networking.k8s.io/chat-db                          cnpg.io/cluster=chat-db                                             9m19s
+networkpolicy.networking.k8s.io/chat-db-backup                   cnpg.io/cluster in (chat-db,chat-db-restore)                        9m19s
+networkpolicy.networking.k8s.io/chat-db-restore                  cnpg.io/cluster=chat-db-restore                                     9m19s
+networkpolicy.networking.k8s.io/chat-pgbouncer                   app.kubernetes.io/name=chat-pgbouncer                               9m19s
+networkpolicy.networking.k8s.io/default-deny                     <none>                                                              9m19s
+networkpolicy.networking.k8s.io/env-link-egress                  app.kubernetes.io/component=env-link                                9m19s
+networkpolicy.networking.k8s.io/src-db-link                      app.kubernetes.io/name=src-db-link                                  4h7m
+
+NAME                                                  AGE     VALID
+ciliumnetworkpolicy.cilium.io/chat-app-from-gateway   4h2m    True
+ciliumnetworkpolicy.cilium.io/chat-db-apiserver       9m19s   True
+

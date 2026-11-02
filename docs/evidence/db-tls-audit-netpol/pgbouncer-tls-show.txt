@@ -1,0 +1,27 @@
+# 2026-11-03 02:05:18 KST PgBouncer SHOW SERVERS / SHOW CLIENTS (tls column) as pgb_stats from an app pod, sslmode=verify-full with the mounted CA
+## bravo-source
+session ssl_in_use: True
+== SHOW SERVERS
+{'type': 'S', 'user': 'app_writer', 'database': 'chat', 'state': 'idle', 'addr': '172.20.228.130', 'port': 5432, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/aws/chat-bravo-demo-54844bc576-mzsdr'}
+== SHOW CLIENTS
+{'type': 'C', 'user': 'app_writer', 'database': 'chat', 'state': 'idle', 'addr': '10.10.11.160', 'port': 51710, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/aws/chat-bravo-demo-54844bc576-zkknl'}
+{'type': 'C', 'user': 'app_writer', 'database': 'chat', 'state': 'idle', 'addr': '10.10.11.63', 'port': 39568, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/aws/chat-bravo-demo-54844bc576-mzsdr'}
+{'type': 'C', 'user': 'pgb_stats', 'database': 'pgbouncer', 'state': 'idle', 'addr': '10.10.11.160', 'port': 46004, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': ''}
+## bravo-onprem
+session ssl_in_use: True
+== SHOW SERVERS
+{'type': 'S', 'user': 'app_writer', 'database': 'chat', 'state': 'active', 'addr': '10.43.128.57', 'port': 5432, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/onprem/chat-bravo-demo-668bb8bc75-wdftp'}
+{'type': 'S', 'user': 'app_writer', 'database': 'chat', 'state': 'active', 'addr': '10.43.128.57', 'port': 5432, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/onprem/chat-bravo-demo-668bb8bc75-ljcwz'}
+== SHOW CLIENTS
+{'type': 'C', 'user': 'app_writer', 'database': 'chat', 'state': 'active', 'addr': '10.42.1.97', 'port': 47412, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/onprem/chat-bravo-demo-668bb8bc75-wdftp'}
+{'type': 'C', 'user': 'app_writer', 'database': 'chat', 'state': 'active', 'addr': '10.42.1.77', 'port': 42036, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/onprem/chat-bravo-demo-668bb8bc75-ljcwz'}
+{'type': 'C', 'user': 'pgb_stats', 'database': 'pgbouncer', 'state': 'idle', 'addr': '10.42.1.77', 'port': 33954, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': ''}
+## bravo-target-gcp
+session ssl_in_use: True
+== SHOW SERVERS
+{'type': 'S', 'user': 'app_writer', 'database': 'chat', 'state': 'idle', 'addr': '10.73.86.95', 'port': 5432, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/gcp/chat-bravo-demo-86754ff5-25tv6'}
+{'type': 'S', 'user': 'app_writer', 'database': 'chat', 'state': 'idle', 'addr': '10.73.86.95', 'port': 5432, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/gcp/chat-bravo-demo-86754ff5-q87lz'}
+== SHOW CLIENTS
+{'type': 'C', 'user': 'app_writer', 'database': 'chat', 'state': 'idle', 'addr': '10.72.0.96', 'port': 50642, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/gcp/chat-bravo-demo-86754ff5-25tv6'}
+{'type': 'C', 'user': 'app_writer', 'database': 'chat', 'state': 'idle', 'addr': '10.72.0.95', 'port': 56132, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': 'bravo-demo/gcp/chat-bravo-demo-86754ff5-q87lz'}
+{'type': 'C', 'user': 'pgb_stats', 'database': 'pgbouncer', 'state': 'idle', 'addr': '10.72.0.95', 'port': 56816, 'tls': 'TLSv1.3/TLS_AES_256_GCM_SHA384', 'application_name': ''}

@@ -6,6 +6,15 @@
 # SDK, spec §8.10) and the platform OpenBao, hands the database to postgres and recreates app_writer
 # with the same password through apps/demo/schema/sql/02_roles.sql, so the final roles equal every
 # other environment. pgaudit (T6): DDL and role changes go to the PostgreSQL log.
+# Gate DB-AUDIT: pgaudit ddl + role, log_connections and log_disconnections on (logins and logouts in the log).
+# Gate DB-TLS (ENC-01): pg_hba takes TLS only (hostnossl ... reject, before CNPG's default "host all all all").
+# Every client verifies the CA and the name (sslmode=verify-full, CA bundle ConfigMap chat/bravo-db-ca from
+# scripts/db-ca.sh). serverAltDNSNames adds the names clients use besides CNPG's own chat-db-rw.* names:
+#   src-db-link.chat.svc[.cluster.local]  on-prem and GKE PgBouncer target-src.ini, on-prem subscription (D-16 links)
+#   src-db.bravo-link.svc[.cluster.local] / src-pgb.bravo-link.svc[.cluster.local]  platform Executor (D-16 links)
+#   chat-pgbouncer.chat.svc[.cluster.local]  the app -> PgBouncer (PgBouncer serves this certificate, base/chat-pgbouncer.yaml)
+# projectedVolumeTemplate: the CA bundle at /projected/db-ca/ca.crt for the reverse subscription bravo_rev_sub
+# (sslrootcert). optional: the instance starts before scripts/db-ca.sh has run (fresh install).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -30,6 +39,27 @@ spec:
       password_encryption: scram-sha-256
       pgaudit.log: "ddl, role"
       pgaudit.log_catalog: "off"
+      log_connections: "on"
+      log_disconnections: "on"
+    pg_hba:
+      - hostnossl all all all reject
+      - hostssl all all all scram-sha-256
+  certificates:
+    serverAltDNSNames:
+      - src-db-link.chat.svc
+      - src-db-link.chat.svc.cluster.local
+      - src-db.bravo-link.svc
+      - src-db.bravo-link.svc.cluster.local
+      - src-pgb.bravo-link.svc
+      - src-pgb.bravo-link.svc.cluster.local
+      - chat-pgbouncer.chat.svc
+      - chat-pgbouncer.chat.svc.cluster.local
+  projectedVolumeTemplate:
+    sources:
+      - configMap:
+          name: bravo-db-ca
+          optional: true
+          items: [{key: ca.crt, path: db-ca/ca.crt}]
   storage:
     storageClass: bravo-db
     size: 10Gi

@@ -11,18 +11,18 @@
   },
   "db": {
     "src": {
-      "conninfo": "host=src-db.bravo-link.svc.cluster.local port=5432",
+      "conninfo": "host=src-db.bravo-link.svc.cluster.local port=5432 sslmode=verify-full sslrootcert=/etc/bravo/kube/source-aws-chat-db.crt",
       "secret": "envs/source-aws/chat-db"
     },
     "dst": {
-      "conninfo": "host=dst-db.bravo-link.svc.cluster.local port=5432",
+      "conninfo": "host=dst-db.bravo-link.svc.cluster.local port=5432 sslmode=verify-full sslrootcert=/etc/bravo/kube/target-onprem-chat-db.crt",
       "secret": "envs/target-onprem/chat-db"
     }
   },
   "pools": [
     {
       "name": "src",
-      "conninfo": "host=src-pgb.bravo-link.svc.cluster.local port=6432",
+      "conninfo": "host=src-pgb.bravo-link.svc.cluster.local port=6432 sslmode=verify-full sslrootcert=/etc/bravo/kube/source-aws-chat-db.crt",
       "secret": "envs/source-aws/chat-db",
       "switch": {
         "kind": "k8s-exec",
@@ -34,7 +34,7 @@
     },
     {
       "name": "dst",
-      "conninfo": "host=dst-pgb.bravo-link.svc.cluster.local port=6432",
+      "conninfo": "host=dst-pgb.bravo-link.svc.cluster.local port=6432 sslmode=verify-full sslrootcert=/etc/bravo/kube/target-onprem-chat-db.crt",
       "secret": "envs/target-onprem/chat-db",
       "switch": {
         "kind": "k8s-exec",
@@ -70,8 +70,8 @@
     }
   },
   "replication": {
-    "fwd_conninfo": "host=src-db-link.chat.svc port=5432",
-    "rev_conninfo": "host=dst-db-link.chat.svc port=5432",
+    "fwd_conninfo": "host=src-db-link.chat.svc port=5432 sslmode=verify-full sslrootcert=/projected/db-ca/ca.crt",
+    "rev_conninfo": "host=dst-db-link.chat.svc port=5432 sslmode=verify-full sslrootcert=/projected/db-ca/ca.crt",
     "label": "D-16 환경 간 링크(cloudflared access tcp, 토큰 dst-src-db / src-dst-db)"
   }
 }

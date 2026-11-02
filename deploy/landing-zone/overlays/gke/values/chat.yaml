@@ -20,6 +20,13 @@ attachments:
     addressingStyle: path
     credentialsSecret: {name: bravo-demo-gcs-hmac}
 otel: {endpoint: "http://otel-agent.bravo-observability.svc:4317"}
+# DB CA bundle (ConfigMap bravo-db-ca, deploy/landing-zone/scripts/db-ca.sh): the DSN (21-externalsecrets.yaml) has
+# sslmode=verify-full sslrootcert=/var/run/bravo/db-ca/ca.crt; PgBouncer serves the chat-db certificate.
+extraVolumes:
+  - name: db-ca
+    configMap: {name: bravo-db-ca, items: [{key: ca.crt, path: ca.crt}]}
+extraVolumeMounts:
+  - {name: db-ca, mountPath: /var/run/bravo/db-ca, readOnly: true}
 admin:
   tokenSecret: {name: chat-admin, key: token}
 networkPolicy:

@@ -4,3 +4,4 @@ resources:
   - ../../base
   - storageclasses.yaml
   - chat-pgbouncer-targets.yaml
+  - chat-netpol.yaml

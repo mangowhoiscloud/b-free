@@ -1,0 +1,29 @@
+# Demo app on the EKS source: values added on top of apps/demo/chart/values-eks.generated.yaml (render-values.sh eks).
+# Helm layers, last wins: values-eks.generated.yaml (image, environment, DB password source, S3) -> this file.
+#
+# DB CA bundle (ConfigMap bravo-db-ca, ../../scripts/db-ca.sh): the DSN in Secret bravo-demo-db (install.sh step
+# secrets) has sslmode=verify-full sslrootcert=/var/run/bravo/db-ca/ca.crt; PgBouncer serves the chat-db certificate
+# (SAN chat-pgbouncer.chat.svc.cluster.local), so the app checks the CNPG CA and the name (ENC-01).
+#
+# App NetworkPolicy (NET-01, with the default deny in ../../base/chat-netpol.yaml). In: nothing here. The app port
+# 8000 comes from the Cilium Gateway (CiliumNetworkPolicy chat-app-from-gateway in gateway.yaml), the admin port 8081
+# from the management connector (deploy/platform/link/customer-mgmt-tunnel); kubelet probes come from the node.
+# Out: PgBouncer, the OTel agent, DNS, and public addresses on 443 (S3 attachments, Secrets Manager for the DB
+# password). The Pod Identity agent (169.254.170.23:80) is the CiliumNetworkPolicy pod-identity-agent (chat-netpol.yaml).
+networkPolicy:
+  enabled: true
+  ingress: []
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: chat-pgbouncer}}}]
+      ports: [{port: 6432, protocol: TCP}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: bravo-observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: opentelemetry-collector}}}]
+      ports: [{port: 4317, protocol: TCP}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]}}]
+      ports: [{port: 443, protocol: TCP}]
+extraVolumes:
+  - name: db-ca
+    configMap: {name: bravo-db-ca, items: [{key: ca.crt, path: ca.crt}]}
+extraVolumeMounts:
+  - {name: db-ca, mountPath: /var/run/bravo/db-ca, readOnly: true}

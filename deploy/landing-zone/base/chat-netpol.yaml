@@ -1,0 +1,129 @@
+# Default deny for ns chat (NET-01, gate NET-DEFAULT-DENY) and allows for exactly the flows that run today
+# (Hubble record 2026-11-03: docs/evidence/db-tls-audit-netpol/). Same intent as the GKE overlay
+# (overlays/gke/manifests/60-networkpolicies.yaml), written for Cilium (eks and rke2 overlays).
+# Not here, on purpose:
+#   - the app's own policy: the chart (networkPolicy values; overlays/eks/chat-values.yaml, overlays/rke2/chat-values.yaml)
+#   - the app port 8000 from the Cilium Gateway (reserved identity "ingress"): CiliumNetworkPolicy chat-app-from-gateway
+#     (overlays/eks/gateway.yaml, overlays/rke2/chat-app-ingress.yaml)
+#   - the admin port 8081 from the management connector: deploy/platform/link/customer-mgmt-tunnel
+#   - ingress to the D-16 env-link pods (src-db-link / dst-db-link): deploy/cloud/env-link/link.yaml.tmpl
+#   - provider pieces (object storage for backups, cloud credentials): the overlays' chat-netpol.yaml
+# Kubelet probes come from the node (Cilium identity host), which Cilium admits without a rule. ESO writes Secrets
+# through the API server and opens no connection to a pod in chat.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+---
+# CNPG chat-db. In: PgBouncer; the management connector (D-16 links t1-<env>-db: platform Executor and gate, the other
+# environment's subscription and PgBouncer); the CNPG operator (instance manager 8000). Out: the env-link pods (the
+# logical replication subscription of this side). The API server is in the CiliumNetworkPolicy below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-db
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: chat-pgbouncer}}}]
+      ports: [{port: 5432, protocol: TCP}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cf-edge}}, podSelector: {matchLabels: {app.kubernetes.io/name: cloudflared-mgmt}}}]
+      ports: [{port: 5432, protocol: TCP}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}}]
+      ports: [{port: 8000, protocol: TCP}, {port: 5432, protocol: TCP}]
+    - from: [{podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}}]
+      ports: [{port: 5432, protocol: TCP}, {port: 8000, protocol: TCP}]
+  egress:
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}}]
+      ports: [{port: 5432, protocol: TCP}, {port: 8000, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: env-link}}}]
+      ports: [{port: 5432, protocol: TCP}]
+---
+# Recovery check cluster chat-db-restore (gate DR-RESTORE): only the CNPG operator comes in. Out: the API server
+# (below) and object storage for a recovery run (overlay).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-db-restore
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector: {matchLabels: {cnpg.io/cluster: chat-db-restore}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}}]
+      ports: [{port: 8000, protocol: TCP}, {port: 5432, protocol: TCP}]
+---
+# CNPG instance manager and CNPG jobs -> Kubernetes API. Cilium gives the API server the reserved identity
+# kube-apiserver, which a Kubernetes ipBlock does not select (same as deploy/platform/link/customer-mgmt-tunnel).
+# EKS serves 443, RKE2 6443.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: chat-db-apiserver
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  endpointSelector:
+    matchExpressions: [{key: cnpg.io/cluster, operator: In, values: [chat-db, chat-db-restore]}]
+  egress:
+    - toEntities: ["kube-apiserver"]
+      toPorts:
+        - ports: [{port: "443", protocol: TCP}, {port: "6443", protocol: TCP}]
+---
+# PgBouncer. In: the app; the management connector (D-16 link t1-<env>-pgb: platform Executor PAUSE/RESUME/RELOAD).
+# Out: the local chat-db and, at cutover, the other environment's chat-db through the env-link pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-pgbouncer
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: chat-pgbouncer}}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: bravo-demo, app.kubernetes.io/instance: chat}}}]
+      ports: [{port: 6432, protocol: TCP}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cf-edge}}, podSelector: {matchLabels: {app.kubernetes.io/name: cloudflared-mgmt}}}]
+      ports: [{port: 6432, protocol: TCP}]
+  egress:
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: chat-db}}}]
+      ports: [{port: 5432, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: env-link}}}]
+      ports: [{port: 5432, protocol: TCP}]
+---
+# D-16 env-link pods (cloudflared access tcp): out to the Cloudflare edge on 443 only, never to private ranges.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: env-link-egress
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/component: env-link}}
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]}}]
+      ports: [{port: 443, protocol: TCP}]

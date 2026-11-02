@@ -3,7 +3,7 @@
 # CNPG chat-db + schema, ESO <- Secrets Manager, PgBouncer, demo app, cloudflared.
 #   overlays/eks/install.sh <kube-context> [step ...]
 # Steps (in order; naming steps runs only those; each is idempotent):
-#   cilium base cnpg schema secrets eso app gateway canary verify
+#   cilium base cnpg db_ca schema secrets eso app gateway canary verify
 # Inputs: `terraform -chdir=infra/envs/source-aws output` (ECR, KMS, Secrets Manager ARN, bucket, API host).
 # Secrets (D-26): values move only on pipes: CNPG Secret -> Secrets Manager / OpenBao, OpenBao ->
 # kubectl (deploy/pilot/scripts/keys.sh env-generate / env-pipe / env-put). Nothing is written to a file
@@ -112,6 +112,15 @@ step_cnpg() {
   k -n chat wait --for=condition=Ready cluster/chat-db --timeout=15m
 }
 
+# DB CA bundle (ENC-01): ConfigMap chat/bravo-db-ca with the CNPG CA of every chat-db (../../scripts/db-ca.sh writes
+# every reachable cluster). PgBouncer and the app mount it and wait for it; CNPG mounts it optionally
+# (/projected/db-ca/ca.crt for the reverse subscription). PgBouncer reads it at start.
+step_db_ca() {
+  log "DB CA bundle chat/bravo-db-ca (CNPG CAs of every environment)"
+  "$lz/scripts/db-ca.sh" apply
+  k -n chat rollout restart deploy/chat-pgbouncer >/dev/null 2>&1 || true
+}
+
 # CNPG app password (owner app_writer) on stdin -> CMD. Only [A-Za-z0-9] is accepted (psql \set quoting).
 cnpg_app_pw() {
   k -n chat get secret chat-db-app -o jsonpath='{.data.password}' | base64 -d \
@@ -186,7 +195,8 @@ step_schema() {
      union all select 'extensions: '||string_agg(extname||' '||extversion, ', ') from pg_extension"
 }
 
-secret_apply() { k apply -f - >/dev/null; }
+# Server-side apply: Secret data never lands in the last-applied-configuration annotation (D-26, as in 3b4a910).
+secret_apply() { k apply --server-side --force-conflicts --field-manager=bravo-secrets -f - >/dev/null; }
 
 step_secrets() {
   log "Secrets from the platform OpenBao (secret/envs/$ENV_ID/*), pipes only"
@@ -203,8 +213,9 @@ step_secrets() {
   } | secret_apply
   echo "secret chat/chat-pgbouncer-auth <- OpenBao chat-db/{pgb_admin,pgb_stats}"
   # DSN without password: the source app reads its password from Secrets Manager (chart passwordSource).
+  # TLS to PgBouncer with the name and the CNPG CA checked (ConfigMap bravo-db-ca, chat-values.yaml, ENC-01).
   k -n chat create secret generic bravo-demo-db \
-    --from-literal=dsn="host=chat-pgbouncer.chat.svc.cluster.local port=6432 dbname=chat user=app_writer" \
+    --from-literal=dsn="host=chat-pgbouncer.chat.svc.cluster.local port=6432 dbname=chat user=app_writer sslmode=verify-full sslrootcert=/var/run/bravo/db-ca/ca.crt" \
     --dry-run=client -o yaml | secret_apply
   echo "secret chat/bravo-demo-db <- dsn (no password)"
   "$keys" env-pipe "$ENV_ID" cf-tunnel token -- \
@@ -239,7 +250,7 @@ step_app() {
   "$repo/apps/demo/scripts/render-values.sh" eks --image-repository "$DEMO_IMAGE_REPO" \
     --image-digest "$DEMO_IMAGE_DIGEST" --public-url "$PUBLIC_URL" --out "$gen"
   h upgrade --install chat "$repo/apps/demo/chart" -n chat \
-    -f "$gen" \
+    -f "$gen" -f "$here/chat-values.yaml" \
     --wait --timeout 5m >/dev/null
   k -n chat rollout status deploy/chat-bravo-demo --timeout=3m
 }
@@ -274,7 +285,7 @@ step_verify() {
 
 load_outputs
 steps=("$@")
-((${#steps[@]})) || steps=(cilium base cnpg schema secrets eso app gateway canary verify)
+((${#steps[@]})) || steps=(cilium base cnpg db_ca schema secrets eso app gateway canary verify)
 for s in "${steps[@]}"; do
   declare -F "step_$s" >/dev/null || die "unknown step: $s"
   "step_$s"

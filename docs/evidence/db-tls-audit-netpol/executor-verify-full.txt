@@ -1,0 +1,8 @@
+# 2026-11-03 01:50:45 KST executor-0 (platform) -> D-16 links with the NEW topology conninfo (deploy/cloud/in-cluster/topology.json, takes effect after push + Argo sync); CA files from ConfigMap executor-kube-ca (cluster-cas.sh)
+OK   db src executor_observe [host=src-db.bravo-link.svc.cluster.local port=5432 sslmode=verify-full sslrootcert=/etc/bravo/kube/source-aws-chat-db.crt]: ssl_in_use=True rows=1
+OK   db dst executor_observe [host=dst-db.bravo-link.svc.cluster.local port=5432 sslmode=verify-full sslrootcert=/etc/bravo/kube/target-onprem-chat-db.crt]: ssl_in_use=True rows=1
+OK   pool src pgb_stats [host=src-pgb.bravo-link.svc.cluster.local port=6432 sslmode=verify-full sslrootcert=/etc/bravo/kube/source-aws-chat-db.crt]: ssl_in_use=True rows=2
+OK   pool dst pgb_stats [host=dst-pgb.bravo-link.svc.cluster.local port=6432 sslmode=verify-full sslrootcert=/etc/bravo/kube/target-onprem-chat-db.crt]: ssl_in_use=True rows=2
+FAIL NEGATIVE db src with the on-prem CA (expect certificate verify failed): OperationalError: connection failed: connection to server at "10.43.44.114", port 5432 failed: SSL error: certificate verify failed
+FAIL NEGATIVE db src by IP literal (expect name mismatch): OperationalError: connection failed: connection to server at "10.43.44.114", port 5432 failed: server certificate for "chat-db-r" (and 20 other names) does not match host name "1
+FAIL NEGATIVE db src plaintext (expect pg_hba reject): OperationalError: connection failed: connection to server at "10.43.44.114", port 5432 failed: FATAL:  pg_hba.conf rejects connection for host "10.10.11.55", user "executor_obser

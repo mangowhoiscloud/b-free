@@ -15,8 +15,8 @@ infra/envs/target-gcp/scripts/down.sh     # 지우기(LB · 디스크 정리 뒤
 | `manifests/00-namespaces.yaml` | `chat`, `bravo-edge`, `cf-edge`, `bravo-observability`. Pod Security `restricted` |
 | `manifests/10-storageclasses.yaml` | `bravo-db`, `bravo-general` |
 | `manifests/20-secretstore.yaml`, `21-externalsecrets.yaml` | ESO만. 플랫폼 OpenBao `secret/envs/target-gcp/*`에서 `bravo-demo-db`, `chat-admin`, `chat-pgbouncer-auth`, `chat-db-owner`, `chat-db-roles`, `bravo-demo-gcs-hmac`, `cf-edge/cf-tunnel` |
-| `manifests/30-chat-db.yaml` | CNPG `Cluster` `chat-db`, PostgreSQL 16, `wal_level=logical`, `max_replication_slots=10`, `max_slot_wal_keep_size=2GB`, Service `chat-db-rw`. 백업(DR-01): barman-cloud → GCS `${DB_BACKUP_BUCKET}`, Workload Identity(키 없음). 복구 확인은 `deploy/landing-zone/scripts/dr-restore.sh gke` |
-| `manifests/31-pgbouncer.yaml` | Deployment `chat-pgbouncer`(replica 1), `/etc/pgbouncer/targets/target-{src,dst}.ini`, `%include /run/pgbouncer/active.ini`, 처음 대상 `target-src` |
+| `manifests/30-chat-db.yaml` | CNPG `Cluster` `chat-db`, PostgreSQL 16, `wal_level=logical`, `max_replication_slots=10`, `max_slot_wal_keep_size=2GB`, Service `chat-db-rw`. 백업(DR-01): barman-cloud → GCS `${DB_BACKUP_BUCKET}`, Workload Identity(키 없음). 복구 확인은 `deploy/landing-zone/scripts/dr-restore.sh gke`. `pg_hba`는 TLS만, pgaudit `ddl, role`, `log_connections` · `log_disconnections` |
+| `manifests/31-pgbouncer.yaml` | Deployment `chat-pgbouncer`(replica 1), `/etc/pgbouncer/targets/target-{src,dst}.ini`, `%include /run/pgbouncer/active.ini`, 처음 대상 `target-src`. 서버 쪽 TLS verify-full(CA 묶음 ConfigMap `bravo-db-ca`, `deploy/landing-zone/scripts/db-ca.sh`), 클라이언트 쪽 TLS 필수(chat-db 서버 인증서) |
 | `manifests/40-gateway.yaml` | Gateway `bravo-gateway`(ns `bravo-edge`), HTTPRoute `chat` → Service `chat-bravo-demo` |
 | `manifests/41-cf-edge.yaml` | ns `cf-edge`, Deployment `cloudflared`(digest), Secret `cf-tunnel`의 `token` |
 | `manifests/50-otel-agent.yaml` | DaemonSet `otel-agent`, Service `otel-agent:4317` → 플랫폼 Collector |

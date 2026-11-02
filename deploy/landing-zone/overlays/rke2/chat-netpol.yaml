@@ -1,0 +1,19 @@
+# On-prem (RKE2) pieces of the ns chat allows (base/chat-netpol.yaml has the default deny and the shared rules).
+# Hubble record of these flows on the on-prem RKE2 (2026-11-03): docs/evidence/db-tls-audit-netpol/.
+#
+# CNPG backup and recovery (DR-01): barman-cloud in chat-db (WAL archive, base backups) and chat-db-restore (recovery
+# run) to the RGW bucket bravo-chat-db-backup over https://rook-ceph-rgw-bravo.rook-ceph.svc:443. NetworkPolicy matches
+# the pod port: Rook's Service maps 443 -> 443.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-db-backup
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector:
+    matchExpressions: [{key: cnpg.io/cluster, operator: In, values: [chat-db, chat-db-restore]}]
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: rook-ceph}}, podSelector: {matchLabels: {app: rook-ceph-rgw}}}]
+      ports: [{port: 443, protocol: TCP}]

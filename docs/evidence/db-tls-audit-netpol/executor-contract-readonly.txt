@@ -1,0 +1,21 @@
+# 2026-11-03 02:00:59 KST executor-0: read-only contract checks (E4 and pool/entry/fence reads) with the NEW topology (verify-full), /tmp/topology-verify-full.json = deploy/cloud/in-cluster/topology.json of this commit
+## ops db src e4
+{"kind": "db", "name": "src", "action": "e4", "db": {"fence update": {"refused": true, "detail": "42501 permission denied for table bravo_fence"}, "barrier insert": {"refused": true, "detail": "42501 permission denied for table bravo_barrier"}, "alter role": {"refused": true, "detail": "42501 permission denied to alter role"}, "revoke": {"refused": true, "detail": "app_writer INSERT still True"}, "subscription": {"refused": true, "detail": "42501 must be owner of subscription bravo_rev_sub"}, "attachment freeze": {"refused": true, "detail": "42501 permission denied for table attachment_store"}}, "pgbouncer": {"pause": {"refused": true, "detail": "admin access needed"}, "reload": {"refused": true, "detail": "admin access needed"}}, "all_refused": true}
+## ops db dst e4
+{"kind": "db", "name": "dst", "action": "e4", "db": {"fence update": {"refused": true, "detail": "42501 permission denied for table bravo_fence"}, "barrier insert": {"refused": true, "detail": "42501 permission denied for table bravo_barrier"}, "alter role": {"refused": true, "detail": "42501 permission denied to alter role"}, "revoke": {"refused": true, "detail": "app_writer INSERT still True"}, "subscription": {"refused": true, "detail": "42704 subscription \"bravo_rev_sub\" does not exist"}, "attachment freeze": {"refused": true, "detail": "42501 permission denied for table attachment_store"}}, "pgbouncer": {"pause": {"refused": true, "detail": "admin access needed"}, "reload": {"refused": true, "detail": "admin access needed"}}, "all_refused": true}
+## ops db src fence
+{"kind": "db", "name": "src", "action": "fence", "epoch": 0}
+## ops db dst fence
+{"kind": "db", "name": "dst", "action": "fence", "epoch": 0}
+## ops pool src current
+{"kind": "pool", "name": "src", "action": "current", "active_side": "src", "files": {"pod": "chat-pgbouncer-77b4dbb968-4qwgn", "files": ["/etc/pgbouncer/targets/target-dst.ini", "/etc/pgbouncer/targets/target-src.ini", "/run/pgbouncer/active.ini"], "workload": "selector:app.kubernetes.io/name=chat-pgbouncer", "context": "bravo-source"}}
+## ops pool dst current
+{"kind": "pool", "name": "dst", "action": "current", "active_side": "src", "files": {"pod": "chat-pgbouncer-857fbc9d67-fh462", "files": ["/etc/pgbouncer/targets/target-dst.ini", "/etc/pgbouncer/targets/target-src.ini", "/run/pgbouncer/active.ini"], "workload": "selector:app.kubernetes.io/name=chat-pgbouncer", "context": "bravo-onprem"}}
+## ops pool src show
+{"kind": "pool", "name": "src", "action": "show", "row": {"name": "chat", "host": "chat-db-rw.chat.svc.cluster.local", "port": 5432, "paused": 0, "current_connections": 1}}
+## ops pool dst show
+{"kind": "pool", "name": "dst", "action": "show", "row": {"name": "chat", "host": "src-db-link.chat.svc.cluster.local", "port": 5432, "paused": 0, "current_connections": 4}}
+## ops entry aws get
+{"kind": "entry", "name": "aws", "action": "get", "state": {"blocked": false, "since": "2026-11-02T12:04:38.276489+00:00"}}
+## ops entry onprem get
+{"kind": "entry", "name": "onprem", "action": "get", "state": {"blocked": false, "since": "2026-11-02T13:00:50.264516+00:00"}}

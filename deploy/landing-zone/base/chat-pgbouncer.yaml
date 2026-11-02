@@ -3,6 +3,16 @@
 # Targets come from the overlay ConfigMap chat-pgbouncer-targets (directory mount, no subPath).
 # Passwords: Secret chat-pgbouncer-auth (keys app_writer, pgb_admin, pgb_stats), created by the
 # platform from OpenBao secret/envs/<env>/chat-db through a pipe.
+# TLS (ENC-01, 02-network.md 11.2):
+#   server side  verify-full against ConfigMap bravo-db-ca (scripts/db-ca.sh, the CNPG CAs of every environment),
+#                because the target moves from the local chat-db to the other environment's chat-db over the D-16
+#                link at cutover. The name checked is the host= of the active target (chat-db-rw.chat.svc.cluster.local,
+#                src-db-link / dst-db-link.chat.svc.cluster.local); each is in that chat-db's serverAltDNSNames.
+#   client side  TLS required. PgBouncer serves the local chat-db server certificate (Secret chat-db-server, made
+#                and renewed by CNPG; its SANs include chat-pgbouncer.chat.svc[.cluster.local] and the platform link
+#                name *-pgb.bravo-link.svc.cluster.local), so the app and the Executor verify it with the CNPG CA.
+#                CNPG renews the certificate 7 days before it expires; RELOAD (or a restart) picks up the new file.
+# The pod waits (volume mount) until both chat-db-server and bravo-db-ca exist.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -30,6 +40,11 @@ data:
     log_connections = 0
     log_disconnections = 0
     log_pooler_errors = 1
+    server_tls_sslmode = verify-full
+    server_tls_ca_file = /etc/pgbouncer/db-ca/ca.crt
+    client_tls_sslmode = require
+    client_tls_cert_file = /etc/pgbouncer/tls/tls.crt
+    client_tls_key_file = /etc/pgbouncer/tls/tls.key
     %include /run/pgbouncer/active.ini
 ---
 apiVersion: apps/v1
@@ -105,9 +120,15 @@ spec:
             - {name: targets, mountPath: /etc/pgbouncer/targets, readOnly: true}
             - {name: active, mountPath: /run/pgbouncer}
             - {name: auth, mountPath: /run/pgbouncer-auth, readOnly: true}
+            - {name: db-ca, mountPath: /etc/pgbouncer/db-ca, readOnly: true}
+            - {name: tls, mountPath: /etc/pgbouncer/tls, readOnly: true}
       volumes:
         - name: main
           configMap: {name: chat-pgbouncer-config}
+        - name: db-ca
+          configMap: {name: bravo-db-ca, items: [{key: ca.crt, path: ca.crt}]}
+        - name: tls
+          secret: {secretName: chat-db-server, defaultMode: 0440}
         - name: targets
           configMap: {name: chat-pgbouncer-targets}
         - name: active

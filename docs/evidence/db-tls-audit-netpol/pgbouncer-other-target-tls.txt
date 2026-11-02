@@ -1,0 +1,16 @@
+# 2026-11-03 02:01:36 KST the other PgBouncer target of each side (used after cutover / failback), checked from inside the PgBouncer pod with its own CA file and the target name (same check as server_tls_sslmode=verify-full), under default deny
+## source PgBouncer -> target-dst.ini host dst-db-link.chat.svc.cluster.local (on-prem chat-db over the D-16 link)
+subject=CN = chat-db-rw
+Verification: OK
+Verify return code: 0 (ok)
+## on-prem PgBouncer -> target-dst.ini host chat-db-rw.chat.svc.cluster.local (local chat-db)
+subject=CN = chat-db-rw
+Verification: OK
+Verify return code: 0 (ok)
+## GKE PgBouncer -> target-dst.ini host chat-db-rw.chat.svc.cluster.local (local chat-db)
+subject=CN = chat-db-rw
+Verification: OK
+Verify return code: 0 (ok)
+## NEGATIVE: source PgBouncer -> dst-db-link with a name not in the certificate (verify_hostname wrong.example)
+verify error:num=62:hostname mismatch
+Verify return code: 62 (hostname mismatch)

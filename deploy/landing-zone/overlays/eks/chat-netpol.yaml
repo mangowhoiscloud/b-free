@@ -1,0 +1,52 @@
+# EKS pieces of the ns chat allows (base/chat-netpol.yaml has the default deny and the shared rules).
+# Hubble record of these flows on the source EKS (2026-11-03): docs/evidence/db-tls-audit-netpol/.
+#
+# CNPG backup and recovery (DR-01): barman-cloud in chat-db (WAL archive, base backups) and chat-db-restore (recovery
+# run) writes and reads the S3 bucket db_backup_bucket. NetworkPolicy has no FQDN match, so it is "public addresses on
+# 443", never the private ranges or link-local (IMDS stays closed).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chat-db-backup
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector:
+    matchExpressions: [{key: cnpg.io/cluster, operator: In, values: [chat-db, chat-db-restore]}]
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]}}]
+      ports: [{port: 443, protocol: TCP}]
+---
+# Gate canary Job (gate-canary-job.yaml, step canary): PUT/HEAD on the attachments bucket as the app identity.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gate-canary
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: gate-canary}}
+  policyTypes: ["Egress"]
+  egress:
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]}}]
+      ports: [{port: 443, protocol: TCP}]
+---
+# EKS Pod Identity: the SDK in the app, the canary and CNPG (barman-cloud) fetch credentials from the node agent
+# eks-pod-identity-agent at 169.254.170.23:80 (hostNetwork). Cilium gives that address the identity host, which a
+# Kubernetes ipBlock does not select, so this is a Cilium rule: host, port 80 only, for the pods the Pod Identity
+# webhook marked (label eks.amazonaws.com/pod-identity=enabled: service accounts chat-app, chat-db, chat-db-restore).
+# IMDS (169.254.169.254) is world to Cilium and stays closed.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: pod-identity-agent
+  namespace: chat
+  labels: {app.kubernetes.io/part-of: bravo-landing-zone}
+spec:
+  endpointSelector:
+    matchLabels: {eks.amazonaws.com/pod-identity: enabled}
+  egress:
+    - toEntities: ["host"]
+      toPorts:
+        - ports: [{port: "80", protocol: TCP}]

@@ -137,6 +137,9 @@ for f in ("01_schema.sql", "02_roles.sql", "03_dst.sql"):
 fi
 
 # ---- 8. PgBouncer, OTel agent, Gateway, cf-edge -----------------------------------------------------------------
+# DB CA bundle ConfigMap chat/bravo-db-ca (CNPG CAs of every reachable environment, ENC-01). PgBouncer (server TLS
+# verify-full) and the app (DSN verify-full) mount it and wait for it.
+"$REPO_ROOT/deploy/landing-zone/scripts/db-ca.sh" apply
 k apply -f "$RENDER_DIR/31-pgbouncer.yaml" -f "$RENDER_DIR/50-otel-agent.yaml" >/dev/null
 # Roll PgBouncer and the app when their Secrets change (auth_file is read at start).
 AUTH_RV="$(k -n chat get secret chat-pgbouncer-auth -o jsonpath='{.metadata.resourceVersion}')"

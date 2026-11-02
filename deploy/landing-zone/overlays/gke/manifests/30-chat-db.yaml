@@ -2,6 +2,15 @@
 # max_slot_wal_keep_size set, max_replication_slots >= 10, Service chat-db-rw:5432.
 # No superuser Secret (enableSuperuserAccess: false). The database owner password comes from OpenBao (ESO).
 # The chat schema (apps/demo/schema/sql 01 -> 02 -> 03_dst) is applied by the platform at bring-up.
+# Gate DB-AUDIT (AUD-01): pgaudit ddl + role (CNPG adds pgaudit to shared_preload_libraries and creates the
+# extension), log_connections and log_disconnections on.
+# Gate DB-TLS (ENC-01): pg_hba takes TLS only (hostnossl ... reject, before CNPG's default "host all all all").
+# Clients verify the CA and the name (sslmode=verify-full, CA bundle ConfigMap chat/bravo-db-ca from
+# deploy/landing-zone/scripts/db-ca.sh). serverAltDNSNames adds the names clients use besides chat-db-rw.*:
+#   gke-db.bravo-link.svc[.cluster.local]  platform D-16 link t1-gke-db
+#   chat-pgbouncer.chat.svc[.cluster.local]  the app -> PgBouncer (PgBouncer serves this certificate, 31-pgbouncer.yaml)
+# projectedVolumeTemplate: the CA bundle at /projected/db-ca/ca.crt for a subscription (sslrootcert); optional so
+# the instance starts before db-ca.sh has run.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -23,6 +32,25 @@ spec:
       max_wal_senders: "10"
       max_slot_wal_keep_size: "2GB"
       password_encryption: scram-sha-256
+      pgaudit.log: "ddl, role"
+      pgaudit.log_catalog: "off"
+      log_connections: "on"
+      log_disconnections: "on"
+    pg_hba:
+      - hostnossl all all all reject
+      - hostssl all all all scram-sha-256
+  certificates:
+    serverAltDNSNames:
+      - gke-db.bravo-link.svc
+      - gke-db.bravo-link.svc.cluster.local
+      - chat-pgbouncer.chat.svc
+      - chat-pgbouncer.chat.svc.cluster.local
+  projectedVolumeTemplate:
+    sources:
+      - configMap:
+          name: bravo-db-ca
+          optional: true
+          items: [{key: ca.crt, path: db-ca/ca.crt}]
   bootstrap:
     initdb:
       database: chat

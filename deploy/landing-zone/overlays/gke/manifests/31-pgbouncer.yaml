@@ -3,6 +3,10 @@
 # %include /run/pgbouncer/active.ini; /run/pgbouncer is an emptyDir that the init container fills.
 # Initial target: target-src (destination app uses the source DB over the link until cutover).
 # Only the Executor switches the target (pods/exec: cp + RELOAD).
+# TLS (ENC-01, same as base/chat-pgbouncer.yaml): server side verify-full against ConfigMap bravo-db-ca
+# (deploy/landing-zone/scripts/db-ca.sh, every environment's CNPG CA; the target moves from the source DB over the
+# link to the local chat-db at cutover). Client side TLS required, with the local chat-db server certificate
+# (Secret chat-db-server from CNPG; SANs include chat-pgbouncer.chat.svc[.cluster.local], 30-chat-db.yaml).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -44,6 +48,11 @@ data:
     log_connections = 0
     log_disconnections = 0
     log_pooler_errors = 1
+    server_tls_sslmode = verify-full
+    server_tls_ca_file = /etc/pgbouncer/db-ca/ca.crt
+    client_tls_sslmode = require
+    client_tls_cert_file = /etc/pgbouncer/tls/tls.crt
+    client_tls_key_file = /etc/pgbouncer/tls/tls.key
     %include /run/pgbouncer/active.ini
 ---
 apiVersion: apps/v1
@@ -111,6 +120,8 @@ spec:
             - {name: targets, mountPath: /etc/pgbouncer/targets, readOnly: true}
             - {name: auth, mountPath: /etc/pgbouncer/auth, readOnly: true}
             - {name: run, mountPath: /run/pgbouncer}
+            - {name: db-ca, mountPath: /etc/pgbouncer/db-ca, readOnly: true}
+            - {name: tls, mountPath: /etc/pgbouncer/tls, readOnly: true}
       volumes:
         - name: conf
           configMap: {name: chat-pgbouncer-config}
@@ -120,6 +131,10 @@ spec:
           secret: {secretName: chat-pgbouncer-auth, defaultMode: 0440}
         - name: run
           emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        - name: db-ca
+          configMap: {name: bravo-db-ca, items: [{key: ca.crt, path: ca.crt}]}
+        - name: tls
+          secret: {secretName: chat-db-server, defaultMode: 0440}
 ---
 apiVersion: v1
 kind: Service

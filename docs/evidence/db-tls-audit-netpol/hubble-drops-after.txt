@@ -1,0 +1,23 @@
+# Hubble DROPPED in ns chat from 01:51 KST (before the policies: on-prem 01:53:43, source 01:58:50) to 02:04:18 KST. IPv6 multicast (ff02::, UNSUPPORTED_L3_PROTOCOL, also before) left out.
+# count  last(UTC)  source -> destination  port  reason
+## src
+2 16:58:51 chat/chat-bravo-demo -> chat/chat-pgbouncer TCP/6432 POLICY_DENIED
+14 16:59:13 chat/chat-bravo-demo -> cidr:10.0.0.0/8,reserved:world(10.10.11.201) TCP/6432 POLICY_DENIED
+30 16:59:16 cidr:172.16.0.0/12,reserved:world(172.20.42.208) -> chat/chat-bravo-demo None POLICY_DENIED
+12 17:03:06 chat/gate-netprobe -> reserved:world(1.1.1.1) TCP/80 POLICY_DENIED
+12 17:03:09 chat/gate-netprobe -> cidr:169.254.169.254/32,reserved:world(169.254.169.254) TCP/80 POLICY_DENIED
+## onprem-agent
+2 16:53:43 chat/chat-pgbouncer -> chat/src-db-link TCP/5432 POLICY_DENIED
+## onprem-server
+2 16:54:14 chat/chat-bravo-demo -> cidr:10.0.0.0/8,reserved:world(10.42.1.144) TCP/6432 POLICY_DENIED
+4 16:56:47 chat/gate-netprobe -> kube-system/rke2-coredns UDP/53 POLICY_DENIED
+18 17:02:54 chat/gate-netprobe -> reserved:world(1.1.1.1) TCP/80 POLICY_DENIED
+18 17:02:57 chat/gate-netprobe -> cidr:169.254.169.254/32,reserved:world(169.254.169.254) TCP/80 POLICY_DENIED
+# Reading (measured, per line):
+# - app -> chat-pgbouncer 6432 at 16:58:51 (source), pgbouncer -> src-db-link at 16:53:43 (on-prem): the second the
+#   policies were created, before Cilium finished computing them; none after.
+# - app -> 10.x:6432 "world" and 172.20.42.208 (the chat-pgbouncer ClusterIP) -> app: during the PgBouncer restarts
+#   (16:54:14, 16:59:13-16): the old backend address is gone, so the packet has no pod identity. None after.
+# - gate-netprobe -> 1.1.1.1:80 and 169.254.169.254:80: the gate's NET-PATHS denied paths, refused as intended.
+# - gate-netprobe -> coredns 53 at pod start: a brand-new pod before its policy is computed; its DNS retry succeeds
+#   (the same run reports the control path chat-pgbouncer.chat.svc:6432 connected).

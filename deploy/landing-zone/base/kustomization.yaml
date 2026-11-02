@@ -4,3 +4,4 @@ resources:
   - namespaces.yaml
   - chat-pgbouncer.yaml
   - cf-edge.yaml
+  - chat-netpol.yaml

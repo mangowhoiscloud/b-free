@@ -1,0 +1,89 @@
+## source-aws chat-db-1 (2026-11-03 02:03:15 KST)
+log_connections=on
+log_disconnections=on
+pgaudit.log=ddl, role
+pgaudit.log_catalog=off
+shared_preload_libraries=pgaudit
+ssl=on
+ssl_min_protocol_version=TLSv1.3
+hba 7 local all cnpg_metrics_exporter  peer
+hba 8 local all all  peer
+hba 11 hostssl postgres streaming_replica all cert
+hba 12 hostssl replication streaming_replica all cert
+hba 13 hostssl all cnpg_pooler_pgbouncer all cert
+hba 20 hostnossl all all all reject
+hba 21 hostssl all all all scram-sha-256
+hba 28 host all all all scram-sha-256
+extensions: plpgsql 1.0, pgaudit 16.1
+# log records since 2026-11-02T17:03:15 UTC: pgaudit for the role change, and connection/disconnection lines (log_connections/log_disconnections)
+2026-11-02T17:02:24 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:24 postgres postgres disconnection: session time: 0:00:00.003 user=postgres database=postgres host=[local]
+2026-11-02T17:02:34 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:34 postgres postgres disconnection: session time: 0:00:00.002 user=postgres database=postgres host=[local]
+2026-11-02T17:02:44 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:44 postgres postgres disconnection: session time: 0:00:00.003 user=postgres database=postgres host=[local]
+
+## target-onprem chat-db-1 (2026-11-03 02:03:18 KST)
+log_connections=on
+log_disconnections=on
+pgaudit.log=ddl, role
+pgaudit.log_catalog=off
+shared_preload_libraries=pgaudit
+ssl=on
+ssl_min_protocol_version=TLSv1.3
+hba 7 local all cnpg_metrics_exporter  peer
+hba 8 local all all  peer
+hba 11 hostssl postgres streaming_replica all cert
+hba 12 hostssl replication streaming_replica all cert
+hba 13 hostssl all cnpg_pooler_pgbouncer all cert
+hba 20 hostnossl all all all reject
+hba 21 hostssl all all all scram-sha-256
+hba 28 host all all all scram-sha-256
+extensions: plpgsql 1.0, pgaudit 16.1
+# log records since 2026-11-02T17:03:18 UTC: pgaudit for the role change, and connection/disconnection lines (log_connections/log_disconnections)
+2026-11-02T17:02:25 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:25 postgres postgres disconnection: session time: 0:00:00.000 user=postgres database=postgres host=[local]
+2026-11-02T17:02:35 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:35 postgres postgres disconnection: session time: 0:00:00.000 user=postgres database=postgres host=[local]
+2026-11-02T17:02:45 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:45 postgres postgres disconnection: session time: 0:00:00.001 user=postgres database=postgres host=[local]
+
+## target-gcp chat-db-1 (2026-11-03 02:03:20 KST)
+log_connections=on
+log_disconnections=on
+pgaudit.log=ddl, role
+pgaudit.log_catalog=off
+shared_preload_libraries=pgaudit
+ssl=on
+ssl_min_protocol_version=TLSv1.3
+hba 7 local all cnpg_metrics_exporter  peer
+hba 8 local all all  peer
+hba 11 hostssl postgres streaming_replica all cert
+hba 12 hostssl replication streaming_replica all cert
+hba 13 hostssl all cnpg_pooler_pgbouncer all cert
+hba 20 hostnossl all all all reject
+hba 21 hostssl all all all scram-sha-256
+hba 28 host all all all scram-sha-256
+extensions: plpgsql 1.0, pgaudit 16.1
+# log records since 2026-11-02T17:03:21 UTC: pgaudit for the role change, and connection/disconnection lines (log_connections/log_disconnections)
+2026-11-02T17:02:30 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:30 postgres postgres disconnection: session time: 0:00:00.001 user=postgres database=postgres host=[local]
+2026-11-02T17:02:40 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:40 postgres postgres disconnection: session time: 0:00:00.002 user=postgres database=postgres host=[local]
+2026-11-02T17:02:50 postgres postgres connection authorized: user=postgres database=postgres application_name=pg_isready
+2026-11-02T17:02:50 postgres postgres disconnection: session time: 0:00:00.001 user=postgres database=postgres host=[local]
+
+
+# pgaudit records of the probe role change above (CREATE ROLE / DROP ROLE bravo_audit_probe), and one remote login line each
+## source-aws
+{"ts":"2026-11-02T17:03:16","user":"postgres","audit":{"audit_type":"SESSION","statement_id":"1","substatement_id":"1","class":"ROLE","command":"CREATE ROLE","statement":"CREATE ROLE bravo_audit_probe NOLOGIN","parameter":"<not logged>"}}
+{"ts":"2026-11-02T17:03:16","user":"postgres","audit":{"audit_type":"SESSION","statement_id":"2","substatement_id":"1","class":"ROLE","command":"DROP ROLE","statement":"DROP ROLE bravo_audit_probe","parameter":"<not logged>"}}
+2026-11-02T17:03:03 10.10.11.55:57550 connection authorized: user=gate_ro database=chat application_name=bravo-gate SSL enabled (protocol=TLSv1.3, cipher=TLS_AES_256_GCM_SHA384, bits=256)
+## target-onprem
+{"ts":"2026-11-02T17:03:18","user":"postgres","audit":{"audit_type":"SESSION","statement_id":"1","substatement_id":"1","class":"ROLE","command":"CREATE ROLE","statement":"CREATE ROLE bravo_audit_probe NOLOGIN","parameter":"<not logged>"}}
+{"ts":"2026-11-02T17:03:18","user":"postgres","audit":{"audit_type":"SESSION","statement_id":"2","substatement_id":"1","class":"ROLE","command":"DROP ROLE","statement":"DROP ROLE bravo_audit_probe","parameter":"<not logged>"}}
+2026-11-02T17:02:52 10.42.1.7:38530 connection authorized: user=gate_ro database=chat application_name=bravo-gate SSL enabled (protocol=TLSv1.3, cipher=TLS_AES_256_GCM_SHA384, bits=256)
+## target-gcp
+{"ts":"2026-11-02T17:03:22","user":"postgres","audit":{"audit_type":"SESSION","statement_id":"1","substatement_id":"1","class":"ROLE","command":"CREATE ROLE","statement":"CREATE ROLE bravo_audit_probe NOLOGIN","parameter":"<not logged>"}}
+{"ts":"2026-11-02T17:03:22","user":"postgres","audit":{"audit_type":"SESSION","statement_id":"2","substatement_id":"1","class":"ROLE","command":"DROP ROLE","statement":"DROP ROLE bravo_audit_probe","parameter":"<not logged>"}}
+2026-11-02T17:03:06 10.72.0.85:55442 connection authorized: user=gate_ro database=chat application_name=bravo-gate SSL enabled (protocol=TLSv1.3, cipher=TLS_AES_256_GCM_SHA384, bits=256)

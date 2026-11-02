@@ -5,3 +5,4 @@ kind: Kustomization
 resources:
   - ../../base
   - chat-pgbouncer-targets.yaml
+  - chat-netpol.yaml

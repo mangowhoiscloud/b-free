@@ -1,0 +1,22 @@
+# 2026-11-03 02:03:54 KST after all changes
+b-free-chat-src /healthz: 200
+b-free-chat-src /readyz: 200
+b-free-chat-dst /healthz: 200
+b-free-chat-dst /readyz: 200
+b-free-chat-gke /healthz: 200
+b-free-chat-gke /readyz: 200
+b-free-chat /healthz: 200
+b-free-chat /readyz: 200
+== /healthz
+{"ok":true,"observe_only":false,"observe_reason":{}}
+== /v1/readiness
+{"lag_bytes":0,"sub_state":"streaming","direction":"forward","schema_hash":{"src":"224b984591c7af598cee76f407444297c9b2281823f971bd8139efdb084f40cb","dst":"224b984591c7af598cee76f407444297c9b2281823f971bd8139efdb084f40cb"},"seq":{"src":1021,"dst":0},"rows":{"src":1021,"dst":1021}}
+ks chat-db phase=Cluster in healthy state ready=1 archiving=True
+ks chat-db-restore phase=Cluster in healthy state ready=1 archiving=True
+ko chat-db phase=Cluster in healthy state ready=1 archiving=True
+ko chat-db-restore phase=Cluster in healthy state ready=1 archiving=True
+kg chat-db phase=Cluster in healthy state ready=1 archiving=True
+kg chat-db-restore phase=Cluster in healthy state ready=1 archiving=True
+ks archiver: archived=35 last=2026-11-02 17:00:15.267296+00 failed=0 last_failed=-
+ko archiver: archived=30 last=2026-11-02 17:00:09.534272+00 failed=1 last_failed=2026-11-02 14:45:05.350648+00
+kg archiver: archived=24 last=2026-11-02 16:46:02.53894+00 failed=1 last_failed=2026-11-02 14:56:15.28044+00

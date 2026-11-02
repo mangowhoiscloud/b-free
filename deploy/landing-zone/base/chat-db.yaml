@@ -2,6 +2,16 @@
 # cutover engine. CNPG generates the owner (chat-db-app) and superuser (chat-db-superuser) Secrets.
 # Roles app_writer/replicator/executor_* come from apps/demo/schema/sql with passwords from the
 # platform OpenBao (secret/envs/<env>/chat-db), applied by the data path, not by this manifest.
+# Gate DB-AUDIT (AUD-01): pgaudit ddl + role (CNPG adds pgaudit to shared_preload_libraries and creates the
+# extension), log_connections and log_disconnections on.
+# Gate DB-TLS (ENC-01): pg_hba takes TLS only (hostnossl ... reject, before CNPG's default "host all all all").
+# Every client verifies the CA and the name (sslmode=verify-full, CA bundle ConfigMap chat/bravo-db-ca from
+# scripts/db-ca.sh). serverAltDNSNames adds the names clients use besides CNPG's own chat-db-rw.* names:
+#   dst-db-link.chat.svc[.cluster.local]  source PgBouncer target-dst.ini, source reverse subscription (D-16 link)
+#   dst-db.bravo-link.svc[.cluster.local] / dst-pgb.bravo-link.svc[.cluster.local]  platform Executor (D-16 links)
+#   chat-pgbouncer.chat.svc[.cluster.local]  the app -> PgBouncer (PgBouncer serves this certificate, chat-pgbouncer.yaml)
+# projectedVolumeTemplate: the CA bundle at /projected/db-ca/ca.crt for the forward subscription bravo_fwd_sub
+# (sslrootcert). optional: the instance starts before scripts/db-ca.sh has run (fresh install).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -22,6 +32,29 @@ spec:
       max_wal_senders: "10"
       max_slot_wal_keep_size: 2GB
       password_encryption: scram-sha-256
+      pgaudit.log: "ddl, role"
+      pgaudit.log_catalog: "off"
+      log_connections: "on"
+      log_disconnections: "on"
+    pg_hba:
+      - hostnossl all all all reject
+      - hostssl all all all scram-sha-256
+  certificates:
+    serverAltDNSNames:
+      - dst-db-link.chat.svc
+      - dst-db-link.chat.svc.cluster.local
+      - dst-db.bravo-link.svc
+      - dst-db.bravo-link.svc.cluster.local
+      - dst-pgb.bravo-link.svc
+      - dst-pgb.bravo-link.svc.cluster.local
+      - chat-pgbouncer.chat.svc
+      - chat-pgbouncer.chat.svc.cluster.local
+  projectedVolumeTemplate:
+    sources:
+      - configMap:
+          name: bravo-db-ca
+          optional: true
+          items: [{key: ca.crt, path: db-ca/ca.crt}]
   storage:
     storageClass: bravo-db
     size: 5Gi

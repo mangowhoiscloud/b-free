@@ -1,0 +1,9 @@
+# 2026-11-03 02:01:49 KST reverse direction (bravo_rev_sub stays disabled until cutover): source chat-db-1 -> dst-db-link with the subscription's own settings (replicator, sslmode=verify-full, sslrootcert=/projected/db-ca/ca.crt), replication protocol, under default deny. Password: OpenBao secret/envs/target-onprem/chat-db replicator -> stdin -> env of psql in the pod
+      systemid       | timeline |  xlogpos   | dbname 
+---------------------+----------+------------+--------
+ 7703559099803787287 |        1 | 0/1D0015A8 | chat
+(1 row)
+
+# forward direction (live): on-prem pg_stat_subscription and source pg_stat_replication
+2026-11-02 17:01:51.777237+00|bravo_fwd_sub|1737|0/23001DF8|0/23001DF8|2026-11-02 17:01:50.887039+00|host=src-db-link.chat.svc port=5432 dbname=chat user=replicator password=*** sslmode=verify-full sslrootcert=/projected/db-ca/ca.crt
+bravo_fwd_sub|streaming|0/23001DF8|0/23001DF8|t|TLSv1.3
