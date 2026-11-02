@@ -51,7 +51,7 @@ images:
     digest: sha256:eefdcf9f8af3e884fe6f17b47db6d34bd7542e173efe01c819f72bd9a963cff2 # cost-20261102T134535Z (obs/cost lane: + GET /v1/cost over r2-20261102T130026Z; tree at 59883af)
   - name: bravo/console
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/console
-    digest: sha256:54f7c709467b341edc4e5cb570ebb860ca33c8eb651c21835d5d9dacdf69b18d # r11 (console lane: observability platform services + Hubble full width, wrap long status paths)
+    digest: sha256:b7c1323e981054697927a3bde44f4347ce39a9ea34e4592c09f61a0a0830c6f2 # r12 (console lane: target_info min by (stale pod series), Hubble note derived from data only)
   - name: bravo/gate
     newName: 721622471953.dkr.ecr.ap-northeast-2.amazonaws.com/bravo-platform/gate
     digest: sha256:fc9ea202339249bf36881529f5409533e974d2dad55eac67f9397887355021c5 # dbauth-20261102T134943Z (gate lane: DB-AUTH judges network pg_hba rules + trust anywhere; CNPG local peer not judged)
