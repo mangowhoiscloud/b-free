@@ -48,9 +48,11 @@ flowchart LR
 
 ## 측정 결과와 결함
 
+**학습용 상세 리포트:** [10개 주제별 보고서](docs/reports/README.md)에서 구조, 장애 원인, 검증기, 부하, 컷오버, 운영을 각각 읽을 수 있습니다. 각 페이지에 확대 가능한 그림과 원본 링크를 넣었습니다.
+
 | 항목 | 기록된 결과 | 해석·근거 |
 |---|---|---|
-| 출발지 부하 | 50쓰기 + HTTP 읽기 150건/s × 300초. 쓰기 p95 138.1ms, 읽기 p95 123.2ms. 쓰기 15,000건 유실·중복 0 | [부하 원본](docs/evidence/load/README.md). 부하 중 컷오버 시험은 아직 없음 |
+| 출발지 부하 | 50쓰기 + HTTP 읽기 150건/s × 300초. 쓰기 p95 138.1ms, 읽기 p95 123.2ms. 쓰기 15,000건 유실·중복 0(재시도 후). 읽기 77건 실패 | [부하 원본](docs/evidence/load/README.md). 부하 중 컷오버 시험은 아직 없음 |
 | S2 리허설 | governance 150–210초, app_migration 180–187초 PASS | [S2 시간](docs/evidence/s2-timing/README.md). API Pod·미리 보기 Pod 경로, 콘솔 승인 전 |
 | 실제 쓰기 SHIFT | 정방향 43.9초, 역방향 46.8초, 단계별 오류 0 | [왕복 증거](docs/evidence/shift/lb-roundtrip-after-gw-fix-20261103T044632/README.md). 도구 경로, 계획·승인 없음 |
 | 차가운 DB 연결 풀 | 예열 51초 뒤 정방향 48.3초 통과 | [예열 시험](docs/evidence/shift/pgbouncer-warm-pool-20261103/README.md). 역방향은 표본 90/100으로 실패 |
