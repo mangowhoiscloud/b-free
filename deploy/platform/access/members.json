@@ -1,8 +1,7 @@
 {
-  "comment": "Just-in-time membership allowlist for the platform API (BRAVO_ACCESS_MEMBERS_FILE, migration 0006). A verified Cloudflare Access email listed here gets these roles in this tenant on its first login only. Any other email is never granted (403 unknown_principal; an admin grants with python -m bravo_api.admin grant). Operator and approver are never the same person (D-18). Coordinator instruction 2026-11-02: naver = operator (requester), gmail = approver.",
+  "comment": "Example only, not deployed. The real first-login allowlist is stored in OpenBao secret/envs/platform/access-members (members_json) and delivered to Kubernetes Secret access-members. Keep actual member emails out of Git. Operator and approver must be different people (D-18).",
   "tenant": "b-free",
   "members": [
-    {"email": "ryoo0504@naver.com", "roles": ["operator", "viewer"]},
-    {"email": "ryoo0504@gmail.com", "roles": ["approver", "viewer"]}
+    {"email": "reviewer@example.com", "roles": ["viewer"]}
   ]
 }

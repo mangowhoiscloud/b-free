@@ -50,10 +50,11 @@
 
 | 신원 | 역할 | 정하는 곳 | 02:32 상태 |
 |---|---|---|---|
-| naver 메일 | `operator`, `viewer`(요청자: 계획 · 실행 시작) | `deploy/platform/access/members.json` | **첫 로그인 전.** 역할은 첫 로그인 때만 생기므로 아직 없음 |
+| naver 메일 | `operator`, `viewer`(요청자: 계획 · 실행 시작) | OpenBao `secret/envs/platform/access-members` → Kubernetes Secret | **첫 로그인 전.** 역할은 첫 로그인 때만 생기므로 아직 없음 |
 | gmail 메일 | `approver`, `viewer`(승인자) | 같음 | 로그인함. 플랫폼 DB `principals` 1행, `memberships` approver · viewer |
 
-- 두 Access 앱(`bravo-platform`, `bravo-platform-mcp`)의 정책 `bravo platform operators`는 위 두 메일을 허용합니다(`infra/envs/edge/access.tf`의 `platform_access_emails`, 값은 gitignore된 `terraform.tfvars`에만). 로그인 방법은 One-time PIN 하나, 세션 24시간입니다. MCP Managed OAuth grant 세션은 168시간입니다.
+- 2026-11-03 팀 공유: 위 운영자·승인자 두 신원은 유지하고, 팀원 네 명의 Slack 이메일에 `viewer` 첫 로그인 역할을 추가했습니다. 실제 목록은 OpenBao에서 Secret으로 전달하며 Git의 `members.json`은 배포하지 않는 예시입니다. 역할 반영은 각자의 첫 로그인 때 일어납니다. [접근 절차](platform/access/README.md)
+- 두 Access 앱(`bravo-platform`, `bravo-platform-mcp`)의 정책 `bravo platform operators`는 위 두 메일과 팀 리뷰 메일 네 개를 허용합니다(`infra/envs/edge/access.tf`의 `platform_access_emails`, 값은 gitignore된 `terraform.tfvars`에만). 로그인 방법은 One-time PIN 하나, 세션 24시간입니다. MCP Managed OAuth grant 세션은 168시간입니다.
 - 목록에 없는 이메일은 403 `unknown_principal`입니다. 운영자와 승인자는 같은 신원일 수 없습니다(D-18).
 - 두 메일 모두 팀장 한 사람의 것입니다. 분리는 신원 단위이고 사람 단위가 아닙니다. 무대에서 다른 팀원이 승인할지는 팀 결정입니다(리뷰 P8).
 
