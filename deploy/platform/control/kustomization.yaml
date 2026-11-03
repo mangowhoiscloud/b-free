@@ -23,9 +23,6 @@ configMapGenerator:
   - name: github-known-hosts
     files:
       - known_hosts=config/github_known_hosts
-  - name: access-members
-    files:
-      - members.json=../access/members.json
   - name: environments
     files:
       - environments.yaml=config/environments.yaml

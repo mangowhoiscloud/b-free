@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Platform secrets -> platform EKS Secrets (D-26, CLOUD-E2E-CONTRACT 4). The platform OpenBao is the only
+# Platform secrets -> platform RKE2 Secrets (D-26, CLOUD-E2E-CONTRACT 4). The platform OpenBao is the only
 # store; values move only through pipes (keys.sh env-pipe -> jq -> kubectl apply -f -). Nothing is written
 # to a file, passed in argv or printed. Run from any directory; needs the bravo-platform kube context.
 #
 #   deliver-secrets.sh generate   create missing random values in OpenBao secret/envs/platform/* (hex)
 #   deliver-secrets.sh deliver    (re)create the Kubernetes Secrets below from OpenBao
+#   deliver-secrets.sh access     deliver only the private first-login membership list
 #
 # OpenBao (secret/envs/...)               -> Secret (namespace/name: key)
+#   platform/access-members members_json   -> bravo-control/access-members: members.json
 #   platform/platform-db owner             -> bravo-control/platform-db-owner: password (+ username bravo_owner)
 #   platform/platform-db api, mcp, executor, apply -> bravo-control/platform-db-roles (apply: T31 worker, 0007)
 #   platform/api sse_ticket_secret         -> bravo-control/platform-api: sse_ticket_secret
@@ -84,7 +86,12 @@ pgpass_doc() {
   printf '%s' "$out" | jq -Rs '{v: (. | @base64)}'
 }
 
+cmd_access() {
+  secret bravo-control access-members Opaque members.json=platform/access-members/members_json
+}
+
 cmd_deliver() {
+  cmd_access
   secret bravo-control platform-db-owner kubernetes.io/basic-auth literal:username=bravo_owner password=platform/platform-db/owner
   secret bravo-control platform-db-roles Opaque api=platform/platform-db/api mcp=platform/platform-db/mcp executor=platform/platform-db/executor apply=platform/platform-db/apply
   secret bravo-control platform-api Opaque sse_ticket_secret=platform/api/sse_ticket_secret
@@ -138,5 +145,6 @@ cmd_deliver() {
 case ${1-} in
   generate) cmd_generate ;;
   deliver) cmd_deliver ;;
+  access) cmd_access ;;
   *) sed -n '2,15p' "${BASH_SOURCE[0]}"; exit 2 ;;
 esac

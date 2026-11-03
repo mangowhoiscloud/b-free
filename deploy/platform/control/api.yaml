@@ -1,7 +1,7 @@
 # Platform API (REST, state machine, approvals; platform/api, BRAVO_MODE=api) and operator MCP
 # (same image, BRAVO_MODE=mcp, D-18). 2 replicas each across AZs (10-cluster-overview 2.1).
 # Login: Cloudflare Access JWT only (ConfigMap platform-access: team domain, console / MCP AUD by path; the API
-# fetches the team JWKS itself). First-login roles from ConfigMap access-members (deploy/platform/access/members.json).
+# fetches the team JWKS itself). First-login roles from Secret access-members, delivered from OpenBao.
 # No dev login, no public bypass. The API resolves environment secret_refs from OpenBao metadata only, with a
 # token from Kubernetes auth role api (sidecar bao-login, policy platform-api-secretref).
 apiVersion: v1
@@ -124,7 +124,7 @@ spec:
             - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: access-members, configMap: {name: access-members}}
+        - {name: access-members, secret: {secretName: access-members}}
         - {name: bao-token, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
         - {name: bao-ca, configMap: {name: openbao-ca}}
         - name: bao-jwt
@@ -207,7 +207,7 @@ spec:
             - {name: pg-ca, mountPath: /etc/bravo/pg-ca, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: access-members, configMap: {name: access-members}}
+        - {name: access-members, secret: {secretName: access-members}}
         - {name: pg-ca, secret: {secretName: platform-db-ca, items: [{key: ca.crt, path: ca.crt}]}}
         - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
 ---

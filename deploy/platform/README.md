@@ -29,7 +29,7 @@
 | `link/source-rbac/`, `link/onprem-rbac/` | 플랫폼 신원의 K8s 권한(수집 읽기 / Executor ns chat exec / 리허설 rehearsal-*·verify-* 한정, VAP) |
 | `register-envs/` | 환경 등록 Job(운영자 첫 로그인 뒤) |
 | `kube-bench/` | rke2-cis-1.9 실행(근사, 결과 `docs/evidence/kube-bench/`) |
-| `argocd/` | Argo CD 3.5.6 값과 app-of-apps. 비공개 저장소 자격이 없어 아직 동기화 못 함 |
+| `argocd/` | Argo CD 3.5.6 값과 app-of-apps. OpenBao의 읽기 전용 deploy key로 main 자동 동기화(cilium 수동) |
 | `envoy-gateway/`, `cilium/values.yaml`, `images/link/` | 임시 EKS 때만 쓴 기록(쓰지 않음) |
 
 ## 이미지 바꾸기(GitOps 규칙, 2026-11-02 22:4x부터)
